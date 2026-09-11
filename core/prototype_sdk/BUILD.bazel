@@ -5,7 +5,7 @@ load("@rules_python//python:defs.bzl", "py_test", "py_binary")
 go_binary(
     name = "burrow-sdk-prototype",
     srcs = ["main.go"],
-    deps = ["@hovel_sdk//:hovel"],
+    deps = ["@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],
 )
 
 exports_files(["hovel.BUILD.bazel", "go.mod", "go.sum"])

@@ -1,86 +1,75 @@
-# Disposable external SDK and lifecycle proof
+# Disposable terminal placement proof
 
-For [Can the external SDK package and session lifecycle be demonstrated?](https://github.com/Bochner/burrow/issues/6).
-Owner accepted the bounded proof on 2026-09-11 and chose to preserve it on
-`prototype/external-sdk-lifecycle` for a later merge. It remains outside main
-as a runnable prototype, not an SSH implementation.
+For [Where should the terminal UI run?](https://github.com/Bochner/burrow/issues/8).
+This branch extends the accepted external SDK proof with an inert Linux PTY
+frontend. It is a boundary probe, not a Charm UI or SSH implementation. No owner
+placement decision has been made.
 
 ## Observed on Linux amd64, 2026-09-11
 
-The pinned public SDK builds in Burrow with unchanged-source BUILD overlay.
-The full upstream Bzlmod dependency failed before compilation at MODULE.bazel:24:
-`nogo.includes = ["@//:__subpackages__"]` references a repository unavailable
-when Hovel is an external module. No upstream source was patched to work around it.
+Hovel pin: `c461ba282a8aecc7aa3a079a4613bf5e2640c388`.
+Unchanged SDK source, consumer-owned BUILD overlay; original archive SHA-256
+`c2233e71fa79473555863b5d0b8381ccf5902877fb6d341825f60a6e12a1e722`.
+Inherited pins: Go 1.26.5, rules_go 0.61.1, Gazelle 0.51.3, x/sys v0.47.0,
+rules_pkg 1.2.0, Aspect 2026.33.3, Bazel 9.1.1.
 
-The fallback downloads the full archive, replaces only its SDK BUILD boundary,
-and compiles precisely upstream HOVEL_SRCS (excluding tests). It retains the original
-import path and Apache-2.0 license, including that license in the package.
-This is a consumer-maintained overlay, not a published standalone Go SDK release.
+Both linked and archive packages pass discovery, schema, confirmed daemon
+execution, explicit-close process cleanup, and daemon-SIGTERM process cleanup.
+The terminal integration uses a real controlling PTY and the public Hovel CLI.
+Its assertions deliberately document missing functionality at this pin; a green
+probe does not mean the embedded UI route is production-ready.
 
-Pins: Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388;
-archive SHA-256 c2233e71fa79473555863b5d0b8381ccf5902877fb6d341825f60a6e12a1e722;
-Go 1.26.5; rules_go 0.61.1; Gazelle 0.51.3; x/sys v0.47.0;
-rules_pkg 1.2.0; Aspect 2026.33.3; Bazel 9.1.1.
-The manifest follows the pinned Hovel module-development contract; the inert
-module reuses its public LineShellSession rather than executing shell commands.
-
-| Check | Observed result |
+| Probe | Observation |
 | --- | --- |
-| Independent SDK build and framed protocol | Pass: handshake/schema, structured module/log, returned session I/O, explicit close, shutdown exit 0. |
-| Linked package and .tgz install | Both pass manifest, Linux launcher, RPC discovery, schema, and installed-module discovery. |
-| Real daemon execution | Both pass inert survey execution through Hovel's normal chain planning and `throw --now`; persisted plans have confirmation IDs. Identical throws reuse the plan hash. |
-| Attach/detach/reattach | Both pass two real `hovel session connect` invocations, detaching on input EOF; session remains usable between them. |
-| Explicit close | Both pass: the module PID disappears after closing the session. |
-| Daemon shutdown | Both pass: SIGTERM exits the daemon with code 0 and removes the active module process. |
+| Module stdout | Framed JSON-RPC stays valid; terminal bytes use SDK PTYSession. |
+| Initial geometry | Operator terminal is 80 columns by 24 rows; embedded PTY reports 0 by 0. |
+| Resize | Operator terminal becomes 120 by 40 and receives SIGWINCH; embedded PTY still reports 0 by 0. |
+| Raw input | Probe receives individual x/y bytes without Enter. The probe explicitly configures its slave raw mode. |
+| Ctrl-C | Reaches probe as byte 03; probe remains alive. This proves byte delivery, not remote-command cancellation. |
+| Ctrl-] | CLI intercepts it and detaches; probe does not receive byte 1d. |
+| Reattach | A second attachment exchanges fresh bytes with the same retained process, with history disabled to prevent replay from satisfying assertions. |
+| Terminal settings | Operator termios exactly matches pre-attachment state after each detach. |
+| Screen/cursor restoration | After probe enters alternate screen and hides cursor, detach emits neither corresponding reset. Second attachment explicitly resets both. |
 
-The test uses disposable workspaces and XDG configuration/data directories.
-The SDK build needs no local Hovel checkout. Integration accepts a real Hovel
-executable built from the pin as its host service boundary; it imports no internals.
-The package build and protocol test are declared, cacheable Bazel targets.
+The restoration observation checks emitted control sequences, not pixels in a
+terminal emulator. The integration drives only a disposable PTY; it cannot leave
+the user's terminal in alternate-screen mode. The harness drains output after
+CLI exit before checking missing resets.
 
 ## Repeat
 
-From a clean Burrow checkout:
-
 ```sh
 aspect burrow-prototype check
-aspect burrow-prototype package
-```
-
-In a separate Hovel checkout at the exact pin, use its documented workflow:
-
-```sh
-aspect build @hovel_core//cmd/hovel
-```
-
-Then from Burrow, substitute that checkout's absolute executable path:
-
-```sh
-aspect burrow-prototype integration -- /absolute/hovel/bazel-bin/external/+local_repository+hovel_core/cmd/hovel/hovel_/hovel
+aspect burrow-prototype integration -- /absolute/pinned-hovel-executable
 aspect burrow-check
 ```
 
-The integration command prints each package check, attachment transcript, and
-PASS line. It removes its scratch state and processes on completion.
-Hovel `run -- session connect` is not an attachment entry point; the proof uses
-its direct `session connect` command. The direct command runs without a controlling
-terminal to exercise input-EOF detach reproducibly. The PID is reported in the
-inert result summary because Hovel's throw JSON does not expose SDK outputs.
+Build the host executable from the exact Hovel pin in a separate checkout with
+`aspect build @hovel_core//cmd/hovel`; pass the resulting executable above.
+The integration uses temporary workspaces and XDG directories and cleans up its
+processes. The module performs no SSH or external commands and uses no secrets.
+The full branch gate checks package/protocol and generated docs; integration is
+an explicit gate requiring the pinned host executable.
 
-## Accepted limits
+## Placement implication, pending owner review
 
-This proves the smallest inert package/session boundary, not useful SSH parity,
-terminal geometry/raw mode/Ctrl-] behavior, multiple sessions sharing one process,
-remote EOF cleanup, failed-close recovery, stuck-operation cancellation, pipe loss,
-or restart recovery. Those observations from the lifecycle research remain open
-acceptance work for the relevant UI/ownership/transport decisions.
+A full-screen management UI inside the current SDK PTY session is not proven
+viable: public initial-size/resize propagation and detach presentation cleanup
+are missing. Neither a hard-coded size nor an undocumented in-band escape
+protocol is accepted as a workaround.
 
-No SSH connections, credentials, listeners, real commands, or persistent user
-state are created. Process disappearance proves OS process cleanup, not that
-arbitrary future SSH cleanup callbacks will execute.
+A separate local Burrow frontend using Hovel's documented daemon HTTP/JSON API
+over its owner-protected Unix socket is the candidate that avoids those local
+management-screen gaps. That candidate has not been implemented or runtime
+proven here. It still requires a bounded frontend proof if selected. It also does
+not solve remote SSH PTY resize, which remains a public API gap for interactive
+remote shells.
 
-Accepted conclusion: this bounded integration proof establishes the overlay as
-a viable packaging candidate for the next decisions. Upstream distribution and
-terminal/lifecycle limits remain explicit. On this branch, the regular `aspect burrow-check` gate
-builds the package and runs its protocol check; the real-daemon integration check
-remains an explicit command requiring the pinned Hovel executable.
+Sources at the pin: SDK `session.go`, `pty_session.go`, `pty_linux.go`;
+`core/internal/adapters/cli/session_connect.go`; public daemon OpenAPI and
+frontend documentation. No internal Hovel package is imported or changed.
+
+This probe does not test SSH, Charm rendering, remote PTY resizing, remote
+cancellation, visual history/redraw, slow-reader buffering, forced-signal terminal
+restoration, daemon restart recovery, or simultaneous attachments. Original
+package/lifecycle evidence remains preserved on `prototype/external-sdk-lifecycle`.

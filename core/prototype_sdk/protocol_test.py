@@ -29,13 +29,13 @@ with subprocess.Popen([sys.argv[1]], stdin=subprocess.PIPE, stdout=subprocess.PI
     result = rpc("execute", dict(runId="proof", moduleId="burrow-sdk-prototype@0.0.0", target="inert"))
     session = result["sessions"][0]["id"]
     assert any(n["method"] == "module/log" for n in notifications)
-    rpc("session/write", dict(sessionId=session, data=base64.b64encode(b"hello\n").decode()))
+    rpc("session/write", dict(sessionId=session, data=base64.b64encode(b"x").decode()))
     output = b""
     for _ in range(3):
         response = rpc("session/read", dict(sessionId=session, timeoutMs=100))
         assert not response["closed"]
         output += base64.b64decode(response["data"])
-    assert b"inert: hello" in output, output
+    assert b"byte=78 size=0x0" in output, output
     rpc("session/close", dict(sessionId=session, reason="proof complete"))
     assert rpc("session/read", dict(sessionId=session, timeoutMs=0))["closed"]
     rpc("shutdown")

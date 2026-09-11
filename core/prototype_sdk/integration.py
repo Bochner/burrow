@@ -1,4 +1,9 @@
 """Disposable Linux integration proof against an Aspect-built, pinned Hovel binary."""
+import fcntl
+import pty
+import select
+import struct
+import termios
 import json
 import os
 from pathlib import Path
@@ -64,18 +69,61 @@ for linked in (True, False):
             pids.append(pid)
             assert Path(f"/proc/{pid}").exists()
             assert session in cli("session", "list", operator=True)
-            # Each connect invocation attaches then detaches on input EOF.
-            for marker in ("first", "reattached"):
-                attachment = subprocess.run([hovel, "session", "connect", session, "--workspace", str(workspace)],
-                                            cwd=root, env=env, input="", text=True, capture_output=True, timeout=20, start_new_session=True)
-                assert attachment.returncode == 0, (attachment.stdout, attachment.stderr)
-                output = attachment.stdout
-                assert "Connected to session" in output and "Detached from session" in output, output
-                print("ATTACH/EOF DETACH:", output.strip(), flush=True)
-                assert Path(f"/proc/{pid}").exists()
-                cli("session", "send", session, marker, operator=True)
-                output = cli("session", "read", session, operator=True)
-                assert f"inert: {marker}" in output, output
+            # Real controlling terminal, unlike the earlier input-EOF proof.
+            for attempt in range(2):
+                master, slave = pty.openpty()
+                original = termios.tcgetattr(slave)
+                fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+
+                def controlling_terminal():
+                    os.setsid()
+                    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+                attachment = None
+                output = bytearray()
+                try:
+                    attachment = subprocess.Popen(
+                        [hovel, "session", "connect", session, "--no-history", "--workspace", str(workspace)],
+                        cwd=root, env=env, stdin=slave, stdout=slave, stderr=slave,
+                        preexec_fn=controlling_terminal)
+
+                    def read_until(marker):
+                        deadline = time.monotonic() + 10
+                        while marker not in output:
+                            assert time.monotonic() < deadline, bytes(output)
+                            if select.select([master], [], [], 0.1)[0]:
+                                output.extend(os.read(master, 65536))
+
+                    read_until(b"Connected to session")
+                    os.write(master, b"x")
+                    read_until(b"byte=78 size=0x0")
+                    assert termios.tcgetattr(slave) != original
+                    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+                    os.kill(attachment.pid, signal.SIGWINCH)
+                    os.write(master, b"y")
+                    read_until(b"byte=79 size=0x0")
+                    os.write(master, b"\x03")
+                    read_until(b"byte=03 size=0x0")
+                    assert attachment.poll() is None
+                    os.write(master, b"a" if attempt == 0 else b"r")
+                    read_until(b"\x1b[?25l" if attempt == 0 else b"\x1b[?1049l")
+                    os.write(master, b"\x1d")
+                    read_until(b"Detached from session")
+                    assert attachment.wait(timeout=10) == 0
+                    while select.select([master], [], [], 0.1)[0]:
+                        output.extend(os.read(master, 65536))
+                    assert termios.tcgetattr(slave) == original
+                    assert b"byte=1d" not in output
+                    if attempt == 0:
+                        assert b"\x1b[?1049l" not in output and b"\x1b[?25h" not in output
+                    assert Path(f"/proc/{pid}").exists()
+                    print(f"REAL PTY attempt={attempt + 1}: {bytes(output)!r}", flush=True)
+                finally:
+                    if attachment and attachment.poll() is None:
+                        attachment.kill()
+                        attachment.wait(timeout=5)
+                    os.close(master)
+                    os.close(slave)
             cli("session", "close", session, operator=True)
             wait_for(lambda: not Path(f"/proc/{pid}").exists())
             pids.remove(pid)
@@ -90,7 +138,7 @@ for linked in (True, False):
             assert daemon.wait(timeout=10) == 0
             wait_for(lambda: not Path(f"/proc/{pid}").exists())
             pids.remove(pid)
-            print(f"PASS {'linked' if linked else 'archive'}: discovery/schema, confirmed execution, attach/detach/reattach, close cleanup, daemon shutdown cleanup", flush=True)
+            print(f"PASS {'linked' if linked else 'archive'}: discovery/schema, confirmed execution, real raw input/Ctrl-C/Ctrl-] detach/reattach, termios restoration, close/shutdown cleanup; OBSERVED GAPS: geometry stays 0x0; detach emits no screen/cursor reset", flush=True)
         finally:
             if daemon and daemon.poll() is None:
                 daemon.terminate()
