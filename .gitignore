@@ -7,6 +7,10 @@
 /.aspect/local/
 /.bazelrc.user
 /dist/
+/_site/
+node_modules/
+/docs/site/dist/
+/docs/site/.astro/
 .DS_Store
 
 # Runtime state and credentials never belong in source control.

@@ -1,6 +1,10 @@
-# Burrow
+# Agent instructions for Burrow
 
-Read `CONTEXT.md` and `docs/wayfinder-start.md` before planning. Research in
+These instructions apply to all agents in this repository. `CLAUDE.md` is a
+symlink to this file, following Hovel; edit this canonical file.
+
+Read `CONTEXT.md`, `docs/wayfinder-start.md`, and the
+[Wayfinder map](https://github.com/Bochner/burrow/issues/1) before planning. Research in
 `docs/research/` is evidence and recommendations, not an approved implementation
 specification. This repository currently contains no SSH implementation.
 
@@ -26,12 +30,38 @@ specification. This repository currently contains no SSH implementation.
   check and run the relevant Aspect gate. The current `//:research` target
   only verifies the metadata build graph, not application behavior or docs prose.
 
+## Repository layout and documentation
+
+Follow the layout in `docs/site/src/content/spec/development-guide.html` when
+adding or moving files. Application code belongs under `core/` when it exists;
+documentation source belongs in `docs/site/`, tooling in `docs/tools/docs/`, and
+research in `docs/research/`. Create module/SDK areas only for real capabilities.
+
+When editing the Pages book, components, assets, or deployment workflow, read
+`docs/agents/docs.md`. Preserve upstream attribution in `docs/site/UPSTREAM.md`.
+
+## Common tasks and completion
+
+- `aspect help`: discover the checked-in workflows.
+- `aspect burrow-check`: current full gate for metadata and documentation.
+- `aspect burrow-site check`: generated book, links/assets, and search checks.
+- `aspect burrow-site stage`: materialize declared site output under `_site/`.
+
+Run the relevant gate before completion and state what it proves. Add behavior
+checks and expand the gate when application code arrives. Prefer declared,
+pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
+
 ## Agent skills
 
 ### Issue tracker
 
 Use the private `Bochner/burrow` GitHub repository. See
-`docs/agents/issue-tracker.md`. Skill installation is left to the owner.
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+When triaging issues, use the default role-to-label mapping in
+`docs/agents/triage-labels.md`.
 
 ### Domain docs
 

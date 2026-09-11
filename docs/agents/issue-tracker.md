@@ -8,6 +8,23 @@ high-level command. Read-only exploration does not authorize publishing issues.
 
 PRs as a request surface: no.
 
+## Project view
+
+The private [Burrow project](https://github.com/users/Bochner/projects/9) is copied
+from Tirnaill: Delivery and Closed tickets tables, grouped by Milestone, with
+Status, Priority, Parent issue, and Sub-issues progress. The initial decision
+map and its children belong to the SSH specification milestone.
+
+Native workflows add sub-issues when their parent is in the project and update
+status when items close. Add standalone issues with `--project Burrow` or
+`gh-axi project item-add 9 --owner Bochner --url <issue-url>` until the owner
+enables the native auto-add rule for `Bochner/burrow`, filter `is:issue`.
+The saved Show hierarchy setting and auto-add workflow configuration require
+GitHub's project UI; current public API setters do not expose them.
+
+Project views are for scanning; the map and decision tickets below remain
+canonical. Avoid duplicating decision details in the project README.
+
 ## Wayfinding operations
 
 These conventions prepare the tracker; the bootstrap does not publish a map or
@@ -19,7 +36,7 @@ pretend that the required live discussion has happened.
   `wayfinder:research`, `wayfinder:prototype`, `wayfinder:grilling`, or
   `wayfinder:task`. Create labels on first use.
 - Attach a child using `POST /repos/Bochner/burrow/issues/<map>/sub_issues`
-  with the child's numeric database `issue_id`.
+  with `sub_issue_id` set to the child's numeric database ID.
 - Blocking: use native dependencies via
   `POST /repos/Bochner/burrow/issues/<child>/dependencies/blocked_by`, with
   the blocker's numeric database `issue_id`. Get that ID from the issue API's

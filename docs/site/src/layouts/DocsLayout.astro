@@ -1,0 +1,39 @@
+---
+// Adapted from Hovel c461ba; Copyright 2026 William Born; Apache-2.0. See UPSTREAM.md.
+import BookContents from "../components/BookContents.astro";
+import Sidebar from "../components/Sidebar.astro";
+import { bookChapter, orderedPages, rootPrefix, type DocPage } from "../lib/catalog";
+import PageShell from "./PageShell.astro";
+interface Props { page: DocPage }
+const { page } = Astro.props;
+const root = rootPrefix(page.slug);
+const chapter = bookChapter(page);
+const ordered = orderedPages("book");
+const index = ordered.findIndex((candidate) => candidate.slug === page.slug);
+const previous = ordered[index - 1];
+const next = ordered[index + 1];
+---
+<PageShell area="book" current="Book" description={page.description} root={root}
+  tag={chapter ? `// chapter ${chapter.label}` : "// book"} title={`${page.title} - Burrow book`}>
+  <div class="layout">
+    <Sidebar current={page} root={root} />
+    <main id="main-content" class:list={["content structured-content book-content", chapter && "numbered-document book-chapter", !chapter && "book-contents-page"]} data-chapter-number={chapter?.label}>
+      <nav class="breadcrumbs" aria-label="Breadcrumb">
+        <a href={`${root}index.html`}>Home</a><span aria-hidden="true">/</span>
+        <a href={`${root}spec/`}>Book</a><span aria-hidden="true">/</span>
+        <span aria-current="page">{page.title}</span>
+      </nav>
+      {chapter && <header class="document-header book-chapter-header">
+        <span class="document-id">Chapter {chapter.label}</span>
+        <span class="document-context">Part {String(chapter.partNumber).padStart(2, "0")} / {chapter.partLabel}</span>
+      </header>}
+      <slot />
+      {page.slug === "spec/index" && <BookContents root={root} />}
+      <nav class="page-nav" aria-label="Page navigation">
+        {previous ? <a class="prev" href={`${root}${previous.href}`}><span class="page-nav-direction">← Previous</span><strong>{previous.title}</strong></a> : <span />}
+        <span class="spacer"></span>
+        {next ? <a class="next" href={`${root}${next.href}`}><span class="page-nav-direction">Next →</span><strong>{next.title}</strong></a> : <span />}
+      </nav>
+    </main>
+  </div>
+</PageShell>

@@ -1,0 +1,19 @@
+# Adapted from Hovel c461ba's Aspect task convention; see docs/site/UPSTREAM.md.
+def _impl(ctx: TaskContext) -> int:
+    commands = {
+        "build": ["build", "//docs/site:astro_site"],
+        "check": ["test", "//docs/tools/docs:site_test"],
+        "stage": ["run", "//docs/tools/docs:stage_site"],
+    }
+    mode = ctx.args.mode[0]
+    if mode not in commands:
+        print("unknown site mode: " + mode)
+        return 2
+    status = ctx.std.process.command("aspect").args(commands[mode]).current_dir(ctx.std.env.aspect_root_dir()).spawn().wait()
+    return status.code or 0
+
+burrow_site = task(
+    args = {"mode": args.positional(default = ["build"], minimum = 0, maximum = 1, description = "build, check, or stage the documentation book")},
+    summary = "Build and validate the Astro documentation book.",
+    implementation = _impl,
+)
