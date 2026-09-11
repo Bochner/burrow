@@ -2,6 +2,17 @@ load("@rules_go//go:def.bzl", "go_binary")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_test", "py_binary")
 
+py_test(
+    name = "reuse_test",
+    srcs = ["reuse.py"],
+    main = "reuse.py",
+    args = ["$(location @hovel_linux_wheel//file)", "$(location :package)"],
+    data = ["@hovel_linux_wheel//file", ":package"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)
+
 py_binary(
     name = "setup",
     srcs = ["setup.py"],

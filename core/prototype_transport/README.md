@@ -131,5 +131,6 @@ both local and VM clean refusals reproduce the master teardown defect.
 - The Go session adapter has a bounded 64-chunk output queue for this fixture;
   production retention/backpressure policy remains undecided.
 
-The source is based on `archive/prototype-hovel-setup`; do not merge this whole
-branch into main. Main should retain only approved decisions and evidence links.
+The source is based on `archive/prototype-hovel-setup` and now lives on `main`
+with the later ownership and script-boundary proofs. Historical observations
+above retain their original scope; consult the linked decisions for acceptance.

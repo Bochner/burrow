@@ -1,9 +1,11 @@
 # Reusing the preserved prototypes
 
 The prototypes remain useful evidence and starting points for implementation.
-Their complete source, dependency locks, provenance and runnable checks are kept
-under archive tags or immutable commit links. Main retains the research, decisions, handoff documents and
-maintained repository tooling. Generated output and local runtime state are ignored.
+Their combined source, dependency locks, provenance and runnable checks now live
+on `main` under `core/prototype_sdk/` and `core/prototype_transport/`. The owner
+requested branch consolidation on 2026-09-11. Historical tags and immutable commit
+links retain the original evidence; merging source does not approve a pending
+design. Generated output and local runtime state are ignored.
 
 | Snapshot | Reuse it for | Canonical decision |
 | --- | --- | --- |
@@ -14,11 +16,10 @@ maintained repository tooling. Generated output and local runtime state are igno
 | [Connection ownership](https://github.com/Bochner/burrow/blob/94e46e1/core/prototype_transport/OWNERSHIP.md) (`94e46e1`) | Daemon-owned master cleanup, local terminal handoff/resize, workspace separation, log-limit reproduction and bounded workaround. Full-screen redraw remains unproven; owner review pending. | [Can connection ownership and complete teardown be proven through Hovel?](https://github.com/Bochner/burrow/issues/25) |
 | [Script execution boundary](https://github.com/Bochner/burrow/blob/ad04fce/core/prototype_transport/SCRIPT_BOUNDARY.md) (`ad04fce`) | Confirmed streamed execution, bounded binary output, missing-master refusal, and reproductions of lost completion/evidence after caller disconnect and direct-API confirmation differences. Full script matrix and workaround remain pending. | [Can remote script runs satisfy Hovel execution and cleanup contracts?](https://github.com/Bochner/burrow/issues/26) |
 
-Start with the setup snapshot: it includes the SDK and terminal fixtures, so
-there is no need to combine all three histories. The earlier tags preserve the
-evidence used for their individual decisions.
+The [daemon reuse proof](../../core/prototype_sdk/REUSE.md), originally `400314c`,
+is also included. Its owner decision remains pending.
 
-For transport work, use the SSH transport snapshot. Run
+For transport work, use the consolidated source on `main`. Run
 `aspect burrow-prototype transport` or its expanded `aspect burrow-check`.
 Read `core/prototype_transport/README.md` first: it requires explicitly hashed
 host OpenSSH binaries and asserts known bridge defects. A passing observation
@@ -29,21 +30,22 @@ reproduced the defects with a separate server, while the client remained on WSL2
 
 ## Run or extend a proof
 
-From a clean repository checkout, create a disposable worktree:
+From the repository checkout:
 
 ```sh
-git fetch origin --tags
-git worktree add --detach ../burrow-proof archive/prototype-hovel-setup
-cd ../burrow-proof
 aspect burrow-prototype setup
+aspect burrow-prototype reuse
 aspect burrow-check
 ```
 
 The setup check requires Linux amd64 and downloads declared, pinned dependencies.
 It runs inert fixtures in temporary workspaces and cleans up its processes.
-Read `core/prototype_sdk/SETUP.md` and `README.md` in that snapshot for the exact
-pins and measured limits. The snapshot's `burrow-check` includes SDK checks;
-main's gate checks maintained metadata and documentation tooling.
+Read `core/prototype_sdk/SETUP.md` and `README.md` for the exact pins and measured
+limits. `burrow-check` includes SDK protocol, daemon reuse, documentation and the
+host-pinned SSH observations. CI uses `aspect burrow-check ci`: it builds every
+prototype and runs the portable tests, excluding the SSH fixture that requires
+the exact host OpenSSH binaries. The full local gate remains required for
+transport changes.
 
 Archived prose describes the decision state when captured. For current scope,
 follow the decision links above and the
@@ -53,9 +55,9 @@ the setup probe is not a production installer. Passing assertions about known
 upstream limitations do not establish full SSH parity.
 
 When implementing an approved capability, bring forward the specific validated
-source, pins and behavior checks it needs. Avoid merging a whole snapshot over
-main: snapshots predate later documentation, ignore rules and the repeat-staging
-fix. Keep active checks in the relevant Aspect gate. Dependency locks such as
+source, pins and behavior checks it needs. Extend the current main checkout;
+historical snapshots predate later documentation, ignore rules and the
+repeat-staging fix. Keep active checks in the relevant Aspect gate. Dependency locks such as
 `MODULE.bazel.lock`, `pnpm-lock.yaml` and a used Go dependency manifest belong in
 version control; build output, Python bytecode, credentials and installer-local
 bookkeeping do not.

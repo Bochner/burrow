@@ -14,7 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0; matches Hovel
       - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9; matches Hovel
-      - run: aspect burrow-check
+      # Build all proofs; the full SSH run requires locally pinned host OpenSSH.
+      - run: aspect burrow-check ci
       - run: aspect burrow-site stage
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1; matches Hovel
         with:

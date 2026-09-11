@@ -20,6 +20,7 @@ import threading
 import termios
 import time
 import zipfile
+from unittest.mock import patch
 
 
 def input_path(value):
@@ -466,7 +467,15 @@ LogLevel VERBOSE
 
         def alive(pid):
             stat = Path(f"/proc/{pid}/stat")
-            return stat.exists() and stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+            try:
+                return stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+            except (FileNotFoundError, ProcessLookupError):
+                return False
+
+        for vanished in (FileNotFoundError, ProcessLookupError):
+            with patch.object(Path, 'read_text', side_effect=vanished):
+                assert not alive(os.getpid())
+        assert alive(os.getpid())
 
         def local_terminal_check(owned_socket, lose=False):
             outer, slave = pty.openpty()

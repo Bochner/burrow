@@ -11,7 +11,7 @@ the daemon and live resources. General existing-daemon attachment is deferred.
 The project is charting an implementation-ready specification for useful LazySSH
 SSH parity: shells, file transfers, forwarding, saved connections, and user
 scripting through supported Hovel contracts. Linux is the initial operator
-platform. **No SSH executable or installable package exists yet.**
+platform. **No production SSH executable or installable package exists yet.**
 
 > **Authorized red-team emulation only.** Use Burrow only in environments you own
 > or are explicitly authorized to assess, with written scope and approvals. See
@@ -62,13 +62,16 @@ Useful commands:
 
 | Command | Description |
 | --- | --- |
-| `aspect burrow-check` | Run the current repository metadata and documentation gates. |
+| `aspect burrow-check` | Run metadata, documentation, SDK, daemon reuse and host-pinned SSH proof checks. |
+| `aspect burrow-check ci` | Build every prototype and run portable checks; omit the host-pinned SSH fixture. |
 | `aspect build //:research` | Check the research metadata build graph; not SSH behavior or prose. |
 | `aspect burrow-site build` | Build the hermetic Astro documentation book. |
 | `aspect burrow-site check` | Validate generated pages, internal links, assets, and search. |
 | `aspect burrow-site stage` | Materialize the documentation site under `_site/`. |
 
-CI runs the same Aspect gates and uploads the validated site. Pages promotes
+The full local gate requires the exact OpenSSH binaries documented in the
+[transport proof](core/prototype_transport/README.md). CI uses the explicit `ci`
+gate and uploads the validated site. Pages promotes
 that exact artifact after successful main-branch CI.
 
 ## Repository layout
@@ -79,6 +82,7 @@ and agent instructions. Only areas with actual content are created.
 | Path | Purpose |
 | --- | --- |
 | `.aspect/` | Repository workflows backed by declared Bazel targets. |
+| `core/prototype_sdk/`, `core/prototype_transport/` | Bounded runnable proofs, consolidated on main. |
 | `docs/site/` | Astro Pages source, book content, shared components, and assets. |
 | `docs/tools/docs/` | Documentation validation and staging tools. |
 | `docs/research/` | Primary-source evidence and upstream provenance. |

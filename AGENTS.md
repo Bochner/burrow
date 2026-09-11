@@ -6,7 +6,7 @@ symlink to this file, following Hovel; edit this canonical file.
 Read `CONTEXT.md`, `docs/wayfinder-start.md`, and the
 [Wayfinder map](https://github.com/Bochner/burrow/issues/1) before planning. Research in
 `docs/research/` is evidence and recommendations, not an approved implementation
-specification. This repository currently contains no SSH implementation.
+specification. `core/prototype_*` contains bounded proofs, not a production SSH application.
 
 ## Development conventions
 
@@ -43,7 +43,8 @@ When editing the Pages book, components, assets, or deployment workflow, read
 ## Common tasks and completion
 
 - `aspect help`: discover the checked-in workflows.
-- `aspect burrow-check`: current full gate for metadata and documentation.
+- `aspect burrow-check`: full metadata, documentation, SDK, daemon reuse and SSH proof gate.
+- `aspect burrow-check ci`: builds all proofs and runs portable checks; excludes the host-pinned SSH fixture.
 - `aspect burrow-site check`: generated book, links/assets, and search checks.
 - `aspect burrow-site stage`: materialize declared site output under `_site/`.
 
@@ -54,6 +55,9 @@ pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
 During initial setup, the owner authorizes merging completed, validated work.
 Finish on clean, synchronized `main`; preserve research commits before removing
 merged branches and temporary worktrees. Do not discard unrelated changes.
+Use one shared branch and a larger PR per milestone, rather than a branch for
+each small task or decision ticket. Consolidate validated prototype source into
+`main` at milestone boundaries; keep prototype labels and open decisions explicit.
 
 ## Agent skills
 
