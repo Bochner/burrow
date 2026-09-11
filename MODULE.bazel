@@ -27,3 +27,32 @@ npm.npm_translate_lock(
     run_lifecycle_hooks = False,
 )
 use_repo(npm, "npm")
+
+# Published v0.4.2 resolves to the Hovel source pin below; GitHub asset digest.
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+http_file(
+    name = "hovel_linux_wheel",
+    urls = ["https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl"],
+    sha256 = "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933",
+    downloaded_file_path = "hovel.whl",
+)
+
+# Disposable external SDK proof, pinned to the research baseline.
+bazel_dep(name = "rules_go", version = "0.61.1")
+bazel_dep(name = "gazelle", version = "0.51.3")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.26.5")
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//core/prototype_sdk:go.mod")
+use_repo(go_deps, "org_golang_x_sys")
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+http_archive(
+    name = "hovel_sdk",
+    urls = ["https://codeload.github.com/vibepwners/hovel/tar.gz/c461ba282a8aecc7aa3a079a4613bf5e2640c388"],
+    type = "tar.gz",
+    sha256 = "c2233e71fa79473555863b5d0b8381ccf5902877fb6d341825f60a6e12a1e722",
+    strip_prefix = "hovel-c461ba282a8aecc7aa3a079a4613bf5e2640c388",
+    patch_cmds = ["rm sdk/go/hovel/BUILD.bazel"],
+    build_file = "//core/prototype_sdk:hovel.BUILD.bazel",
+)

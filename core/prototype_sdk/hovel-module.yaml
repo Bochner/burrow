@@ -1,0 +1,15 @@
+apiVersion: hovel.dev/v1alpha1
+kind: ModulePackage
+metadata:
+  name: burrow-sdk-prototype
+  version: 0.0.0
+  moduleType: survey
+  summary: Inert SDK lifecycle proof.
+  license: Apache-2.0
+runtime:
+  protocol: jsonrpc-stdio
+launch:
+  - selector:
+      os: linux
+      arch: amd64
+    command: ["burrow-sdk-prototype"]
