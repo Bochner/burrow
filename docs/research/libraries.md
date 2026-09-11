@@ -4,9 +4,14 @@ Researched 2026-09-11 against primary documentation, source, release metadata, a
 
 ## Recommended direction
 
+The owner's confirmed priority is [Hovel integration first](../wayfinder-start.md#standing-preferences-from-the-owner).
+The choices below are candidates to evaluate within that boundary, not a
+dependency installation list. A separate executable does not necessarily mean
+standalone operation: it may be launched and managed entirely by Hovel.
+
 Build the user experience with Bubble Tea, Bubbles, and Lip Gloss. Keep network operations independent of rendering. For SSH, evaluate OpenSSH session management plus Go's `golang.org/x/crypto/ssh` and `github.com/pkg/sftp`: there is now an official bridge from Go SSH to OpenSSH ControlMaster sockets, which could preserve existing SSH behavior while providing native transfer progress. The first spike should settle that choice before committing to a complete native SSH implementation.
 
-Use Charm v2 inside a separately launched Burrow executable. If Burrow instead shares Hovel's Go UI models in-process, align with Hovel's existing v1 family. A process boundary permits different Go dependencies; it does not eliminate the need to match Hovel's command, session, output, and lifecycle contracts.
+Evaluate Charm v2 if the Hovel integration gives Burrow a separate rendering process or session. If Burrow instead shares Hovel's Go UI models in-process, align with Hovel's existing v1 family. A process boundary permits different Go dependencies; it does not eliminate the need to match Hovel's command, session, output, and lifecycle contracts. Resolve UI placement before selecting a major version.
 
 ## Hovel compatibility and current versions
 
@@ -47,6 +52,33 @@ The catalog below covers Charm's advertised libraries and adjacent projects rele
 UI proposal: host/session list with clear active context, a details area for identity and tunnel state, and a transfer queue with byte counts and cancellable progress. Include keyboard help, light/dark terminal support, narrow-window behavior, readable text status in addition to color, and a plain non-TTY output path. These are design requirements, not claims of an existing screen. A Bubble Tea viewport displays text; it is not by itself a terminal emulator for arbitrary interactive programs. Hand the terminal to an SSH subprocess for the first interactive-shell slice and restore the TUI on exit.
 
 Avoid writing concurrent progress/log output straight to the TUI's stdout. Tea owns that terminal; route events through the model and diagnostics to a file or other dedicated sink. [Bubble Tea logging guidance](https://github.com/charmbracelet/bubbletea#logging-stuff).
+
+## Logging research boundary
+
+Logging is required; a direct Charm Log dependency is conditional. For Hovel
+module execution, use `ctx.Log` so diagnostics and progress enter the SDK's
+structured `module/log` route. Keep module stdout exclusively for framed
+JSON-RPC. The SDK logging contract is documented in the
+[Go SDK guide](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/sdk/go/README.md).
+
+If standalone operation is later selected, Go's `log/slog` with a Charm Log
+handler is a candidate for readable CLI diagnostics. Charm Log supports text,
+JSON and logfmt output and a `slog` handler; it does not by itself define
+Burrow's evidence retention or Hovel audit integration.
+[Charm Log documentation](https://github.com/charmbracelet/log).
+
+For an active TUI, route display events through the UI model and diagnostics
+to a dedicated sink; stderr may share the same terminal and disrupt rendering.
+Before choosing a logging adapter, research which Hovel events are persisted,
+how they correlate with runs/connections/sessions, how secrets are excluded,
+and which progress events should appear in the UI. Ordinary diagnostic logs,
+transfer progress, and engagement audit records have different requirements;
+do not assume `ctx.Log` alone fulfills all three.
+
+Bubble Tea, Bubbles and Lip Gloss remain the UI foundation candidates. Huh is
+a likely fit for connection forms if Burrow owns those prompts. Glamour,
+Fang/Cobra, and development-only VHS remain conditional on help rendering,
+standalone CLI, and recording needs respectively.
 
 ## Go SSH versus Paramiko and OpenSSH
 

@@ -51,6 +51,10 @@ Run the relevant gate before completion and state what it proves. Add behavior
 checks and expand the gate when application code arrives. Prefer declared,
 pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
 
+During initial setup, the owner authorizes merging completed, validated work.
+Finish on clean, synchronized `main`; preserve research commits before removing
+merged branches and temporary worktrees. Do not discard unrelated changes.
+
 ## Agent skills
 
 ### Issue tracker
