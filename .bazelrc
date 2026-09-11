@@ -1,0 +1,4 @@
+common --announce_rc
+test --test_output=errors
+
+try-import %workspace%/.bazelrc.user

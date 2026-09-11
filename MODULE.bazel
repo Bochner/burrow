@@ -1,0 +1,4 @@
+module(
+    name = "burrow",
+    version = "0.0.0",
+)

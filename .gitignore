@@ -1,0 +1,19 @@
+# Local upstream checkouts and research scratch space.
+/.references/
+/.scratch/
+
+# Build outputs and machine-specific settings.
+/bazel-*
+/.aspect/local/
+/.bazelrc.user
+/dist/
+.DS_Store
+
+# Runtime state and credentials never belong in source control.
+/.burrow/
+/.hovel/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
