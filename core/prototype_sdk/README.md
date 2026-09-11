@@ -51,23 +51,65 @@ processes. The module performs no SSH or external commands and uses no secrets.
 The full branch gate checks package/protocol and generated docs; integration is
 an explicit gate requiring the pinned host executable.
 
-## Placement implication, pending owner review
+## Separate local frontend proof
 
-A full-screen management UI inside the current SDK PTY session is not proven
-viable: public initial-size/resize propagation and detach presentation cleanup
-are missing. Neither a hard-coded size nor an undocumented in-band escape
-protocol is accepted as a workaround.
+`frontend.py` is a throwaway Python standard-library terminal probe, not a
+production Python frontend or final UI design. It uses only public HTTP/JSON
+ListSessions, ReadSession, WriteSession, and CloseSession over the Hovel Unix
+socket. It imports no Hovel internals. The Go module remains inert.
 
-A separate local Burrow frontend using Hovel's documented daemon HTTP/JSON API
-over its owner-protected Unix socket is the candidate that avoids those local
-management-screen gaps. That candidate has not been implemented or runtime
-proven here. It still requires a bounded frontend proof if selected. It also does
-not solve remote SSH PTY resize, which remains a public API gap for interactive
-remote shells.
+The same real-daemon integration gate additionally runs this frontend in a real
+controlling PTY for each linked/archive install and observes:
 
-Sources at the pin: SDK `session.go`, `pty_session.go`, `pty_linux.go`;
+- Initial local display at 80×24; SIGWINCH redraw at 120×40.
+- Raw operator input sent to the retained module session through the public API;
+  returned bytes displayed as escaped text, so daemon output cannot emit terminal
+  control sequences into the management screen.
+- Ctrl-] detach and Ctrl-C frontend interruption both restore cursor, alternate
+  screen, and exact termios; the Hovel session/process remains available.
+- Reattachment reads the existing session and exchanges fresh input/output.
+- Explicit `q` closes the session through the public API, restores terminal state,
+  and removes the module process. Daemon shutdown cleanup is also checked.
+
+The observer checks emitted control sequences rather than rendered pixels. Ctrl-C
+here interrupts the local UI, not a remote command. Remote PTY geometry still
+reports 0×0 and is deliberately not disguised by the local display size.
+
+For a manual probe against an already running disposable session:
+
+```sh
+aspect burrow-prototype frontend -- /absolute/workspace/hoveld.sock SESSION_ID
+```
+
+The module/session setup is automated by the integration gate; this manual entry
+point expects the session already to exist. The gate runs the same declared
+frontend source with the pinned Python runtime. The frontend intentionally polls
+and only displays the last 256 received bytes; no transcript policy is selected.
+
+## Owner-selected direction
+
+The owner selected a separate Burrow terminal app backed by Hovel's daemon and
+clarified that "standalone" means no need to manage Hovel separately. Transparently
+installing/managing Hovel as a dependency is acceptable; avoid separate SSH engines
+or build variants. Exact dependency installation, default workspace, startup,
+and quit behavior remain the setup/workspace decision.
+
+The local management screen owns its terminal; Hovel owns operational state,
+confirmation/planning and retained sessions. Burrow's SSH capabilities remain
+available to Hovel chains independently of starting the UI. Squatter illustrates
+shared client/provider behavior and public step/session contracts; its embedded
+prompt's 80×24 fallback is not a full-screen resize proof, and installed-payload
+records must not be copied for ordinary SSH login.
+
+The embedded route's geometry and presentation-restoration gaps remain recorded
+above. The public session/daemon contract still needs a solution for remote SSH
+PTY initial size/resize; a separate management frontend does not solve it.
+
+Sources at the pin: SDK `session.go`, `step.go`, `pty_session.go`, `pty_linux.go`;
 `core/internal/adapters/cli/session_connect.go`; public daemon OpenAPI and
-frontend documentation. No internal Hovel package is imported or changed.
+frontend documentation; Squatter `provider/main.go`, standalone
+`client/cmd/squatterctl/main.go`, and `client/shell/prompt_pty_posix.go`.
+No internal Hovel package is imported or changed.
 
 This probe does not test SSH, Charm rendering, remote PTY resizing, remote
 cancellation, visual history/redraw, slow-reader buffering, forced-signal terminal

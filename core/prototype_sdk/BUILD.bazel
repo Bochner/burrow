@@ -29,7 +29,13 @@ py_test(
 py_binary(
     name = "integration",
     srcs = ["integration.py"],
-    args = ["$(location :package)"],
-    data = [":package"],
+    args = ["$(location :package)", "$(location frontend.py)"],
+    data = [":package", "frontend.py"],
+    legacy_create_init = 0,
+)
+
+py_binary(
+    name = "frontend",
+    srcs = ["frontend.py"],
     legacy_create_init = 0,
 )

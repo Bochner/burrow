@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 import time
 
-archive, hovel = map(lambda p: str(Path(p).resolve()), sys.argv[1:])
+archive, frontend, hovel = map(lambda p: str(Path(p).resolve()), sys.argv[1:])
 
 
 def wait_for(check):
@@ -124,7 +124,42 @@ for linked in (True, False):
                         attachment.wait(timeout=5)
                     os.close(master)
                     os.close(slave)
-            cli("session", "close", session, operator=True)
+            # Separate local frontend: geometry and cleanup stay on the operator terminal.
+            for key, reason in ((b"\x1d", "detached"), (b"\x03", "interrupted"), (b"q", "closed")):
+                master, slave = pty.openpty()
+                original = termios.tcgetattr(slave)
+                fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+                attachment = None
+                output = bytearray()
+                try:
+                    attachment = subprocess.Popen(
+                        [sys.executable, frontend, str(workspace / "hoveld.sock"), session],
+                        cwd=root, env=env, stdin=slave, stdout=slave, stderr=slave,
+                        preexec_fn=controlling_terminal)
+                    read_until(b"PROTOTYPE 80x24")
+                    assert termios.tcgetattr(slave) != original
+                    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+                    os.kill(attachment.pid, signal.SIGWINCH)
+                    read_until(b"PROTOTYPE 120x40")
+                    os.write(master, b"x")
+                    read_until(b"byte=78 size=0x0")
+                    os.write(master, key)
+                    read_until(f"Frontend {reason}".encode())
+                    assert attachment.wait(timeout=10) == 0
+                    while select.select([master], [], [], 0.1)[0]:
+                        output.extend(os.read(master, 65536))
+                    assert termios.tcgetattr(slave) == original
+                    assert b"\x1b[?25h\x1b[?1049l" in output
+                    if reason != "closed":
+                        assert Path(f"/proc/{pid}").exists()
+                        assert session in cli("session", "list", operator=True)
+                    print(f"PASS LOCAL FRONTEND: 80x24 -> 120x40, public daemon input/output, {reason}, screen/cursor/termios restored", flush=True)
+                finally:
+                    if attachment and attachment.poll() is None:
+                        attachment.kill()
+                        attachment.wait(timeout=5)
+                    os.close(master)
+                    os.close(slave)
             wait_for(lambda: not Path(f"/proc/{pid}").exists())
             pids.remove(pid)
             # A second execution remains active while the daemon shuts down.
