@@ -1,12 +1,12 @@
 def _impl(ctx: TaskContext) -> int:
     root = ctx.std.env.aspect_root_dir()
-    for command in [["build", "//:research"], ["test", "//docs/tools/docs:site_test"]]:
+    for command in [["build", "//:research", "//core/prototype_sdk:package"], ["test", "//docs/tools/docs:site_test", "//core/prototype_sdk:protocol_test"]]:
         status = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait()
         if status.code:
             return status.code
     return 0
 
 burrow_check = task(
-    summary = "Check the repository metadata and documentation book.",
+    summary = "Check metadata, documentation, and the inert SDK prototype.",
     implementation = _impl,
 )

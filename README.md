@@ -36,9 +36,9 @@ open and completed issues in the same views as Tirnaill.
 
 ## Install
 
-There is no runtime package to install yet. The first external SDK package and
-SSH slice will be specified through the Wayfinder map before distribution
-commands are published.
+There is no SSH runtime package to install yet. The accepted
+[inert SDK prototype](core/prototype_sdk/README.md) demonstrates Hovel package
+installation and session lifecycle. SSH distribution remains Wayfinder work.
 
 ## Develop
 
@@ -56,7 +56,7 @@ Useful commands:
 
 | Command | Description |
 | --- | --- |
-| `aspect burrow-check` | Run the current repository metadata and documentation gates. |
+| `aspect burrow-check` | Check metadata, documentation, the inert SDK package, and its protocol behavior. |
 | `aspect build //:research` | Check the research metadata build graph; not SSH behavior or prose. |
 | `aspect burrow-site build` | Build the hermetic Astro documentation book. |
 | `aspect burrow-site check` | Validate generated pages, internal links, assets, and search. |
@@ -73,6 +73,7 @@ and agent instructions. Only areas with actual content are created.
 | Path | Purpose |
 | --- | --- |
 | `.aspect/` | Repository workflows backed by declared Bazel targets. |
+| `core/prototype_sdk/` | Accepted inert Hovel SDK/package/session proof; no SSH. |
 | `docs/site/` | Astro Pages source, book content, shared components, and assets. |
 | `docs/tools/docs/` | Documentation validation and staging tools. |
 | `docs/research/` | Primary-source evidence and upstream provenance. |

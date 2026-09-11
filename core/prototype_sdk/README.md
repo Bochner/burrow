@@ -1,7 +1,9 @@
 # Disposable external SDK and lifecycle proof
 
 For [Can the external SDK package and session lifecycle be demonstrated?](https://github.com/Bochner/burrow/issues/6).
-Prototype only; keep this branch out of main. Owner review is pending.
+Owner accepted the bounded proof on 2026-09-11 and chose to preserve it on
+`prototype/external-sdk-lifecycle` for a later merge. It remains outside main
+as a runnable prototype, not an SSH implementation.
 
 ## Observed on Linux amd64, 2026-09-11
 
@@ -38,7 +40,7 @@ The package build and protocol test are declared, cacheable Bazel targets.
 
 ## Repeat
 
-From this branch in a clean Burrow checkout:
+From a clean Burrow checkout:
 
 ```sh
 aspect burrow-prototype check
@@ -65,7 +67,7 @@ its direct `session connect` command. The direct command runs without a controll
 terminal to exercise input-EOF detach reproducibly. The PID is reported in the
 inert result summary because Hovel's throw JSON does not expose SDK outputs.
 
-## Limits for owner review
+## Accepted limits
 
 This proves the smallest inert package/session boundary, not useful SSH parity,
 terminal geometry/raw mode/Ctrl-] behavior, multiple sessions sharing one process,
@@ -77,6 +79,8 @@ No SSH connections, credentials, listeners, real commands, or persistent user
 state are created. Process disappearance proves OS process cleanup, not that
 arbitrary future SSH cleanup callbacks will execute.
 
-Proposed conclusion: accept this bounded integration proof and carry the overlay
-as a viable packaging candidate into the next decisions. Keep upstream distribution
-and terminal/lifecycle limits explicit; do not merge this prototype into production.
+Accepted conclusion: this bounded integration proof establishes the overlay as
+a viable packaging candidate for the next decisions. Upstream distribution and
+terminal/lifecycle limits remain explicit. On this branch, the regular `aspect burrow-check` gate
+builds the package and runs its protocol check; the real-daemon integration check
+remains an explicit command requiring the pinned Hovel executable.
