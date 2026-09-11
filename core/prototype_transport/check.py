@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import pwd
+import signal
+import sqlite3
 import socket
 import subprocess
 import sys
@@ -403,6 +405,144 @@ LogLevel VERBOSE
         wait_for(hovel_closed)
         print("PASS active Hovel SSH session observes master loss as closed", flush=True)
         print("PASS external master termination observed; missing socket cannot silently log in again", flush=True)
+
+        # Ownership investigation: a new daemon inherits only the inert fixture config.
+        daemon.terminate()
+        daemon.wait(timeout=10)
+        owner_root = root / "owners"
+        owner_root.mkdir(mode=0o700)
+        env.update(BURROW_OWNER_ROOT=str(owner_root), BURROW_OWNER_CONFIG=str(ssh_config))
+        workspace = root / "owner-workspace"
+        daemon = spawn([hovel, "daemon", "serve", "--workspace", workspace], "owner-hovel")
+        wait_for(lambda: (workspace / "hoveld.sock").exists())
+        cli("module", "install", archive)
+        cli("op", "create", "proof")
+        cli("chain", "create", "proof", operator=True)
+        cli("chain", "add", "burrow-transport-prototype@0.0.0", operator=True)
+        cli("target", "add", "ssh://controlled-fixture", operator=True)
+
+        def owned_run():
+            result = json.loads(cli("throw", "--now", "--allow-dangerous", "--json", operator=True))["results"][0]
+            assert result["state"] == "succeeded", result
+            return result, result["sessions"][0]["id"]
+
+        denied = run([hovel, "run", "--workspace", workspace, "--op", "proof", "--chain", "proof", "--", "throw", "--now", "--json"], success=False)
+        assert "dangerous" in denied.stderr.lower() + denied.stdout.lower()
+        assert not (owner_root / "gateway").exists()
+        print("PASS dangerous operation refuses before master startup without explicit allowance", flush=True)
+
+        def alive(pid):
+            stat = Path(f"/proc/{pid}/stat")
+            return stat.exists() and stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+
+        for mode in ("close", "module-kill", "master-loss", "log-ceiling", "bounded-logs", "daemon-kill"):
+            result, session = owned_run()
+            owned_socket = owner_root / "gateway" / "master"
+            owner_pid, master_pid = [int(field.split("=")[1]) for field in result["summary"].split()]
+            run_id = result["runId"]
+            clients = []
+            forwards = []
+            owned = ssh + ["-S", owned_socket, "-o", "ProxyCommand=/bin/false"]
+            try:
+                assert alive(owner_pid) and alive(master_pid)
+                assert owned_socket.stat().st_mode & 0o077 == 0
+                with sqlite3.connect(workspace / "workspace.db") as db:
+                    artifacts = list(db.execute("select path, sha256 from artifacts where run_id = ?", (run_id,)))
+                    plans = [json.loads(row[0]) for row in db.execute("select plan_json from throw_plans")]
+                assert artifacts and plans and all(p["confirmationId"] for p in plans)
+                artifact_bytes = [(workspace / path, (workspace / path).read_bytes(), digest) for path, digest in artifacts]
+                for path, data, digest in artifact_bytes:
+                    assert hashlib.sha256(data).hexdigest() == digest
+                    assert path.is_relative_to(workspace)
+                if mode in ("close", "bounded-logs"):
+                    collision = json.loads(cli("throw", "--now", "--allow-dangerous", "--json", operator=True))["results"][0]
+                    assert collision["state"] != "succeeded", collision
+                    assert alive(master_pid)
+                for kind in ("L", "R", "D"):
+                    local = free_port()
+                    spec = f"127.0.0.1:{local}" + ("" if kind == "D" else f":127.0.0.1:{port}")
+                    run(owned + ["-O", "forward", "-" + kind, spec, "target"])
+                    forwards.append(local)
+                for i in range(2):
+                    client = spawn(owned + ["-tt", "target", "sleep 60"], f"owner-shell-{mode}-{i}")
+                    clients.append(client)
+                assert run(owned + ["target", "printf retained"]).stdout == "retained"
+                status, body = rpc("WriteSession", {"SessionID": session, "Data": base64.b64encode(b"log\n").decode()})
+                assert status == 200, body
+                def logged():
+                    with sqlite3.connect(workspace / "workspace.db") as db:
+                        rows = list(db.execute("select timestamp from events where run_id = ? and message = ?", (run_id, "retained-owner-diagnostic")))
+                    return bool(rows) and all(row[0] for row in rows)
+                wait_for(logged)
+                print("PASS daemon-owned master with no required shell; two clients and three tunnels; diagnostics after Run", flush=True)
+                if mode == "bounded-logs":
+                    status, body = rpc("WriteSession", {"SessionID": session, "Data": base64.b64encode(b"bounded-logs\n").decode()})
+                    assert status == 200, body
+                    with sqlite3.connect(workspace / "workspace.db") as db:
+                        count = db.execute("select count(*) from events where run_id = ? and message = 'diagnostic budget exhausted; further milestones suppressed'", (run_id,)).fetchone()[0]
+                    assert count == 1, count
+                    print("PASS 600 bounded diagnostic attempts warn once without breaking control", flush=True)
+                if mode in ("close", "bounded-logs"):
+                    status, body = rpc("CloseSession", {"SessionID": session})
+                    assert status == 200, body
+                    wait_for(lambda: not alive(master_pid))
+                    for client in clients: client.wait(timeout=5)
+                    for local in forwards:
+                        with socket.socket() as sock:
+                            assert sock.connect_ex(("127.0.0.1", local)) != 0
+                    assert not owned_socket.exists()
+                    print("PASS explicit close ends master, both clients, all three listeners, socket", flush=True)
+                elif mode == "module-kill":
+                    os.kill(owner_pid, signal.SIGKILL)
+                    wait_for(lambda: not alive(owner_pid))
+                    wait_for(lambda: not alive(master_pid))
+                    for client in clients: client.wait(timeout=5)
+                    for local in forwards:
+                        with socket.socket() as sock: assert sock.connect_ex(("127.0.0.1", local)) != 0
+                    print("PASS module SIGKILL: Linux parent-death signal ends master, clients and listeners", flush=True)
+                elif mode == "master-loss":
+                    run(owned + ["-O", "exit", "target"])
+                    wait_for(lambda: not alive(master_pid))
+                    run(owned + ["target", "printf forbidden-fallback"], success=False)
+                    print("PASS external master loss: no fallback login or automatic reconnect", flush=True)
+                elif mode == "daemon-kill":
+                    daemon.kill()
+                    daemon.wait(timeout=5)
+                    wait_for(lambda: not alive(owner_pid))
+                    wait_for(lambda: not alive(master_pid))
+                    for client in clients: client.wait(timeout=5)
+                    for local in forwards:
+                        with socket.socket() as sock: assert sock.connect_ex(("127.0.0.1", local)) != 0
+                    print("PASS daemon SIGKILL: SDK stream EOF wrapper closes owned master and listeners", flush=True)
+                else:
+                    try:
+                        rpc("WriteSession", {"SessionID": session, "Data": base64.b64encode(b"log-ceiling\n").decode()})
+                    except (TimeoutError, OSError):
+                        pass
+                    def closed_by_protocol():
+                        status, body = rpc("ReadSession", {"SessionID": session, "TimeoutMs": 50})
+                        return status == 200 and body.get("Closed")
+                    wait_for(closed_by_protocol)
+                    assert run(owned + ["target", "printf protocol-orphan"]).stdout == "protocol-orphan"
+                    for local in forwards:
+                        with socket.create_connection(("127.0.0.1", local), timeout=1): pass
+                    status, failure = rpc("CloseSession", {"SessionID": session})
+                    assert status != 200 and "notification count exceeds maximum 256" in str(failure), (status, failure)
+                    with sqlite3.connect(workspace / "workspace.db") as db:
+                        count = db.execute("select count(*) from events where run_id = ? and type = 'hovel.module.log'", (run_id,)).fetchone()[0]
+                    assert count == 256, count
+                    print("OBSERVED GAP: exactly 256 stored module logs; next notification marks session closed with live master/listeners; explicit CloseSession returns error (cleanup may still execute)", flush=True)
+                for path, data, digest in artifact_bytes:
+                    assert path.read_bytes() == data
+                print("PASS Hovel-recorded confirmation and artifact hashes/paths; evidence survives resource close/loss", flush=True)
+            finally:
+                if owned_socket.exists():
+                    run(owned + ["-O", "exit", "target"])
+                wait_for(lambda: not alive(master_pid))
+                for client in clients: client.wait(timeout=5)
+                if alive(owner_pid): os.kill(owner_pid, signal.SIGKILL)
+                # Only remove this fixture's empty reservation after verified master exit.
+                if owned_socket.parent.exists(): owned_socket.parent.rmdir()
     finally:
         for process in reversed(processes):
             if process.poll() is None:

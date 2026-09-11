@@ -64,16 +64,27 @@ func command(c *ssh.Client, cmd string) string {
 
 func main() {
 	if len(os.Args) == 1 {
+		if os.Getenv("BURROW_OWNER_ROOT") != "" {
+			owner := &ownership{}
+			err := hovel.ServeIO(owner, os.Stdin, os.Stdout)
+			if owner.connection != nil {
+				owner.connection.Close("module protocol ended")
+			}
+			must(err)
+			return
+		}
 		hovel.Serve(prototype{})
 		return
 	}
 	if os.Args[1] == "format" {
-		path := filepath.Join(os.Getenv("BUILD_WORKSPACE_DIRECTORY"), "core/prototype_transport/main.go")
-		data, err := os.ReadFile(path)
-		must(err)
-		data, err = format.Source(data)
-		must(err)
-		must(os.WriteFile(path, data, 0644))
+		for _, name := range []string{"main.go", "ownership.go"} {
+			path := filepath.Join(os.Getenv("BUILD_WORKSPACE_DIRECTORY"), "core/prototype_transport", name)
+			data, err := os.ReadFile(path)
+			must(err)
+			data, err = format.Source(data)
+			must(err)
+			must(os.WriteFile(path, data, 0644))
+		}
 		return
 	}
 	if os.Args[1] == "password-server" {
