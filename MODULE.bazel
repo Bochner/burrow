@@ -45,7 +45,7 @@ go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.5")
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//core/prototype_sdk:go.mod")
-use_repo(go_deps, "org_golang_x_sys")
+use_repo(go_deps, "org_golang_x_sys", "org_golang_x_crypto", "com_github_pkg_sftp")
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_archive(
     name = "hovel_sdk",
