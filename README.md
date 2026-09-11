@@ -31,6 +31,8 @@ The source for the book lives under [`docs/site/src/content/`](docs/site/src/con
 The [Wayfinder map](https://github.com/Bochner/burrow/issues/1) is the canonical
 index of implementation decisions. Existing [research](docs/research/) provides
 evidence, not an approved architecture.
+Use the [Burrow project](https://github.com/users/Bochner/projects/9) to scan
+open and completed issues in the same views as Tirnaill.
 
 ## Install
 
