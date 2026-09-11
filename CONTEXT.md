@@ -19,15 +19,18 @@ Hovel's extension and development conventions as Hovel evolves.
 
 | Term | Meaning here |
 | --- | --- |
-| Connection | An authenticated SSH transport to a host; may support several shells, transfers, or tunnels. |
+| Connection | An authenticated SSH transport to a host; can exist without an interactive shell and support shells, transfers, or tunnels on demand. |
+| Master socket | The local control endpoint through which operations reuse an established SSH connection. Its existence does not imply an open interactive shell. |
+| Interactive shell | An on-demand terminal channel using a connection; closing it does not close the connection. Initially local to the Burrow frontend, rather than a retained Hovel shell. |
+| Background shell | An interactive shell that keeps running while Burrow displays management or another shell. Backgrounding within Burrow does not imply survival after the frontend exits. |
 | Session | An interactive channel exposed to an operator; distinguish Burrow SSH channels from Hovel's session records. |
-| Detach | Leave an operator frontend or attachment while its daemon and live resources remain available. Normal Burrow quit detaches. |
-| Close | Explicitly end a live resource, distinct from detaching an operator. |
-| Tunnel | Local, remote, or dynamic forwarding owned by a connection. |
+| Detach | Leave an operator frontend or attachment while daemon-owned resources remain available. Normal Burrow quit retains connections and tunnels but ends its frontend-local interactive shells. |
+| Close | Explicitly end a live resource, distinct from detaching an operator. Closing a connection ends all its shells, transfers and tunnels and removes its master socket; saved settings and evidence remain. |
+| Tunnel | Local, remote, or dynamic forwarding owned by a connection. Initially, the operator establishes it in Burrow before a Hovel chain can select and use it. |
 | Saved connection | Non-secret connection settings that can recreate a connection; not a live transport. |
 | Hovel module | A separately launched program packaged for Hovel and speaking its module protocol through the SDK. |
 | LazySSH plugin | Existing Python/shell automation consuming LazySSH environment variables and OpenSSH control sockets; not a Hovel module. |
 | Standalone use | Launching Burrow without having to operate Hovel separately; a transparently installed and managed Hovel dependency is acceptable. |
-| Workspace | Hovel's daemon-owned operational state boundary; how homelab and engagement data map to it remains to be decided. |
+| Workspace | Hovel's daemon-owned operational state boundary, separating homelab or engagement records and artifacts. Connection names are local to a workspace; a workspace is not a security boundary against processes running as the same user. |
 
 See `docs/wayfinder-start.md` for the proposed destination and initial questions.

@@ -4,8 +4,9 @@
 
 Burrow is a planned Go SSH manager for homelab operations, authorized red-team
 emulation, controlled lab exercises, defensive validation, and operator workflow
-automation. Hovel integration is the primary direction; standalone operation is
-being evaluated where it can share behavior without substantial complexity.
+automation. Burrow will transparently manage a pinned Hovel dependency, initially
+supporting only Hovel instances it starts. Normal quit will detach and retain
+the daemon and live resources. General existing-daemon attachment is deferred.
 
 The project is charting an implementation-ready specification for useful LazySSH
 SSH parity: shells, file transfers, forwarding, saved connections, and user
@@ -36,9 +37,14 @@ open and completed issues in the same views as Tirnaill.
 
 ## Install
 
-There is no runtime package to install yet. The first external SDK package and
-SSH slice will be specified through the Wayfinder map before distribution
-commands are published.
+There is no production runtime package to install yet. Inert external SDK,
+terminal and setup proofs are preserved as evidence; the first real SSH slice
+remains a Wayfinder decision. See the
+[proposed Hovel compatibility convention](docs/research/hovel-daemon-compatibility-handoff.md)
+for the deferred upstream handoff and current development boundary.
+
+The [prototype evidence guide](docs/research/prototype-evidence.md) indexes the
+preserved code, pins, results and commands for continuing development.
 
 ## Develop
 

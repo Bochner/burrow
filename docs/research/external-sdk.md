@@ -2,6 +2,11 @@
 
 Research date: 2026-09-11. Hovel baseline and verified current default-branch head: `c461ba282a8aecc7aa3a079a4613bf5e2640c388`. This resolves the source investigation in [How can Burrow consume the public Hovel SDK externally?](https://github.com/Bochner/burrow/issues/2); it does not claim an external build or installation has passed.
 
+Subsequent evidence: the [external SDK/package proof](prototype-evidence.md)
+demonstrated the unchanged-source BUILD overlay and inert package/session lifecycle.
+The candidate wording below records the earlier investigation; consult the linked
+proof and decision before repeating work or selecting the full-source dependency.
+
 ## Finding
 
 Hovel explicitly supports out-of-tree module packages and exposes a public Go SDK. Its source distribution is not a demonstrated standalone Go-module distribution. The smallest candidate integration is a pinned source dependency exposing its public Bazel SDK target; if the full Hovel workspace proves unsuitable, use an unchanged-source archive with a minimal Burrow-owned BUILD overlay. Both candidates still require an external build/install proof. This is a recommendation, not acceptance of an untested dependency recipe. [Module development][development], [SDK README][sdk], [SDK BUILD][build].
