@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import pwd
 import pty
+import re
 import select
 import struct
 import signal
@@ -447,6 +448,7 @@ LogLevel VERBOSE
         print('PASS workspace-local same names, invalid names/permissions/symlinks and stale socket refusal without deletion', flush=True)
         env.update(BURROW_OWNER_ROOT=str(owner_root), BURROW_OWNER_CONFIG=str(ssh_config))
         workspace = root / "owner-workspace"
+        env['BURROW_PROOF_DAEMON'] = str(workspace / 'hoveld.sock')
         daemon = spawn([hovel, "daemon", "serve", "--workspace", workspace], "owner-hovel")
         wait_for(lambda: (workspace / "hoveld.sock").exists())
         cli("module", "install", archive)
@@ -611,6 +613,38 @@ LogLevel VERBOSE
                     assert collision["state"] != "succeeded", collision
                     assert alive(master_pid)
                 if mode == 'close':
+                    # Public Mesh discovery dispatches to a fresh module, not
+                    # the retained connection owner. Preserve this boundary
+                    # before designing any cross-process inventory binding.
+                    for _ in range(2):
+                        status, body = rpc('ListMeshListeners', {
+                            'moduleId': 'burrow-transport-prototype@0.0.0', 'request': {}})
+                        assert status != 200, body
+                        match = re.search(r'mesh-dispatch-proof: pid=(\d+) has no retained connection', str(body))
+                        assert match and int(match[1]) != owner_pid, body
+                        assert alive(owner_pid) and alive(master_pid)
+                        assert run(owned + ['target', 'printf mesh-owner-alive']).stdout == 'mesh-owner-alive'
+                    print('OBSERVED public Mesh discovery uses fresh processes with no retained owner; existing master remains live', flush=True)
+                    status, body = rpc('ListSessionCommands', {'SessionID': session, 'Request': {}})
+                    assert status == 200 and body['commands'][0]['name'] == 'connection-status', body
+                    for _ in range(2):
+                        status, body = rpc('RunSessionCommand', {'SessionID': session, 'Request': {'command': 'connection-status'}})
+                        assert status == 200 and body['fields']['ownerPID'] == str(owner_pid), body
+                    status, body = rpc('RunSessionCommand', {'SessionID': session, 'Request': {'command': 'connect'}})
+                    assert status != 200, body
+                    print('PASS public session commands reach the live owner without an installed payload or reconnect', flush=True)
+                    cli('chain', 'config', 'set', 'proof_action', 'connection-status', operator=True)
+                    for selected in (session, session, 'missing-session'):
+                        cli('chain', 'config', 'set', 'proof_session', selected, operator=True)
+                        selected_result = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+                        if selected == session:
+                            assert selected_result['state'] == 'succeeded', selected_result
+                            assert selected_result['summary'] == f'selected owner={owner_pid}', selected_result
+                        else:
+                            assert selected_result['state'] == 'failed', selected_result
+                        assert alive(owner_pid) and alive(master_pid)
+                    cli('chain', 'config', 'set', 'proof_action', 'connect', operator=True)
+                    print('PASS confirmed chain selects existing owner twice; missing selection fails without recreating master', flush=True)
                     first_workspace = workspace
                     workspace = root / 'second-owner-workspace'
                     second_daemon = spawn([hovel, 'daemon', 'serve', '--workspace', workspace], 'second-owner-hovel',
@@ -720,6 +754,10 @@ LogLevel VERBOSE
                 if mode in ("close", "bounded-logs", "unexpected-eof"):
                     status, body = rpc("CloseSession", {"SessionID": session})
                     assert status == 200, body
+                    if mode == 'close':
+                        status, body = rpc('RunSessionCommand', {'SessionID': session, 'Request': {'command': 'connection-status'}})
+                        assert status != 200, body
+                        print('PASS closed owner selection fails through public session command', flush=True)
                     wait_for(lambda: not alive(master_pid))
                     for client in clients: client.wait(timeout=5)
                     for local in forwards:

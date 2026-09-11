@@ -2,7 +2,13 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,7 +49,23 @@ func (*ownership) Info() hovel.Info {
 	return hovel.Info{Name: "burrow-transport-prototype", Version: "0.0.0", Type: hovel.TypeSurvey, Tags: []string{"dangerous"}, Summary: "Disposable connection ownership proof"}
 }
 func (*ownership) Schema() hovel.Schema { return hovel.Schema{} }
+
+// Disposable Mesh dispatch probe, not a tunnel inventory implementation.
+func (*ownership) DescribeMesh(hovel.MeshDescribeRequest) (hovel.MeshDescriptor, error) {
+	return hovel.MeshDescriptor{Name: "burrow-transport-prototype", Version: "0.0.0"}, nil
+}
+
+func (p *ownership) ListMeshListeners(hovel.MeshListenerListRequest) ([]hovel.MeshListener, error) {
+	if p.connection == nil {
+		return nil, fmt.Errorf("mesh-dispatch-proof: pid=%d has no retained connection", os.Getpid())
+	}
+	return nil, fmt.Errorf("mesh-dispatch-proof: pid=%d reached retained owner", os.Getpid())
+}
+
 func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
+	if ctx.InputString("proof_action", "connect") == "connection-status" {
+		return selectedOwnerStatus(ctx)
+	}
 	if ctx.InputString("proof_action", "connect") == "script" {
 		return scriptBoundary(ctx)
 	}
@@ -106,6 +128,62 @@ type ownedConnection struct {
 	done     chan struct{}
 	once     sync.Once
 	closeErr error
+}
+
+// The SDK permits command providers on a Session without an installed payload.
+// This read-only probe asks the authoritative owner, never a saved registry.
+func (s *ownedConnection) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
+	return []hovel.PayloadCommand{{Name: "connection-status", ReadOnly: true}}, nil
+}
+
+func (s *ownedConnection) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
+	if req.Command != "connection-status" || len(req.Args) != 0 || req.Reconnect != nil {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("only read-only connection-status is supported")
+	}
+	if s.Closed() {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("selected connection is closed")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	check := exec.CommandContext(ctx, "/usr/bin/ssh", "-F", os.Getenv("BURROW_OWNER_CONFIG"), "-S", filepath.Join(s.dir, "master"), "-O", "check", "target")
+	if err := check.Run(); err != nil {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("selected connection is unavailable")
+	}
+	return hovel.PayloadCommandResult{Command: req.Command, Fields: map[string]string{"ownerPID": fmt.Sprint(os.Getpid()), "connection": "gateway"}}, nil
+}
+
+// A real confirmed chain selects a session ID and queries its retained owner.
+// Only the harness-supplied local daemon is allowed; no remote TCP or token.
+func selectedOwnerStatus(ctx *hovel.Context) (hovel.Result, error) {
+	id := ctx.InputString("proof_session", "")
+	if id == "" {
+		return hovel.Result{}, fmt.Errorf("select an existing connection session")
+	}
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", os.Getenv("BURROW_PROOF_DAEMON"))
+	}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 4 * time.Second}
+	body, err := json.Marshal(map[string]any{"SessionID": id, "Request": map[string]string{"command": "connection-status"}})
+	if err != nil {
+		return hovel.Result{}, err
+	}
+	response, err := client.Post("http://localhost/hovel.daemon.v1.DaemonService/RunSessionCommand", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return hovel.Result{}, fmt.Errorf("selected owner unavailable")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return hovel.Result{}, fmt.Errorf("selected owner refused status")
+	}
+	var result hovel.PayloadCommandResult
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&result); err != nil {
+		return hovel.Result{}, err
+	}
+	if result.Fields["connection"] != "gateway" || result.Fields["ownerPID"] == "" {
+		return hovel.Result{}, fmt.Errorf("invalid owner response")
+	}
+	return hovel.Ok(nil, hovel.WithSummary("selected owner="+result.Fields["ownerPID"])), nil
 }
 
 func (s *ownedConnection) Open() error {
