@@ -28,6 +28,6 @@ Hovel's extension and development conventions as Hovel evolves.
 | Hovel module | A separately launched program packaged for Hovel and speaking its module protocol through the SDK. |
 | LazySSH plugin | Existing Python/shell automation consuming LazySSH environment variables and OpenSSH control sockets; not a Hovel module. |
 | Standalone use | Launching Burrow without having to operate Hovel separately; a transparently installed and managed Hovel dependency is acceptable. |
-| Workspace | Hovel's daemon-owned operational state boundary; how homelab and engagement data map to it remains to be decided. |
+| Workspace | Hovel's daemon-owned operational state boundary, separating homelab or engagement records and artifacts. Connection names are local to a workspace; a workspace is not a security boundary against processes running as the same user. |
 
 See `docs/wayfinder-start.md` for the proposed destination and initial questions.
