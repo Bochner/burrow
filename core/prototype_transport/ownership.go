@@ -44,6 +44,9 @@ func (*ownership) Info() hovel.Info {
 }
 func (*ownership) Schema() hovel.Schema { return hovel.Schema{} }
 func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
+	if ctx.InputString("proof_action", "connect") == "script" {
+		return scriptBoundary(ctx)
+	}
 	// Atomic reservation: even a stale directory refuses; never adopt or erase it.
 	dir, err := reserveConnection(os.Getenv("BURROW_OWNER_ROOT"), "gateway")
 	if err != nil {

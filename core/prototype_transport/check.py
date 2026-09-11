@@ -631,6 +631,54 @@ LogLevel VERBOSE
                     run(owned + ["-O", "forward", "-" + kind, spec, "target"])
                     forwards.append(local)
                 if mode == 'close':
+                    # Probe the actual confirmed throw path before designing
+                    # retained script state or a second execution mechanism.
+                    cli('chain', 'config', 'set', 'proof_action', 'script', operator=True)
+                    cli('chain', 'config', 'set', 'proof_marker', 'normal', operator=True)
+                    normal = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+                    assert normal['state'] == 'failed', normal
+                    with sqlite3.connect(workspace / 'workspace.db') as db:
+                        paths = list(db.execute('select path from artifacts where run_id = ?', (normal['runId'],)))
+                    assert paths, normal
+                    report = json.loads((workspace / paths[0][0]).read_text())
+                    assert report['sshExit'] == 7 and report['state'] == 'remote-exit', report
+                    expected = "space ' quote ; $(not-executed) ☃\n".encode() + bytes(70000)
+                    assert base64.b64decode(report['stdoutBase64']) == expected[:65536]
+                    assert report['stdoutDiscarded'] == len(expected) - 65536
+                    assert base64.b64decode(report['stderrBase64']) == b'fixture stderr\n', report
+                    print('PASS confirmed streamed script: argument boundaries, separate binary-safe bounded output, truncation count and remote nonzero status in Hovel artifact', flush=True)
+
+                    cli('chain', 'config', 'set', 'proof_marker', 'disconnect', operator=True)
+                    with sqlite3.connect(workspace / 'workspace.db') as db:
+                        previous_runs = {r[0] for r in db.execute("select run_id from events where type = 'hovel.run.started'")}
+                        previous_records = db.execute('select count(*) from throw_records').fetchone()[0]
+                        previous_artifacts = db.execute('select count(*) from artifacts').fetchone()[0]
+                    caller = spawn([hovel, 'run', '--workspace', workspace, '--op', 'proof', '--chain', 'proof', '--', 'throw', '--now', '--allow-dangerous', '--json'], 'script-caller')
+                    wait_for(lambda: (owner_root / 'disconnect.started').exists())
+                    caller.kill()
+                    caller.wait(timeout=5)
+                    wait_for(lambda: (owner_root / 'disconnect.finished').exists())
+                    # The remote completion marker is outside Hovel, solely an
+                    # independent observation. It is never used to fabricate a
+                    # successful Hovel result after caller loss.
+                    with sqlite3.connect(workspace / 'workspace.db') as db:
+                        new_runs = {r[0] for r in db.execute("select run_id from events where type = 'hovel.run.started'")} - previous_runs
+                        assert len(new_runs) == 1, new_runs
+                        disconnected_run = new_runs.pop()
+                        assert list(db.execute('select type from events where run_id = ?', (disconnected_run,))) == [('hovel.run.started',)]
+                        assert db.execute('select count(*) from throw_records').fetchone()[0] == previous_records
+                        assert db.execute('select count(*) from artifacts').fetchone()[0] == previous_artifacts
+                        confirmations = db.execute('select count(*) from throw_confirmations').fetchone()[0]
+                    print('OBSERVED GAP caller disconnected: remote completion without retained throw result or output artifact', flush=True)
+                    status, direct = rpc('ExecuteModule', {'Operation': 'proof', 'Chain': 'proof', 'ModuleID': 'burrow-transport-prototype@0.0.0', 'Target': 'ssh://controlled-fixture', 'Inputs': {'proof_action': 'script', 'proof_marker': 'direct'}})
+                    assert status == 200, direct
+                    assert (owner_root / 'direct.finished').exists()
+                    with sqlite3.connect(workspace / 'workspace.db') as db:
+                        assert db.execute('select count(*) from throw_confirmations').fetchone()[0] == confirmations
+                        assert db.execute('select count(*) from artifacts').fetchone()[0] == previous_artifacts
+                    print('OBSERVED GAP direct ExecuteModule runs dangerous-tagged fixture without throw confirmation or artifact materialization', flush=True)
+                    assert run(owned + ['target', 'printf sibling-retained']).stdout == 'sibling-retained'
+                    cli('chain', 'config', 'set', 'proof_action', 'connect', operator=True)
                     local_terminal_check(owned_socket)
                     assert run(owned + ['target', 'printf frontend-quit-retained']).stdout == 'frontend-quit-retained'
                     for local in forwards:
@@ -680,6 +728,16 @@ LogLevel VERBOSE
                     print("PASS module SIGKILL: Linux parent-death signal ends master, clients and listeners", flush=True)
                 elif mode == "master-loss":
                     local_terminal_check(owned_socket, lose=True)
+                    cli('chain', 'config', 'set', 'proof_action', 'script', operator=True)
+                    cli('chain', 'config', 'set', 'proof_marker', 'normal', operator=True)
+                    missing = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+                    with sqlite3.connect(workspace / 'workspace.db') as db:
+                        path = db.execute('select path from artifacts where run_id = ?', (missing['runId'],)).fetchone()[0]
+                    report = json.loads((workspace / path).read_text())
+                    assert report['sshExit'] == 255 and report['state'] == 'transport-or-completion-unknown', report
+                    assert base64.b64decode(report['stdoutBase64']) == b''
+                    cli('chain', 'config', 'set', 'proof_action', 'connect', operator=True)
+                    print('PASS missing selected master cannot authenticate; SSH 255 stays transport/completion-unknown', flush=True)
                     wait_for(lambda: not alive(master_pid))
                     status, state = rpc('ReadSession', {'SessionID': session, 'TimeoutMs': 50})
                     assert status == 200 and state.get('Closed'), state
