@@ -1,8 +1,15 @@
 # Disposable terminal interaction walkthrough
 
 For [Which terminal interaction model fits the agreed boundaries?](https://github.com/Bochner/burrow/issues/15).
-The owner approved the connection-first layout, full-screen shells, responsive
-management panes, color plus text status, and truthful progress on 2026-09-11.
+The owner’s latest direction is a command-first interactive CLI. This earlier
+panel-and-button sketch illustrates resource states; it is not the literal
+production interface. Hovel colors, color plus text status, selected-target
+highlighting and truthful progress remain approved. Preserve a connection-specific
+transfer prompt with live filesystem navigation, alongside on-demand shells.
+Clickable views may offer shortcuts, but every action must remain available
+through the CLI, including noninteractive scripting. The owner prefers the
+LazySSH/Meterpreter/Evil-WinRM prompt-and-mode base with restrained Charm
+enhancements; a Midnight Commander-style workspace is too heavy.
 
 The owner accepted this initial look and requested Hovel’s color theme. Dark-mode
 accents, borders, text and status colors follow [Hovel clistyle](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/core/internal/adapters/clistyle/styles.go):
