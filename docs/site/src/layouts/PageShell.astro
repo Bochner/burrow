@@ -1,0 +1,39 @@
+---
+// Adapted from Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388; Copyright 2026 William Born; Apache-2.0. Changed for Burrow; see docs/site/UPSTREAM.md.
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import type { DocArea } from "../lib/catalog";
+
+interface Props {
+  area: DocArea | "api" | "reports";
+  current: "Home" | "Book" | "Modules" | "API Docs" | "Reports";
+  description?: string;
+  scripts?: string[];
+  stylesheets?: string[];
+  root: string;
+  tag: string;
+  title: string;
+}
+
+const { area, current, description, root, scripts = [], stylesheets = [], tag, title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" class:list={{ "home-page": area === "home", "report-page": area === "reports" }}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    <link rel="icon" type="image/png" href={`${root}assets/burrow.png`} />
+    <link rel="stylesheet" href={`${root}assets/site.css`} />
+    {stylesheets.map((href) => <link rel="stylesheet" href={href} />)}
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <SiteHeader current={current} root={root} tag={tag} />
+    <slot />
+    <SiteFooter area={area} root={root} />
+    {scripts.map((src) => <script is:inline src={src}></script>)}
+  </body>
+</html>

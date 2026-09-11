@@ -1,7 +1,8 @@
 # First Wayfinder session
 
-This is an input brief, not a published Wayfinder map or an accepted architecture.
-The owner will install Matt Pocock's skills locally. His current workflow calls
+This is the input brief for the [published Wayfinder map](https://github.com/Bochner/burrow/issues/1),
+not an accepted architecture. The tracker is canonical for decisions.
+Matt Pocock's skills are installed locally. His current workflow calls
 for a live discussion to name the destination, then decision tickets on the
 tracker, with research conducted in parallel. This bootstrap supplies evidence
 for that discussion without inventing the owner's answers.
@@ -19,6 +20,23 @@ shipping the full rewrite is the subsequent implementation effort.
 
 ## Standing preferences from the owner
 
+- Hovel integration is the top priority, confirmed on 2026-09-11. Resolve its
+  supported lifecycle, logging, state ownership, and UI boundaries before
+  selecting Charm dependencies or designing standalone behavior. Standalone
+  SSH management is desirable if it can share behavior without substantial
+  additional complexity; its feasibility remains a decision for this map.
+- Initial authentication/configuration baseline: passwords, encrypted keys,
+  SSH agents, host-key verification, SSH config aliases, and jump hosts.
+  Inspect Hovel for additional supported capabilities before deciding whether
+  certificates, hardware-backed keys, or keyboard-interactive/MFA need scope.
+- Unchanged LazySSH plugins and their legacy API are not required. Map user
+  scripting as three separate questions: remote script execution, local scripts
+  invoking Hovel operations, and local tools using SSH tunnels. Prefer Hovel's
+  existing execution and Mesh contracts where they fit.
+- Lifetime preference: explicit detach versus close in Hovel mode; standalone
+  initially closes its resources on exit. Recovery across Hovel daemon restart
+  remains a separate decision, not an implied consequence of UI detach.
+- Initial operator platform: Linux, approved on 2026-09-11.
 - Private repository under Bochner.
 - Homelab management and authorized penetration-testing engagements.
 - Full useful LazySSH SSH functionality, not just a connection picker.
@@ -40,18 +58,22 @@ shipping the full rewrite is the subsequent implementation effort.
 These findings are research assets; the future map should link them, not copy
 them into multiple ticket bodies or claim that their recommendations are final.
 
-## Candidate decision tickets
+## Original candidate decision tickets
 
-These questions are precise enough to discuss as tickets. Publish and assign
-them during the first Wayfinder session after confirming its destination.
+These questions seeded the published map. Query the map's child issues for
+current ticket scope, ownership, resolutions, and blocking relationships.
 
 | Question | Type | Dependency / evidence needed |
 | --- | --- | --- |
 | Can an external Burrow Bazel workspace build and install a pinned Hovel Go SDK module? | Research, then prototype if needed | Verify the SDK distribution and smallest working package; independent first step. |
-| Which LazySSH workflows and plugin contracts define required parity? | Grilling | Review the source inventory with the owner, including migration and known bugs. |
-| Should SSH use Go transports, OpenSSH control masters, or Go channels over a control master? | Research + grilling | Parity decisions, particularly OpenSSH config/auth and plugin socket compatibility. |
+| Which LazySSH SSH workflows define required parity? | Grilling | Review the source inventory with the owner, including migration and known bugs; unchanged legacy plugins are excluded. |
+| Should SSH use Go transports, OpenSSH control masters, or Go channels over a control master? | Research + grilling | Parity decisions, particularly the accepted OpenSSH configuration/authentication baseline. |
+| How should users execute scripts on an SSH target through Burrow and Hovel? | Grilling | Hovel execution, confirmation, output, and audit contracts. |
+| How should local user scripts invoke Hovel operations? | Grilling | Supported Hovel automation interfaces and credential boundaries. |
+| How should local tools use tunnels through Burrow SSH connections? | Grilling | Hovel Mesh contracts and connection/listener ownership. |
 | Where does Burrow's TUI run, and must it work without a Hovel daemon? | Grilling + prototype | Module lifecycle findings, operator OS requirements, PTY/resize proof. |
 | Who owns connections, tunnels, secrets, and engagement state across detach/restart? | Grilling | Hovel ownership and transport choice; inspect actual credential persistence. |
+| How do diagnostics, progress, and audit events reach Hovel and the operator UI? | Research | Trace SDK logging through the daemon; verify correlation, persistence, redaction, and terminal-safe rendering before considering another logger. |
 | Which Charm components and interaction model fit those boundaries? | Prototype | TUI placement, Charm major version choice, concrete operator reactions. |
 | What is the first tested SSH slice and subsequent parity sequence? | Grilling | Resolved architecture/transport/lifecycle decisions. |
 
@@ -60,14 +82,14 @@ GitHub sub-issues and blocking relationships as described in
 [the tracker conventions](agents/issue-tracker.md). Research can run in parallel;
 human decisions require the owner's live input.
 
-## Questions to bring to the live discussion
+## Original discussion prompts
 
 1. Which operator platforms must work initially: Linux, macOS, Windows?
 2. Must Burrow run independently for homelab use, or is starting Hovel acceptable?
-3. Which existing LazySSH plugins must run unchanged, including their control
-   socket access? Is behavior parity enough, or is command syntax also required?
-4. Which authentication paths matter first: passwords, encrypted keys, agents,
-   SSH certificates, hardware-backed keys, keyboard-interactive, jump hosts?
+3. Which script invocation, output, cancellation, and routing behaviors are
+   required for the three scripting questions above?
+4. Does Hovel offer authentication capabilities beyond the accepted baseline
+   that Burrow should expose initially?
 5. Should active connections survive quitting/restarting the UI? What separates
    homelab state from engagement state, and what history may be retained?
 
@@ -101,14 +123,12 @@ modifying Hovel core without a demonstrated API gap, and shipping the complete
 SSH rewrite during a research bootstrap. These are not unresolved decisions
 blocking the first SSH specification.
 
-## Suggested invocation
+## Continue the map
 
-After installation and `/setup-matt-pocock-skills`:
+The first map is published. Continue with:
 
-> /wayfinder Read CONTEXT.md, docs/wayfinder-start.md, and the linked research.
-> Help me chart a decision map for an implementation-ready SSH parity spec.
-> Confirm the destination and map the open decisions with me before publishing
-> the map to Bochner/burrow. Use the existing research as evidence, verify any
-> upstream changes, and keep SMB/WinRM implementation outside this map.
+> /wayfinder https://github.com/Bochner/burrow/issues/1
+> Pick the next available decision, read its linked research, and work through
+> it with me. Keep SMB/WinRM implementation outside this map.
 
 Source: [Wayfinder at the inspected revision](https://github.com/mattpocock/skills/blob/3cca18b368ae95cdbdebbff572ccafa662551015/skills/engineering/wayfinder/SKILL.md).

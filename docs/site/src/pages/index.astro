@@ -1,0 +1,9 @@
+---
+// Adapted from Hovel c461ba; Copyright 2026 William Born; Apache-2.0. See UPSTREAM.md.
+import { getPage } from "../lib/catalog";
+import PageShell from "../layouts/PageShell.astro";
+const page = getPage("index");
+---
+<PageShell area="home" current="Home" description={page.description} root="" tag="// planning" title={page.title}>
+  <main id="main-content" class="home-main"><Fragment set:html={page.body} /></main>
+</PageShell>

@@ -1,0 +1,33 @@
+---
+// Adapted from Hovel c461ba; Copyright 2026 William Born; Apache-2.0. See UPSTREAM.md.
+import { bookChapter, bookParts, type DocPage } from "../lib/catalog";
+interface Props { current: DocPage; root: string }
+const { current, root } = Astro.props;
+const currentChapter = bookChapter(current);
+---
+<aside class="sidebar">
+  <button class="sidebar-toggle" type="button" aria-controls="book-sidebar-navigation" aria-expanded="false">
+    <span><small>Book navigation</small>{current.title}</span><span aria-hidden="true">+</span>
+  </button>
+  <nav id="book-sidebar-navigation" aria-label="Book navigation">
+    <a class="sidebar-contents" href={`${root}spec/`} aria-current={current.slug === "spec/index" ? "page" : undefined}><span>TOC</span><strong>Book contents</strong></a>
+    {bookParts().map((part) => <details class="sidebar-part" open={part.number === currentChapter?.partNumber}>
+      <summary class="sidebar-section"><span>{String(part.number).padStart(2, "0")}</span>{part.label}</summary>
+      <ul>{part.chapters.map((chapter) => <li>
+        <a href={`${root}${chapter.page.href}`} aria-current={chapter.page.slug === current.slug ? "page" : undefined}>
+          <span class="sidebar-chapter-number">{chapter.label}</span><span>{chapter.page.navTitle ?? chapter.page.title}</span>
+        </a>
+      </li>)}</ul>
+    </details>)}
+  </nav>
+</aside>
+<script>
+  const sidebar = document.querySelector<HTMLElement>(".sidebar");
+  const toggle = sidebar?.querySelector<HTMLButtonElement>(".sidebar-toggle");
+  toggle?.addEventListener("click", () => {
+    const open = toggle.getAttribute("aria-expanded") !== "true";
+    toggle.setAttribute("aria-expanded", String(open));
+    sidebar?.classList.toggle("sidebar-is-open", open);
+    toggle.querySelector<HTMLElement>("[aria-hidden]")!.textContent = open ? "−" : "+";
+  });
+</script>

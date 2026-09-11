@@ -1,10 +1,9 @@
-# Research bootstrap only. Add Go targets after the SDK-consumption decision.
+# Research metadata only. Application targets follow the SDK-consumption decision.
 filegroup(
     name = "research",
     srcs = glob(["docs/**/*.md"]) + [
         "AGENTS.md",
         "CONTEXT.md",
         "README.md",
-        "docs/assets/burrow.png",
     ],
 )

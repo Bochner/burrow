@@ -2,3 +2,28 @@ module(
     name = "burrow",
     version = "0.0.0",
 )
+
+# Documentation toolchain pins match Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388.
+bazel_dep(name = "aspect_rules_js", version = "3.2.2")
+bazel_dep(name = "rules_nodejs", version = "6.7.5")
+bazel_dep(name = "rules_python", version = "2.2.0")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(python_version = "3.12")
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version_from_nvmrc = "//docs/site:.nvmrc")
+use_repo(node, "nodejs_toolchains")
+
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+pnpm.pnpm(pnpm_version_from = "//docs/site:package.json")
+use_repo(pnpm, "pnpm")
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm.npm_translate_lock(
+    name = "npm",
+    npmrc = "//docs/site:.npmrc",
+    pnpm_lock = "//docs/site:pnpm-lock.yaml",
+    run_lifecycle_hooks = False,
+)
+use_repo(npm, "npm")

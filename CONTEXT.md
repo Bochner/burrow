@@ -11,8 +11,9 @@ Hovel's extension and development conventions as Hovel evolves.
   Charm-based terminal experience and Go implementation.
 - Follow Hovel's Aspect/Bazel build approach and public integration contracts.
 - Investigate SMB and WinRM now only enough to leave informed future work.
-- This bootstrap prepares research and a first Matt Pocock Wayfinder session;
-  architecture, UX, transport, and implementation milestones remain decisions.
+- The [Wayfinder map](https://github.com/Bochner/burrow/issues/1) tracks the
+  implementation-ready specification. Architecture, UX, transport, and
+  implementation milestones remain decisions; initial research is resolved.
 
 ## Vocabulary
 

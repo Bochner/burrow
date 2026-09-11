@@ -1,59 +1,97 @@
 # Burrow
 
-![Burrow: a warm underground terminal hideaway surrounded by cyan and magenta circuitry.](docs/assets/burrow.png)
+![Burrow](docs/site/public/assets/burrow.png)
 
-A planned Hovel-native SSH manager in Go: LazySSH's workflows, a modern Charm
-terminal interface, and room for SMB and WinRM later.
+Burrow is a planned Go SSH manager for homelab operations, authorized red-team
+emulation, controlled lab exercises, defensive validation, and operator workflow
+automation. Hovel integration is the primary direction; standalone operation is
+being evaluated where it can share behavior without substantial complexity.
 
-**Status: research and repository bootstrap. No SSH executable exists yet.**
+The project is charting an implementation-ready specification for useful LazySSH
+SSH parity: shells, file transfers, forwarding, saved connections, and user
+scripting through supported Hovel contracts. Linux is the initial operator
+platform. **No SSH executable or installable package exists yet.**
 
-## Start here
+> **Authorized red-team emulation only.** Use Burrow only in environments you own
+> or are explicitly authorized to assess, with written scope and approvals. See
+> [SECURITY.md](SECURITY.md).
 
-1. Read the [Wayfinder starting brief](docs/wayfinder-start.md).
-2. Install Matt Pocock's skills in this project as described in his
-   [official repository](https://github.com/mattpocock/skills):
+## Documentation
 
-   ```sh
-   npx skills@latest add mattpocock/skills
-   ```
+The documentation uses the same Astro GitHub Pages book format as Hovel.
 
-   Include `setup-matt-pocock-skills`, `wayfinder`, `research`, `grilling`,
-   `domain-modeling`, and `prototype`. Installation is left to the owner.
-3. Run `/setup-matt-pocock-skills` to review the existing GitHub tracker and
-   single-context configuration, then `/wayfinder` with the starting brief.
+## [bochner.github.io/burrow](https://bochner.github.io/burrow/index.html)
 
-The first session should turn the research into a shared decision map, followed
-by an implementation-ready SSH parity specification.
+The URL above is the intended deployment address; Pages is not enabled yet.
+Start with the [User Guide](docs/site/src/content/spec/user-guide.html) for current
+scope and status, then [Hovel Integration](docs/site/src/content/spec/hovel-integration.html).
+Contributors should read the [Development Guide](docs/site/src/content/spec/development-guide.html).
+The source for the book lives under [`docs/site/src/content/`](docs/site/src/content/).
 
-## Research
+The [Wayfinder map](https://github.com/Bochner/burrow/issues/1) is the canonical
+index of implementation decisions. Existing [research](docs/research/) provides
+evidence, not an approved architecture.
 
-- [Hovel integration and build conventions](docs/research/hovel-integration.md)
-- [LazySSH feature parity and migration](docs/research/lazyssh-parity.md)
-- [Charm, Go SSH, and future SMB/WinRM options](docs/research/libraries.md)
-- [Source revisions and bootstrap conventions](docs/research/sources.md)
+## Install
 
-## Development
+There is no runtime package to install yet. The first external SDK package and
+SSH slice will be specified through the Wayfinder map before distribution
+commands are published.
 
-Use [Aspect CLI](https://github.com/aspect-build/aspect-cli) as Hovel does.
-The repo pins Aspect `2026.33.3` and Bazel `9.1.1` to the inspected Hovel revision.
+## Develop
+
+Aspect CLI is the single entry point for building, testing, linting, formatting,
+packaging, and local runs. Tool versions are pinned in `.aspect/version.axl`,
+`.bazelversion`, `MODULE.bazel`, and the documentation dependency lockfile.
 
 ```sh
 aspect help
-aspect build //:research
+aspect burrow-check
+aspect burrow-site stage
 ```
 
-The current target collects the research documents and checks that the Bazel
-workspace loads. It does not test application functionality or validate prose.
-CI runs the same command. Go/SDK dependencies and executable targets will be
-added after the external SDK build approach is resolved. No Hovel remote cache,
-credentials, or release infrastructure is inherited.
+Useful commands:
 
-Use `AGENTS.md` for contributor conventions. Keep upstream reference checkouts
-under ignored `.references/`; pin their revisions in the research source index.
+| Command | Description |
+| --- | --- |
+| `aspect burrow-check` | Run the current repository metadata and documentation gates. |
+| `aspect build //:research` | Check the research metadata build graph; not SSH behavior or prose. |
+| `aspect burrow-site build` | Build the hermetic Astro documentation book. |
+| `aspect burrow-site check` | Validate generated pages, internal links, assets, and search. |
+| `aspect burrow-site stage` | Materialize the documentation site under `_site/`. |
 
-## Upstream
+CI runs the same Aspect gates and uploads the validated site. Pages promotes
+that exact artifact after successful main-branch CI.
 
-[Hovel](https://github.com/vibepwners/hovel) is the integration reference;
-[LazySSH](https://github.com/Bochner/lazyssh) is the behavior reference.
-Upstream license obligations must accompany any future copied source. Burrow
-has no public distribution license selected during this private bootstrap.
+## Repository layout
+
+The repository follows Hovel's separation of application, documentation, tooling,
+and agent instructions. Only areas with actual content are created.
+
+| Path | Purpose |
+| --- | --- |
+| `.aspect/` | Repository workflows backed by declared Bazel targets. |
+| `docs/site/` | Astro Pages source, book content, shared components, and assets. |
+| `docs/tools/docs/` | Documentation validation and staging tools. |
+| `docs/research/` | Primary-source evidence and upstream provenance. |
+| `docs/agents/` | Tracker, domain, triage, and documentation conventions. |
+| `.agents/skills/` | Installed project agent skills. |
+| `AGENTS.md`, `CLAUDE.md` | Canonical agent instructions and a symlink to the same file. |
+
+The Go application will belong under `core/` when implementation starts.
+`modules/` and `sdk/` are reserved for real module packages or a supported Burrow
+SDK if needed. Internal architecture and nested build workspaces remain map
+decisions. Local upstream checkouts live under ignored `.references/`.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Run `aspect burrow-check` before landing
+changes. Describe what was tested and distinguish documentation/build checks
+from runtime interoperability evidence.
+
+## License
+
+Burrow has no project-wide distribution license selected yet. The adapted Hovel
+README structure, warning, agent conventions, and documentation theme retain
+Hovel's [Apache-2.0 license](docs/site/public/LICENSE-HOVEL) and
+[provenance/attribution](docs/site/UPSTREAM.md).

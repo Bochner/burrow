@@ -1,0 +1,20 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_test(
+    name = "site_test",
+    size = "small",
+    legacy_create_init = 0,
+    srcs = ["site_test.py"],
+    args = ["$(rootpath //docs/site:astro_site)"],
+    data = ["//docs/site:astro_site"],
+)
+
+py_binary(
+    name = "stage_site",
+    legacy_create_init = 0,
+    srcs = ["stage_site.py"],
+    args = ["$(rootpath //docs/site:astro_site)"],
+    data = ["//docs/site:astro_site"],
+)
