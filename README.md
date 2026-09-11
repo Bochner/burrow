@@ -43,11 +43,8 @@ remains a Wayfinder decision. See the
 [proposed Hovel compatibility convention](docs/research/hovel-daemon-compatibility-handoff.md)
 for the deferred upstream handoff and current development boundary.
 
-Preserved prototype snapshots:
-
-- [External SDK package and lifecycle](https://github.com/Bochner/burrow/tree/archive/prototype-external-sdk-lifecycle).
-- [Terminal placement](https://github.com/Bochner/burrow/tree/archive/prototype-terminal-placement).
-- [Verified setup and daemon attachment](https://github.com/Bochner/burrow/tree/archive/prototype-hovel-setup).
+The [prototype evidence guide](docs/research/prototype-evidence.md) indexes the
+preserved code, pins, results and commands for continuing development.
 
 ## Develop
 
