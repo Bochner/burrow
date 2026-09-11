@@ -1,0 +1,8 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+
+js_test(
+    name = "check",
+    size = "small",
+    entry_point = "check.cjs",
+    data = ["index.html"],
+)

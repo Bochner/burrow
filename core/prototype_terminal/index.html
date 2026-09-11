@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Burrow — interaction prototype</title>
+<style>
+  :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #101419; color: #e7ecf2; --surface: #141b24; --raised: #202b38; --hover: #34465c; --border: #536276; --muted: #b5c0cd; --focus: #8ac8ff; --green: #7cdda6; --yellow: #ffd27b; --red: #ff9b9b; }
+  :root.light { color-scheme: light; background: #f4f6f9; color: #182334; --surface: #fff; --raised: #e9eef5; --hover: #d7e4f4; --border: #66768b; --muted: #46566a; --focus: #005ba5; --green: #17613d; --yellow: #775300; --red: #a12626; }
+  * { box-sizing: border-box; }
+  body { max-width: 1200px; margin: auto; padding: 24px; }
+  h1 { font-size: 25px; margin-bottom: 0; } h2 { font-size: 16px; }
+  p { color: var(--muted); } a { color: var(--focus); }
+  button, select, input[type="search"] { font: inherit; color: inherit; background: var(--raised); border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; }
+  button, select { cursor: pointer; }
+  button:hover, button[aria-pressed="true"] { background: var(--hover); }
+  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 14px 0; }
+  .terminal { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-family: ui-monospace, monospace; background: var(--surface); container-type: inline-size; }
+  .terminal.narrow { max-width: 480px; }
+  .bar { padding: 8px 12px; background: var(--raised); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+  .panes { display: grid; grid-template-columns: 230px 1fr; min-height: 410px; }
+  nav { padding: 12px; border-right: 1px solid var(--border); } nav button { display: block; width: 100%; text-align: left; margin-top: 10px; }
+  nav input { width: 100%; } [hidden] { display: none !important; }
+  .detail { padding: 12px; min-width: 0; }
+  .row { padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .row strong { display: block; } .muted { color: var(--muted); font-size: 13px; }
+  .connected { color: var(--green); } .connecting { color: var(--yellow); } .disconnected { color: var(--red); }
+  .mono .connected, .mono .connecting, .mono .disconnected { color: inherit; }
+  .mono { filter: grayscale(1); }
+  .spinner { display: inline-block; animation: turn 1.2s linear infinite; }
+  .quiet .spinner { animation: none; }
+  @keyframes turn { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+  .back { display: none; }
+  @container (max-width: 620px) {
+    .panes { display: block; } .panes nav { border-right: 0; }
+    .panes[data-pane="list"] .detail, .panes[data-pane="detail"] nav { display: none; }
+    .back { display: inline-block; }
+  }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+  .shell { min-height: 410px; padding: 18px; }
+  progress { width: min(240px, 100%); accent-color: var(--green); }
+  progress::-webkit-progress-value { transition: width 180ms linear; }
+  .quiet progress::-webkit-progress-value { transition: none; }
+  @media (prefers-reduced-motion: reduce) { progress::-webkit-progress-value { transition: none; } }
+  #notice { min-height: 28px; }
+  summary { cursor: pointer; } .scenario { border-left: 3px solid var(--focus); padding-left: 14px; }
+  dialog { background: var(--surface); color: inherit; border: 1px solid var(--border); border-radius: 8px; width: min(560px, 90vw); }
+  dialog::backdrop { background: #0009; } dialog input { width: 100%; }
+  #actions button { display: block; width: 100%; margin-top: 8px; text-align: left; }
+  @media (max-width: 600px) { body { padding: 12px; } }
+</style>
+<header>
+  <h1>Burrow <span class="muted">/ interaction walkthrough</span></h1>
+  <p>Try the approved connection-first layout: background a shell, use another, then quit or close a connection.
+    <strong>Disposable simulation.</strong> No SSH, terminal emulation, file transfers, or Hovel operations run here.</p>
+</header>
+<div class="controls">
+  <label><input id="narrow" type="checkbox"> Narrow terminal</label>
+  <label><input id="mono" type="checkbox"> No color</label>
+  <label><input id="light" type="checkbox"> Light theme</label>
+  <label><input id="quiet" type="checkbox"> No animation</label>
+  <button data-action="tick">Advance simulated activity</button>
+  <button data-action="reset">Reset demo</button>
+</div>
+<section class="terminal" id="terminal" aria-label="Burrow terminal preview"></section>
+<p id="notice" role="status" aria-live="polite"></p>
+<dialog id="palette" aria-labelledby="palette-title">
+  <h2 id="palette-title">Actions</h2>
+  <label>Find an action <input id="action-query" type="search" placeholder="Type to filter…" autocomplete="off"></label>
+  <div id="actions"></div><p id="empty-actions" hidden>No matching actions.</p>
+  <form method="dialog"><p><button>Close · Esc</button></p></form>
+</dialog>
+<dialog id="help" aria-labelledby="help-title">
+  <h2 id="help-title">Keyboard help</h2>
+  <p>Management: <kbd>Ctrl-P</kbd> actions · <kbd>/</kbd> find connection · <kbd>s</kbd> new shell · <kbd>q</kbd> quit · <kbd>?</kbd> help.</p>
+  <p>Shell: <kbd>Ctrl-]</kbd> returns to management. Management shortcuts are inactive inside a shell.</p>
+  <p><kbd>Tab</kbd> moves focus; <kbd>Enter</kbd> activates. Text selection and copying use your browser’s normal controls. No mouse capture.</p>
+  <p>Quit ends frontend-local shells and retains connections/tunnels. Close connection ends its dependent access.</p>
+  <form method="dialog"><button>Close · Esc</button></form>
+</dialog>
+<section aria-label="Guided walkthroughs">
+  <h2>Try a scenario</h2>
+  <div class="controls" id="scenarios">
+    <button data-scenario="shells" aria-pressed="true">Background and resume</button>
+    <button data-scenario="quit" aria-pressed="false">Quit versus close</button>
+    <button data-scenario="loss" aria-pressed="false">Connection loss</button>
+  </div>
+  <p id="guide" class="scenario"></p>
+</section>
+<details><summary>Current simulated state and proof limits</summary>
+  <p>These controls illustrate the interaction contract. Browser buttons stand in for Charm widgets.
+    Activity advances only when you press the simulation control; no percentage or shell output is a live measurement.
+    The model retains eight output lines per shell to make truncation visible. Real terminal redraw and input need their separate proof.</p>
+  <pre id="state"></pre>
+</details>
+<script id="model">
+// Throwaway interaction model. No network or persistent state.
+function initial() {
+  return { selected: 0, pane: 'list', active: null, quit: false, nextShell: 1,
+    notice: 'Select a connection to manage its access.', connections: [
+      { name: 'lab-server', host: '192.0.2.10', user: 'operator', status: 'CONNECTED', shells: [], tunnels: ['SOCKS · 127.0.0.1:1080'], transfer: null, run: null },
+      { name: 'gateway', host: '192.0.2.20', user: 'admin', status: 'DISCONNECTED', shells: [], tunnels: [], transfer: null, run: null }
+    ] };
+}
+function reduce(previous, action, value) {
+  if (action === 'reset') return initial();
+  const s = structuredClone(previous), c = s.connections[s.selected];
+  if (action === 'tick') {
+    for (const connection of s.connections) {
+      for (const shell of connection.shells) {
+        shell.ticks++;
+        shell.lines.push('sample job: step ' + shell.ticks);
+        // ponytail: eight plain sample lines; real shells require a supported VT screen model.
+        if (shell.lines.length > 8) { shell.lines.shift(); shell.discarded++; }
+      }
+      if (connection.transfer?.status === 'RUNNING') {
+        connection.transfer.bytes = Math.min(100, connection.transfer.bytes + 25);
+        if (connection.transfer.bytes === 100) connection.transfer.status = 'COMPLETE';
+      }
+      if (connection.run?.status === 'RUNNING') connection.run.status = 'COMPLETE';
+    }
+    s.notice = 'Simulated activity advanced; background shells continued.';
+    return s;
+  }
+  if (action === 'relaunch') { s.quit = false; s.notice = 'Frontend reopened. Retained connections are available; shells ended on quit.'; return s; }
+  if (s.quit) return s;
+  if (action === 'select') { s.selected = Number(value); s.pane = 'detail'; s.active = null; }
+  if (action === 'list') s.pane = 'list';
+  if (action === 'manage') { s.active = null; s.notice = 'Shell continues in the background.'; }
+  if (action === 'quit') {
+    for (const connection of s.connections) connection.shells = [];
+    s.active = null; s.quit = true;
+    s.notice = 'Frontend quit. Local shells ended; connections and tunnels remain.';
+  }
+  if (action === 'connect' && c.status === 'DISCONNECTED') { c.status = 'CONNECTING'; s.notice = 'Waiting for connection result. No percentage is known.'; }
+  if (action === 'connected' && c.status === 'CONNECTING') { c.status = 'CONNECTED'; s.notice = 'Simulated connection established. No shell opened automatically.'; }
+  if (action === 'close' || action === 'lost') {
+    c.status = 'DISCONNECTED'; c.shells = []; c.tunnels = [];
+    if (c.transfer?.status === 'RUNNING') c.transfer.status = 'INTERRUPTED';
+    if (c.run?.status === 'RUNNING') c.run.status = 'INTERRUPTED';
+    s.active = null;
+    s.notice = action === 'lost' ? 'Connection lost. Dependent work interrupted; reconnect explicitly.' : 'Connection closed, including its shells and tunnels. Saved settings and evidence remain.';
+  }
+  if (c.status !== 'CONNECTED') return s;
+  if (action === 'shell') {
+    const shell = { id: s.nextShell++, ticks: 0, lines: ['sample job ready'], discarded: 0 };
+    c.shells.push(shell); s.active = shell.id; s.notice = 'Shell foregrounded. Ctrl-] returns to management.';
+  }
+  if (action === 'resume' && c.shells.some(shell => shell.id === Number(value))) s.active = Number(value);
+  if (action === 'exit') { c.shells = c.shells.filter(shell => shell.id !== s.active); s.active = null; s.notice = 'Shell ended. The connection remains available.'; }
+  if (action === 'transfer') { c.transfer = { bytes: 0, status: 'RUNNING' }; s.notice = 'Sample download started; advance simulated activity to update byte counts.'; }
+  if (action === 'cancel') { if (c.transfer?.status === 'RUNNING') c.transfer.status = 'CANCELLED'; }
+  if (action === 'run') { c.run = { mode: value, status: 'RUNNING' }; s.notice = 'Sample ' + value + ' run started on ' + c.name + '; no interactive shell environment inherited.'; }
+  if (action === 'tunnel' && c.tunnels.length) s.notice = 'Selected existing ' + c.tunnels[0] + '. No route provisioned or connection opened.';
+  return s;
+}
+</script>
+<script>
+let current = initial(), scenario = 'shells';
+let connectionFilter = '', openSections = [], runChoice = 'Remote command';
+const escapeHTML = text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const button = (action, label, disabled = false, value = '') => `<button data-action="${action}" data-value="${escapeHTML(value)}" ${disabled ? 'disabled' : ''}>${escapeHTML(label)}</button>`;
+const status = c => `<span class="${c.status.toLowerCase()}"><span aria-hidden="true">●</span> ${c.status}</span>`;
+function render() {
+  const s = current, c = s.connections[s.selected], connected = c.status === 'CONNECTED';
+  const shell = c.shells.find(item => item.id === s.active);
+  let content;
+  if (s.quit) {
+    content = `<div class="shell"><h2>Frontend closed</h2><p>Local shells ended. Daemon-owned connections and tunnels remain.</p>${button('relaunch', 'Reopen frontend')}</div>`;
+  } else if (shell) {
+    content = `<div class="bar"><span>${escapeHTML(c.name)} / shell ${shell.id} · FOREGROUND</span>${button('manage', 'Ctrl-] Management')}</div>
+      <div class="shell"><p class="muted">SIMULATED SHELL OUTPUT · This is not a terminal emulator.</p>
+      ${shell.discarded ? '<p>Earlier sample output discarded: ' + shell.discarded + ' lines.</p>' : ''}
+      <pre>${escapeHTML(shell.lines.join('\n'))}</pre></div><div class="bar">${button('exit', 'End this shell')}<span>Connection and sibling shells remain.</span></div>`;
+  } else {
+    content = `<div class="bar"><strong>BURROW / homelab</strong><span><button data-dialog="palette">Actions · Ctrl-P</button> <button data-dialog="help">Help · ?</button></span></div>
+    <div class="panes" data-pane="${s.pane}"><nav aria-label="Connections"><h2>Connections</h2><label class="muted">Find connection [/]<input type="search" id="connection-query" placeholder="Name, host, user…" autocomplete="off"></label>${s.connections.map((item, i) =>
+      `<button data-action="select" data-value="${i}" data-search="${escapeHTML(item.name + ' ' + item.host + ' ' + item.user)}" aria-pressed="${i === s.selected}">${escapeHTML(item.name)}<br>${status(item)}</button>`).join('')}<p id="empty-connections" hidden>No matching connections.</p></nav>
+    <div class="detail"><div class="back">${button('list', '← Connections')}</div><h2>${escapeHTML(c.name)} · ${status(c)}</h2><p class="muted">${escapeHTML(c.user)}@${escapeHTML(c.host)}:22</p>
+      ${!connected ? `<div class="controls">${button('connect', 'Connect explicitly', c.status === 'CONNECTING')}
+        ${c.status === 'CONNECTING' ? '<span class="spinner" aria-hidden="true">◌</span> Waiting… ' + button('connected', 'Simulate success') : ''}</div>` : ''}
+      <div class="row"><strong>Shells · ${c.shells.length} background</strong><div class="controls">${button('shell', 'New shell [s]', !connected)}
+        ${c.shells.map(item => button('resume', 'Resume shell ' + item.id, false, item.id)).join('')}</div></div>
+      <details class="row"><summary>Tunnels · ${c.tunnels.length} existing</summary>${c.tunnels.length ? button('tunnel', c.tunnels[0]) : '<span class="muted">No existing compatible path. Selecting a shell does not create one.</span>'}</details>
+      <div class="row"><strong>Transfers</strong>${c.transfer ? `<span>${c.transfer.status} · ${c.transfer.bytes}/100 sample bytes</span><br><progress aria-label="Simulated transfer bytes" max="100" value="${c.transfer.bytes}"></progress>` : '<span class="muted">No active transfers</span>'}
+        <div class="controls">${button('transfer', 'Sample download', !connected || c.transfer?.status === 'RUNNING')}${button('cancel', 'Cancel download', c.transfer?.status !== 'RUNNING')}</div></div>
+      <details class="row"><summary>Run tool / command${c.run ? ' · ' + c.run.status : ''}</summary><p class="muted">Uses this connection; does not inherit an interactive shell’s environment.</p>
+        <label>Execution <select id="run-mode" ${!connected ? 'disabled' : ''}><option>Remote command</option><option>Remote script</option><option>Local tool using master socket</option></select></label>
+        ${button('run', 'Run sample', !connected || c.run?.status === 'RUNNING')}${c.run ? `<p>${escapeHTML(c.run.mode)} · ${c.run.status}</p>` : ''}</details>
+      <div class="controls">${button('close', 'Close connection…', c.status === 'DISCONNECTED')}${button('quit', 'Quit frontend [q]')}${button('lost', 'Simulate loss', !connected)}</div>
+    </div></div><div class="bar muted">Tab: focus · Enter: activate · /: find · Ctrl-P: actions · ?: help</div>`;
+  }
+  document.querySelector('#terminal').innerHTML = content;
+  document.querySelector('#notice').textContent = s.notice;
+  document.querySelector('#state').textContent = s.connections.map(item =>
+    `${item.name}: ${item.status}\n  Shells: ${item.shells.map(x => x.id + ' (' + x.ticks + ' steps)').join(', ') || 'none'}\n  Tunnels: ${item.tunnels.join(', ') || 'none'}\n  Transfer: ${item.transfer?.status || 'none'}\n  Run: ${item.run?.status || 'none'}`).join('\n\n');
+  document.querySelector('#guide').textContent = {
+    shells: 'Select lab-server → New shell → advance activity → Management → New shell → advance activity → Management → resume shell 1. Both sample jobs advance while backgrounded. Try narrow mode and turn color off.',
+    quit: 'Open a shell and start a sample download → Quit frontend → advance activity → Reopen frontend. Shells ended; the connection and tunnel remain. Then Close connection: review the confirmation and see dependent access end.',
+    loss: 'Open a shell → Management → start a sample download → Simulate loss. Work is interrupted. Reconnect explicitly → Simulate success. Shells and tunnels are not recreated.'
+  }[scenario];
+}
+function dispatch(action, value) {
+  const focus = document.activeElement;
+  const focusAction = focus?.dataset.action, focusValue = focus?.dataset.value;
+  if (action === 'close' && !confirm('Close ' + current.connections[current.selected].name + '? Its shells, tunnels and active transfers/runs will end. Saved settings and evidence remain.')) return;
+  if (action === 'run') value = document.querySelector('#run-mode').value;
+  if (document.querySelector('#connection-query')) {
+    openSections = [...document.querySelectorAll('#terminal details')].map(item => item.open);
+    runChoice = document.querySelector('#run-mode').value;
+    connectionFilter = document.querySelector('#connection-query').value;
+  }
+  if (action === 'reset') { connectionFilter = ''; openSections = []; runChoice = 'Remote command'; }
+  current = reduce(current, action, value); render();
+  document.querySelectorAll('#terminal details').forEach((item, i) => item.open = openSections[i] || false);
+  if (document.querySelector('#run-mode')) document.querySelector('#run-mode').value = runChoice;
+  if (document.querySelector('#connection-query')) {
+    document.querySelector('#connection-query').value = connectionFilter;
+    filterButtons('nav button', connectionFilter, '#empty-connections');
+  }
+  const nextFocus = [...document.querySelectorAll('#terminal button')].find(item => item.dataset.action === focusAction && item.dataset.value === focusValue && !item.disabled);
+  if (focus?.closest('#terminal')) (nextFocus || document.querySelector('#terminal button:not(:disabled)'))?.focus();
+}
+function openDialog(name) {
+  if (name === 'palette') {
+    const dialog = document.querySelector('#palette');
+    dialog.querySelector('h2').textContent = 'Actions · ' + current.connections[current.selected].name;
+    document.querySelector('#actions').innerHTML = [...document.querySelectorAll('#terminal button[data-action]')]
+      .filter(item => !item.disabled && !['select', 'lost', 'connected', 'list'].includes(item.dataset.action))
+      .map(item => button(item.dataset.action, item.textContent, false, item.dataset.value)).join('');
+    document.querySelector('#action-query').value = '';
+    document.querySelector('#empty-actions').hidden = true;
+  }
+  document.querySelector('#' + name).showModal();
+}
+function filterButtons(selector, query, empty) {
+  const buttons = [...document.querySelectorAll(selector)];
+  buttons.forEach(item => item.hidden = !(item.dataset.search || item.textContent).toLowerCase().includes(query.trim().toLowerCase()));
+  document.querySelector(empty).hidden = buttons.some(item => !item.hidden);
+}
+document.addEventListener('click', event => {
+  const target = event.target.closest('button');
+  if (target?.dataset.dialog) openDialog(target.dataset.dialog);
+  if (target?.dataset.action) {
+    if (target.closest('#palette')) document.querySelector('#palette').close();
+    dispatch(target.dataset.action, target.dataset.value);
+  }
+  if (target?.dataset.scenario) {
+    scenario = target.dataset.scenario; dispatch('reset');
+    document.querySelectorAll('[data-scenario]').forEach(item => item.setAttribute('aria-pressed', item === target));
+  }
+});
+document.addEventListener('keydown', event => {
+  if (document.querySelector('dialog[open]')) return;
+  if (event.target.matches('input, select, textarea') || event.altKey || event.metaKey) return;
+  if (event.ctrlKey && event.key === ']' && current.active !== null) { event.preventDefault(); dispatch('manage'); }
+  else if (current.active === null && !current.quit && event.ctrlKey && event.key === 'p') { event.preventDefault(); openDialog('palette'); }
+  else if (current.active === null && !current.quit && event.key === '?') { event.preventDefault(); openDialog('help'); }
+  else if (current.active === null && !current.quit && event.key === '/') { event.preventDefault(); dispatch('list'); document.querySelector('#connection-query').focus(); }
+  else if (!event.ctrlKey && current.active === null && !current.quit && ['s', 'q'].includes(event.key)) { event.preventDefault(); dispatch(event.key === 's' ? 'shell' : 'quit'); }
+});
+document.addEventListener('input', event => {
+  if (event.target.id === 'connection-query') filterButtons('nav button', event.target.value, '#empty-connections');
+  if (event.target.id === 'action-query') filterButtons('#actions button', event.target.value, '#empty-actions');
+});
+document.querySelector('#narrow').addEventListener('change', event => document.querySelector('#terminal').classList.toggle('narrow', event.target.checked));
+document.querySelector('#mono').addEventListener('change', event => document.querySelector('#terminal').classList.toggle('mono', event.target.checked));
+document.querySelector('#light').checked = matchMedia('(prefers-color-scheme: light)').matches;
+document.documentElement.classList.toggle('light', document.querySelector('#light').checked);
+document.querySelector('#light').addEventListener('change', event => document.documentElement.classList.toggle('light', event.target.checked));
+document.querySelector('#quiet').addEventListener('change', event => document.querySelector('#terminal').classList.toggle('quiet', event.target.checked));
+render();
+</script>
+</html>
