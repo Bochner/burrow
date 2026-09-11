@@ -20,11 +20,13 @@ shipping the full rewrite is the subsequent implementation effort.
 
 ## Standing preferences from the owner
 
-- AI support and a Burrow-owned skill set set up exactly like Hovel are critical
+- AI support and a Burrow-owned skill set following Hovel's conventions are critical
   requirements, added on 2026-09-11. The
   [AI and skills decision](https://github.com/Bochner/burrow/issues/33) investigates
   the workflows, agent interfaces and Hovel-aligned packaging/install/update
-  contract before final slice planning; it does not yet select an embedded AI.
+  contract before final slice planning. The owner subsequently selected external
+  agents driven by CLI-oriented skills, with MCP optional: mirror Hovel's skill
+  layout and installation conventions without requiring its MCP integration.
 - The [transport proof decision](https://github.com/Bochner/burrow/issues/19#issuecomment-5639082720)
   selects ordinary OpenSSH subprocesses over a shared, user-named master, with
   structured Go SFTP over subsystem pipes. It supersedes the initial Go

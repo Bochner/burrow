@@ -1,0 +1,17 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "check",
+    srcs = ["check.py", "install.py"],
+    args = ["$(location :burrow)"],
+    data = [":burrow"] + glob(["agent/skills/**"]),
+    legacy_create_init = 0,
+)
+
+py_binary(
+    name = "burrow",
+    main = "install.py",
+    srcs = ["install.py"],
+    data = glob(["agent/skills/**"]),
+    legacy_create_init = 0,
+)
