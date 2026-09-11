@@ -1,9 +1,64 @@
-# Proposed Hovel daemon compatibility convention
+# Hovel developer handoff
 
 Status: proposal for the Hovel developer, not an implemented or accepted upstream
 API. The Burrow owner deferred Hovel changes on 2026-09-11 and requested this
 handoff. The [setup feasibility decision](https://github.com/Bochner/burrow/issues/18)
 holds the owner decision; this document specifies the proposed upstream contract.
+
+## Individual handoff tickets
+
+The owner requested separate tickets in Burrow under the `hovel` label, to pass
+to Hovel's developer. Nothing has been filed in Hovel's repository. Each ticket
+contains the detailed evidence, current workaround and upstream acceptance checks.
+
+| Ticket | Current Burrow approach |
+| --- | --- |
+| [Hovel: expose running-daemon protocol and build compatibility](https://github.com/Bochner/burrow/issues/28) | Burrow-started pinned local daemons; general existing-daemon attachment deferred. |
+| [Hovel: support terminal geometry and resize for retained sessions](https://github.com/Bochner/burrow/issues/29) | Frontend-owned local SSH PTYs over the daemon-owned master; Hovel-retained shells deferred. |
+| [Hovel: retain module control after the lifetime log limit](https://github.com/Bochner/burrow/issues/30) | Bounded diagnostic milestones with a visible suppression warning; retain status and explicit close through the supported control path. |
+
+### Terminal resize
+
+The pinned public SDK/session protocol has no resize operation. The terminal
+placement proof observed an SDK PTY remaining at 0×0 while the controlling
+terminal resized; the transport proof demonstrated SSH-level resizing but not
+a Hovel-mediated resize path. The [owner's resize decision](https://github.com/Bochner/burrow/issues/24)
+selects local shells initially. Frontend quit ends those shells while the
+daemon-owned master and tunnels remain. Local terminal bytes are not Hovel session
+recordings. Later retained shells need validated initial/live geometry, dimensions
+on attach, one controlling view and explicit unsupported/error behavior, as
+specified in the linked ticket. The earlier CLI alternate-screen/cursor-restoration
+observation is also recorded there for the terminal integration test.
+
+### Retained diagnostics and resource state
+
+The [preserved ownership checkpoint](https://github.com/Bochner/burrow/blob/b69517a/core/prototype_transport/OWNERSHIP.md)
+reproduces a lifetime ceiling in Hovel v0.4.2: exactly 256 SDK module-log events are
+persisted; the next notification ends the RPC reader. Hovel reports the session
+closed while the SSH master and forwarding listeners are still usable. A later
+CloseSession returns a protocol error, although its request may execute cleanup;
+failed acknowledgment is not proof of no mutation.
+
+The owner authorized a temporary workaround: the disposable module allows 200
+diagnostic milestones, warns once, then suppresses further milestones. The check
+attempts 600 and verifies that explicit close still terminates the master, two
+clients and three listeners. This loses subsequent diagnostic detail and does not
+replace required audit evidence. The upstream request is bounded memory with
+continuing control and documented event-delivery/failure behavior, not an unbounded
+log buffer. The raw ceiling trigger is retained only for the reproduction.
+
+The same checkpoint verifies module-SIGKILL cleanup using Linux parent-death
+signaling and daemon-SIGKILL cleanup using an explicit SDK-stream-EOF wrapper.
+These are local supervision measures, not additional upstream API requests.
+`aspect burrow-check` passed the preserved SDK/docs and transport/ownership
+observation gates. The full ownership ticket remains open: local terminal handoff
+and the comprehensive naming/workspace/recovery acceptance cases are still pending.
+
+The OpenSSH control-proxy refusal and remote-listener defects from the earlier
+transport proof are not Hovel defects. The accepted ordinary OpenSSH subprocess
+path avoids them; their source evidence remains in the transport proof.
+
+## Compatibility proposal
 
 ## Problem and development impact
 
