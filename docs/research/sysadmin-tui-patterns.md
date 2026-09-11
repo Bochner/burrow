@@ -100,3 +100,25 @@ These are recommendations for discussion. They neither select a new Go prompt
 library nor resolve the existing terminal prototype decision. Hovel component
 reuse and the prompt-toolkit comparison are covered by the companion
 [command-first interaction research](command-first-interaction.md).
+
+## Follow-up: eza-style transfer listings
+
+The owner supplied eza as the concrete example of the desired hybrid: preserve
+LazySSH's SCP-mode command flow while improving how file listings are displayed.
+This is an approved visual reference, not a decision to depend on eza or copy its
+entire option set. No claim about its market share or standardization is needed.
+
+Eza documents colored file types/metadata, grid and long listings, human-readable
+sizes, directory grouping, symlink handling and depth-limited tree views.
+Those are useful presentation references for listing results in Burrow.
+[Upstream README](https://github.com/eza-community/eza/blob/main/README.md),
+[manual](https://github.com/eza-community/eza/blob/main/man/eza.1.md).
+
+Recommendation: retain typed ls/cd/get/put-style interaction with the selected
+connection and local/remote path context visible. Render remote metadata locally
+using Hovel-aligned styling over the accepted SFTP path; do not require remote
+eza installation or parse colored remote ls output. Optional icons should have
+plain-text fallbacks. Tree traversal should be explicit and bounded; advanced
+eza-specific Git, SELinux or extended-attribute features are not implied by the
+visual reference. Script output remains structured/plain rather than parsing the
+human-facing columns. Exact default columns and syntax await the next walkthrough.
