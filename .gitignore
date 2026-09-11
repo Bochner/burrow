@@ -21,3 +21,6 @@ node_modules/
 !.env.example
 *.key
 *.pem
+
+# Optional local skill-installer bookkeeping.
+/skills-lock.json
