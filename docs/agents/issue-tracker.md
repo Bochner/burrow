@@ -36,7 +36,7 @@ pretend that the required live discussion has happened.
   `wayfinder:research`, `wayfinder:prototype`, `wayfinder:grilling`, or
   `wayfinder:task`. Create labels on first use.
 - Attach a child using `POST /repos/Bochner/burrow/issues/<map>/sub_issues`
-  with the child's numeric database `issue_id`.
+  with `sub_issue_id` set to the child's numeric database ID.
 - Blocking: use native dependencies via
   `POST /repos/Bochner/burrow/issues/<child>/dependencies/blocked_by`, with
   the blocker's numeric database `issue_id`. Get that ID from the issue API's
