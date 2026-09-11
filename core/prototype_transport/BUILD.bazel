@@ -1,0 +1,32 @@
+load("@rules_go//go:def.bzl", "go_binary")
+load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+py_binary(
+    name = "lab",
+    srcs = ["lab.py"],
+    args = ["$(location :burrow-transport-prototype)"],
+    data = [":burrow-transport-prototype"],
+    legacy_create_init = 0,
+)
+
+go_binary(
+    name = "burrow-transport-prototype",
+    srcs = ["main.go", "ownership.go", "script_boundary.go"],
+    deps = ["@hovel_sdk//:hovel", "@org_golang_x_crypto//ssh", "@com_github_pkg_sftp//:sftp"],
+)
+
+pkg_tar(
+    name = "package",
+    srcs = [":burrow-transport-prototype", "hovel-module.yaml", "@hovel_sdk//:LICENSE"],
+    extension = "tgz",
+    mode = "0755",
+)
+
+py_binary(
+    name = "check",
+    srcs = ["check.py"],
+    args = ["$(location :burrow-transport-prototype)", "$(location :package)", "$(location @hovel_linux_wheel//file)", "$(location local_terminal.py)"],
+    data = [":burrow-transport-prototype", ":package", "@hovel_linux_wheel//file", "local_terminal.py"],
+    legacy_create_init = 0,
+)
