@@ -25,6 +25,7 @@ Hovel's extension and development conventions as Hovel evolves.
 | Saved connection | Non-secret connection settings that can recreate a connection; not a live transport. |
 | Hovel module | A separately launched program packaged for Hovel and speaking its module protocol through the SDK. |
 | LazySSH plugin | Existing Python/shell automation consuming LazySSH environment variables and OpenSSH control sockets; not a Hovel module. |
+| Standalone use | Launching Burrow without having to operate Hovel separately; a transparently installed and managed Hovel dependency is acceptable. |
 | Workspace | Hovel's daemon-owned operational state boundary; how homelab and engagement data map to it remains to be decided. |
 
 See `docs/wayfinder-start.md` for the proposed destination and initial questions.

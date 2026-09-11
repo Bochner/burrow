@@ -23,8 +23,10 @@ shipping the full rewrite is the subsequent implementation effort.
 - Hovel integration is the top priority, confirmed on 2026-09-11. Resolve its
   supported lifecycle, logging, state ownership, and UI boundaries before
   selecting Charm dependencies or designing standalone behavior. Standalone
-  SSH management is desirable if it can share behavior without substantial
-  additional complexity; its feasibility remains a decision for this map.
+  SSH management should feel standalone to the operator; the owner clarified
+  that transparently installing and managing Hovel is acceptable. Prefer one
+  daemon-backed design over separate runtime/build variants. Setup and workspace
+  defaults remain a decision for this map.
 - Initial authentication/configuration baseline: passwords, encrypted keys,
   SSH agents, host-key verification, SSH config aliases, and jump hosts.
   Inspect Hovel for additional supported capabilities before deciding whether
