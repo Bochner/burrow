@@ -1,76 +1,116 @@
-# Disposable existing-tunnel discovery prerequisite
+# Existing-tunnel workaround on current Hovel
 
 For [Can Hovel chains discover and consume existing Burrow tunnels?](https://github.com/Bochner/burrow/issues/27).
-Run `aspect burrow-prototype transport`. Uses the existing pinned local SSH and
-Hovel fixtures described in [README.md](README.md); no remote lab access needed.
-This is a dispatch/selection proof, **not completed tunnel-chain integration**.
+The owner requested a working Burrow workaround on current Hovel, with necessary
+upstream gaps handed off as `hovel`-labeled Burrow issues rather than blocking on
+the end state. This remains a disposable, controlled-fixture proof.
 
-## Question and bounded result
+Run `aspect burrow-prototype transport` or `aspect burrow-check`. Pins and host
+requirements are in [README.md](README.md). Hovel v0.4.2 and SDK/source
+`c461ba282a8aecc7aa3a079a4613bf5e2640c388` were still the latest published release
+and upstream main respectively when checked on 2026-09-11. No Hovel patch,
+private import, additional dependency or second live-state registry is used.
 
-Can a chain reach the already-retained connection owner through public Hovel
-contracts, without keeping another registry or recreating the connection?
+## Working path
 
-The Mesh listener RPC starts a fresh module subprocess. Its `ownership.connection`
-is nil even while the original owner and SSH master remain alive. The check
-compares process identities across two discovery calls and verifies the existing
-master remains usable. A Mesh interface on the retained module alone therefore
-does not make that owner's inventory discoverable.
+1. An explicit confirmed Hovel run starts the fixture's connection owner and
+   operator-requested OpenSSH forwards. Consumers never create those resources.
+2. A frontend selects an existing connection session using Hovel's session
+   inventory and queries `RunSessionCommand(tunnel-list)`. The authoritative
+   tunnel map stays inside that retained connection owner.
+3. The compatible Burrow chain consumer takes `proof_session` and `proof_tunnel`
+   IDs as its input binding. It calls `RunSessionCommand(tunnel-probe)` through
+   the public Unix-socket API. The owner validates the selection and performs
+   an inert HTTP nonce exchange over the existing forward.
+4. The chain records the nonce and selected endpoint metadata in a normal Hovel
+   artifact. Completing the consumer closes its HTTP/SSH client, retaining the
+   shared connection and tunnel. Missing selections fail instead of reconnecting.
 
-Hovel also has public `ListSessionCommands` and `RunSessionCommand` operations.
-The SDK dispatches these to `PayloadCommandProvider` on the selected **Session**.
-That route reaches the retained owner; it does not require registering an
-installed payload. The prototype exposes only `connection-status`, verifies the
-master with bounded `ssh -O check`, rejects reconnect requests, and reports
-non-secret owner identity.
+This consumer deliberately runs its bounded traffic operation in the owner via
+a structured request. It does not export a general stream to an arbitrary module
+or automatically produce a typed `TransportEndpoint` capability.
 
-A real confirmed Hovel chain selects that session by configuration and calls
-`RunSessionCommand` through the fixture's Unix daemon socket. Two runs reach the
-same owner. Missing selections fail; direct queries after owner close fail too.
-Consumer completion leaves the owner and master alive. No Mesh bearer capability
-or credentials are created or included in chain outputs.
+Each tunnel has an opaque creation ID, owning connection, direction, mode, bind
+address and observed reverse bind. Local/reverse forwards have fixed
+destinations. A SOCKS tunnel has `mode=socks5` and no fixed destination;
+`probeDestination` is explicitly the test's HTTP target, not a tunnel limitation.
+Recreating an endpoint on the same port produces a different identity.
 
-## Contract caveat for owner discussion
+## Checks passed
 
-The SDK names and documents `PayloadCommandProvider` as commands against an
-installed payload. The daemon RPC reference also describes both session-command
-methods as operating through an installed payload session, although runtime
-dispatch does not enforce that restriction.
-Using it for connection/tunnel inventory is mechanically supported at this pin,
-but its intended long-term use for non-payload connections is not established.
-An SSH connection remains a connection, never a fabricated installed payload.
+- Real confirmed chain HTTP exchanges twice through each local, reverse and
+  SOCKS forward. Reverse requests originate in a Python process launched on the
+  SSH target and connect to the remote listener; reverse is not an outbound proxy.
+- Concurrent consumers, independent frontend requests and consumer completion
+  leave the same owner and tunnel inventory alive.
+- Explicit per-tunnel close removes its selection and leaves siblings usable.
+  Connection close, missing IDs, old IDs after same-port recreation and master
+  loss all refuse further consumption without reconnect or fallback.
+- Empty bind host defaults to `127.0.0.1`; explicit `127.0.0.2` is exercised.
+- Reverse `GatewayPorts no` overriding a wildcard request, and `yes` overriding
+  a loopback request, are detected by inspecting the remote Linux kernel's TCP
+  listener tables. The fixture refuses and closes its connection/resources.
+  `clientspecified` honors the explicit address and carries real chain traffic.
+- SOCKS HTTP to a `localhost` hostname succeeds. Go 1.26.5's standard HTTP
+  transport handles `socks5h` and sends non-IP names as SOCKS FQDN requests
+  (`src/net/http/socks_bundle.go`); resolution is delegated to the SSH side.
+  This is source tracing plus a real hostname request, not a DNS packet capture.
+- Nonce validation, bounded requests/output, dangerous-run confirmation and
+  normal artifact materialization are retained. Proxy credentials and Mesh
+  bearer tokens are neither needed nor generated. Ambient HTTP proxies are
+  bypassed by the explicit Go transport and remote Python proxy configuration.
 
-Candidate direction: select the existing connection session first, query its
-owner for compatible live tunnels through structured session commands, then pass
-the selected tunnel identity to a compatible consumer. Keep the authoritative
-inventory in that owner. Do not infer automatic Mesh discovery from this result.
+All tests use temporary local Linux SSH servers with explicit fixture-key trust.
+The Ubuntu VM was not needed. The local server is the remote SSH endpoint in
+these tests; this is not a separate-machine networking or platform-matrix claim.
 
-## Still required before resolving the parent decision
+## Why the workaround is needed
 
-- Actual owner-maintained tunnel inventory and consumer binding, including
-  connection/tunnel identity, direction, effective bind and destination.
-- Chain data traffic through local, reverse and SOCKS forwards; two consumers,
-  per-tunnel removal and transport-loss races. Existing transport tests alone
-  do not establish these chain properties.
-- SOCKS DNS behavior, reverse `GatewayPorts` policy and effective exposure.
-- Confirmation/audit treatment of any future mutating session commands. This
-  probe exposes read-only status only; direct session commands are not presumed
-  to run the confirmed throw workflow.
-- Owner feedback on this proposed public-contract usage before adoption.
+`ListMeshListeners` starts a fresh module subprocess. Merely adding that method
+to a retained module cannot expose its in-memory inventory. The earlier probe
+still reproduces this with different process IDs and a live original master.
 
-## Source trace
+Hovel's session-command broker does reach the retained session object. Its SDK
+uses `PayloadCommandProvider`, and both that interface and the daemon RPC table
+describe installed-payload use. The runtime accepts this ordinary connection
+session without any fabricated installed payload. This is the narrow contract
+gap to hand off: explicitly support this existing structured-command route for
+non-payload connection sessions, preserving request isolation and lifecycle.
+It does not require changing Hovel to run the current bounded workaround.
 
-Hovel source baseline `c461ba282a8aecc7aa3a079a4613bf5e2640c388`:
+Source trace at the pinned revision:
 
-- `core/internal/moduleruntime/pythonrpc/runner.go`: `ListMeshListeners` →
-  `callMeshProvider` → `callProvider` starts and disposes a process per call;
+- `core/internal/moduleruntime/pythonrpc/runner.go`: `ListMeshListeners` calls
+  `callMeshProvider`/`callProvider`, which starts and disposes a process;
   `SessionBroker.RunSessionCommand` uses the retained session's process.
 - `sdk/go/hovel/session.go`: `sessionManager.runCommand` asserts
-  `PayloadCommandProvider` on the session object.
-- `sdk/go/hovel/payload.go`: public command request/result shape and documented
-  installed-payload semantics.
-- `core/internal/adapters/daemonrpc/daemonrpc.go`: public session command RPCs.
-- `docs/site/src/content/spec/daemon-rpc.html`, session operations table:
-  documented installed-payload restriction.
+  `PayloadCommandProvider` on the selected session object.
+- `sdk/go/hovel/payload.go` and the session operations table in
+  `docs/site/src/content/spec/daemon-rpc.html`: documented payload semantics.
 
-These internal files were inspected as evidence only; Burrow imports the public
-SDK and calls public daemon RPCs.
+These internal files are evidence, never Burrow imports.
+
+## Deliberate limits
+
+- No generic Mesh bridge, arbitrary third-party module routing, UDP, proxy
+  authentication, IPv6 or production terminal UI. They are not necessary for
+  this compatible-consumer proof and have not been silently implemented.
+- Fixture tunnels are established as a bounded initial batch, maximum four,
+  to controlled HTTP destinations. Production add/edit UX is not demonstrated.
+- Per-tunnel close uses an explicit operator `WriteSession` command and emits
+  the existing bounded SDK milestone. Hovel does not automatically run throw
+  confirmation for every session command; this is not claimed as durable audit
+  parity or permission to expose arbitrary mutating commands through this path.
+- Closing a tunnel waits for its active, bounded probes. General streams will
+  need explicit cancellation. A failed/ambiguous close is an error, never proof
+  that cleanup did not execute.
+- Reverse verification requires readable Linux `/proc/net/tcp*` and Python on
+  the controlled target. Unverifiable/mismatched exposure fails closed. A server
+  may briefly bind a wider address before the mismatch is observed and cleanup
+  completes; prevent that in server policy where temporary exposure is forbidden.
+- Direct external manipulation of the OpenSSH control socket is outside this
+  owner's inventory contract. OpenSSH has no general forward-enumeration query;
+  a same-user external actor replacing a listener at the same address is not
+  covered. Workspace isolation is not a same-user security boundary.
+- The existing retained-log limit and script caller-disconnect limitations remain
+  unchanged. A green observation gate includes their expected reproductions.

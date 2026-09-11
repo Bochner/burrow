@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -63,6 +64,13 @@ func (p *ownership) ListMeshListeners(hovel.MeshListenerListRequest) ([]hovel.Me
 }
 
 func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
+	if ctx.InputString("proof_action", "connect") == "tunnel-probe" {
+		result, err := ownerCommand(ctx.InputString("proof_session", ""), "tunnel-probe", []string{ctx.InputString("proof_tunnel", ""), ctx.InputString("proof_nonce", "")})
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		return hovel.Ok(nil, hovel.WithArtifacts(hovel.JSONArtifact("tunnel-probe", result))), nil
+	}
 	if ctx.InputString("proof_action", "connect") == "connection-status" {
 		return selectedOwnerStatus(ctx)
 	}
@@ -75,6 +83,12 @@ func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
 		return hovel.Result{}, err
 	}
 	s := &ownedConnection{dir: dir, done: make(chan struct{})}
+	if ctx.InputString("proof_action", "connect") == "tunnel-connect" {
+		if err := json.Unmarshal([]byte(ctx.InputString("proof_tunnels", "")), &s.requested); err != nil {
+			os.Remove(dir)
+			return hovel.Result{}, fmt.Errorf("invalid fixture tunnel configuration")
+		}
+	}
 	p.connection = s
 	var logMu sync.Mutex
 	logCount := 0
@@ -93,6 +107,13 @@ func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
 		}
 	}
 	s.Handle = func(command string) (string, error) {
+		if id, ok := strings.CutPrefix(command, "tunnel-close "); ok {
+			if err := s.closeTunnel(id); err != nil {
+				return "", err
+			}
+			logMilestone("operator closed tunnel " + id)
+			return "tunnel closed", nil
+		}
 		switch command {
 		case "status":
 			return "owned connection", nil
@@ -123,22 +144,25 @@ func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
 
 type ownedConnection struct {
 	hovel.LineShellSession
-	dir      string
-	master   *exec.Cmd
-	done     chan struct{}
-	once     sync.Once
-	closeErr error
+	dir       string
+	master    *exec.Cmd
+	done      chan struct{}
+	once      sync.Once
+	closeErr  error
+	tunnelMu  sync.RWMutex
+	requested []fixtureTunnel
+	tunnels   map[string]fixtureTunnel
 }
 
 // The SDK permits command providers on a Session without an installed payload.
 // This read-only probe asks the authoritative owner, never a saved registry.
 func (s *ownedConnection) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "connection-status", ReadOnly: true}}, nil
+	return []hovel.PayloadCommand{{Name: "connection-status", ReadOnly: true}, {Name: "tunnel-list", ReadOnly: true}, {Name: "tunnel-probe", Summary: "Inert fixture HTTP request through an existing tunnel"}}, nil
 }
 
 func (s *ownedConnection) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
-	if req.Command != "connection-status" || len(req.Args) != 0 || req.Reconnect != nil {
-		return hovel.PayloadCommandResult{}, fmt.Errorf("only read-only connection-status is supported")
+	if req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" || len(req.Config) != 0 {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("reconnect, payloads, input files and credentials are not supported")
 	}
 	if s.Closed() {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("selected connection is closed")
@@ -149,41 +173,60 @@ func (s *ownedConnection) RunPayloadCommand(req hovel.PayloadCommandRequest) (ho
 	if err := check.Run(); err != nil {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("selected connection is unavailable")
 	}
+	if req.Command == "tunnel-list" && len(req.Args) == 0 {
+		s.tunnelMu.RLock()
+		defer s.tunnelMu.RUnlock()
+		data, err := json.Marshal(s.tunnels)
+		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(data)}, err
+	}
+	if req.Command == "tunnel-probe" && len(req.Args) == 2 {
+		return s.probeTunnel(req.Args[0], req.Args[1])
+	}
+	if req.Command != "connection-status" || len(req.Args) != 0 {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported fixture command")
+	}
 	return hovel.PayloadCommandResult{Command: req.Command, Fields: map[string]string{"ownerPID": fmt.Sprint(os.Getpid()), "connection": "gateway"}}, nil
 }
 
 // A real confirmed chain selects a session ID and queries its retained owner.
 // Only the harness-supplied local daemon is allowed; no remote TCP or token.
 func selectedOwnerStatus(ctx *hovel.Context) (hovel.Result, error) {
-	id := ctx.InputString("proof_session", "")
-	if id == "" {
-		return hovel.Result{}, fmt.Errorf("select an existing connection session")
-	}
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", os.Getenv("BURROW_PROOF_DAEMON"))
-	}}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 4 * time.Second}
-	body, err := json.Marshal(map[string]any{"SessionID": id, "Request": map[string]string{"command": "connection-status"}})
+	result, err := ownerCommand(ctx.InputString("proof_session", ""), "connection-status", nil)
 	if err != nil {
-		return hovel.Result{}, err
-	}
-	response, err := client.Post("http://localhost/hovel.daemon.v1.DaemonService/RunSessionCommand", "application/json", bytes.NewReader(body))
-	if err != nil {
-		return hovel.Result{}, fmt.Errorf("selected owner unavailable")
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return hovel.Result{}, fmt.Errorf("selected owner refused status")
-	}
-	var result hovel.PayloadCommandResult
-	if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&result); err != nil {
 		return hovel.Result{}, err
 	}
 	if result.Fields["connection"] != "gateway" || result.Fields["ownerPID"] == "" {
 		return hovel.Result{}, fmt.Errorf("invalid owner response")
 	}
 	return hovel.Ok(nil, hovel.WithSummary("selected owner="+result.Fields["ownerPID"])), nil
+}
+
+func ownerCommand(id, command string, args []string) (hovel.PayloadCommandResult, error) {
+	if id == "" {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("select an existing connection session")
+	}
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", os.Getenv("BURROW_PROOF_DAEMON"))
+	}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 8 * time.Second}
+	body, err := json.Marshal(map[string]any{"SessionID": id, "Request": hovel.PayloadCommandRequest{Command: command, Args: args}})
+	if err != nil {
+		return hovel.PayloadCommandResult{}, err
+	}
+	response, err := client.Post("http://localhost/hovel.daemon.v1.DaemonService/RunSessionCommand", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("selected owner unavailable")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("selected owner refused command")
+	}
+	var result hovel.PayloadCommandResult
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&result); err != nil {
+		return hovel.PayloadCommandResult{}, err
+	}
+	return result, nil
 }
 
 func (s *ownedConnection) Open() error {
@@ -214,6 +257,9 @@ func (s *ownedConnection) Open() error {
 		default:
 		}
 		if _, err := os.Lstat(filepath.Join(s.dir, "master")); err == nil {
+			if err := s.openTunnels(); err != nil {
+				return err
+			}
 			return s.LineShellSession.Open()
 		}
 		time.Sleep(20 * time.Millisecond)
