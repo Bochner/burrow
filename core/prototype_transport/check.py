@@ -1,11 +1,15 @@
 """Throwaway Linux transport check. No operator SSH configuration or remote lab used."""
 import base64
 import hashlib
+import fcntl
 import http.client
 import json
 import os
 from pathlib import Path
 import pwd
+import pty
+import select
+import struct
 import signal
 import sqlite3
 import socket
@@ -13,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import termios
 import time
 import zipfile
 
@@ -24,7 +29,7 @@ def input_path(value):
     return str(path.resolve())
 
 
-probe, archive, wheel = map(input_path, sys.argv[1:])
+probe, archive, wheel, local_frontend = map(input_path, sys.argv[1:])
 # Explicit host prerequisite: Ubuntu 10.2p1-2ubuntu3.6. These are not hermetic
 # toolchains; upgrades must change this evidence pin and rerun the proof.
 pins = {
@@ -411,6 +416,34 @@ LogLevel VERBOSE
         daemon.wait(timeout=10)
         owner_root = root / "owners"
         owner_root.mkdir(mode=0o700)
+        second_root = root / 'other-workspace'
+        second_root.mkdir(mode=0o700)
+        for directory in (owner_root, second_root):
+            reserved = Path(run([probe, 'reserve', directory, 'same-name']).stdout.strip())
+            assert reserved.stat().st_mode & 0o777 == 0o700
+            run([probe, 'reserve', directory, 'same-name'], success=False)
+            # Unknown/stale sockets are left byte-for-byte/inode-for-inode intact.
+            stale = socket.socket(socket.AF_UNIX)
+            stale.bind(str(reserved / 'master'))
+            stale.close()
+            inode = (reserved / 'master').stat().st_ino
+            run([probe, 'reserve', directory, 'same-name'], success=False)
+            assert (reserved / 'master').stat().st_ino == inode
+            (reserved / 'master').unlink()  # this harness created it, never authenticated
+            reserved.rmdir()
+        for name in ('../escape', '.', '-option', 'spaces here', 'unicode-☃', 'x'*25, ''):
+            run([probe, 'reserve', owner_root, name], success=False)
+        alias_root = root / 'runtime-symlink'
+        alias_root.symlink_to(owner_root)
+        run([probe, 'reserve', alias_root, 'gateway'], success=False)
+        owner_root.chmod(0o755)
+        run([probe, 'reserve', owner_root, 'gateway'], success=False)
+        owner_root.chmod(0o700)
+        long_root = root / ('runtime-' + 'x' * 48)
+        long_root.mkdir(mode=0o700)
+        run([probe, 'reserve', long_root, 'gateway'], success=False)
+        assert not (long_root / 'gateway').exists()
+        print('PASS workspace-local same names, invalid names/permissions/symlinks and stale socket refusal without deletion', flush=True)
         env.update(BURROW_OWNER_ROOT=str(owner_root), BURROW_OWNER_CONFIG=str(ssh_config))
         workspace = root / "owner-workspace"
         daemon = spawn([hovel, "daemon", "serve", "--workspace", workspace], "owner-hovel")
@@ -435,7 +468,117 @@ LogLevel VERBOSE
             stat = Path(f"/proc/{pid}/stat")
             return stat.exists() and stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
 
-        for mode in ("close", "module-kill", "master-loss", "log-ceiling", "bounded-logs", "daemon-kill"):
+        def local_terminal_check(owned_socket, lose=False):
+            outer, slave = pty.openpty()
+            saved = termios.tcgetattr(slave)
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
+            def controlling():
+                os.setsid()
+                fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+            frontend = subprocess.Popen([sys.executable, local_frontend, str(ssh_config), str(owned_socket)],
+                stdin=slave, stdout=slave, stderr=slave, cwd=root, env=env, preexec_fn=controlling)
+            processes.append(frontend)
+            output = bytearray()
+            def until(marker):
+                deadline = time.monotonic() + 8
+                while marker not in output:
+                    assert time.monotonic() < deadline, (marker, bytes(output[-2000:]))
+                    if select.select([outer], [], [], .05)[0]: output.extend(os.read(outer, 65536))
+                end = output.index(marker) + len(marker)
+                data = bytes(output[:end])
+                del output[:end]
+                return data
+            def send(data): os.write(outer, data)
+            shell_pids = []
+            try:
+                until(b'MANAGEMENT')
+                send(b'1')
+                until(b'SHELL 1 80x24')
+                send(b"stty -echo; stty size; printf 'FIRST_END\\n'\n")
+                assert b'24 80' in until(b'FIRST_END\r\n')
+                if lose:
+                    run(ssh + ['-S', owned_socket, '-O', 'exit', 'target'])
+                    until(b'MANAGEMENT')
+                    send(b'1')
+                    until(b'SHELL 1 80x24')
+                    until(b'MANAGEMENT')
+                    assert not owned_socket.exists()
+                    send(b'q')
+                    tail = until(b'Frontend exited; local shells ended')
+                    assert frontend.wait(timeout=5) == 0 and termios.tcgetattr(slave) == saved
+                    assert b'\x1b[?25h\x1b[?1049l' in tail
+                    print('PASS master loss during local handoff returns to management; reopen cannot authenticate; terminal restored', flush=True)
+                    return
+                send(b"sleep .3; stty size; printf 'BACKGROUND_END\\n'\n")
+                send(b'\x1d')
+                until(b'MANAGEMENT')
+                send(b'2')
+                until(b'SHELL 2 80x24')
+                fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
+                frontend.send_signal(signal.SIGWINCH)
+                send(b"stty -echo; sleep .4; stty size; printf 'SECOND_END\\n'\n")
+                assert b'40 120' in until(b'SECOND_END\r\n')
+                send(b'\x1d')
+                until(b'MANAGEMENT')
+                send(b'1')
+                until(b'SHELL 1 120x40')
+                assert b'24 80' in until(b'BACKGROUND_END\r\n')
+                send(b"stty size; printf 'RETURN_END\\n'\n")
+                assert b'40 120' in until(b'RETURN_END\r\n')
+                send(b"printf 'INTERRUPT_READY\\n'; sleep 30; printf 'SHOULD_NOT_COMPLETE\\n'\n")
+                until(b'INTERRUPT_READY\r\n')
+                send(b'\x03')
+                send(b"printf 'INTERRUPT_END\\n'\n")
+                assert b'SHOULD_NOT_COMPLETE' not in until(b'INTERRUPT_END\r\n')
+                send(b"stty -icanon; printf 'RAW_READY\\n'; dd bs=1 count=1 2>/dev/null | od -An -tu1; stty icanon; printf 'RAW_END\\n'\n")
+                until(b'RAW_READY\r\n')
+                send(b'Z')
+                assert b'90' in until(b'RAW_END\r\n')
+                send(b"sleep .2; head -c 100000 /dev/zero | tr '\\0' x; printf 'FLOOD_END\\n'\n")
+                send(b'\x1d')
+                until(b'MANAGEMENT')
+                # Wait for background completion by foregrounding the other shell.
+                send(b'2')
+                until(b'SHELL 2 120x40')
+                send(b"sleep .5; printf 'DRAIN_END\\n'\n")
+                until(b'DRAIN_END\r\n')
+                send(b'\x1d')
+                until(b'MANAGEMENT ')
+                state = json.loads(until(b'\r\n').strip())
+                assert state['1']['buffer'] == 65536 and state['1']['discarded'] > 0, state
+                shell_pids = [s['pid'] for s in state.values()]
+                send(b'1')
+                until(b'SHELL 1 120x40')
+                until(b'[older output discarded]')
+                until(b'FLOOD_END\r\n')
+                send(b'exit\n')
+                until(b'MANAGEMENT')
+                send(b'1')
+                until(b'SHELL 1 120x40')
+                send(b"stty -echo; printf 'REOPEN_END\\n'\n")
+                until(b'REOPEN_END\r\n')
+                fcntl.ioctl(slave, termios.TIOCSWINSZ, bytes(8))
+                frontend.send_signal(signal.SIGWINCH)
+                until(b'ERROR terminal geometry unavailable')
+                send(b'\x1d')
+                until(b'MANAGEMENT ')
+                state = json.loads(until(b'\r\n').strip())
+                shell_pids += [s['pid'] for s in state.values()]
+                send(b'q')
+                tail = until(b'Frontend exited; local shells ended')
+                assert frontend.wait(timeout=5) == 0
+                assert termios.tcgetattr(slave) == saved
+                assert all(not alive(pid) for pid in shell_pids)
+                assert b'\x1b[?25h\x1b[?1049l' in tail
+                print('PASS local handoff: independent PTYs/resize, background execution/bounded replay, raw byte/Ctrl-C, exit/reopen, invalid geometry, quit cleanup and termios restoration', flush=True)
+            finally:
+                if frontend.poll() is None:
+                    frontend.terminate()
+                    frontend.wait(timeout=5)
+                os.close(outer)
+                os.close(slave)
+
+        for mode in ("close", "unexpected-eof", "module-kill", "master-loss", "log-ceiling", "bounded-logs", "daemon-kill"):
             result, session = owned_run()
             owned_socket = owner_root / "gateway" / "master"
             owner_pid, master_pid = [int(field.split("=")[1]) for field in result["summary"].split()]
@@ -458,11 +601,40 @@ LogLevel VERBOSE
                     collision = json.loads(cli("throw", "--now", "--allow-dangerous", "--json", operator=True))["results"][0]
                     assert collision["state"] != "succeeded", collision
                     assert alive(master_pid)
+                if mode == 'close':
+                    first_workspace = workspace
+                    workspace = root / 'second-owner-workspace'
+                    second_daemon = spawn([hovel, 'daemon', 'serve', '--workspace', workspace], 'second-owner-hovel',
+                                          extra={'BURROW_OWNER_ROOT': str(second_root)})
+                    try:
+                        wait_for(lambda: (workspace / 'hoveld.sock').exists())
+                        cli('module', 'install', archive)
+                        cli('op', 'create', 'proof')
+                        cli('chain', 'create', 'proof', operator=True)
+                        cli('chain', 'add', 'burrow-transport-prototype@0.0.0', operator=True)
+                        cli('target', 'add', 'ssh://controlled-fixture', operator=True)
+                        second_result, second_session = owned_run()
+                        second_socket = second_root / 'gateway' / 'master'
+                        assert second_socket.exists() and owned_socket.exists()
+                        assert run(ssh + ['-S', second_socket, '-o', 'ProxyCommand=/bin/false', 'target', 'printf separate']).stdout == 'separate'
+                        status, body = rpc('CloseSession', {'SessionID': second_session})
+                        assert status == 200 and not second_socket.exists(), body
+                        assert alive(master_pid) and owned_socket.exists()
+                        print('PASS two actual Hovel workspaces hold gateway concurrently; closing one preserves the other', flush=True)
+                    finally:
+                        second_daemon.terminate()
+                        second_daemon.wait(timeout=5)
+                        workspace = first_workspace
                 for kind in ("L", "R", "D"):
                     local = free_port()
                     spec = f"127.0.0.1:{local}" + ("" if kind == "D" else f":127.0.0.1:{port}")
                     run(owned + ["-O", "forward", "-" + kind, spec, "target"])
                     forwards.append(local)
+                if mode == 'close':
+                    local_terminal_check(owned_socket)
+                    assert run(owned + ['target', 'printf frontend-quit-retained']).stdout == 'frontend-quit-retained'
+                    for local in forwards:
+                        with socket.create_connection(('127.0.0.1', local), timeout=1): pass
                 for i in range(2):
                     client = spawn(owned + ["-tt", "target", "sleep 60"], f"owner-shell-{mode}-{i}")
                     clients.append(client)
@@ -475,6 +647,12 @@ LogLevel VERBOSE
                     return bool(rows) and all(row[0] for row in rows)
                 wait_for(logged)
                 print("PASS daemon-owned master with no required shell; two clients and three tunnels; diagnostics after Run", flush=True)
+                if mode == 'unexpected-eof':
+                    clients[0].terminate()
+                    clients[0].wait(timeout=5)
+                    assert clients[1].poll() is None
+                    assert run(owned + ['target', 'printf sibling-retained']).stdout == 'sibling-retained'
+                    print('PASS unexpected client EOF preserves master, sibling and connection ownership', flush=True)
                 if mode == "bounded-logs":
                     status, body = rpc("WriteSession", {"SessionID": session, "Data": base64.b64encode(b"bounded-logs\n").decode()})
                     assert status == 200, body
@@ -482,7 +660,7 @@ LogLevel VERBOSE
                         count = db.execute("select count(*) from events where run_id = ? and message = 'diagnostic budget exhausted; further milestones suppressed'", (run_id,)).fetchone()[0]
                     assert count == 1, count
                     print("PASS 600 bounded diagnostic attempts warn once without breaking control", flush=True)
-                if mode in ("close", "bounded-logs"):
+                if mode in ("close", "bounded-logs", "unexpected-eof"):
                     status, body = rpc("CloseSession", {"SessionID": session})
                     assert status == 200, body
                     wait_for(lambda: not alive(master_pid))
@@ -501,8 +679,10 @@ LogLevel VERBOSE
                         with socket.socket() as sock: assert sock.connect_ex(("127.0.0.1", local)) != 0
                     print("PASS module SIGKILL: Linux parent-death signal ends master, clients and listeners", flush=True)
                 elif mode == "master-loss":
-                    run(owned + ["-O", "exit", "target"])
+                    local_terminal_check(owned_socket, lose=True)
                     wait_for(lambda: not alive(master_pid))
+                    status, state = rpc('ReadSession', {'SessionID': session, 'TimeoutMs': 50})
+                    assert status == 200 and state.get('Closed'), state
                     run(owned + ["target", "printf forbidden-fallback"], success=False)
                     print("PASS external master loss: no fallback login or automatic reconnect", flush=True)
                 elif mode == "daemon-kill":
@@ -543,6 +723,24 @@ LogLevel VERBOSE
                 if alive(owner_pid): os.kill(owner_pid, signal.SIGKILL)
                 # Only remove this fixture's empty reservation after verified master exit.
                 if owned_socket.parent.exists(): owned_socket.parent.rmdir()
+        # An explicit daemon restart reloads evidence/settings, not SSH resources.
+        daemon = spawn([hovel, 'daemon', 'serve', '--workspace', workspace], 'restarted-owner-hovel')
+        def restarted_ready():
+            assert daemon.poll() is None, (root / 'restarted-owner-hovel.log').read_text()
+            try:
+                return rpc('ListSessions', {})[0] == 200
+            except OSError:
+                return False
+        wait_for(restarted_ready)
+        status, state = rpc('ListSessions', {})
+        assert status == 200 and not state.get('Sessions'), state
+        assert not (owner_root / 'gateway').exists()
+        result, session = owned_run()  # explicit operator throw is the only reconnect
+        socket_after_restart = owner_root / 'gateway' / 'master'
+        assert socket_after_restart.exists()
+        status, body = rpc('CloseSession', {'SessionID': session})
+        assert status == 200 and not socket_after_restart.exists(), body
+        print('PASS daemon restart restores workspace without connections/tunnels; explicit reconnect and close succeed', flush=True)
     finally:
         for process in reversed(processes):
             if process.poll() is None:

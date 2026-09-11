@@ -87,6 +87,12 @@ func main() {
 		}
 		return
 	}
+	if os.Args[1] == "reserve" {
+		path, err := reserveConnection(os.Args[2], os.Args[3])
+		must(err)
+		fmt.Println(path)
+		return
+	}
 	if os.Args[1] == "password-server" {
 		passwordServer(os.Args[2])
 		return

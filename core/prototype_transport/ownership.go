@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sync"
 	"syscall"
@@ -16,14 +17,36 @@ import (
 
 type ownership struct{ connection *ownedConnection }
 
+func reserveConnection(root, name string) (string, error) {
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,23}$`).MatchString(name) {
+		return "", fmt.Errorf("name must be 1-24 ASCII letters/digits, underscore or hyphen, starting with a letter/digit")
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil || !filepath.IsAbs(root) || resolved != root || !info.IsDir() || info.Mode().Perm() != 0700 || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Getuid()) {
+		return "", fmt.Errorf("workspace runtime root must be absolute, owner-only and free of symlinks")
+	}
+	dir := filepath.Join(root, name)
+	if len(filepath.Join(dir, "master")) > 90 {
+		return "", fmt.Errorf("socket path too long for OpenSSH temporary suffix")
+	}
+	if err := os.Mkdir(dir, 0700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
 func (*ownership) Info() hovel.Info {
 	return hovel.Info{Name: "burrow-transport-prototype", Version: "0.0.0", Type: hovel.TypeSurvey, Tags: []string{"dangerous"}, Summary: "Disposable connection ownership proof"}
 }
 func (*ownership) Schema() hovel.Schema { return hovel.Schema{} }
 func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
-	dir := filepath.Join(os.Getenv("BURROW_OWNER_ROOT"), "gateway")
 	// Atomic reservation: even a stale directory refuses; never adopt or erase it.
-	if err := os.Mkdir(dir, 0700); err != nil {
+	dir, err := reserveConnection(os.Getenv("BURROW_OWNER_ROOT"), "gateway")
+	if err != nil {
 		return hovel.Result{}, err
 	}
 	s := &ownedConnection{dir: dir, done: make(chan struct{})}

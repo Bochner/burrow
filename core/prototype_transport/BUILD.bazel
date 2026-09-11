@@ -26,7 +26,7 @@ pkg_tar(
 py_binary(
     name = "check",
     srcs = ["check.py"],
-    args = ["$(location :burrow-transport-prototype)", "$(location :package)", "$(location @hovel_linux_wheel//file)"],
-    data = [":burrow-transport-prototype", ":package", "@hovel_linux_wheel//file"],
+    args = ["$(location :burrow-transport-prototype)", "$(location :package)", "$(location @hovel_linux_wheel//file)", "$(location local_terminal.py)"],
+    data = [":burrow-transport-prototype", ":package", "@hovel_linux_wheel//file", "local_terminal.py"],
     legacy_create_init = 0,
 )
