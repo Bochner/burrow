@@ -32,7 +32,7 @@ observation is also recorded there for the terminal integration test.
 
 ### Retained diagnostics and resource state
 
-The [preserved ownership checkpoint](https://github.com/Bochner/burrow/blob/b69517a/core/prototype_transport/OWNERSHIP.md)
+The [preserved ownership proof](https://github.com/Bochner/burrow/blob/94e46e1/core/prototype_transport/OWNERSHIP.md)
 reproduces a lifetime ceiling in Hovel v0.4.2: exactly 256 SDK module-log events are
 persisted; the next notification ends the RPC reader. Hovel reports the session
 closed while the SSH master and forwarding listeners are still usable. A later
@@ -51,8 +51,12 @@ The same checkpoint verifies module-SIGKILL cleanup using Linux parent-death
 signaling and daemon-SIGKILL cleanup using an explicit SDK-stream-EOF wrapper.
 These are local supervision measures, not additional upstream API requests.
 `aspect burrow-check` passed the preserved SDK/docs and transport/ownership
-observation gates. The full ownership ticket remains open: local terminal handoff
-and the comprehensive naming/workspace/recovery acceptance cases are still pending.
+observation gates. The expanded proof also passes local terminal handoff/resize,
+bounded background output, raw input/restoration, same-name workspace separation,
+stale-socket refusal and explicit reconnect after restart. The ownership ticket
+remains open for review. Arbitrary full-screen redraw is explicitly unproven:
+bounded byte replay is not a VT screen model. The final launcher placement of the
+verified private runtime root also remains an implementation acceptance detail.
 
 The OpenSSH control-proxy refusal and remote-listener defects from the earlier
 transport proof are not Hovel defects. The accepted ordinary OpenSSH subprocess
