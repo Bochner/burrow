@@ -19,9 +19,12 @@ Hovel's extension and development conventions as Hovel evolves.
 
 | Term | Meaning here |
 | --- | --- |
-| Connection | An authenticated SSH transport to a host; may support several shells, transfers, or tunnels. |
+| Connection | An authenticated SSH transport to a host; can exist without an interactive shell and support shells, transfers, or tunnels on demand. |
+| Master socket | The local control endpoint through which operations reuse an established SSH connection. Its existence does not imply an open interactive shell. |
+| Interactive shell | An on-demand terminal channel using a connection; closing it does not close the connection. Initially local to the Burrow frontend, rather than a retained Hovel shell. |
+| Background shell | An interactive shell that keeps running while Burrow displays management or another shell. Backgrounding within Burrow does not imply survival after the frontend exits. |
 | Session | An interactive channel exposed to an operator; distinguish Burrow SSH channels from Hovel's session records. |
-| Detach | Leave an operator frontend or attachment while its daemon and live resources remain available. Normal Burrow quit detaches. |
+| Detach | Leave an operator frontend or attachment while daemon-owned resources remain available. Normal Burrow quit retains connections and tunnels but ends its frontend-local interactive shells. |
 | Close | Explicitly end a live resource, distinct from detaching an operator. Closing a connection ends all its shells, transfers and tunnels and removes its master socket; saved settings and evidence remain. |
 | Tunnel | Local, remote, or dynamic forwarding owned by a connection. Initially, the operator establishes it in Burrow before a Hovel chain can select and use it. |
 | Saved connection | Non-secret connection settings that can recreate a connection; not a live transport. |

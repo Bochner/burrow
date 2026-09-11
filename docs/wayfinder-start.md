@@ -23,8 +23,9 @@ shipping the full rewrite is the subsequent implementation effort.
 - The [transport proof decision](https://github.com/Bochner/burrow/issues/19#issuecomment-5639082720)
   selects ordinary OpenSSH subprocesses over a shared, user-named master, with
   structured Go SFTP over subsystem pipes. It supersedes the initial Go
-  control-proxy preference; [end-to-end Hovel resize](https://github.com/Bochner/burrow/issues/24)
-  remains a separate decision. See the [preserved proof](research/prototype-evidence.md).
+  control-proxy preference. The [terminal resize decision](https://github.com/Bochner/burrow/issues/24)
+  selects on-demand Burrow-local shells through that master initially; Hovel-mediated
+  resize and retained shells follow later. See the [preserved proof](research/prototype-evidence.md).
 - Hovel integration is the top priority, confirmed on 2026-09-11. Resolve its
   supported lifecycle, logging, state ownership, and UI boundaries before
   selecting Charm dependencies or designing standalone behavior. Standalone
@@ -45,7 +46,10 @@ shipping the full rewrite is the subsequent implementation effort.
   existing execution and Mesh contracts where they fit.
 - The [setup and workspace decision](https://github.com/Bochner/burrow/issues/9#issuecomment-5636553707)
   supersedes the initial standalone close-on-exit preference: normal quit detaches
-  and retains the daemon and live resources. The
+  and retains the daemon and daemon-owned resources. The
+  [terminal resize decision](https://github.com/Bochner/burrow/issues/24) makes
+  frontend-local interactive shells an explicit exception: those end on Burrow
+  exit, while the background connection and tunnels remain available. The
   [ownership decision](https://github.com/Bochner/burrow/issues/11) requires
   explicit reconnect after restart or loss; loading saved settings never connects.
 - Initial operator platform: Linux, approved on 2026-09-11.
