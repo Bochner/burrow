@@ -4,6 +4,12 @@ For [Which terminal interaction model fits the agreed boundaries?](https://githu
 The owner approved the connection-first layout, full-screen shells, responsive
 management panes, color plus text status, and truthful progress on 2026-09-11.
 
+The owner accepted this initial look and requested Hovel’s color theme. Dark-mode
+accents, borders, text and status colors follow [Hovel clistyle](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/core/internal/adapters/clistyle/styles.go):
+cyan and magenta with semantic green/yellow/red. Browser background surfaces and
+darker light-mode variants are adaptations; Hovel leaves terminal backgrounds
+to the terminal.
+
 Open `index.html` directly in a browser. It is one self-contained file, requires
 no server or dependencies, and sends no network requests. Use the three guided
 scenarios and the narrow/no-color/light-theme/no-animation controls. Tab and Enter operate buttons;

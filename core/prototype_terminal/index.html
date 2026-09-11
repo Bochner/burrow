@@ -4,8 +4,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Burrow — interaction prototype</title>
 <style>
-  :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #101419; color: #e7ecf2; --surface: #141b24; --raised: #202b38; --hover: #34465c; --border: #536276; --muted: #b5c0cd; --focus: #8ac8ff; --green: #7cdda6; --yellow: #ffd27b; --red: #ff9b9b; }
-  :root.light { color-scheme: light; background: #f4f6f9; color: #182334; --surface: #fff; --raised: #e9eef5; --hover: #d7e4f4; --border: #66768b; --muted: #46566a; --focus: #005ba5; --green: #17613d; --yellow: #775300; --red: #a12626; }
+  :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #0b0d12; color: #e5e7eb; --surface: #101319; --raised: #171b24; --hover: #252b38; --border: #00e5ff; --muted: #9ca3af; --focus: #00e5ff; --accent: #ff2bd6; --green: #22c55e; --yellow: #facc15; --red: #ff0033; }
+  :root.light { color-scheme: light; background: #f4f6f9; color: #182334; --surface: #fff; --raised: #e9eef5; --hover: #d7e4f4; --border: #007889; --muted: #46566a; --focus: #007889; --accent: #a60087; --green: #17613d; --yellow: #775300; --red: #a12626; }
+  /* Hovel clistyle palette at c461ba282a8aecc7aa3a079a4613bf5e2640c388; browser surfaces and light variants are adaptations. */
+  h1, .bar > strong { color: var(--accent); }
+  h2, summary { color: var(--focus); }
+  button[aria-pressed="true"] { border-color: var(--accent); }
   * { box-sizing: border-box; }
   body { max-width: 1200px; margin: auto; padding: 24px; }
   h1 { font-size: 25px; margin-bottom: 0; } h2 { font-size: 16px; }
