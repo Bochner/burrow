@@ -45,8 +45,9 @@ shipping the full rewrite is the subsequent implementation effort.
   existing execution and Mesh contracts where they fit.
 - The [setup and workspace decision](https://github.com/Bochner/burrow/issues/9#issuecomment-5636553707)
   supersedes the initial standalone close-on-exit preference: normal quit detaches
-  and retains the daemon and live resources. Daemon restart recovery remains a
-  separate decision, not an implied consequence of UI detach.
+  and retains the daemon and live resources. The
+  [ownership decision](https://github.com/Bochner/burrow/issues/11) requires
+  explicit reconnect after restart or loss; loading saved settings never connects.
 - Initial operator platform: Linux, approved on 2026-09-11.
 - Private repository under Bochner.
 - Homelab management and authorized penetration-testing engagements.
