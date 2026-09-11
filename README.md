@@ -22,7 +22,7 @@ The documentation uses the same Astro GitHub Pages book format as Hovel.
 
 ## [bochner.github.io/burrow](https://bochner.github.io/burrow/index.html)
 
-The URL above is the intended deployment address; Pages is not enabled yet.
+GitHub Pages publishes the documentation after successful checks on main.
 Start with the [User Guide](docs/site/src/content/spec/user-guide.html) for current
 scope and status, then [Hovel Integration](docs/site/src/content/spec/hovel-integration.html).
 Contributors should read the [Development Guide](docs/site/src/content/spec/development-guide.html).
