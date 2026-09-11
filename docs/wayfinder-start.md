@@ -20,6 +20,11 @@ shipping the full rewrite is the subsequent implementation effort.
 
 ## Standing preferences from the owner
 
+- The [transport proof decision](https://github.com/Bochner/burrow/issues/19#issuecomment-5639082720)
+  selects ordinary OpenSSH subprocesses over a shared, user-named master, with
+  structured Go SFTP over subsystem pipes. It supersedes the initial Go
+  control-proxy preference; [end-to-end Hovel resize](https://github.com/Bochner/burrow/issues/24)
+  remains a separate decision. See the [preserved proof](research/prototype-evidence.md).
 - Hovel integration is the top priority, confirmed on 2026-09-11. Resolve its
   supported lifecycle, logging, state ownership, and UI boundaries before
   selecting Charm dependencies or designing standalone behavior. Standalone
