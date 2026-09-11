@@ -11,6 +11,8 @@
 node_modules/
 /docs/site/dist/
 /docs/site/.astro/
+__pycache__/
+*.pyc
 .DS_Store
 
 # Runtime state and credentials never belong in source control.

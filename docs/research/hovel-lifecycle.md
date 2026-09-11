@@ -4,6 +4,11 @@ Research baseline: 2026-09-11, Hovel `c461ba282a8aecc7aa3a079a4613bf5e2640c388`.
 The GitHub API reported the same `main` head during this investigation. This is
 source research for [Which Hovel lifecycle and terminal contracts can Burrow rely on?](https://github.com/Bochner/burrow/issues/3), not a live integration proof or a UI decision.
 
+Subsequent evidence: the [terminal and setup proofs](prototype-evidence.md)
+demonstrated local frontend placement and inert detach/reattach behavior. The
+alternatives below are historical research; the linked decisions record the
+selected direction, and the proofs retain their untested boundaries.
+
 ## Findings
 
 **Hovel supports a module-owned session surviving operator detach. Its current
