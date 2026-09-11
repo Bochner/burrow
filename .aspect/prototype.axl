@@ -1,0 +1,22 @@
+def _impl(ctx: TaskContext) -> int:
+    root = ctx.std.env.aspect_root_dir()
+    commands = {
+        "check": ["test", "//core/prototype_sdk:protocol_test"],
+        "package": ["build", "//core/prototype_sdk:package"],
+        "integration": ["run", "//core/prototype_sdk:integration", "--"] + ctx.args.hovel,
+    }
+    mode = ctx.args.mode[0]
+    if mode not in commands:
+        print("expected check, package, or integration")
+        return 2
+    status = ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait()
+    return status.code or 0
+
+burrow_prototype = task(
+    args = {
+        "mode": args.positional(default = ["check"], minimum = 0, maximum = 1),
+        "hovel": args.trailing_var_args(description = "For integration: absolute path to the pinned Hovel executable."),
+    },
+    summary = "Check the disposable external SDK proof.",
+    implementation = _impl,
+)

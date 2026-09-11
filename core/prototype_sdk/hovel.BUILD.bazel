@@ -1,0 +1,14 @@
+# BUILD overlay only; upstream Go sources remain unchanged at c461ba282a8a.
+load("@rules_go//go:def.bzl", "go_library")
+exports_files(["LICENSE"])
+go_library(
+    name = "hovel",
+    srcs = glob(["sdk/go/hovel/*.go"], exclude = ["sdk/go/hovel/*_test.go"]),
+    importpath = "github.com/vibepwners/hovel/sdk/go/hovel",
+    visibility = ["//visibility:public"],
+    deps = select({
+        "@rules_go//go/platform:linux": ["@org_golang_x_sys//unix"],
+        "@rules_go//go/platform:android": ["@org_golang_x_sys//unix"],
+        "//conditions:default": [],
+    }),
+)

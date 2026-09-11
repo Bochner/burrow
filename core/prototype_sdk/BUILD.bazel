@@ -1,0 +1,35 @@
+load("@rules_go//go:def.bzl", "go_binary")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_test", "py_binary")
+
+go_binary(
+    name = "burrow-sdk-prototype",
+    srcs = ["main.go"],
+    deps = ["@hovel_sdk//:hovel"],
+)
+
+exports_files(["hovel.BUILD.bazel", "go.mod", "go.sum"])
+
+pkg_tar(
+    name = "package",
+    srcs = [":burrow-sdk-prototype", "hovel-module.yaml", "@hovel_sdk//:LICENSE"],
+    extension = "tgz",
+    mode = "0755",
+)
+
+py_test(
+    name = "protocol_test",
+    srcs = ["protocol_test.py"],
+    args = ["$(location :burrow-sdk-prototype)"],
+    data = [":burrow-sdk-prototype"],
+    size = "small",
+    legacy_create_init = 0,
+)
+
+py_binary(
+    name = "integration",
+    srcs = ["integration.py"],
+    args = ["$(location :package)"],
+    data = [":package"],
+    legacy_create_init = 0,
+)
