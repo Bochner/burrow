@@ -2,7 +2,7 @@
 def _impl(ctx: TaskContext) -> int:
     commands = {
         "build": ["build", "//docs/site:astro_site"],
-        "check": ["test", "//docs/tools/docs:site_test"],
+        "check": ["test", "//docs/tools/docs:site_test", "//docs/tools/docs:stage_site_test"],
         "stage": ["run", "//docs/tools/docs:stage_site"],
     }
     mode = ctx.args.mode[0]
