@@ -25,8 +25,11 @@ shipping the full rewrite is the subsequent implementation effort.
   selecting Charm dependencies or designing standalone behavior. Standalone
   SSH management should feel standalone to the operator; the owner clarified
   that transparently installing and managing Hovel is acceptable. Prefer one
-  daemon-backed design over separate runtime/build variants. Setup and workspace
-  defaults remain a decision for this map.
+  daemon-backed design over separate runtime/build variants. The owner subsequently
+  limited initial support to Burrow-started, pinned Hovel instances; general
+  existing local/remote daemon attachment is deferred. See the
+  [setup feasibility decision](https://github.com/Bochner/burrow/issues/18) and
+  [proposed upstream compatibility convention](research/hovel-daemon-compatibility-handoff.md).
 - Initial authentication/configuration baseline: passwords, encrypted keys,
   SSH agents, host-key verification, SSH config aliases, and jump hosts.
   Inspect Hovel for additional supported capabilities before deciding whether
