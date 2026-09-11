@@ -23,7 +23,7 @@ Hovel's extension and development conventions as Hovel evolves.
 | Session | An interactive channel exposed to an operator; distinguish Burrow SSH channels from Hovel's session records. |
 | Detach | Leave an operator frontend or attachment while its daemon and live resources remain available. Normal Burrow quit detaches. |
 | Close | Explicitly end a live resource, distinct from detaching an operator. Closing a connection ends all its shells, transfers and tunnels and removes its master socket; saved settings and evidence remain. |
-| Tunnel | Local, remote, or dynamic forwarding owned by a connection. |
+| Tunnel | Local, remote, or dynamic forwarding owned by a connection. Initially, the operator establishes it in Burrow before a Hovel chain can select and use it. |
 | Saved connection | Non-secret connection settings that can recreate a connection; not a live transport. |
 | Hovel module | A separately launched program packaged for Hovel and speaking its module protocol through the SDK. |
 | LazySSH plugin | Existing Python/shell automation consuming LazySSH environment variables and OpenSSH control sockets; not a Hovel module. |
