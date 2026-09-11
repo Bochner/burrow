@@ -21,6 +21,8 @@ Hovel's extension and development conventions as Hovel evolves.
 | --- | --- |
 | Connection | An authenticated SSH transport to a host; may support several shells, transfers, or tunnels. |
 | Session | An interactive channel exposed to an operator; distinguish Burrow SSH channels from Hovel's session records. |
+| Detach | Leave an operator frontend or attachment while its daemon and live resources remain available. Normal Burrow quit detaches. |
+| Close | Explicitly end a live resource, distinct from detaching an operator. |
 | Tunnel | Local, remote, or dynamic forwarding owned by a connection. |
 | Saved connection | Non-secret connection settings that can recreate a connection; not a live transport. |
 | Hovel module | A separately launched program packaged for Hovel and speaking its module protocol through the SDK. |

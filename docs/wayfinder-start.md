@@ -35,9 +35,10 @@ shipping the full rewrite is the subsequent implementation effort.
   scripting as three separate questions: remote script execution, local scripts
   invoking Hovel operations, and local tools using SSH tunnels. Prefer Hovel's
   existing execution and Mesh contracts where they fit.
-- Lifetime preference: explicit detach versus close in Hovel mode; standalone
-  initially closes its resources on exit. Recovery across Hovel daemon restart
-  remains a separate decision, not an implied consequence of UI detach.
+- The [setup and workspace decision](https://github.com/Bochner/burrow/issues/9#issuecomment-5636553707)
+  supersedes the initial standalone close-on-exit preference: normal quit detaches
+  and retains the daemon and live resources. Daemon restart recovery remains a
+  separate decision, not an implied consequence of UI detach.
 - Initial operator platform: Linux, approved on 2026-09-11.
 - Private repository under Bochner.
 - Homelab management and authorized penetration-testing engagements.
