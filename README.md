@@ -1,5 +1,7 @@
 # Burrow
 
+![Burrow: a warm underground terminal hideaway surrounded by cyan and magenta circuitry.](docs/assets/burrow.png)
+
 A planned Hovel-native SSH manager in Go: LazySSH's workflows, a modern Charm
 terminal interface, and room for SMB and WinRM later.
 
