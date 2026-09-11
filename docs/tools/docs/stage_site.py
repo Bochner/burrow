@@ -29,6 +29,10 @@ destination = workspace / "_site"
 if destination.is_symlink():
     raise SystemExit("Refusing to stage through a symlink at _site")
 if destination.exists():
+    # copytree preserves Bazel's read-only directory modes; unlink needs write access.
+    for root, _, _ in os.walk(destination, followlinks=False):
+        directory = Path(root)
+        directory.chmod(directory.stat().st_mode | 0o200)
     shutil.rmtree(destination)
 shutil.copytree(source, destination, ignore=shutil.ignore_patterns(".astro-cache"))
 print(f"Documentation staged at {destination}")

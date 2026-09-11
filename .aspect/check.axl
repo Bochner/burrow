@@ -1,6 +1,6 @@
 def _impl(ctx: TaskContext) -> int:
     root = ctx.std.env.aspect_root_dir()
-    for command in [["build", "//:research"], ["test", "//docs/tools/docs:site_test"]]:
+    for command in [["build", "//:research"], ["test", "//docs/tools/docs:site_test", "//docs/tools/docs:stage_site_test"]]:
         status = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait()
         if status.code:
             return status.code

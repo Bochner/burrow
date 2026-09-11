@@ -3,6 +3,15 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_test(
+    name = "stage_site_test",
+    size = "small",
+    legacy_create_init = 0,
+    srcs = ["stage_site_test.py"],
+    args = ["$(rootpath stage_site.py)"],
+    data = ["stage_site.py"],
+)
+
+py_test(
     name = "site_test",
     size = "small",
     legacy_create_init = 0,
