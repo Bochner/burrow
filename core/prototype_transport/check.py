@@ -3,11 +3,13 @@ import base64
 import hashlib
 import fcntl
 import http.client
+import http.server
 import json
 import os
 from pathlib import Path
 import pwd
 import pty
+import re
 import select
 import struct
 import signal
@@ -447,6 +449,7 @@ LogLevel VERBOSE
         print('PASS workspace-local same names, invalid names/permissions/symlinks and stale socket refusal without deletion', flush=True)
         env.update(BURROW_OWNER_ROOT=str(owner_root), BURROW_OWNER_CONFIG=str(ssh_config))
         workspace = root / "owner-workspace"
+        env['BURROW_PROOF_DAEMON'] = str(workspace / 'hoveld.sock')
         daemon = spawn([hovel, "daemon", "serve", "--workspace", workspace], "owner-hovel")
         wait_for(lambda: (workspace / "hoveld.sock").exists())
         cli("module", "install", archive)
@@ -611,6 +614,38 @@ LogLevel VERBOSE
                     assert collision["state"] != "succeeded", collision
                     assert alive(master_pid)
                 if mode == 'close':
+                    # Public Mesh discovery dispatches to a fresh module, not
+                    # the retained connection owner. Preserve this boundary
+                    # before designing any cross-process inventory binding.
+                    for _ in range(2):
+                        status, body = rpc('ListMeshListeners', {
+                            'moduleId': 'burrow-transport-prototype@0.0.0', 'request': {}})
+                        assert status != 200, body
+                        match = re.search(r'mesh-dispatch-proof: pid=(\d+) has no retained connection', str(body))
+                        assert match and int(match[1]) != owner_pid, body
+                        assert alive(owner_pid) and alive(master_pid)
+                        assert run(owned + ['target', 'printf mesh-owner-alive']).stdout == 'mesh-owner-alive'
+                    print('OBSERVED public Mesh discovery uses fresh processes with no retained owner; existing master remains live', flush=True)
+                    status, body = rpc('ListSessionCommands', {'SessionID': session, 'Request': {}})
+                    assert status == 200 and body['commands'][0]['name'] == 'connection-status', body
+                    for _ in range(2):
+                        status, body = rpc('RunSessionCommand', {'SessionID': session, 'Request': {'command': 'connection-status'}})
+                        assert status == 200 and body['fields']['ownerPID'] == str(owner_pid), body
+                    status, body = rpc('RunSessionCommand', {'SessionID': session, 'Request': {'command': 'connect'}})
+                    assert status != 200, body
+                    print('PASS public session commands reach the live owner without an installed payload or reconnect', flush=True)
+                    cli('chain', 'config', 'set', 'proof_action', 'connection-status', operator=True)
+                    for selected in (session, session, 'missing-session'):
+                        cli('chain', 'config', 'set', 'proof_session', selected, operator=True)
+                        selected_result = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+                        if selected == session:
+                            assert selected_result['state'] == 'succeeded', selected_result
+                            assert selected_result['summary'] == f'selected owner={owner_pid}', selected_result
+                        else:
+                            assert selected_result['state'] == 'failed', selected_result
+                        assert alive(owner_pid) and alive(master_pid)
+                    cli('chain', 'config', 'set', 'proof_action', 'connect', operator=True)
+                    print('PASS confirmed chain selects existing owner twice; missing selection fails without recreating master', flush=True)
                     first_workspace = workspace
                     workspace = root / 'second-owner-workspace'
                     second_daemon = spawn([hovel, 'daemon', 'serve', '--workspace', workspace], 'second-owner-hovel',
@@ -720,6 +755,10 @@ LogLevel VERBOSE
                 if mode in ("close", "bounded-logs", "unexpected-eof"):
                     status, body = rpc("CloseSession", {"SessionID": session})
                     assert status == 200, body
+                    if mode == 'close':
+                        status, body = rpc('RunSessionCommand', {'SessionID': session, 'Request': {'command': 'connection-status'}})
+                        assert status != 200, body
+                        print('PASS closed owner selection fails through public session command', flush=True)
                     wait_for(lambda: not alive(master_pid))
                     for client in clients: client.wait(timeout=5)
                     for local in forwards:
@@ -808,6 +847,140 @@ LogLevel VERBOSE
         status, body = rpc('CloseSession', {'SessionID': session})
         assert status == 200 and not socket_after_restart.exists(), body
         print('PASS daemon restart restores workspace without connections/tunnels; explicit reconnect and close succeed', flush=True)
+
+        # Workaround proof: one retained owner is the only live tunnel inventory.
+        requests = []
+        class EchoHTTP(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                nonce = self.path.removeprefix('/')
+                assert re.fullmatch('[a-f0-9]{16}', nonce)
+                requests.append(nonce)
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(nonce.encode())
+            def log_message(self, *_): pass
+        http_fixture = http.server.ThreadingHTTPServer(('127.0.0.1', 0), EchoHTTP)
+        http_thread = threading.Thread(target=http_fixture.serve_forever, daemon=True)
+        http_thread.start()
+        destination_port = http_fixture.server_port
+
+        def tunnel_owner(specs, success=True):
+            cli('chain', 'config', 'set', 'proof_action', 'tunnel-connect', operator=True)
+            cli('chain', 'config', 'set', 'proof_tunnels', json.dumps(specs), operator=True)
+            result = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+            assert (result['state'] == 'succeeded') == success, result
+            return result['sessions'][0]['id'] if success else None
+
+        def tunnel_inventory(session):
+            status, result = rpc('RunSessionCommand', {'SessionID': session, 'Request': {'command': 'tunnel-list'}})
+            assert status == 200, result
+            return json.loads(result['stdout'])
+
+        def tunnel_chain(session, tunnel, success=True):
+            nonce = os.urandom(8).hex()
+            for key, value in {'proof_action': 'tunnel-probe', 'proof_session': session,
+                               'proof_tunnel': tunnel, 'proof_nonce': nonce}.items():
+                cli('chain', 'config', 'set', key, value, operator=True)
+            result = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+            assert (result['state'] == 'succeeded') == success, result
+            if success:
+                with sqlite3.connect(workspace / 'workspace.db') as db:
+                    artifact = db.execute('select path from artifacts where run_id = ?', (result['runId'],)).fetchone()[0]
+                report = json.loads((workspace / artifact).read_text())
+                assert report['stdout'] == nonce and report['fields']['id'] == tunnel, report
+                assert report['fields']['connection'] == 'gateway', report
+                assert nonce in requests
+            else:
+                assert nonce not in requests
+
+        specs = [{'direction': kind, 'bind': f'{bind}:{free_port()}',
+                  'destination': f'{host}:{destination_port}'}
+                 for kind, bind, host in [('L', '', '127.0.0.1'), ('R', '127.0.0.1', '127.0.0.1'), ('D', '127.0.0.2', 'localhost')]]
+        try:
+            session = tunnel_owner(specs)
+            inventory = tunnel_inventory(session)
+            assert len(inventory) == 3
+            by_kind = {t['direction']: t for t in inventory.values()}
+            assert by_kind['L']['bind'].startswith('127.0.0.1:')
+            assert by_kind['D']['bind'].startswith('127.0.0.2:')
+            assert by_kind['R']['effectiveBind'] == '127.0.0.1'
+            assert by_kind['D']['probeDestination'].startswith('localhost:')
+            assert by_kind['D']['mode'] == 'socks5' and by_kind['D']['destination'] == ''
+            for selected in inventory:
+                tunnel_chain(session, selected)
+                tunnel_chain(session, selected)
+            print('PASS current Hovel confirmed chains consume existing local, remote-origin reverse and SOCKS hostname tunnels twice; owner-only inventory and explicit binds', flush=True)
+
+            # Separate requests model simultaneous consumers and frontend detach.
+            results = []
+            def consumer():
+                results.append(rpc('RunSessionCommand', {'SessionID': session, 'Request': {
+                    'command': 'tunnel-probe', 'args': [by_kind['L']['id'], os.urandom(8).hex()]}}))
+            consumers = [threading.Thread(target=consumer) for _ in range(2)]
+            for consumer in consumers: consumer.start()
+            for consumer in consumers: consumer.join(timeout=8)
+            assert len(results) == 2 and all(status == 200 for status, _ in results), results
+            assert tunnel_inventory(session) == inventory
+            tunnel_chain(session, 'missing-tunnel', success=False)
+            status, body = rpc('RunSessionCommand', {'SessionID': session, 'Request': {'command': 'tunnel-probe', 'args': [by_kind['L']['id'], 'invalid;command']}})
+            assert status != 200, body
+
+            stale_id = by_kind['L']['id']
+            status, body = rpc('WriteSession', {'SessionID': session, 'Data': base64.b64encode(('tunnel-close '+stale_id+'\n').encode()).decode()})
+            assert status == 200, body
+            assert stale_id not in tunnel_inventory(session)
+            tunnel_chain(session, stale_id, success=False)
+            tunnel_chain(session, by_kind['D']['id'])
+            print('PASS concurrent consumers and detach retain tunnels; explicit tunnel close invalidates selection and preserves sibling', flush=True)
+
+            status, body = rpc('CloseSession', {'SessionID': session})
+            assert status == 200, body
+            tunnel_chain(session, by_kind['D']['id'], success=False)
+            # Reuse the same bind ports deliberately: old session/tunnel IDs stay stale.
+            replacement = tunnel_owner(specs)
+            current = tunnel_inventory(replacement)
+            assert not set(current).intersection(inventory)
+            tunnel_chain(replacement, stale_id, success=False)
+            selected = next(iter(current))
+            tunnel_chain(replacement, selected)
+            run(ssh + ['-S', owner_root / 'gateway' / 'master', '-O', 'exit', 'target'])
+            tunnel_chain(replacement, selected, success=False)
+            rpc('CloseSession', {'SessionID': replacement})
+            assert not (owner_root / 'gateway' / 'master').exists()
+            print('PASS close/recreate on same ports and master loss refuse stale identities without fallback or reconnect', flush=True)
+
+            # Server policies must be observed, not inferred from accepted -R.
+            original_config = ssh_config.read_text()
+            for policy, bind, accepted in [('no', '0.0.0.0', False), ('yes', '127.0.0.1', False),
+                                            ('clientspecified', '127.0.0.2', True)]:
+                policy_port = free_port()
+                policy_server = spawn(['/usr/sbin/sshd', '-D', '-e', '-f', config,
+                                       '-p', policy_port, '-o', 'GatewayPorts='+policy], 'gatewayports-'+policy)
+                try:
+                    def policy_ready():
+                        assert policy_server.poll() is None
+                        with socket.socket() as sock: return sock.connect_ex(('127.0.0.1', policy_port)) == 0
+                    wait_for(policy_ready)
+                    with known.open('a') as trust:
+                        trust.write(f'[127.0.0.1]:{policy_port} {hostkey[0]} {hostkey[1]}\n')
+                    ssh_config.write_text(original_config.replace(f'  Port {port}\n', f'  Port {policy_port}\n'))
+                    remote_port = free_port()
+                    remote = [{'direction': 'R', 'bind': f'{bind}:{remote_port}', 'destination': f'127.0.0.1:{destination_port}'}]
+                    policy_session = tunnel_owner(remote, success=accepted)
+                    if accepted:
+                        tunnel_chain(policy_session, next(iter(tunnel_inventory(policy_session))))
+                        assert rpc('CloseSession', {'SessionID': policy_session})[0] == 200
+                    assert not (owner_root / 'gateway' / 'master').exists()
+                    with socket.socket() as sock: assert sock.connect_ex(('127.0.0.1', remote_port)) != 0
+                finally:
+                    ssh_config.write_text(original_config)
+                    policy_server.terminate()
+                    policy_server.wait(timeout=5)
+            print('PASS reverse GatewayPorts no/yes mismatches refuse and clean up; clientspecified honors explicit bind and carries chain traffic', flush=True)
+        finally:
+            http_fixture.shutdown()
+            http_fixture.server_close()
+            http_thread.join(timeout=3)
     finally:
         for process in reversed(processes):
             if process.poll() is None:
