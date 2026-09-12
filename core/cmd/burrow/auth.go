@@ -60,7 +60,45 @@ func (a *authenticate) Run() error {
 		args = append(args, "--yes")
 	}
 	a.result, e = connection.ExecutePrompt(ctx, a.workspace, args, func(ctx context.Context, p connection.Prompt) ([]byte, error) { return readPrompt(ctx, tty, p) })
-	return e
+	if e != nil {
+		return e
+	}
+	state, ok := a.result.(connection.State)
+	if !ok || state.State != "connected" {
+		return nil
+	}
+	offer, err := connection.SaveOffer(ctx, a.workspace, state.Name)
+	if err != nil {
+		fmt.Fprintln(tty, "Connection active; saved collection unavailable. Use profile save NAME after fixing it.")
+		return nil
+	}
+	if !offer {
+		return nil
+	}
+	list, err := connection.Profiles(ctx, a.workspace)
+	if err != nil {
+		fmt.Fprintln(tty, "Connection active; collection unavailable for saving.")
+		return nil
+	}
+	f := saveProfileForm(state.Name, list.Path)
+	if err = run(f); err != nil {
+		return nil
+	} // Skipping save never cancels a successful connection.
+	saveArgs := []string{"profile", "save", state.Name, "--as", f.GetString("name"), "--collection", list.Path, "--revision", list.Revision}
+	result, err := connection.Execute(ctx, a.workspace, saveArgs)
+	if err == nil {
+		if review, ok := result.(map[string]string); ok && review["review"] != "" {
+			confirm := confirmForm("Replace saved profile?", safe(review["review"]), "Save", "Cancel")
+			if run(confirm) != nil || !confirm.GetBool("approved") {
+				return nil
+			}
+			_, err = connection.Execute(ctx, a.workspace, append(saveArgs, "--yes", "--revision", review["revision"], "--collection", review["collection"]))
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(tty, "Connection active; settings not saved: "+safe(err.Error()))
+	}
+	return nil
 }
 func runCLIForm(ctx context.Context, tty *os.File, f *huh.Form) error {
 	// Establish no-echo before Huh can render its first prompt, including an

@@ -36,7 +36,7 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                 assert secret.encode() not in data, "secret persisted in workspace"
                 assert b"BEGIN OPENSSH PRIVATE KEY" not in data, "private key persisted in workspace"
 
-    def terminal(args, answers, success=True, size=(30, 120), terminal_env=None, redirect=False):
+    def terminal(args, answers, success=True, size=(30, 120), terminal_env=None, redirect=False, save=False):
         outer, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", *size, 0, 0))
         before = termios.tcgetattr(slave)
@@ -58,6 +58,8 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
         try:
             offset = 0
             previous = None
+            if success:
+                answers = [*answers, ("Save profile as", b"\r" if save else b"\x1b")]
             for needle, answer in answers:
                 deadline = time.monotonic() + 20
                 while True:
@@ -119,8 +121,10 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
             assert not (workspace / "burrow" / name).exists()
     finally:
         trust_file.write_bytes(saved_trust)
-    terminal(["connect", "password", *base], [("SSH password", secret.encode()+b"\r")],redirect=True)
+    terminal(["connect", "password", *base], [("SSH password", secret.encode()+b"\r")],redirect=True,save=True)
     assert burrow(workspace, "inspect", "password")["state"] == "connected"
+    assert burrow(workspace, "profile", "select", "password")["host"] == "127.0.0.1"
+    no_leaks()
     burrow(workspace, "close", "password", "--yes")
     terminal(["connect", "passphrase", *base, "--key", encrypted], [("SSH key passphrase", secret.encode()+b"\r")])
     assert burrow(workspace, "inspect", "passphrase")["state"] == "connected"

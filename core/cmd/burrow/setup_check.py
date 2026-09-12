@@ -381,6 +381,11 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\x03")
             read_until(b"Quit Burrow?")
             os.write(master, b"\t\r")
+            # Keep consuming terminal repaint bytes while the renderer shuts down.
+            deadline = time.monotonic() + 5
+            while terminal.poll() is None and time.monotonic() < deadline:
+                if select.select([master], [], [], .1)[0]:
+                    output.extend(os.read(master, 65536))
             assert terminal.wait(timeout=5) == 0
             assert terminal.stdout.read() == b"", "TUI leaked into captured stdout"
             assert termios.tcgetattr(slave) == before

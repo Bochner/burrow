@@ -4,17 +4,17 @@ def _impl(ctx: TaskContext) -> int:
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/terminal/host_linux.go", root + "/core/terminal/host_test.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
-        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/cmd/burrow/terminal.go", root + "/core/cmd/burrow/auth.go", root + "/core/cmd/burrow/forms.go"]).current_dir(root).spawn().wait()
+        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/cmd/burrow/terminal.go", root + "/core/cmd/burrow/auth.go", root + "/core/cmd/burrow/forms.go", root + "/core/cmd/burrow/profile_ui.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
-        for paths in [["core/launch/files_linux.go", "core/launch/package.go", "core/launch/online_test.go", "core/launch/daemon_linux.go", "core/launch/operations_linux.go"], ["core/connection/connection_linux.go", "core/connection/commands.go", "core/connection/prompt_linux.go", "core/connection/ssh_config.go"], ["core/cmd/burrow/main.go", "core/cmd/burrow/tui.go", "core/cmd/burrow/screen_check.go", "core/cmd/burrow/frame.go", "core/cmd/burrow/frame_test.go", "core/cmd/burrow/theme.go", "core/cmd/burrow/demo.go", "core/cmd/burrow/presentation_test.go"]]:
+        for paths in [["core/launch/files_linux.go", "core/launch/package.go", "core/launch/online_test.go", "core/launch/daemon_linux.go", "core/launch/operations_linux.go"], ["core/connection/connection_linux.go", "core/connection/commands.go", "core/connection/profiles.go", "core/connection/prompt_linux.go", "core/connection/ssh_config.go"], ["core/cmd/burrow/main.go", "core/cmd/burrow/tui.go", "core/cmd/burrow/screen_check.go", "core/cmd/burrow/frame.go", "core/cmd/burrow/frame_test.go", "core/cmd/burrow/theme.go", "core/cmd/burrow/demo.go", "core/cmd/burrow/presentation_test.go"]]:
             status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt"] + [root + "/" + p for p in paths]).current_dir(root).spawn().wait()
             if status.code:
                 return status.code
         return 0
     commands = {
         "run": ["run", "//core/cmd/burrow:burrow", "--"] + ctx.args.options,
-        "check": ["test", "//core/cmd/burrow:setup_test", "//core/cmd/burrow:connection_test", "//core/cmd/burrow:interaction_test", "//core/launch:online_test", "//core/terminal:host_test", "//core/cmd/burrow:terminal_test"],
+        "check": ["test", "//core/cmd/burrow:setup_test", "//core/cmd/burrow:connection_test", "//core/cmd/burrow:profile_test", "//core/cmd/burrow:interaction_test", "//core/launch:online_test", "//core/terminal:host_test", "//core/cmd/burrow:terminal_test"],
         "ssh-check": ["test", "//core/cmd/burrow:connection_lab"],
         "ssh-smoke": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--smoke"],
         "package": ["build", "//core/cmd/burrow:package"],

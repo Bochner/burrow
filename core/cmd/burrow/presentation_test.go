@@ -540,3 +540,77 @@ func TestTableAndMetadataRoles(t *testing.T) {
 		t.Fatal("NO_COLOR leaked styles")
 	}
 }
+
+func TestSavedProfilesPresentation(t *testing.T) {
+	for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		for _, plain := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/profile-view"}, plain, launch.Options{})
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			prefix := fmt.Sprintf("%dx%d-profiles-%t", size[0], size[1], plain)
+			capturePresentation(t, m, prefix+"-empty")
+			list := connection.Collection{Path: "/tmp/homelab.json", Revision: strings.Repeat("a", 64), Profiles: []connection.Profile{{Name: "nas", Host: "192.168.1.20", User: "alice", Port: 2222, Key: "/home/alice/.ssh/key", Jump: "bastion"}, {Name: "router", Host: "192.168.1.1", User: "admin", Port: 22}}}
+			m.updateManagement(m.active, profilesReady{collection: list})
+			capturePresentation(t, m, prefix+"-populated")
+			if !strings.Contains(ansi.Strip(m.View().Content), "SAVED CONNECTIONS") {
+				t.Fatal("missing saved table")
+			}
+			// Actual row layers and selection retain field alignment and never run I/O.
+			m.activate("profile:0")
+			if m.current().management.selectedProfile != "nas" {
+				t.Fatal("row did not select")
+			}
+			screen := capturePresentation(t, m, prefix+"-selected")
+			assertSelected(t, m, screen, "profile:0", !plain)
+			if !strings.Contains(ansi.Strip(m.View().Content), "›") {
+				t.Fatal("selection marker missing")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			capturePresentation(t, m, prefix+"-actions")
+			if m.modal != "profile-menu" {
+				t.Fatal("saved actions unavailable")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			if got := m.current().management.input.Value(); got != "profile connect nas" {
+				t.Fatalf("action did not prepare explicit connect: %q", got)
+			}
+			m.current().management.input.Reset()
+			frameEvent(m, tea.PasteMsg{Content: "profile connect rou"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+			if got := m.current().management.input.Value(); got != "profile connect router" {
+				t.Fatalf("profile completion: %q", got)
+			}
+			m.setForm("profile-save", "Connected · save for a future session?", saveProfileForm("nas", "/tmp/homelab.json"))
+			capturePresentation(t, m, prefix+"-save")
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			if m.modal != "" {
+				t.Fatal("skip save did not return to management")
+			}
+			if plain && strings.Contains(m.View().Content, "\x1b") {
+				t.Fatal("NO_COLOR leaked escapes")
+			}
+		}
+	}
+}
+
+func TestSaveOfferWaitsForWorkspaceAndDialog(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/first"}, true, launch.Options{})
+	first := m.active
+	m.workspaces["/tmp/second"] = &workspaceView{management: newUI(launch.Info{Workspace: "/tmp/second"}, true)}
+	m.active = "/tmp/second"
+	message := m.dispatch(first, func() tea.Msg {
+		return saveOffered{name: "nas", offer: true, collection: connection.Collection{Path: "/tmp/homelab.json"}}
+	})()
+	m.Update(message)
+	if m.modal != "" || len(m.workspaces[first].saveOffers) != 1 {
+		t.Fatal("save offer lost or shown in wrong workspace")
+	}
+	m.active, m.modal = first, "menu"
+	if m.showSaveOffer() != nil || len(m.current().saveOffers) != 1 {
+		t.Fatal("save offer interrupted another dialog")
+	}
+	m.modal = ""
+	m.showSaveOffer()
+	if m.modal != "profile-save" || m.saveName != "nas" || len(m.current().saveOffers) != 0 {
+		t.Fatal("pending save offer was not presented")
+	}
+}

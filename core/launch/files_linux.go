@@ -147,3 +147,58 @@ func absent(path string) error {
 	}
 	return refuse(path, "unknown existing reservation")
 }
+
+// Settings serializes reads/replacements in a verified directory. A nil result
+// leaves the file untouched. Missing files are passed as nil; no links followed.
+func Settings(ctx context.Context, path string, edit func([]byte) ([]byte, error)) error {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return fmt.Errorf("collection path must be absolute and canonical")
+	}
+	dir, e := directory(filepath.Dir(path), false, false)
+	if e != nil {
+		return e
+	}
+	defer dir.Close()
+	if e = lock(ctx, dir); e != nil {
+		return e
+	}
+	old, e := regular(path, 0600, 1<<20)
+	if e != nil && !os.IsNotExist(e) {
+		return e
+	}
+	if os.IsNotExist(e) {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			return fmt.Errorf("refused existing collection entry")
+		}
+	}
+	data, e := edit(old)
+	if e != nil || data == nil {
+		return e
+	}
+	if len(data) > 1<<20 {
+		return fmt.Errorf("collection exceeds 1 MiB")
+	}
+	f, e := os.CreateTemp(dir.Name(), ".burrow-settings-*")
+	if e != nil {
+		return e
+	}
+	defer os.Remove(f.Name())
+	_, e = f.Write(data)
+	if e == nil {
+		e = f.Sync()
+	}
+	ce := f.Close()
+	if e == nil {
+		e = ce
+	}
+	if e != nil {
+		return e
+	}
+	if e = os.Rename(f.Name(), path); e != nil {
+		return e
+	}
+	if e = dir.Sync(); e != nil {
+		return fmt.Errorf("settings replaced but durability unverified: %w", e)
+	}
+	return nil
+}

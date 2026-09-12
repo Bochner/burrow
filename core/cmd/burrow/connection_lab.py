@@ -113,6 +113,20 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             assert state["state"] != "lost", state
             return state if state["state"] == "connected" else None
         first = wait(connected)
+        burrow(w,"profile","save","gateway","--as","saved-gateway")
+        profile = burrow(w,"profile","select","saved-gateway")
+        assert profile["key"] == str(key) and "trust" not in profile and "promptSocket" not in profile
+        profile_backup = root / "saved-backup.json"
+        burrow(w,"profile","backup",str(profile_backup))
+        burrow(w,"profile","edit","saved-gateway","192.0.2.50","tester","--yes")
+        burrow(w,"profile","delete","saved-gateway","--yes")
+        assert burrow(w,"inspect","gateway")["masterPID"] == first["masterPID"]
+        burrow(w,"profile","load",str(profile_backup))
+        burrow(w,"profile","connect","saved-gateway","--as","saved-live","--yes")
+        wait(lambda: state_is(w,"saved-live","connected"))
+        burrow(w,"close","saved-live","--yes")
+        # Default selection restored for the remaining independent checks.
+        burrow(w,"profile","load",str(w / "burrow-profiles.json"))
         assert Path(first["socket"]).is_socket()
         assert Path(f'/proc/{first["masterPID"]}').exists()
         assert b"-N\0" in Path(f'/proc/{first["masterPID"]}/cmdline').read_bytes()
@@ -287,6 +301,10 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             os.write(outer, ui_command.encode() + b"\r")
             wait(lambda: screen_contains(b'"terminal"'))
             wait(lambda: state_is(w, "terminal", "connected"))
+            wait(lambda: screen_contains(b"Save profile as"))
+            os.write(outer,b"\r")
+            wait(lambda: burrow(w,"profiles")["profiles"] and any(p["name"]=="terminal" for p in burrow(w,"profiles")["profiles"]))
+            wait(lambda: screen_contains(b'"save"'))
             os.write(outer,b"close terminal\r")
             wait(lambda: screen_contains(b"Close terminal"))
             assert screen_contains(b"Proceed]")
@@ -304,6 +322,9 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             wait(lambda: screen_contains(b'"terminal-secret"'))
             assert burrow(w, "inspect", "terminal-secret")["state"] == "connected"
             assert auth_secret.encode() not in output
+            wait(lambda: screen_contains(b"Save profile as"))
+            os.write(outer,b"\x1b")
+            wait(lambda: not screen_contains(b"Save profile as"))
             os.write(outer, b"close terminal-secret --yes\r")
             wait(lambda: screen_contains(b'"closed"'))
             ui_command = shlex.join(["connect", "terminal-cancel", "127.0.0.1", "tester", "--key", str(auth_key), "--port", str(port), "--yes"])
@@ -329,6 +350,9 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
                 else:
                     wait(lambda: screen_contains(b'"tui-trust"'))
                     assert burrow(w,"inspect",name)["state"]=="connected"
+                    wait(lambda: screen_contains(b"Save profile as"))
+                    os.write(outer,b"\x1b")
+                    wait(lambda: not screen_contains(b"Save profile as"))
                     os.write(outer,b"close tui-trust --yes\r")
                     wait(lambda: screen_contains(b'"closed"'))
             trust_file.write_bytes(trusted)
@@ -349,6 +373,9 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             os.write(outer,b"\t\r")
             wait(lambda: screen_contains(b'"guided-tui"'))
             assert burrow(w,"inspect","guided-tui")["state"]=="connected"
+            wait(lambda: screen_contains(b"Save profile as"))
+            os.write(outer,b"\x1b")
+            wait(lambda: not screen_contains(b"Save profile as"))
             os.write(outer,b"close guided-tui --yes\r")
             wait(lambda: screen_contains(b'"closed"'))
             # Repaint after resize starts a new screen; do not replay old 160-column

@@ -35,7 +35,7 @@ py_test(
 go_binary(
     name = "burrow",
     embedsrcs = ["hovel-module.yaml"],
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go"],
     deps = [
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
@@ -72,7 +72,7 @@ py_test(
 go_test(
     name = "interaction_test",
     embedsrcs = ["hovel-module.yaml"],
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "frame_test.go", "presentation_test.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "frame_test.go", "presentation_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
@@ -82,4 +82,15 @@ go_test(
         "@land_charm_lipgloss_v2//table", "@com_github_charmbracelet_x_ansi//:ansi",
         "@com_github_charmbracelet_x_term//:term", "@com_github_charmbracelet_colorprofile//:colorprofile",
     ],
+)
+
+py_test(
+    name = "profile_test",
+    srcs = ["profile_check.py"],
+    main = "profile_check.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)"],
+    data = [":burrow", "@hovel_linux_wheel//file"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
 )

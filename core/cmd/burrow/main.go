@@ -25,6 +25,7 @@ Required:
   --workspace PATH      Explicit canonical Hovel workspace
 Options:
   --hovel-package FILE  Local copy of the pinned Linux amd64 wheel
+  --load PATH           Open a saved collection (never connects automatically)
   --offline             Use the verified cache only
   --demo                Preview sample tables without opening a workspace
   --no-color            Disable terminal colors (also respects NO_COLOR)
@@ -67,6 +68,8 @@ func run(args []string) error {
 	fs := flag.NewFlagSet("burrow", flag.ContinueOnError)
 	var o launch.Options
 	var noColor, demo bool
+	var loadPath string
+	fs.StringVar(&loadPath, "load", "", "open saved collection without connecting")
 	fs.StringVar(&o.Workspace, "workspace", "", "explicit canonical workspace (required)")
 	fs.StringVar(&o.Package, "hovel-package", "", "pinned wheel file")
 	fs.BoolVar(&o.Offline, "offline", false, "verified cache only")
@@ -96,32 +99,46 @@ func run(args []string) error {
 		command = fs.Arg(0)
 	}
 	if command != "status" && command != "tui" {
-		if command == "connect" || command == "reconnect" {
-			interactive := command == "connect" && fs.NArg() == 1
-			if fs.NArg() > 1 {
-				c, yes, err := connection.Parse(o.Workspace, fs.Args()[1:])
-				if err != nil {
-					return err
-				}
-				interactive = c.Prompt || (!yes && term.IsTerminal(os.Stdin.Fd()))
+		args := fs.Args()
+		wizard := len(args) == 1 && command == "connect"
+		if !wizard {
+			if e := connection.ValidateCommand(o.Workspace, args); e != nil {
+				return e
 			}
-			if interactive {
-				a := &authenticate{workspace: o.Workspace, args: fs.Args()}
-				if e := a.Run(); e != nil {
-					return e
-				}
-				return json.NewEncoder(os.Stdout).Encode(a.result)
-			}
-		}
-		if e := connection.ValidateCommand(o.Workspace, fs.Args()); e != nil {
-			return e
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if _, e := launch.Status(ctx, o.Workspace); e != nil {
 			return e
 		}
-		result, e := connection.Execute(ctx, o.Workspace, fs.Args())
+		if loadPath != "" {
+			if _, e := connection.Execute(ctx, o.Workspace, []string{"profile", "load", loadPath}); e != nil {
+				return e
+			}
+		}
+		var e error
+		args, e = connection.ProfileConnect(ctx, o.Workspace, args)
+		if e != nil {
+			return e
+		}
+		if args[0] == "connect" || args[0] == "reconnect" {
+			interactive := wizard
+			if len(args) > 1 {
+				c, yes, err := connection.Parse(o.Workspace, args[1:])
+				if err != nil {
+					return err
+				}
+				interactive = c.Prompt || (!yes && term.IsTerminal(os.Stdin.Fd()))
+			}
+			if interactive {
+				a := &authenticate{workspace: o.Workspace, args: args}
+				if e := a.Run(); e != nil {
+					return e
+				}
+				return json.NewEncoder(os.Stdout).Encode(a.result)
+			}
+		}
+		result, e := connection.Execute(ctx, o.Workspace, args)
 		if e != nil {
 			return e
 		}
@@ -142,6 +159,11 @@ func run(args []string) error {
 	if e != nil {
 		return e
 	}
+	if loadPath != "" {
+		if _, e = connection.Execute(ctx, o.Workspace, []string{"profile", "load", loadPath}); e != nil {
+			return e
+		}
+	}
 	if command == "status" {
 		return json.NewEncoder(os.Stdout).Encode(info)
 	}
@@ -153,6 +175,9 @@ var workspaceManifest []byte
 
 func openWorkspace(ctx context.Context, options launch.Options) (launch.Info, error) {
 	info, err := launch.Open(ctx, options)
+	if err == nil {
+		err = connection.EnsureProfiles(ctx, options.Workspace)
+	}
 	if err == nil {
 		err = launch.RegisterModule(ctx, options.Workspace, "burrow@0.1.0", workspaceManifest)
 	}
@@ -167,14 +192,32 @@ func (workspaceModule) Info() hovel.Info {
 	return hovel.Info{Name: "burrow", Version: "0.1.0", Type: hovel.TypeSurvey, Summary: "Inspect a verified Burrow workspace"}
 }
 func (workspaceModule) Schema() hovel.Schema {
-	return hovel.Schema{ChainConfig: []hovel.Requirement{hovel.Req("workspace", "string", "Explicit canonical Burrow workspace")}}
+	return hovel.Schema{ChainConfig: []hovel.Requirement{hovel.Req("workspace", "string", "Explicit canonical Burrow workspace"), hovel.Requirement{Key: "command", Type: "string", Description: "Saved-profile command; empty inspects workspace"}}}
 }
 func (workspaceModule) Run(ctx *hovel.Context) (hovel.Result, error) {
-	c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	c, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	info, e := launch.Status(c, ctx.InputString("workspace", ""))
 	if e != nil {
 		return hovel.Result{}, e
+	}
+	if line := ctx.InputString("command", ""); line != "" {
+		if os.Getppid() != info.PID {
+			return hovel.Result{}, fmt.Errorf("profile commands must run in the verified workspace daemon")
+		}
+		args, err := connection.Split(line)
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		if len(args) == 0 || (args[0] != "profile" && args[0] != "profiles" && args[0] != "history") || (len(args) > 1 && args[1] == "connect") {
+			return hovel.Result{}, fmt.Errorf("expected saved-profile management command; use the connection module for authentication")
+		}
+		result, err := connection.Execute(c, info.Workspace, args)
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		ctx.Log.Info("saved-profile management completed")
+		return hovel.Ok(map[string]any{"result": result}), nil
 	}
 	ctx.Log.Info("verified Burrow workspace identity")
 	return hovel.Ok(map[string]any{"workspacePath": info.Workspace, "pid": info.PID}, hovel.WithSummary(fmt.Sprintf("Verified Burrow workspace %s · daemon PID %d", safe(info.Workspace), info.PID))), nil

@@ -301,6 +301,17 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 			return m.workspaceForm()
 		}
 		return cmd
+	case "profile-menu":
+		return m.profileAction(completed.GetString("command"))
+	case "profile-save":
+		name := completed.GetString("name")
+		args := []string{"profile", "save", m.saveName, "--as", name, "--collection", m.saveCollection.Path, "--revision", m.saveCollection.Revision}
+		m.saveName = ""
+		if e := connection.ValidateCommand(m.active, args); e != nil {
+			m.modal = ""
+			return m.updateManagement(m.active, connectionResult{nil, e})
+		}
+		return m.reviewCommand(args)
 	case "connect":
 		args := m.details.args()
 		m.details = nil
@@ -312,6 +323,16 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		}
 		args := append(append([]string{}, m.commandArgs...), "--yes")
 		m.commandArgs = nil
+		if args[0] == "profile" {
+			path := m.active
+			m.modal = ""
+			return m.dispatch(path, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				result, e := connection.Execute(ctx, path, args)
+				return connectionResult{result, e}
+			})
+		}
 		if args[0] == "close" {
 			expected := m.closeTarget
 			path := m.active
@@ -366,6 +387,7 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 }
 
 type commandReview struct {
+	result any
 	epoch  uint64
 	args   []string
 	review string
@@ -382,7 +404,7 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 		m.details = &connectDetails{}
 		return m.setForm("connect", "Connect · click a field or use ↑↓ / Tab", detailsForm(m.active, m.details))
 	}
-	if args[0] != "close" {
+	if args[0] != "close" && args[0] != "profile" {
 		_, yes, e := connection.Parse(m.active, args[1:])
 		if e != nil {
 			m.dismissForm()
@@ -402,6 +424,26 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		r := commandReview{epoch: epoch, args: args}
+		if args[0] == "profile" && args[1] == "connect" {
+			expanded, e := connection.ProfileConnect(ctx, path, args)
+			if e != nil {
+				r.err = e
+				return r
+			}
+			r.args = expanded
+			// Resolve for review even when --yes was supplied; authentication
+			// must still travel through the private frontend path.
+			_, yes, e := connection.Parse(path, expanded[1:])
+			if e != nil {
+				r.err = e
+				return r
+			}
+			if yes {
+				r.review = "approved-profile-connect"
+				return r
+			}
+			args = expanded
+		}
 		if args[0] == "close" {
 			r.target, r.review, r.err = connection.ReviewClose(ctx, path, args[1])
 			return r
@@ -409,7 +451,13 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 		result, e := connection.Execute(ctx, path, args)
 		r.err = e
 		if e == nil {
-			r.review = result.(map[string]string)["review"]
+			r.result = result
+			if details, ok := result.(map[string]string); ok {
+				r.review = details["review"]
+				if details["revision"] != "" {
+					r.args = append(r.args, "--revision", details["revision"], "--collection", details["collection"])
+				}
+			}
 		}
 		return r
 	})

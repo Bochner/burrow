@@ -163,7 +163,7 @@ func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
 	if e != nil {
 		return hovel.Result{}, e
 	}
-	s := &owner{config: c, dir: dir, done: make(chan struct{}), log: ctx.Log}
+	s := &owner{profile: saved(c), config: c, dir: dir, done: make(chan struct{}), log: ctx.Log}
 	s.state = State{Name: c.Name, Host: c.Host, User: c.User, Port: c.Port, State: "connecting", Socket: filepath.Join(dir.Name(), "master"), OwnerPID: os.Getpid()}
 	if _, e = ctx.OpenSession(s, hovel.WithName(c.Name), hovel.WithKind("connection"), hovel.WithTransport("ssh")); e != nil {
 		s.Close("registration failed")
@@ -173,6 +173,7 @@ func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
 }
 
 type owner struct {
+	profile    Profile
 	mu         sync.Mutex
 	config     Config
 	dir        *os.File
@@ -377,7 +378,7 @@ func (s *owner) Write([]byte) error {
 }
 func (s *owner) Read(time.Duration) ([]byte, error) { return nil, nil }
 func (s *owner) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "connection-status", ReadOnly: true}, {Name: "connection-close", Summary: "Close all owned connection resources after review"}}, nil
+	return []hovel.PayloadCommand{{Name: "connection-status", ReadOnly: true}, {Name: "connection-profile", ReadOnly: true, Summary: "Reusable settings after successful authentication"}, {Name: "connection-close", Summary: "Close all owned connection resources after review"}}, nil
 }
 func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
 	if req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" || len(req.Config) > 0 {
@@ -387,7 +388,7 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 		e := s.Close("operator confirmed connection-wide close")
 		return hovel.PayloadCommandResult{Command: req.Command}, e
 	}
-	if req.Command != "connection-status" || len(req.Args) != 0 {
+	if (req.Command != "connection-status" && req.Command != "connection-profile") || len(req.Args) != 0 {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported connection command")
 	}
 	s.mu.Lock()
@@ -404,6 +405,13 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 				s.state.Detail = e.Error()
 			}
 		}
+	}
+	if req.Command == "connection-profile" {
+		if s.state.State != "connected" || s.closed {
+			return hovel.PayloadCommandResult{}, fmt.Errorf("save requires an authenticated active connection")
+		}
+		b, e := json.Marshal(s.profile)
+		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
 	}
 	s.milestone("connection inspected")
 	b, e := json.Marshal(s.state)

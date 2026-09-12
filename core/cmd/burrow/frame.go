@@ -35,6 +35,7 @@ type workspaceView struct {
 	lastSuccess, observed time.Time
 	duration              time.Duration
 	failure               string
+	saveOffers            []saveOffered
 }
 
 // This is presentation state only. All resource snapshots come from Hovel.
@@ -59,6 +60,8 @@ type frame struct {
 	details             *connectDetails
 	commandArgs         []string
 	closeTarget         connection.State
+	saveName            string
+	saveCollection      connection.Collection
 	attempt             *authAttempt
 	question            *authQuestion
 	savedForm           *huh.Form
@@ -255,7 +258,13 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.modal == "auth" {
 			m.dismissForm()
 		}
-		return m, m.updateManagement(v.attempt.path, connectionResult{v.result, v.err})
+		cmd := m.updateManagement(v.attempt.path, connectionResult{v.result, v.err})
+		if v.err == nil {
+			if state, ok := v.result.(connection.State); ok && state.State == "connected" {
+				return m, tea.Batch(cmd, m.dispatch(v.attempt.path, offerSave(v.attempt.path, state.Name)))
+			}
+		}
+		return m, cmd
 
 	case workspaceMessage:
 		path, ok := m.pending[v.request]
@@ -276,6 +285,15 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("connection request cancelled after workspace switch")})
 			}
 			return m, m.reviewCommand(result.args)
+		case saveOffered:
+			if result.err != nil {
+				m.workspaces[path].management.output += "\nConnection active; save offer unavailable. Use profile save NAME after fixing the collection."
+				return m, nil
+			}
+			if result.offer {
+				m.workspaces[path].saveOffers = append(m.workspaces[path].saveOffers, result)
+			}
+			return m, m.showSaveOffer()
 		case commandReview:
 			if path != m.active || m.modal != "review" || m.commandArgs == nil || result.epoch != m.inputEpoch {
 				return m, nil
@@ -284,6 +302,15 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.dismissForm()
 				return m, m.updateManagement(path, connectionResult{nil, result.err})
 			}
+			if result.review == "approved-profile-connect" {
+				m.commandArgs = nil
+				return m, m.startAuthentication(result.args)
+			}
+			if result.review == "" {
+				m.dismissForm()
+				return m, m.updateManagement(path, connectionResult{result.result, nil})
+			}
+			m.commandArgs = result.args
 			m.closeTarget = result.target
 			return m, m.setForm("review", "Review exact target", confirmForm("Proceed?", publicPrompt(connection.Prompt{Text: result.review}), "Proceed", "Cancel"))
 		case cliOpened, cliScreen, cliClosed:
@@ -297,7 +324,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.now.Sub(w.observed) >= 3*time.Second {
 				cmd = m.check(m.active)
 			}
-			return m, tea.Batch(cmd, m.tick())
+			return m, tea.Batch(cmd, m.tick(), m.showSaveOffer())
 		case statusRequested:
 			m.workspaces[path].showCheck = true
 			return m, m.check(path)
@@ -421,6 +448,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if hit.ID() == "shells" {
 				m.current().shellOffset = max(0, min(len(m.paths)-1, m.current().shellOffset+delta))
 			}
+			if strings.HasPrefix(hit.ID(), "profile:") || hit.ID() == "saved" {
+				u := &m.current().management
+				u.profileOffset = max(0, min(max(0, len(u.profiles.Profiles)-u.profileRows()), u.profileOffset+delta))
+			}
 			if strings.HasPrefix(hit.ID(), "resource:") {
 				u := &m.current().management
 				u.connectionOffset = max(0, min(max(0, len(u.connections)-u.connectionRows()), u.connectionOffset+delta))
@@ -496,7 +527,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modal = "navigation"
 			return m, nil
 		case key.Matches(v, focusNext):
-			names := []string{"prompt", "workspaces", "new", "menu", "shells", "tabs", "resources"}
+			names := []string{"prompt", "workspaces", "new", "menu", "shells", "tabs", "resources", "saved"}
 			for i, name := range names {
 				if name == m.current().focus {
 					delta := 1
@@ -542,6 +573,19 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						w.tab = ""
 					}
+				}
+			case "saved":
+				rows := w.management.profiles.Profiles
+				index := 0
+				for i, p := range rows {
+					if p.Name == w.management.selectedProfile {
+						index = i
+					}
+				}
+				if len(rows) > 0 {
+					index = max(0, min(len(rows)-1, index+delta))
+					w.management.selectedProfile = rows[index].Name
+					w.management.profileOffset = index
 				}
 			case "resources":
 				rows := w.management.connections
@@ -627,6 +671,15 @@ func (m *frame) activate(id string) tea.Cmd {
 		}
 		return nil
 	}
+	if strings.HasPrefix(id, "profile:") {
+		i, err := strconv.Atoi(strings.TrimPrefix(id, "profile:"))
+		u := &m.current().management
+		if err == nil && i >= 0 && i < len(u.profiles.Profiles) {
+			u.selectedProfile = u.profiles.Profiles[i].Name
+			m.current().focus = "saved"
+		}
+		return nil
+	}
 	if strings.HasPrefix(id, "resource:") {
 		i, err := strconv.Atoi(strings.TrimPrefix(id, "resource:"))
 		rows := m.current().management.connections
@@ -641,6 +694,8 @@ func (m *frame) activate(id string) tea.Cmd {
 		return m.selectWorkspace(i)
 	}
 	switch id {
+	case "saved":
+		return m.profileMenu()
 	case "new":
 		return m.openNew()
 	case "menu":
@@ -712,7 +767,7 @@ func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	switch m.modal {
-	case "new", "menu", "connect", "review", "auth", "quit", "browse":
+	case "new", "menu", "connect", "review", "auth", "quit", "browse", "profile-menu", "profile-save":
 		if v.String() == "ctrl+o" {
 			return m.browse()
 		}
@@ -827,6 +882,7 @@ func (m *frame) metadata() string {
 	}
 	text += u.paint(statusStyle, strings.ToUpper(state)) + "\n" + field("Last success", age, infoStyle) + "\n" + field("Check duration", duration, numberStyle) + "\n" + u.paint(secondary, "Last known ") + u.paint(numberStyle, fmt.Sprintf("PID %d", u.info.PID))
 	// Keep identity paths after operational metrics so narrow sidebars show health first.
+	text += "\n\n" + section("SAVED COLLECTION") + "\n" + u.paint(secondary, safe(u.profiles.Path))
 	text += "\n\n" + section("WORKSPACE") + "\n" + u.paint(secondary, safe(m.active)) + "\n" + field("Endpoint", safe(filepath.Join(m.active, "hoveld.sock")), secondary) + details
 	if w.failure != "" {
 		text += "\n" + u.paint(errorStyle, w.failure)
@@ -883,6 +939,31 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	add("center", center, cx, 3, cw, h-4, 1)
 	// Identified row layers reuse the rendered cells rather than guessing table
 	// border or wrapping offsets in the pointer handler.
+	savedLine := -1
+	profileStart := min(management.profileOffset, max(0, len(management.profiles.Profiles)-management.profileRows()))
+	for y, line := range strings.Split(center, "\n") {
+		plain := ansi.Strip(line)
+		if strings.Contains(plain, "SAVED CONNECTIONS") {
+			savedLine = 0
+			add("saved", line, cx, y+3, cw, 1, 2)
+			continue
+		}
+		if strings.Contains(plain, "ACTIVE SSH CONNECTIONS") {
+			break
+		}
+		if savedLine < 0 || management.profileError != "" {
+			continue
+		}
+		savedLine++
+		i := profileStart + savedLine - 3
+		if i < profileStart || i >= min(len(management.profiles.Profiles), profileStart+management.profileRows()) {
+			continue
+		}
+		if management.selectedProfile == management.profiles.Profiles[i].Name {
+			line = management.paint(selectedStyle.Width(cw), "›"+strings.TrimPrefix(plain, " "))
+		}
+		add(fmt.Sprintf("profile:%d", i), line, cx, y+3, cw, 1, 2)
+	}
 	activeLine := -1
 	start := min(management.connectionOffset, max(0, len(management.connections)-management.connectionRows()))
 	for y, line := range strings.Split(center, "\n") {
@@ -1008,7 +1089,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			bw := pw - 6
 			text := ""
 			switch m.modal {
-			case "new", "menu", "connect", "review", "auth", "quit", "browse":
+			case "new", "menu", "connect", "review", "auth", "quit", "browse", "profile-menu", "profile-save":
 				text = m.formText()
 			case "metadata":
 				v := scrollBody(m.metadata(), bw, ph-6, m.modalOffset)

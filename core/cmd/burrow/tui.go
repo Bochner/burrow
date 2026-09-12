@@ -56,6 +56,10 @@ func connectionTimer() tea.Cmd {
 }
 
 type ui struct {
+	profiles                      connection.Collection
+	profileError, selectedProfile string
+	profileOffset                 int
+	profileHistoryLoaded          bool
 	info                          launch.Info
 	input                         textinput.Model
 	width, height                 int
@@ -107,11 +111,34 @@ func terminal(m *frame, noColor bool) error {
 	_, e := tea.NewProgram(m, opts...).Run()
 	return e
 }
-func (m ui) Init() tea.Cmd { return tea.Batch(m.input.Focus(), refreshConnections(m.info.Workspace)) }
+func (m ui) Init() tea.Cmd {
+	return tea.Batch(m.input.Focus(), refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace))
+}
 func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case connectionTick:
-		return m, refreshConnections(m.info.Workspace)
+		return m, tea.Batch(refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace))
+	case profilesReady:
+		if v.err != nil {
+			m.profileError = "UNAVAILABLE · " + safe(v.err.Error())
+		} else {
+			m.profileError = ""
+			m.profiles = v.collection
+			found := false
+			for _, p := range m.profiles.Profiles {
+				found = found || p.Name == m.selectedProfile
+			}
+			if !found {
+				m.selectedProfile = ""
+			}
+			if !m.profileHistoryLoaded {
+				m.history = append(v.history, m.history...)
+				m.historyIndex = len(m.history)
+				m.profileHistoryLoaded = true
+			}
+		}
+		m.input.SetSuggestions(m.suggestions())
+		return m, nil
 	case connectionList:
 		m.connectionObserved = true
 		if v.err != nil {
@@ -122,7 +149,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.connectionError = ""
 			m.connections = v.states
-			m.input.SetSuggestions(connection.CommandSuggestions(m.input.Value(), v.states))
+			m.input.SetSuggestions(m.suggestions())
 		}
 		return m, connectionTimer()
 	case connectionResult:
@@ -138,6 +165,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.output = strings.Join(lines, "\n")
 		}
+		return m, refreshProfiles(m.info.Workspace)
 	case tea.WindowSizeMsg:
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
@@ -152,7 +180,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.input.SetValue(m.input.Value() + safe(v.Content))
 		m.input.CursorEnd()
-		m.input.SetSuggestions(connection.CommandSuggestions(m.input.Value(), m.connections))
+		m.input.SetSuggestions(m.suggestions())
 		return m, nil
 	case tea.KeyPressMsg:
 		if m.help {
@@ -247,7 +275,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.busy = true
 				m.output = "Running reviewed command through Hovel…"
 				workspace := m.info.Workspace
-				if args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) {
+				if args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
 				return m, func() tea.Msg {
@@ -264,7 +292,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.input, cmd = m.input.Update(msg)
 	if _, ok := msg.(tea.KeyPressMsg); ok {
 		m.input.ShowSuggestions = true
-		m.input.SetSuggestions(connection.CommandSuggestions(m.input.Value(), m.connections))
+		m.input.SetSuggestions(m.suggestions())
 	}
 	return m, cmd
 }
@@ -339,7 +367,7 @@ func (m ui) View() tea.View {
 	var b strings.Builder
 
 	bodyW := w
-	content := m.paint(heading, "SAVED CONNECTIONS") + "\n" + m.paint(secondary, "Not implemented") + "\n\n" +
+	content := m.savedConnections(bodyW) + "\n\n" +
 		m.activeConnections(bodyW) + "\n\n" + m.paint(heading, "TUNNELS") + "\n" + m.paint(secondary, "Not implemented")
 	if m.demo {
 		content = m.demoResources(bodyW)
@@ -389,7 +417,7 @@ func (m ui) View() tea.View {
 }
 
 func (m ui) helpText() string {
-	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P menu (Alt+M), Alt+N New, Alt+W workspace drawer.\nTab completes the prompt. Click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
+	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources, saved. Saved: Enter actions; arrows select.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P menu (Alt+M), Alt+N New, Alt+W workspace drawer.\nTab completes the prompt. Click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
 }
 func (m ui) helpViewport(w, h int) viewport.Model {
 	return scrollBody(m.syntax(m.helpText()), max(1, min(96, w-4)-6), max(1, min(30, h-4)-8), m.helpOffset)

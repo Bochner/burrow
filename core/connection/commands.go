@@ -16,7 +16,24 @@ import (
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
-const Help = `connections                         Inspect retained owners
+const Help = `profiles                            List saved entries and selected collection
+profile create NAME HOST USER [options] Save settings without connecting
+profile select NAME                 Inspect saved settings only
+profile connect NAME [--as LIVE] [--yes] [--prompt] Connect a saved profile
+profile save CONNECTION [--as PROFILE] [--yes] Save authenticated settings
+profile edit NAME HOST USER [options] Replace saved settings (--yes confirms)
+profile delete NAME [--yes]          Delete settings; retain live resources
+profile collection PATH             Create/open a collection
+profile load PATH                   Open an existing collection; never connect
+profile backup PATH                 Copy collection to a new backup file
+history                             Retained profile management commands
+Profiles keep aliases/overrides and key references, never authentication secrets.
+Default template: WORKSPACE/burrow-profiles.json; _example is documentation only.
+All profile writes use the selected file, retained by Hovel across invocations.
+Edit replaces all settings; include options to retain them. Review replies include
+revision/collection; repeat --revision HASH --collection PATH --yes to pin review.
+
+connections                         Inspect retained owners
 connect                             Guided connection entry (terminal)
 connect NAME HOST USER [options]     Create shell-free SSH master
 reconnect NAME HOST USER [options]   Explicitly replace a lost owned connection
@@ -171,6 +188,8 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "profile", "profiles", "history":
+		return validateProfile(workspace, args)
 	case "connect", "reconnect":
 		_, _, e := Parse(workspace, args[1:])
 		return e
@@ -299,7 +318,16 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	if e := ValidateCommand(w, args); e != nil {
 		return nil, e
 	}
+	if args[0] == "profile" && args[1] == "connect" {
+		expanded, e := ProfileConnect(ctx, w, args)
+		if e != nil {
+			return nil, e
+		}
+		return execute(ctx, w, expanded, promptSocket)
+	}
 	switch args[0] {
+	case "profile", "profiles", "history":
+		return executeProfile(ctx, w, args)
 	case "connections":
 		return List(ctx, w)
 	case "inspect":
