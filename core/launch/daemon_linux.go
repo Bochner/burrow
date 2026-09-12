@@ -78,8 +78,11 @@ func processIdentity(pid int) (record, error) {
 }
 
 func rpc(conn net.Conn, method string, out any) error {
+	return rpcBody(conn, method, []byte("{}"), out)
+}
+func rpcBody(conn net.Conn, method string, bodyInput []byte, out any) error {
 	// A raw request uses exactly this verified connection; never implicit redial/retry.
-	request, _ := http.NewRequest(http.MethodPost, "http://localhost/hovel.daemon.v1.DaemonService/"+method, bytes.NewBufferString("{}"))
+	request, _ := http.NewRequest(http.MethodPost, "http://localhost/hovel.daemon.v1.DaemonService/"+method, bytes.NewReader(bodyInput))
 	request.Header.Set("Content-Type", "application/json")
 	if e := request.Write(conn); e != nil {
 		return e

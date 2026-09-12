@@ -295,7 +295,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         output = bytearray()
         screen_dimensions = ["30", "8"]
         try:
-            read_until(b"SAVED CONNECTIONS")
+            read_until(b"Resize window")
             os.write(master, b"\x03")
             read_until("› Keep".encode())
             os.write(master, b"\t")

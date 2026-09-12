@@ -43,8 +43,9 @@ When editing the Pages book, components, assets, or deployment workflow, read
 ## Common tasks and completion
 
 - `aspect help`: discover the checked-in workflows.
-- `aspect burrow-check`: full metadata, documentation, SDK, daemon reuse and SSH proof gate.
-- `aspect burrow-check ci`: builds all proofs and runs portable checks; excludes the host-pinned SSH fixture.
+- `aspect burrow-check`: metadata, documentation, SDK, daemon reuse and production SSH gate; requires Docker and OpenSSH client tools.
+- `aspect burrow-check ci`: builds production packages and proofs and runs portable checks without Docker.
+- `aspect burrow ssh-check`: production connection acceptance against a declared, digest-pinned disposable OpenSSH Docker server.
 - `aspect burrow-site check`: generated book, links/assets, and search checks.
 - `aspect burrow-site stage`: materialize declared site output under `_site/`.
 

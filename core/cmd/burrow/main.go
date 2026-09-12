@@ -10,13 +10,14 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
 	"github.com/charmbracelet/x/term"
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
 const usage = `Burrow — verified Hovel workspace
-Usage: burrow --workspace /absolute/workspace [options] [status|tui]
+Usage: burrow --workspace /absolute/workspace [options] [status|tui|COMMAND]
 
 Required:
   --workspace PATH      Explicit canonical Hovel workspace
@@ -28,7 +29,7 @@ Options:
 
 status opens/reuses the workspace and prints verified daemon identity as JSON.
 tui opens the management interface (default); quit retains the daemon.
-Inside the interface: status revalidates without restarting; help; quit.
+Inside the interface: status, connections, connect, inspect, reconnect, close, help, quit.
 Linux amd64 only. Cache: $XDG_CACHE_HOME/burrow/hovel/0.4.2 (or ~/.cache).
 Unknown/stale resources require manual investigation; no automatic cleanup.
 `
@@ -46,6 +47,10 @@ func safe(s string) string {
 }
 
 func run(args []string) error {
+	if len(args) == 1 && args[0] == "connection-module" {
+		hovel.Serve(connection.Module{})
+		return nil
+	}
 	if len(args) == 1 && args[0] == "module" {
 		hovel.Serve(workspaceModule{})
 		return nil
@@ -57,7 +62,7 @@ func run(args []string) error {
 	fs.StringVar(&o.Package, "hovel-package", "", "pinned wheel file")
 	fs.BoolVar(&o.Offline, "offline", false, "verified cache only")
 	fs.BoolVar(&noColor, "no-color", false, "disable colors")
-	fs.Usage = func() { fmt.Fprint(fs.Output(), usage) }
+	fs.Usage = func() { fmt.Fprint(fs.Output(), usage+"\n"+connection.Help) }
 	if e := fs.Parse(args); e != nil {
 		if e == flag.ErrHelp {
 			return nil
@@ -71,8 +76,23 @@ func run(args []string) error {
 	if fs.NArg() > 0 {
 		command = fs.Arg(0)
 	}
-	if fs.NArg() > 1 || (command != "status" && command != "tui") {
-		return fmt.Errorf("expected status or tui; use --help")
+	if command != "status" && command != "tui" {
+		if e := connection.ValidateCommand(o.Workspace, fs.Args()); e != nil {
+			return e
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if _, e := launch.Status(ctx, o.Workspace); e != nil {
+			return e
+		}
+		result, e := connection.Execute(ctx, o.Workspace, fs.Args())
+		if e != nil {
+			return e
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	if fs.NArg() > 1 {
+		return fmt.Errorf("status and tui take no arguments")
 	}
 	if command == "tui" && !term.IsTerminal(os.Stdin.Fd()) {
 		return fmt.Errorf("tui requires terminal input; use status for JSON")

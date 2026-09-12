@@ -6,11 +6,11 @@ def _impl(ctx: TaskContext) -> int:
         return 2
     commands = [
         ["build", "//core/cmd/burrow:package", "//:research", "//core/prototype_sdk:package", "//core/prototype_sdk:frontend", "//core/prototype_transport:package", "//core/prototype_agent:burrow", "//core/prototype_terminal:terminal"],
-        ["test", "//core/cmd/burrow:setup_test", "//core/prototype_transport:direct_script_test", "//core/prototype_agent:check", "//docs/tools/docs:site_test", "//docs/tools/docs:stage_site_test", "//core/prototype_sdk:protocol_test", "//core/prototype_sdk:reuse_test", "//core/prototype_terminal:check", "//core/prototype_terminal:terminal_test", "//core/prototype_terminal:cli_test", "//core/prototype_terminal:vt_test", "//core/prototype_terminal:vt_cli_test"],
+        ["test", "//core/cmd/burrow:setup_test", "//core/cmd/burrow:connection_test", "//core/prototype_transport:direct_script_test", "//core/prototype_agent:check", "//docs/tools/docs:site_test", "//docs/tools/docs:stage_site_test", "//core/prototype_sdk:protocol_test", "//core/prototype_sdk:reuse_test", "//core/prototype_terminal:check", "//core/prototype_terminal:terminal_test", "//core/prototype_terminal:cli_test", "//core/prototype_terminal:vt_test", "//core/prototype_terminal:vt_cli_test"],
     ]
-    # The SSH observation fixture requires the exact host binaries in check.py.
+    # Production SSH uses a declared digest-pinned disposable Docker server.
     if mode == "full":
-        commands.append(["run", "//core/prototype_transport:check"])
+        commands.append(["test", "//core/cmd/burrow:connection_lab"])
     for command in commands:
         status = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait()
         if status.code:
