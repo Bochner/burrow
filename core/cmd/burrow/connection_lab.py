@@ -221,7 +221,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             os.write(outer, b"ins\x1bn")
             wait(lambda: screen_contains(b"Exact destination"))
             os.write(outer, str(other).encode() + b"\r")
-            wait(lambda: screen_contains(str(other).encode()))
+            wait(lambda: screen_contains(("● " + other.name).encode()))
             wait(lambda: screen_contains(b"gateway"))
             assert burrow(other, "inspect", "gateway")["socket"] != first["socket"]
             os.write(outer, b"\x1bw")

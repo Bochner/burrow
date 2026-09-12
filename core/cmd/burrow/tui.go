@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
@@ -20,14 +21,6 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
-// Adapted from the accepted core/prototype_terminal app/design at 6493f54.
-// Dracula Classic; preserve its ordered overview, contextual prompt and overlays.
-var purple = lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9")).Bold(true)
-var cyan = lipgloss.NewStyle().Foreground(lipgloss.Color("#8be9fd"))
-var muted = lipgloss.NewStyle().Foreground(lipgloss.Color("#6272a4"))
-var surface = lipgloss.NewStyle().Foreground(lipgloss.Color("#f8f8f2")).Background(lipgloss.Color("#282a36"))
-var dialog = surface.Background(lipgloss.Color("#343746")).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#bd93f9")).Padding(1, 2)
-var cell = lipgloss.NewStyle().Padding(0, 1)
 var enter = key.NewBinding(key.WithKeys("enter"))
 var escape = key.NewBinding(key.WithKeys("esc"))
 var quit = key.NewBinding(key.WithKeys("ctrl+c", "ctrl+d"))
@@ -80,6 +73,7 @@ type ui struct {
 
 func newUI(info launch.Info, noColor bool) ui {
 	input := textinput.New()
+	styleInput(&input)
 	input.Prompt = "╰─ "
 	input.Placeholder = "connect · connections · help · quit"
 	input.SetSuggestions(connection.Suggestions(nil))
@@ -147,7 +141,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.ColorProfileMsg:
 		m.noColor = m.noColor || v.Profile == colorprofile.ASCII
 	case tea.BackgroundColorMsg:
-		// The owner selected Dracula Classic; terminal background doesn't change it.
+		// The owner selected Herdr's Catppuccin Mocha; keep the explicit dark palette.
 	case tea.PasteMsg:
 		if m.help || m.quitting {
 			return m, nil
@@ -197,6 +191,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(v, quit):
 			m.quitting = true
+			m.leave = false
 			return m, nil
 		case key.Matches(v, help):
 			m.help = true
@@ -240,6 +235,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.helpOffset = 0
 			case "quit":
 				m.quitting = true
+				m.leave = false
 			case "status":
 				m.busy = true
 				return m, func() tea.Msg { return statusRequested{} }
@@ -294,23 +290,23 @@ func fit(s string, w, h int) string {
 	return strings.Join(lines, "\n")
 }
 func (m ui) resource(title string, headers []string, w int) string {
-	t := table.New().Headers(headers...).Width(w).Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).
+	t := table.New().Headers(headers...).Width(w).Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderStyle(separatorStyle).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == table.HeaderRow {
-				return cell.Bold(true)
+				return tableCell.Bold(true)
 			}
-			return cell
+			return tableCell
 		})
-	return m.paint(cyan, title) + "\n" + t.String() + "\n" + m.paint(muted, "No resources — this capability is not implemented yet.")
+	return m.paint(heading, title) + "\n" + t.String() + "\n" + m.paint(secondary, "No resources — this capability is not implemented yet.")
 }
 func (m ui) connectionRows() int { return max(1, min(5, m.height-16)) }
 func (m ui) activeConnections(w int) string {
-	title := m.paint(cyan, "ACTIVE SSH CONNECTIONS")
+	title := m.paint(heading, "ACTIVE SSH CONNECTIONS")
 	if m.connectionError != "" {
-		return title + "\n" + m.connectionError
+		return title + "\n" + m.paint(errorStyle, m.connectionError)
 	}
 	if len(m.connections) == 0 {
-		return title + "\nNo connections · connect NAME HOST USER --key PATH"
+		return title + "\n" + m.paint(secondary, "No connections · ") + m.syntax("connect NAME HOST USER --key PATH")
 	}
 	start := min(m.connectionOffset, max(0, len(m.connections)-m.connectionRows()))
 	end := min(len(m.connections), start+m.connectionRows())
@@ -321,17 +317,22 @@ func (m ui) activeConnections(w int) string {
 	}
 	var rows [][]string
 	for _, s := range visible {
-		rows = append(rows, []string{safe(s.Name), safe(s.Host), safe(s.User), fmt.Sprint(s.Port), safe(s.State)})
+		rows = append(rows, []string{safe(s.Name), safe(s.Host), safe(s.User), fmt.Sprint(s.Port), m.paint(connectionStyle(s.State), safe(s.State))})
 	}
 	if w < 60 {
 		var b strings.Builder
 		b.WriteString(title)
 		for _, s := range visible {
-			fmt.Fprintf(&b, "\n%s · %s · %s@%s:%d", safe(s.Name), safe(s.State), safe(s.User), safe(s.Host), s.Port)
+			fmt.Fprintf(&b, "\n%s · %s · %s@%s:%d", safe(s.Name), m.paint(connectionStyle(s.State), safe(s.State)), safe(s.User), safe(s.Host), s.Port)
 		}
 		return b.String() + overflow
 	}
-	return title + "\n" + table.New().Headers("NAME", "HOST", "USER", "PORT", "STATE").Rows(rows...).Width(w).Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).String() + overflow
+	return title + "\n" + table.New().Headers("NAME", "HOST", "USER", "PORT", "STATE").Rows(rows...).Width(w).Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderStyle(separatorStyle).StyleFunc(func(row, col int) lipgloss.Style {
+		if row == table.HeaderRow {
+			return tableCell.Foreground(lipgloss.Color(subtextColor)).Bold(true)
+		}
+		return tableCell
+	}).String() + overflow
 }
 func (m ui) View() tea.View {
 	w, h := max(1, m.width), max(1, m.height)
@@ -349,30 +350,30 @@ func (m ui) View() tea.View {
 				text = strings.Replace(text, "  Quit   › Keep", "› Quit     Keep", 1)
 			}
 		}
-		v := tea.NewView(fit(m.paint(purple, text), w, h))
+		v := tea.NewView(fit(m.paint(accent, text), w, h))
 		v.AltScreen = true
 		return v
 	}
 	var b strings.Builder
-	b.WriteString(m.paint(cyan, safe(m.info.Workspace)) + m.paint(purple, " · Burrow") + "\n\n")
+
 	bodyW := w
 	content := m.resource("SAVED CONNECTION CONFIGURATIONS", []string{"NAME", "HOST", "USER", "PORT", "AUTH", "SHELL"}, bodyW) + "\n\n" +
 		m.activeConnections(bodyW) + "\n\n" +
 		m.resource("TUNNELS · grouped by connection", []string{"CONNECTION", "ID", "TYPE", "LISTEN", "DESTINATION"}, bodyW)
 	if h < 34 || bodyW < 60 {
-		content = "SAVED CONNECTIONS · not implemented\n" + m.activeConnections(bodyW) + "\nTUNNELS · not implemented"
+		content = m.paint(heading, "SAVED CONNECTIONS") + m.paint(secondary, " · not implemented") + "\n\n" + m.activeConnections(bodyW) + "\n\n" + m.paint(heading, "TUNNELS") + m.paint(secondary, " · not implemented")
 	}
 	// Reserve command output space even when endpoint text wraps in the table.
-	content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-10)))
-	outputLines := strings.Split(ansi.Wrap(m.output, bodyW, ""), "\n")
+	content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-7)))
+	outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
 	start := min(m.outputOffset, len(outputLines)-1)
-	content += "\n\n" + m.paint(cyan, "COMMAND OUTPUT · PgUp/PgDn scroll") + "\n" + strings.Join(outputLines[start:], "\n")
-	b.WriteString(fit(content, w, max(0, h-5)))
+	content += "\n\n" + m.paint(heading, "COMMAND OUTPUT · PgUp/PgDn scroll") + "\n" + strings.Join(outputLines[start:], "\n")
+	b.WriteString(fit(content, w, max(0, h-3)))
 	footer := "F1 help · Tab completion · Ctrl+C quit"
 	if m.busy {
 		footer = "Working… prompt remains editable · close NAME cancels a connection"
 	}
-	b.WriteString("\n" + m.paint(muted, footer) + "\n" + m.paint(purple, "╭─ workspace › management") + "\n" + m.input.View())
+	b.WriteString("\n" + m.paint(secondary, footer) + "\n" + m.paint(accent, "╭─ workspace › management") + "\n" + m.input.View())
 	base := fit(b.String(), w, h)
 	if !m.help && !m.quitting && m.input.Value() != "" && m.input.ShowSuggestions {
 		matches := m.input.MatchedSuggestions()
@@ -390,49 +391,57 @@ func (m ui) View() tea.View {
 				if i == m.input.CurrentSuggestionIndex() {
 					prefix = "› "
 				}
-				rows = append(rows, prefix+s)
+				rows = append(rows, m.choice(s, prefix == "› ", w))
 			}
-			popup := fit(strings.Join(rows, "\n"), w, min(len(rows), max(1, h-3)))
+			popup := solid(strings.Join(rows, "\n"), w, min(len(rows), max(1, h-3)), popupColor, m.noColor)
 			base = lipgloss.NewCompositor(lipgloss.NewLayer(base), lipgloss.NewLayer(popup).Y(max(0, h-3-lipgloss.Height(popup))).Z(1)).Render()
 		}
 	}
 	if m.help || m.quitting {
-		base = m.overlay(base, w, h)
+		base = m.overlay(base, w, h).Render()
 	}
 
-	if !m.noColor {
-		base = surface.Width(w).Height(h).Render(base)
-	} else {
-		base = ansi.Strip(base)
-	}
+	base = solid(base, w, h, baseColor, m.noColor)
 	v := tea.NewView(fit(base, w, h))
 	v.AltScreen = true
 	return v
 }
 
-func (m ui) overlay(base string, w, h int) string {
-	text := "BURROW COMMAND MENU · ↑↓ scroll · Esc returns\n\nstatus   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources.\nArrows select; Enter activates; Esc returns to prompt.\nAlt+N New, Alt+M Menu, Alt+W workspace drawer.\nTab completes the prompt. Click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
+func (m ui) helpText() string {
+	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P commands (Alt+M), Alt+N New, Alt+W workspace drawer.\nTab completes the prompt. Click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
+}
+func (m ui) helpViewport(w, h int) viewport.Model {
+	return scrollBody(m.syntax(m.helpText()), max(1, min(96, w-4)-6), max(1, min(30, h-4)-8), m.helpOffset)
+}
+func (m ui) overlay(base string, w, h int) *lipgloss.Compositor {
+	pw, ph := min(96, w-4), min(30, h-4)
 	if m.quitting {
-		text = "Quit Burrow?\n\nDaemon and workspace resources remain.\n\n  Quit   › Keep working\nTab choose · Enter confirm · Esc cancel"
-		if h < 12 || w < 50 {
-			text = "Quit Burrow?\n  Quit   › Keep\nTab choose · Enter\nEsc cancels"
+		pw, ph = min(64, w-4), 10
+	}
+	pw, ph = max(8, pw), max(8, min(ph, h))
+	x, y := (w-pw)/2, (h-ph)/2
+	bodyW := pw - 6
+	title := m.paint(accent, "BURROW COMMAND MENU")
+	body := m.helpViewport(w, h).View()
+	footer := m.paint(secondary, "↑↓ scroll · Esc returns")
+	if m.quitting {
+		title = m.paint(accent, "Quit Burrow?")
+		body = fit("Daemon and workspace resources remain.", bodyW, 1)
+		footer = m.paint(secondary, "Tab choose · Enter confirm · Esc cancel")
+	}
+	text := title + "\n\n" + body
+	popup := dialogStyle.Width(pw).Height(ph).Render(fit(text, bodyW, ph-4))
+	layers := []*lipgloss.Layer{lipgloss.NewLayer(solid(m.paint(secondary, ansi.Strip(base)), w, h, baseColor, m.noColor)).ID("modal-backdrop"), lipgloss.NewLayer(solid(popup, pw, ph, popupColor, m.noColor)).X(x).Y(y).Z(1).ID("child-modal")}
+	if m.quitting {
+		layers = append(layers, lipgloss.NewLayer(solid(footer, bodyW, 1, popupColor, m.noColor)).X(x+3).Y(y+ph-3).Z(2).ID("modal-footer"))
+		bw := min(20, (bodyW-2)/2)
+		keepLabel := "Keep working"
+		if bw < 14 {
+			keepLabel = "Keep"
 		}
-		if m.leave {
-			text = strings.Replace(text, "  Quit   › Keep", "› Quit     Keep", 1)
-		}
+		layers = append(layers, lipgloss.NewLayer(solid(m.choice("Quit", m.leave, bw), bw, 1, popupColor, m.noColor)).X(x+3).Y(y+ph-4).Z(2).ID("quit-leave"), lipgloss.NewLayer(solid(m.choice(keepLabel, !m.leave, bw), bw, 1, popupColor, m.noColor)).X(x+5+bw).Y(y+ph-4).Z(2).ID("dismiss"))
+	} else {
+		layers = append(layers, lipgloss.NewLayer(solid(footer, bodyW, 1, popupColor, m.noColor)).X(x+3).Y(y+ph-3).Z(2).ID("dismiss"))
 	}
-	pw := max(1, min(64, w-2))
-	if m.help {
-		lines := strings.Split(ansi.Wrap(text, max(1, pw-6), ""), "\n")
-		start := min(m.helpOffset, max(0, len(lines)-1))
-		text = strings.Join(lines[start:], "\n")
-	}
-	popup := fit(text, max(1, pw-6), max(1, min(strings.Count(text, "\n")+1, h-6)))
-	if !m.noColor {
-		popup = dialog.Width(pw).Render(popup)
-		base = muted.Render(ansi.Strip(base))
-	}
-	base = lipgloss.NewCompositor(lipgloss.NewLayer(base), lipgloss.NewLayer(popup).X(max(0, (w-lipgloss.Width(popup))/2)).Y(max(0, (h-lipgloss.Height(popup))/2)).Z(1)).Render()
-
-	return base
+	return lipgloss.NewCompositor(layers...)
 }

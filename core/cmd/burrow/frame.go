@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"image"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,11 +19,8 @@ import (
 
 var focusNext = key.NewBinding(key.WithKeys("f6", "shift+f6"))
 var newWorkspace = key.NewBinding(key.WithKeys("alt+n"))
-var openMenu = key.NewBinding(key.WithKeys("alt+m"))
+var openMenu = key.NewBinding(key.WithKeys("alt+m", "ctrl+p"))
 var openNavigation = key.NewBinding(key.WithKeys("alt+w"))
-var green = lipgloss.NewStyle().Foreground(lipgloss.Color("#50fa7b"))
-var yellow = lipgloss.NewStyle().Foreground(lipgloss.Color("#f1fa8c"))
-var red = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff5555"))
 
 const freshFor = 8 * time.Second
 
@@ -49,9 +47,11 @@ type frame struct {
 	modal                  string
 	modalOffset, menuIndex int
 	destination            textinput.Model
+	palette                textinput.Model
 	launchPending          bool
 	launchError            string
 	sequence               uint64
+	inputEpoch             uint64
 	pending                map[uint64]string
 	now                    time.Time
 }
@@ -65,6 +65,11 @@ type daemonObservation struct {
 	err      error
 	at       time.Time
 	duration time.Duration
+}
+type modalInputResult struct {
+	epoch   uint64
+	modal   string
+	message tea.Msg
 }
 type workspaceOpened struct {
 	info        launch.Info
@@ -114,24 +119,24 @@ func (m *frame) check(path string) tea.Cmd {
 }
 func (w *workspaceView) health(now time.Time) (string, lipgloss.Style) {
 	if w.checking {
-		return "checking", yellow
+		return "checking", warningStyle
 	}
 	if w.failure != "" {
-		return "UNVERIFIED / refused", red
+		return "UNVERIFIED / refused", errorStyle
 	}
 	if w.lastSuccess.IsZero() {
-		return "unknown", yellow
+		return "unknown", warningStyle
 	}
 	if now.Sub(w.lastSuccess) > freshFor {
-		return "stale", yellow
+		return "stale", warningStyle
 	}
-	return "verified", green
+	return "verified", successStyle
 }
 func (m *frame) resize() {
 	left, right := m.columns()
 	for _, w := range m.workspaces {
-		w.management.width = max(1, m.width-left-right)
-		w.management.height = max(1, m.height-2)
+		w.management.width = max(1, m.width-left-right-4)
+		w.management.height = max(1, m.height-4)
 		w.management.input.SetWidth(max(1, w.management.width-4))
 	}
 }
@@ -140,9 +145,9 @@ func (m *frame) columns() (int, int) {
 	if m.width >= 70 {
 		left = 22
 	}
-	if m.width >= 118 {
-		left = 24
-		right = 30
+	if m.width >= 128 {
+		left = 26
+		right = 32
 	}
 	return left, right
 }
@@ -161,11 +166,13 @@ func (m *frame) openNew() {
 		return
 	}
 	m.launchError = ""
+	m.inputEpoch++
 	m.destination = textinput.New()
+	styleInput(&m.destination)
 	m.destination.Prompt = "> "
 	m.destination.Placeholder = "/absolute/workspace"
 	m.destination.CharLimit = 2048
-	m.destination.SetWidth(max(1, min(64, m.width-8)))
+	m.destination.SetWidth(max(1, min(64, min(76, m.width-4)-9)))
 	m.destination.Focus()
 }
 func (m *frame) submitWorkspace() tea.Cmd {
@@ -192,6 +199,10 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	w := m.workspaces[path]
 	model, cmd := w.management.Update(msg)
 	w.management = model.(ui)
+	if w.management.help {
+		v := w.management.helpViewport(m.width, m.height)
+		w.management.helpOffset = v.YOffset()
+	}
 	return m.dispatch(path, cmd)
 }
 func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -248,6 +259,18 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
+		case modalInputResult:
+			if path != m.active || result.epoch != m.inputEpoch || result.modal != m.modal || (result.modal == "new" && m.launchPending) {
+				return m, nil
+			}
+			if batch, ok := result.message.(tea.BatchMsg); ok {
+				var cmds []tea.Cmd
+				for _, cmd := range batch {
+					cmds = append(cmds, m.inputCommand(result.modal, cmd))
+				}
+				return m, tea.Batch(cmds...)
+			}
+			return m, m.updateModalInput(result.modal, result.message)
 		case workspaceOpened:
 			m.launchPending = false
 			if result.err != nil {
@@ -279,7 +302,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
 		m.resize()
-		m.destination.SetWidth(max(1, min(64, m.width-8)))
+		m.destination.SetWidth(max(1, min(64, min(76, m.width-4)-9)))
+		m.palette.SetWidth(max(1, min(76, m.width-4)-9))
 		return m, nil
 	case tea.ColorProfileMsg:
 		for path := range m.workspaces {
@@ -288,7 +312,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.noColor = m.current().management.noColor
 		return m, nil
 	case tea.MouseMsg:
-		if m.width < 24 || m.height < 16 {
+		if m.width < 28 || m.height < 16 {
 			return m, nil
 		}
 		// All pointer types are captured by the active modal, including the child's
@@ -301,11 +325,20 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				delta = -1
 			}
 			if m.current().management.help {
-				m.current().management.helpOffset = max(0, m.current().management.helpOffset+delta)
+				u := &m.current().management
+				u.helpOffset = max(0, u.helpOffset+delta)
+				v := u.helpViewport(m.width, m.height)
+				u.helpOffset = v.YOffset()
+				return m, nil
+			}
+			if m.modal == "menu" {
+				m.menuIndex = max(0, min(len(m.menuMatches())-1, m.menuIndex+delta))
 				return m, nil
 			}
 			if m.modal != "" && m.modal != "navigation" {
-				m.modalOffset = max(0, m.modalOffset+delta)
+				if m.modal == "metadata" {
+					m.scrollMetadata(delta)
+				}
 				return m, nil
 			}
 			if m.current().management.quitting {
@@ -341,7 +374,13 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.activate(hit.ID())
 	case tea.PasteMsg:
-		if m.width < 24 || m.height < 16 {
+		if m.width < 28 || m.height < 16 || m.current().management.help || m.current().management.quitting {
+			return m, nil
+		}
+		if m.modal == "menu" {
+			m.palette.SetValue(m.palette.Value() + safe(v.Content))
+			m.palette.CursorEnd()
+			m.menuIndex = 0
 			return m, nil
 		}
 		if m.modal == "new" && !m.launchPending {
@@ -353,7 +392,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.KeyPressMsg:
-		if (m.width < 24 || m.height < 16) && !m.current().management.quitting {
+		if (m.width < 28 || m.height < 16) && !m.current().management.quitting {
 			if key.Matches(v, quit) {
 				m.current().management.help = false
 				return m, m.updateManagement(m.active, v)
@@ -375,8 +414,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openNew()
 			return m, nil
 		case key.Matches(v, openMenu):
-			m.modal = "menu"
-			m.menuIndex = 0
+			m.openPalette()
 			return m, nil
 		case key.Matches(v, openNavigation):
 			m.modal = "navigation"
@@ -410,8 +448,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "workspaces":
 				m.navIndex = max(0, min(len(m.paths)-1, m.navIndex+delta))
 				m.navOffset = max(0, min(m.navOffset, m.navIndex))
-				if m.navIndex >= m.navOffset+max(1, m.height/2-4) {
-					m.navOffset = m.navIndex - max(1, m.height/2-4) + 1
+				if m.navIndex >= m.navOffset+max(1, m.height/2-5) {
+					m.navOffset = m.navIndex - max(1, m.height/2-5) + 1
 				}
 				if key.Matches(v, enter) {
 					return m, m.selectWorkspace(m.navIndex)
@@ -493,8 +531,7 @@ func (m *frame) activate(id string) tea.Cmd {
 	case "new":
 		m.openNew()
 	case "menu":
-		m.modal = "menu"
-		m.menuIndex = 0
+		m.openPalette()
 	case "navigation":
 		m.modal = "navigation"
 	case "daemon":
@@ -515,6 +552,52 @@ func (m *frame) activate(id string) tea.Cmd {
 	}
 	return nil
 }
+func (m *frame) openPalette() {
+	m.modal = "menu"
+	m.menuIndex = 0
+	m.inputEpoch++
+	m.palette = textinput.New()
+	styleInput(&m.palette)
+	m.palette.Prompt = "› "
+	m.palette.Placeholder = "Type to filter"
+	m.palette.CharLimit = 128
+	m.palette.SetWidth(max(1, min(76, m.width-4)-9))
+	m.palette.Focus()
+}
+func (m *frame) menuMatches() []int {
+	// ponytail: substring filtering for five actions; use fuzzy matching if this catalog grows.
+	var matches []int
+	query := strings.ToLower(m.palette.Value())
+	for i, action := range menuActions {
+		if strings.Contains(strings.ToLower(action), query) {
+			matches = append(matches, i)
+		}
+	}
+	return matches
+}
+
+// Clipboard results belong to the input instance that requested them, just as
+// daemon results belong to their originating workspace.
+func (m *frame) inputCommand(modal string, cmd tea.Cmd) tea.Cmd {
+	if cmd == nil {
+		return nil
+	}
+	epoch := m.inputEpoch
+	return m.dispatch(m.active, func() tea.Msg { return modalInputResult{epoch, modal, cmd()} })
+}
+func (m *frame) updateModalInput(modal string, msg tea.Msg) tea.Cmd {
+	input := &m.palette
+	if modal == "new" {
+		input = &m.destination
+	}
+	before := input.Value()
+	model, cmd := input.Update(msg)
+	*input = model
+	if modal == "menu" && input.Value() != before {
+		m.menuIndex = 0
+	}
+	return m.inputCommand(modal, cmd)
+}
 func (m *frame) menuAction(i int) tea.Cmd {
 	m.modal = ""
 	switch i {
@@ -529,6 +612,7 @@ func (m *frame) menuAction(i int) tea.Cmd {
 		m.current().management.help = true
 	case 4:
 		m.current().management.quitting = true
+		m.current().management.leave = false
 	}
 	return nil
 }
@@ -543,26 +627,31 @@ func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
 			return m.submitWorkspace()
 		}
 		if !m.launchPending {
-			var cmd tea.Cmd
-			m.destination, cmd = m.destination.Update(v)
-			return m.dispatch(m.active, cmd)
+			return m.updateModalInput("new", v)
 		}
 	case "menu":
-		if key.Matches(v, previous) {
-			m.menuIndex = max(0, m.menuIndex-1)
-		}
-		if key.Matches(v, next) {
-			m.menuIndex = min(len(menuActions)-1, m.menuIndex+1)
-		}
-		if key.Matches(v, enter) {
-			return m.menuAction(m.menuIndex)
+		matches := m.menuMatches()
+		if key.Matches(v, previous) || v.String() == "ctrl+p" {
+			if len(matches) > 0 {
+				m.menuIndex = (m.menuIndex - 1 + len(matches)) % len(matches)
+			}
+		} else if key.Matches(v, next) || v.String() == "ctrl+n" {
+			if len(matches) > 0 {
+				m.menuIndex = (m.menuIndex + 1) % len(matches)
+			}
+		} else if key.Matches(v, enter) {
+			if len(matches) > 0 {
+				return m.menuAction(matches[m.menuIndex])
+			}
+		} else {
+			return m.updateModalInput("menu", v)
 		}
 	case "navigation":
 		if key.Matches(v, newWorkspace) {
 			m.openNew()
 		}
 		if key.Matches(v, openMenu) {
-			m.modal = "menu"
+			m.openPalette()
 		}
 		if key.Matches(v, previous) {
 			m.navIndex = max(0, m.navIndex-1)
@@ -576,13 +665,18 @@ func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
 		}
 	default:
 		if key.Matches(v, previous, pageUp) {
-			m.modalOffset = max(0, m.modalOffset-1)
+			m.scrollMetadata(-1)
 		}
 		if key.Matches(v, next, pageDown) {
-			m.modalOffset++
+			m.scrollMetadata(1)
 		}
 	}
 	return nil
+}
+func (m *frame) scrollMetadata(delta int) {
+	bounds := m.dialogBounds()
+	v := scrollBody(m.metadata(), bounds.Dx()-6, bounds.Dy()-6, m.modalOffset+delta)
+	m.modalOffset = v.YOffset()
 }
 func (m *frame) metadata() string {
 	w := m.current()
@@ -604,7 +698,11 @@ func (m *frame) metadata() string {
 	if w.management.connectionError != "" {
 		owner = w.management.connectionError
 	}
-	return fmt.Sprintf("SELECTED CONNECTION\n%s\n\nRESOURCES\n%d SSH connections (snapshot)\n%s\nShells / runs / transfers:\nNot implemented\n\nHOVEL DAEMON: %s\nLast success: %s\nVerification duration: %s\nLast known PID %d\nEndpoint: %s\nWorkspace: %s\n%s", selected, len(w.management.connections), owner, state, age, w.duration.Round(time.Millisecond), w.management.info.PID, safe(filepath.Join(m.active, "hoveld.sock")), safe(m.active), w.failure)
+	text := fmt.Sprintf("SELECTED CONNECTION\n%s\n\nRESOURCES\n%d SSH connections (snapshot)\n%s\nShells / runs / transfers:\nNot implemented\n\nHOVEL DAEMON: %s\nLast success: %s\nVerification duration: %s\nLast known PID %d\nEndpoint: %s\nWorkspace: %s\n%s", selected, len(w.management.connections), owner, state, age, w.duration.Round(time.Millisecond), w.management.info.PID, safe(filepath.Join(m.active, "hoveld.sock")), safe(m.active), w.failure)
+	for _, label := range []string{"SELECTED CONNECTION", "RESOURCES", "HOVEL DAEMON"} {
+		text = strings.Replace(text, label, w.management.paint(heading, label), 1)
+	}
+	return text
 }
 
 // All visible control cells and pointer targets come from these same layers.
@@ -612,17 +710,16 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	w, h := max(1, m.width), max(1, m.height)
 	current := m.current()
 	left, right := m.columns()
-	layers := []*lipgloss.Layer{lipgloss.NewLayer(strings.Repeat(" ", w) + strings.Repeat("\n", h-1)).ID("background")}
+	layers := []*lipgloss.Layer{lipgloss.NewLayer(solid("", w, h, baseColor, m.noColor)).ID("background")}
 	add := func(id, text string, x, y, width, height, z int) {
 		if width <= 0 || height <= 0 {
 			return
 		}
-		text = fit(text, width, height)
-		lines := strings.Split(text, "\n")
-		for i, line := range lines {
-			lines[i] = line + strings.Repeat(" ", max(0, width-ansi.StringWidth(line)))
+		bg := baseColor
+		if x < left || (right > 0 && x >= w-right) {
+			bg = sidebarColor
 		}
-		layers = append(layers, lipgloss.NewLayer(strings.Join(lines, "\n")).ID(id).X(x).Y(y).Z(z))
+		layers = append(layers, lipgloss.NewLayer(solid(text, width, height, bg, m.noColor)).ID(id).X(x).Y(y).Z(z))
 	}
 	label := func(id, text string) string {
 		if current.focus == id {
@@ -632,22 +729,33 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	}
 	state, style := current.health(m.now)
 	status := current.management.paint(style, "● Hovel: "+state)
-	add("daemon", status, w-min(w, 30), 0, min(w, 30), 1, 2)
-	add("navigation", current.management.paint(cyan, "[Workspaces] "+safe(m.active)), 0, 0, max(0, w-30), 1, 1)
-	tabLabel := "[Burrow]"
-	hovelLabel := "[Hovel · soon]"
-	if current.tab == "" {
-		tabLabel = "> Burrow"
-	} else {
-		hovelLabel = "> Hovel · soon"
+	cx, cw := left+2, w-left-right-4
+	statusY := 1
+	statusWidth := min(w, 26)
+	if w-27 < cx+26 {
+		statusY = 0
 	}
-	add("burrow", label("tabs", tabLabel), left, 1, 10, 1, 1)
-	add("hovel", hovelLabel, left+10, 1, min(16, w-left-10), 1, 1)
+	if left == 0 && w < 54 {
+		statusWidth = w / 2
+		status = current.management.paint(style, "Hovel: "+state)
+	}
+	add("daemon", status, w-statusWidth, statusY, statusWidth, 1, 2)
+	if left == 0 {
+		add("navigation", current.management.paint(heading, "[Workspaces]"), 1, 0, min(14, w/2-1), 1, 2)
+	}
+	tabStyle, hovelStyle := activeStyle, secondary
+	tabLabel, hovelLabel := "› Burrow", "  Hovel · soon"
+	if current.tab != "" {
+		tabStyle, hovelStyle = secondary, activeStyle
+		tabLabel, hovelLabel = "  Burrow", "› Hovel · soon"
+	}
+	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, 10, 1, 1)
+	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(16, w-cx-10), 1, 1)
 	management := current.management
 	management.help = false
 	management.quitting = false
 	center := management.View().Content
-	add("center", center, left, 2, w-left-right, h-2, 1)
+	add("center", center, cx, 3, cw, h-4, 1)
 	// Identified row layers reuse the rendered cells rather than guessing table
 	// border or wrapping offsets in the pointer handler.
 	inActive := false
@@ -667,25 +775,30 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			fields := strings.Fields(plain)
 			if len(fields) > 0 && fields[0] == row.Name {
 				if current.selected == row.Name {
-					line = current.management.paint(purple, ">"+ansi.Truncate(plain, w-left-right-1, "…"))
+					line = current.management.choice(plain, true, cw)
 				}
-				add(fmt.Sprintf("resource:%d", i), line, left, y+2, w-left-right, 1, 2)
+				add(fmt.Sprintf("resource:%d", i), line, cx, y+3, cw, 1, 2)
 				break
 			}
 		}
 	}
 
 	if current.tab != "" {
-		add("center", "Hovel CLI · not implemented (#68)\n\nThe embedded terminal will appear here.\nEsc or Burrow tab returns to management.", left, 3, w-left-right, max(1, h-4), 3)
+		add("center", "Hovel CLI · not implemented (#68)\n\nThe embedded terminal will appear here.\nEsc or Burrow tab returns to management.", cx, 3, cw, max(1, h-4), 3)
 	}
-	add("footer", "Focus: "+current.focus+" · F6 · Alt+N/M/W · F1 help", left, h-3, w-left-right, 1, 2)
+	add("footer", current.management.paint(secondary, "Management · focus: "+current.focus), cx, h-4, cw, 1, 2)
 	if right > 0 {
-		add("metadata", ansi.Wrap(m.metadata(), right-2, ""), w-right, 2, right, h-2, 1)
+		add("metadata", "", w-right, 0, right, h, 0)
+		add("metadata", ansi.Wrap(m.metadata(), right-4, ""), w-right+2, 3, right-4, h-4, 1)
+		add("separator", current.management.paint(separatorStyle, strings.Repeat("│\n", h)), w-right, 0, 1, h, 2)
 	}
 	sidebar := func(width, z int) {
+		add("workspaces", "", 0, 0, width, h, z-1)
+		add("separator", current.management.paint(separatorStyle, strings.Repeat("│\n", h)), width-1, 0, 1, h, z+1)
+		width -= 3
 		midpoint := max(4, h/2)
-		add("workspaces", label("workspaces", "WORKSPACES")+"\nExplicit · this session", 0, 1, width, max(1, midpoint-1), z)
-		rows := max(1, midpoint-4)
+		add("workspaces", current.management.paint(heading, label("workspaces", "WORKSPACES"))+"\n"+current.management.paint(secondary, "This session"), 1, 1, width, max(1, midpoint-1), z)
+		rows := max(1, midpoint-5)
 		start := min(m.navOffset, max(0, len(m.paths)-1))
 		end := min(len(m.paths), start+rows)
 		for i := start; i < end; i++ {
@@ -696,85 +809,102 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			if current.focus == "workspaces" && i == m.navIndex {
 				prefix = "> "
 			}
-			add(fmt.Sprintf("workspace:%d", i), prefix+safe(filepath.Base(m.paths[i])), 0, 3+i-start, width, 1, z+1)
+			add(fmt.Sprintf("workspace:%d", i), current.management.paint(func() lipgloss.Style {
+				if m.paths[i] == m.active || (current.focus == "workspaces" && i == m.navIndex) {
+					return activeStyle.Width(width)
+				}
+				return pageStyle
+			}(), ansi.Truncate(prefix+safe(filepath.Base(m.paths[i])), width, "…")), 1, 4+i-start, width, 1, z+1)
 		}
-		add("workspaces", fmt.Sprintf("%d–%d/%d · ↑↓ / wheel", start+1, end, len(m.paths)), 0, midpoint-1, width, 1, z+1)
-		add("new", label("new", "[New]"), 0, midpoint, width/2, 1, z+1)
-		add("menu", label("menu", "[Menu]"), width/2, midpoint, width-width/2, 1, z+1)
-		rows = max(1, (h-midpoint-4)/2)
+		add("workspaces", fmt.Sprintf("%d–%d/%d · ↑↓ / wheel", start+1, end, len(m.paths)), 1, midpoint-1, width, 1, z+1)
+		add("new", current.management.paint(heading, label("new", "[New]")), 1, midpoint, width/2, 1, z+1)
+		add("menu", current.management.paint(heading, label("menu", "[Menu]")), 1+width/2, midpoint, width-width/2, 1, z+1)
+		gap, groupHeight := "\n\n", 3
+		if h-midpoint-3 < 6 {
+			gap, groupHeight = "\n", 2
+		}
+		rows = max(1, (h-midpoint-6)/groupHeight)
 		start = min(current.shellOffset, max(0, len(m.paths)-1))
 		end = min(len(m.paths), start+rows)
-		text := label("shells", "SHELLS · not implemented")
+		text := current.management.paint(heading, label("shells", "SHELLS")) + "\n" + current.management.paint(secondary, "Not implemented")
 		for _, path := range m.paths[start:end] {
-			text += "\n" + safe(filepath.Base(path)) + "\n  No shells"
+			text += gap + safe(filepath.Base(path)) + "\n  No shells"
 		}
 		text += fmt.Sprintf("\n%d–%d/%d · wheel", start+1, end, len(m.paths))
-		add("shells", text, 0, midpoint+1, width, max(1, h-midpoint-1), z)
+		add("shells", text, 1, midpoint+2, width, max(1, h-midpoint-3), z)
 	}
 	if left > 0 {
 		sidebar(left, 2)
 	}
+	layers = append(layers, lipgloss.NewLayer(m.commandHelp()).Y(h-1).Z(3).ID("command-help"))
 	if m.modal != "" {
 		// A full-screen identified backdrop captures every pointer event.
 		base := lipgloss.NewCompositor(layers...).Render()
 		if !m.noColor {
-			base = muted.Render(ansi.Strip(base))
+			base = solid(secondary.Render(ansi.Strip(base)), w, h, baseColor, false)
 		}
 		layers = []*lipgloss.Layer{lipgloss.NewLayer(base).ID("modal-backdrop")}
 		if m.modal == "navigation" {
 			sidebar(min(32, w), 3)
 			add("dismiss", "[Esc close]", max(0, w-12), 1, min(12, w), 1, 5)
 		} else {
-			pw := max(1, min(72, w-2))
-			x := max(0, (w-pw)/2)
-			y := max(1, (h-min(h-2, 14))/2)
+			bounds := m.dialogBounds()
+			pw, ph := bounds.Dx(), bounds.Dy()
+			x, y := bounds.Min.X, bounds.Min.Y
+			bw := pw - 6
 			text := ""
 			switch m.modal {
 			case "new":
-				text = "NEW / OPEN WORKSPACE\nExact destination (Enter launches):\n" + m.destination.View() + "\nDestination: " + safe(m.destination.Value()) + "\n\n" + m.launchError
+				text = current.management.paint(accent, "NEW / OPEN WORKSPACE") + "\n\nExact destination (Enter launches):\n" + m.destination.View() + "\n\n" + current.management.paint(errorStyle, m.launchError)
 				if m.launchPending {
 					text += "\nLaunching and verifying…"
 				}
 			case "menu":
-				text = "MENU · ↑↓ Enter · Esc close"
+				text = current.management.paletteTitle(bw) + "\n\n" + m.palette.View()
 			case "metadata":
-				text = m.metadata()
+				v := scrollBody(m.metadata(), bw, ph-6, m.modalOffset)
+				text = v.View()
 			}
-			lines := strings.Split(ansi.Wrap(text, pw, ""), "\n")
-			start := min(m.modalOffset, max(0, len(lines)-1))
-			if m.modal != "metadata" {
-				start = 0
+			popup := dialogStyle.Width(pw).Height(ph).Render(fit(text, bw, ph-4))
+			layers = append(layers, lipgloss.NewLayer(solid(popup, pw, ph, popupColor, m.noColor)).ID("modal").X(x).Y(y).Z(3))
+			control := func(id, text string, y int) {
+				layers = append(layers, lipgloss.NewLayer(solid(text, bw, 1, popupColor, m.noColor)).ID(id).X(x+3).Y(y).Z(4))
 			}
-			add("modal", current.management.paint(surface, strings.Join(lines[start:], "\n")), x, y, pw, max(1, min(h-y-2, 14)), 3)
 			if m.modal == "menu" {
-				for i, action := range menuActions {
-					prefix := "  "
-					if i == m.menuIndex {
-						prefix = "> "
-					}
-					add(fmt.Sprintf("action:%d", i), prefix+action, x, y+2+i, pw, 1, 4)
+				matches := m.menuMatches()
+				count := max(1, ph-9)
+				start := max(0, m.menuIndex-count+1)
+				for j := start; j < min(len(matches), start+count); j++ {
+					i := matches[j]
+					control(fmt.Sprintf("action:%d", i), current.management.choice(menuActions[i], j == m.menuIndex, bw), y+6+j-start)
+				}
+				if len(matches) == 0 {
+					control("no-matches", current.management.paint(secondary, "No matching commands"), y+6)
 				}
 			}
 			if m.modal == "new" {
-				add("submit", "[Launch exact destination]", x, min(h-2, y+10), pw, 1, 4)
+				control("submit", current.management.paint(heading, "[Launch exact destination]"), y+ph-4)
 			}
-			add("dismiss", "[Esc close]", x, h-1, pw, 1, 4)
+			hint := "[Esc close]"
+			if m.modal == "menu" {
+				hint = "↑↓ select · Enter run · Esc close"
+			}
+			control("dismiss", current.management.paint(secondary, hint), y+ph-3)
 		}
 	}
 	if current.management.help || current.management.quitting {
-		base := current.management.overlay(lipgloss.NewCompositor(layers...).Render(), w, h)
-		layers = []*lipgloss.Layer{lipgloss.NewLayer(base).ID("child-modal")}
-		add("modal-footer", "", 0, h-1, w, 1, 3)
-		if current.management.quitting {
-			add("quit-leave", "[Quit]", max(0, w/2-16), h-1, min(12, w), 1, 4)
-		}
-		add("dismiss", "[Esc / Keep working]", max(0, w/2), h-1, min(22, w-w/2), 1, 4)
+		return current.management.overlay(lipgloss.NewCompositor(layers...).Render(), w, h)
 	}
 	return lipgloss.NewCompositor(layers...)
 }
+func (m *frame) dialogBounds() image.Rectangle {
+	pw, ph := min(76, m.width-4), min(18, m.height-4)
+	x, y := (m.width-pw)/2, (m.height-ph)/2
+	return image.Rect(x, y, x+pw, y+ph)
+}
 func (m *frame) View() tea.View {
 	// Preserve the existing tiny-terminal quit recovery, with no stale click targets.
-	if m.height < 16 || m.width < 24 {
+	if m.height < 16 || m.width < 28 {
 		u := m.current().management
 		u.width = m.width
 		u.height = min(m.height, 11)
@@ -784,10 +914,38 @@ func (m *frame) View() tea.View {
 	if m.noColor {
 		base = ansi.Strip(base)
 	} else {
-		base = surface.Render(base)
+		base = solid(base, m.width, m.height, baseColor, false)
 	}
 	v := tea.NewView(fit(base, m.width, m.height))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
+	if !m.current().management.help && !m.current().management.quitting {
+		x, y := 0, 0
+		switch m.modal {
+		case "menu":
+			v.Cursor = m.palette.Cursor()
+			r := m.dialogBounds()
+			x, y = r.Min.X+3, r.Min.Y+4
+		case "new":
+			if !m.launchPending {
+				v.Cursor = m.destination.Cursor()
+				r := m.dialogBounds()
+				x, y = r.Min.X+3, r.Min.Y+5
+			}
+		case "":
+			if m.current().focus == "prompt" && m.current().tab == "" {
+				v.Cursor = m.current().management.input.Cursor()
+				left, _ := m.columns()
+				x, y = left+2, m.height-2
+			}
+		}
+		if v.Cursor != nil {
+			v.Cursor.Position.X += x
+			v.Cursor.Position.Y += y
+			if m.noColor {
+				v.Cursor.Color = nil
+			}
+		}
+	}
 	return v
 }

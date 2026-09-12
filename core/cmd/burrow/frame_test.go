@@ -133,7 +133,7 @@ func TestOverflowAndResourceSelection(t *testing.T) {
 	}
 	m.Update(tea.MouseWheelMsg{X: 2, Y: 4, Button: tea.MouseWheelDown})
 	// A wheel changes the list, never the independently anchored controls.
-	if !strings.Contains(m.View().Content, "2–9/21") {
+	if !strings.Contains(m.View().Content, "2–8/21") {
 		t.Fatal(m.View().Content)
 	}
 	m.Update(tea.MouseClickMsg{X: 2, Y: 12, Button: tea.MouseLeft})

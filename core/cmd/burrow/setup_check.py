@@ -253,19 +253,28 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             raise AssertionError((needle, subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3).stdout, bytes(fresh)))
         try:
             read_until(b"SAVED CONNECTION")
+            # Real command palette keeps the draft isolated and filters actions.
+            os.write(master, b"\x10")  # Ctrl+P
+            read_until(b"Type to filter")
+            os.write(master, b"meta")
+            read_until(b"Metadata")
+            os.write(master, b"\r")
+            read_until(b"SELECTED CONNECTION")
+            os.write(master, b"\x1b")
+            time.sleep(.2)
             # Real New form launches through the shared verified Open operation.
             created = root / "nav-created"
             os.write(master, b"\x1bn")  # Alt+N
             read_until(b"Exact destination")
             assert not created.exists(), "opening New mutated the destination"
             os.write(master, str(created).encode() + b"\r")
-            read_until(str(created).encode())
+            read_until(("● " + created.name).encode())
             created_info = run(created, "--offline")
             assert created_info["pid"] != info["pid"]
             os.write(master, b"draft-created\x1bw")  # preserve draft, open drawer
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[A\r")
-            read_until(str(w).encode())
+            read_until(("● " + w.name).encode())
             # Mouse opens midpoint New at the resized 80x24 geometry.
             os.write(master, b"\x1b[<0;3;13M\x1b[<0;3;13m")
             read_until(b"Exact destination")
@@ -278,7 +287,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\x1bw")
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[A\r")
-            read_until(str(w).encode())
+            read_until(("● " + w.name).encode())
             os.write(master, b"sta\x1bOP")  # draft, F1
             read_until(b"BURROW COMMAND MENU")
             os.write(master, b"\x1b")
@@ -291,7 +300,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             time.sleep(.1)
             assert terminal.poll() is None, "paste executed"
             os.write(master, b"\x15")  # discard pasted draft
-            for height, width in [(8, 30), (2, 8), (32, 120), (24, 80)]:
+            for height, width in [(8, 30), (2, 8), (32, 160), (24, 80)]:
                 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
                 os.kill(terminal.pid, signal.SIGWINCH)
                 time.sleep(.1)
@@ -326,12 +335,18 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             read_until("› Keep".encode())
             os.write(master, b"\t")
             read_until("› Quit".encode())
-            assert b"38;2;189;147;249" in output, "Dracula purple missing"
+            assert b"38;2;180;190;254" in output, "Catppuccin lavender missing"
             os.write(master, b"\x1b")
-            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 120, 0, 0))
-            screen_dimensions = ["120", "32"]
+            read_until(b"Resize window")
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 160, 0, 0))
+            screen_dimensions = ["160", "32"]
             os.kill(terminal.pid, signal.SIGWINCH)
             read_until(f"PID {info['pid']}".encode())
+            os.write(master, b"\x10")
+            read_until(b"Type to filter")
+            assert b"\x1b[1 q" in output, "native blinking block cursor was not requested"
+            os.write(master, b"\x1b")
+            time.sleep(.2)
             # A failed refresh must invalidate the visible daemon identity.
             os.kill(info["pid"], signal.SIGTERM)
             processes.remove(info["pid"])
@@ -342,7 +357,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             assert str(w).encode() in screen, screen
             os.write(master, b"\x03")
             read_until(b"Quit Burrow?")
-            os.write(master, b"\r")
+            os.write(master, b"\t\r")
             assert terminal.wait(timeout=5) == 0
             assert terminal.stdout.read() == b"", "TUI leaked into captured stdout"
             assert termios.tcgetattr(slave) == before
