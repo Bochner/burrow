@@ -1,5 +1,6 @@
 """Disposable pinned OpenSSH container; actual Burrow -> Hovel -> module path."""
 import base64
+import argparse
 import hashlib
 import http.client
 import fcntl
@@ -14,15 +15,27 @@ import sqlite3
 import socket
 import struct
 import subprocess
-import sys
 import tempfile
 import termios
 import time
 
 from core.cmd.burrow.authentication_lab import authentication_matrix
 
-binary, wheel, image_file, screen_check = [str(Path(p).resolve()) for p in sys.argv[1:]]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("paths", nargs=4, metavar="PATH")
+parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
+args = parser.parse_args()
+smoke = args.smoke
+binary, wheel, image_file, screen_check = [str(Path(p).resolve()) for p in args.paths]
 image = Path(image_file).read_text().strip()
+started = stage_started = time.monotonic()
+
+def timing(stage):
+    global stage_started
+    now = time.monotonic()
+    print(f"TIMING {stage}: {now - stage_started:.1f}s (total {now - started:.1f}s)", flush=True)
+    stage_started = now
+
 def interrupted(signum, _frame):
     raise SystemExit(f"acceptance interrupted by signal {signum}")
 for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
@@ -77,6 +90,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         w = root / "w"
         info = burrow(w, "--hovel-package", wheel, "status")
         daemons.append(info["pid"])
+        timing("fixture and workspace setup")
         options = ["--key", str(key), "--port", str(port), "--trust", fingerprint, "--yes"]
         def state_is(w, name, expected):
             s = burrow(w, "inspect", name)
@@ -106,6 +120,13 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
         burrow(w, "connect", "gateway", "127.0.0.1", "tester", *options, ok=False)
         assert burrow(w, "inspect", "gateway")["socketInode"] == first["socketInode"]
+        timing("key authentication, trust, retention and collision")
+        if smoke:
+            burrow(w, "close", "gateway", "--yes")
+            assert not Path(first["socket"]).parent.exists()
+            timing("explicit close")
+            print("PASS SSH smoke only; full authentication/PTY/lifecycle matrix not run", flush=True)
+            raise SystemExit(0)
         # Refusals leave symlinks, unsafe permissions and substituted roots intact.
         alias = w / "burrow/alias"
         alias.symlink_to(Path(first["socket"]).parent, target_is_directory=True)
@@ -198,13 +219,16 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             if path.is_file():
                 assert canary.encode() not in path.read_bytes(), path
                 assert b"BEGIN OPENSSH PRIVATE KEY" not in path.read_bytes(), path
+        timing("connection lifecycle and batch authentication")
         auth_secret, auth_key = authentication_matrix(binary, w, root, env, container, port, key, fingerprint, burrow, wait, screen_check)
+        timing("interactive authentication matrix")
         trusted = trust_file.read_bytes()  # Includes the explicitly approved jump destination.
         # Actual TUI commands, terminal restoration, narrow rendering and quit
         # retention. The screen oracle is the existing pinned VT emulator.
         for i in range(7):
             burrow(w, "connect", f"row{i}", "127.0.0.1", "tester", *plain)
             wait(lambda: state_is(w, f"row{i}", "connected"))
+        timing("TUI inventory setup")
         outer, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         before = termios.tcgetattr(slave)
@@ -351,6 +375,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
         for i in range(7):
             burrow(w, "close", f"row{i}", "--yes")
+        timing("TUI and inventory cleanup")
         # Non-secret diagnostics cannot fill Hovel's retained notification queue.
         def rpc(method, data):
             conn = http.client.HTTPConnection("localhost", timeout=15)
@@ -367,6 +392,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         for _ in range(265):
             code, result = rpc("RunSessionCommand", {"SessionID": first["session"], "Request": {"command": "connection-status"}})
             assert code == 200 and json.loads(result["stdout"])["state"] == "connected", result
+        timing("retained log ceiling")
         # Cleanup failures preserve unknown contents and the control session.
         evidence = w / "operator-evidence"
         evidence.write_text("retain evidence")
@@ -430,6 +456,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         burrow(w, "--offline", "status", ok=False)
         burrow(w, "connect", "afterloss", "127.0.0.1", "tester", *plain, ok=False)
         assert not (w / "burrow/afterloss").exists() and evidence.read_text() == "retain evidence"
+        timing("failure ownership and evidence")
         print("PASS production key/agent auth, trust, cancellation, ownership, cross-workspace isolation, loss/reconnect, bounded logs and truthful close", flush=True)
     finally:
         for child in children:
@@ -442,3 +469,4 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
                 pass
         if container:
             command("docker", "rm", "-f", container)
+        timing("fixture cleanup")
