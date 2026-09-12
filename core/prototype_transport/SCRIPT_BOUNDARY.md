@@ -5,7 +5,8 @@ For [Can remote script runs satisfy Hovel execution and cleanup contracts?](http
 **Finding: the synchronous confirmed throw path does not satisfy retained script
 execution after caller loss at the pinned Hovel revision.** This is a prerequisite
 failure reproduction, not the full script implementation or an accepted workaround.
-Owner review is pending. The full ticket requirements remain in force.
+The retained-session follow-up below tests a candidate workaround. Owner review
+is pending. The full ticket requirements remain in force.
 
 Run `aspect burrow-prototype transport` or `aspect burrow-check`. The latter also
 builds the SDK package/frontend and checks the SDK protocol and documentation.
@@ -60,8 +61,9 @@ Keep the accepted detach, confirmation and evidence requirements. A candidate
 next proof is a run represented by a retained Hovel session, with confirmed start
 and explicit status/cancel/result collection through supported operations. This
 must prove final artifact persistence, confirmation coverage, remote cancellation
-and cleanup; a returned session reference alone is insufficient. An upstream
-retained-run contract is the other route. Neither is implemented or accepted here.
+and cleanup; a returned session reference alone is insufficient. The follow-up
+below implements that bounded candidate, not an accepted production contract.
+An upstream retained-run contract remains the other route.
 
 Do not claim the remaining ticket matrix has passed: operator-selected local
 tools driving two connections, remote existing commands/scripts, separate stdin
@@ -69,3 +71,87 @@ files, actual staged-file cleanup and keep behavior, per-run cancellation with a
 child, timeout, connection loss during execution and cleanup, and long-running
 retained status/output still need the selected execution path. No AI integration,
 new job framework, audit database or production SSH code is introduced.
+
+## Retained-session follow-up
+
+The owner authorized testing retained Hovel sessions for script execution. The
+candidate reuses the daemon-owned connection above and adds one result-bearing
+SDK session per inert run. It introduces no job registry or audit database.
+The same Aspect transport gate runs both the original failure reproduction and
+this follow-up. The loopback remote supervisor uses the declared Python 3.12
+toolchain executable inherited from the harness; Python availability on arbitrary
+remote machines is **not** established by this fixture.
+
+### Candidate sequence
+
+1. A confirmed `script-prepare` throw creates an idle session. No remote code runs.
+2. A confirmed `script-launch` throw addresses that already-retained session.
+   A mutex and permanent started flag ensure retries refer to the same execution.
+3. The remote supervisor owns its inert child's process group, optional timeout,
+   and its exact staged script path. The retained module drains a bounded result
+   envelope; it never places script output on the module's protocol stdout or in
+   SDK diagnostic logs.
+4. Status queries expose the retained result. A confirmed `script-cancel` throw
+   requests cancellation and collects its result; ordinary frontend exit does
+   neither. Killing a local SSH process is never treated as confirmed cleanup.
+5. A confirmed `script-collect` throw materializes the result in Hovel's workspace
+   artifact store. Collection does not erase the session result and can be retried.
+   Explicit session close follows successful collection. Its persisted artifact
+   remains readable after close.
+
+The collection throw's success means **collection succeeded**. Remote exit code,
+cancellation, timeout, and uncertainty remain separate fields in that artifact.
+The proof retains a 65,536-byte prefix of each output stream, reports exact
+discard counts, and base64-encodes arbitrary bytes. Its 256 KiB JSON reply limit
+covers both encoded streams. These are fixture bounds, not an approved product
+output-retention policy. Output is available in the result at completion; this
+does not demonstrate live streaming of arbitrary script output.
+
+### Behavior checks
+
+| Case | Assertion |
+| --- | --- |
+| Success/nonzero exit | Frontend exits while the run remains active; status and a later confirmed artifact preserve separate stdout/stderr, binary bytes, truncation count and remote exit 0/7. |
+| Cancel/timeout | Remote supervisor signals only its process group; independent harness observations verify the leader and its ordinary child are no longer live. Sibling use of the SSH connection remains available. |
+| Staging | Default completion/cancel/timeout removes the exact inert staged script and its empty private directory; explicit keep preserves them for harness cleanup. |
+| Failed/repeated collection | A missing session fails; the original result remains collectible. Repeated cancel/collection returns the existing terminal result. Artifact hash and correlated Hovel confirmation are checked. |
+| One-step start interrupted | Deliberately delay the initial module result, then kill its caller after remote launch. No broker session or final artifact becomes discoverable. SDK registration alone does not establish retention. |
+| Prepared-session launch interrupted | Prepare first, launch through a second confirmed throw, and kill that caller before its result. The existing run remains queryable; retrying launch does not change the independently observed remote PID or rerun the script. Later collection persists its result. |
+| Master loss | The session preserves transport/completion uncertainty, no invented remote exit and unconfirmed cleanup. Confirmed collection records that uncertainty. Missing-master reuse refuses authentication fallback. |
+| Daemon death before collection | After a completed result is visible through status, kill and restart Hovel without collecting it. The session is unavailable and no final output artifact has appeared. |
+
+The one-step gap follows the pinned runner's adoption boundary: it keeps the
+module only after receiving the result and adopting its sessions. The two-step
+candidate starts remote work only after that boundary. Cancelling a later
+session-command request abandons the request's response; it does not kill the
+already-retained owner. Sources: pinned
+[runner and session broker](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/core/internal/moduleruntime/pythonrpc/runner.go),
+[SDK dispatch](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/sdk/go/hovel/server.go),
+and [throw confirmation/artifact collection](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/core/internal/app/commands/catalog.go).
+
+### Remaining decision and limits
+
+This candidate makes **prepare, launch, inspect/cancel, collect, close** explicit.
+Until collection succeeds, final output lives in the retained module's memory,
+not in Hovel's durable artifact store. Module/daemon death before collection can
+lose it. Preparation or launch response loss is not permission to create and
+execute a replacement run: inspect the existing session first. Session commands
+remain privileged low-level interfaces; their destructive/read-only metadata
+does not enforce throw confirmation. Operator-facing mutation must use the
+confirmed throw path. This is the same Hovel authority boundary observed above,
+not an added credential or confirmation system.
+
+The remote supervisor is a Linux/Python inert fixture. It does not prove portable
+remote process-tree containment, daemonized/escaped descendants, hostile target
+result integrity, production signal escalation, or cleanup under every failure.
+Transport loss is reported as unknown even when the independent loopback harness
+can observe termination or remove leftover fixture files.
+
+The full ticket still requires local tools selecting between two connections,
+operator-selected scripts/interpreters, existing remote commands/scripts,
+independent stdin files, streaming through this retained path, injected cleanup
+failure, and a final output/retention policy. The original streamed synchronous
+probe is separate evidence, not proof of those features in this candidate.
+Do not close the ticket or unblock final slice planning merely because this
+bounded gate passes. Review the concrete lifetime/collection tradeoff with the
+owner before promoting it to the accepted scripting contract.
