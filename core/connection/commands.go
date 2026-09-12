@@ -23,7 +23,11 @@ reconnect NAME HOST USER [options]   Explicitly replace a lost owned connection
 inspect NAME                        State, endpoint and socket identity
 close NAME [--yes]                   Review/close all owned connection resources
 
-Required first: NAME HOST USER (- uses SSH config user). Options:
+Required: NAME HOST USER (- uses SSH config user), or:
+connect -ip HOST -port NUMBER -user USER -socket NAME [-ssh-key PATH]
+Named flags may appear in any order; duplicate fields/aliases are refused.
+Legacy -proxy, -shell and -no-term are unsupported, never silently accepted.
+Options (required fields are shown before optional settings):
 --key PATH, --agent PATH (SSH_AUTH_SOCK default), --port NUMBER (config/22),
 --ssh-config PATH (~/.ssh/config), --jump [USER@]HOST[:PORT][,...],
 --known-hosts PATH (~/.ssh/known_hosts), --trust SHA256:FINGERPRINT,
@@ -55,15 +59,21 @@ launch:
     command: ["burrow", "connection-module"]
 `
 
+func optionName(arg string) string {
+	name := strings.TrimLeft(strings.SplitN(arg, "=", 2)[0], "-")
+	switch name {
+	case "ip":
+		return "host"
+	case "socket":
+		return "name"
+	case "ssh-key":
+		return "key"
+	}
+	return name
+}
+
 func Parse(workspace string, args []string) (Config, bool, error) {
 	c := Config{Workspace: workspace, Agent: os.Getenv("SSH_AUTH_SOCK")}
-	if len(args) < 3 {
-		return c, false, fmt.Errorf("required first: NAME HOST USER; use help")
-	}
-	c.Name, c.Host, c.User = args[0], args[1], args[2]
-	if _, e := launch.ConnectionPath(workspace, c.Name); e != nil {
-		return c, false, e
-	}
 	home, e := os.UserHomeDir()
 	if e != nil {
 		return c, false, e
@@ -72,6 +82,9 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	c.SSHConfig = filepath.Join(home, ".ssh", "config")
 	fs := flag.NewFlagSet("connect", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	fs.StringVar(&c.Name, "name", "", "connection name")
+	fs.StringVar(&c.Host, "host", "", "host or alias")
+	fs.StringVar(&c.User, "user", "", "username")
 	fs.StringVar(&c.Key, "key", "", "key path")
 	fs.StringVar(&c.Agent, "agent", c.Agent, "agent socket")
 	fs.StringVar(&c.KnownHosts, "known-hosts", c.KnownHosts, "known-hosts path")
@@ -81,8 +94,61 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	fs.BoolVar(&c.Prompt, "prompt", false, "private terminal authentication")
 	fs.IntVar(&c.Port, "port", 0, "SSH port (configuration or 22)")
 	yes := fs.Bool("yes", false, "confirm reviewed operation")
-	if e = fs.Parse(args[3:]); e != nil || fs.NArg() != 0 {
+	// Normalize the pinned LazySSH spellings, then let flag validate values.
+	// Required positionals and named options can be interspersed; duplicates
+	// are refused rather than silently choosing a different endpoint or key.
+	seen := map[string]bool{}
+	var options, positional []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "-" || !strings.HasPrefix(arg, "-") {
+			positional = append(positional, arg)
+			continue
+		}
+		name, value, assigned := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		name = optionName(name)
+		f := fs.Lookup(name)
+		if f == nil {
+			return c, false, fmt.Errorf("invalid connection options; use help (secrets are not accepted)")
+		}
+		// Interactive review appends --yes after an explicit --yes=false.
+		// Only this approval switch may repeat; connection fields stay unique.
+		if seen[name] && name != "yes" {
+			return c, false, fmt.Errorf("duplicate connection option %s", name)
+		}
+		seen[name] = true
+		if !assigned && name != "yes" && name != "prompt" {
+			i++
+			if i == len(args) {
+				return c, false, fmt.Errorf("missing value for %s; required NAME HOST USER; use help", name)
+			}
+			value, assigned = args[i], true
+		}
+		option := "--" + name
+		if assigned {
+			option += "=" + value
+		}
+		options = append(options, option)
+	}
+	for i, value := range positional {
+		if i >= 3 {
+			return c, false, fmt.Errorf("expected NAME HOST USER and options; use help")
+		}
+		name := []string{"name", "host", "user"}[i]
+		if seen[name] {
+			return c, false, fmt.Errorf("duplicate connection option %s", name)
+		}
+		seen[name] = true
+		options = append(options, "--"+name+"="+value)
+	}
+	if !seen["name"] || !seen["host"] || !seen["user"] {
+		return c, false, fmt.Errorf("required NAME HOST USER (or -socket NAME -ip HOST -user USER); bare connect opens the form")
+	}
+	if e = fs.Parse(options); e != nil {
 		return c, false, fmt.Errorf("invalid connection options; use help (secrets are not accepted)")
+	}
+	if _, e := launch.ConnectionPath(workspace, c.Name); e != nil {
+		return c, false, e
 	}
 	var invalidPort bool
 	fs.Visit(func(f *flag.Flag) {
@@ -196,6 +262,34 @@ func closeOwned(ctx context.Context, w string, s State) error {
 	return launch.Call(ctx, w, "CloseSession", map[string]string{"SessionID": s.Session}, &result)
 }
 
+func closeReview(s State) string {
+	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.Name)
+}
+
+// ReviewClose binds the displayed consequence to the exact observed owner.
+func ReviewClose(ctx context.Context, w, name string) (State, string, error) {
+	s, e := selected(ctx, w, name)
+	if e != nil {
+		return s, "", e
+	}
+	return s, closeReview(s), nil
+}
+
+// CloseReviewed refuses replacement owners after a frontend has shown a target.
+func CloseReviewed(ctx context.Context, w string, expected State) (any, error) {
+	current, e := selected(ctx, w, expected.Name)
+	if e != nil {
+		return nil, e
+	}
+	if current.Session != expected.Session || current.MasterPID != expected.MasterPID || current.Socket != expected.Socket || current.SocketInode != expected.SocketInode || current.State != expected.State {
+		return nil, fmt.Errorf("connection changed after review; inspect and review close again")
+	}
+	if e := closeOwned(ctx, w, expected); e != nil {
+		return nil, e
+	}
+	return map[string]string{"state": "closed", "name": expected.Name}, nil
+}
+
 // Execute is the shared CLI/TUI command boundary. Hovel remains the state owner.
 func Execute(ctx context.Context, w string, args []string) (any, error) {
 	return execute(ctx, w, args, "")
@@ -215,7 +309,7 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 		if e != nil {
 			return nil, e
 		}
-		review := fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.Name)
+		review := closeReview(s)
 		if len(args) == 2 {
 			return map[string]string{"review": review}, nil
 		}
@@ -312,23 +406,47 @@ func Suggestions(states []State) []string {
 
 func CommandSuggestions(line string, states []State) []string {
 	args, e := Split(line)
-	if e != nil || len(args) < 4 || (args[0] != "connect" && args[0] != "reconnect") {
+	if e != nil || len(args) < 1 || (args[0] != "connect" && args[0] != "reconnect") {
 		return Suggestions(states)
 	}
 	start := strings.LastIndexByte(line, ' ') + 1
-	if start < 1 || (start < len(line) && !strings.HasPrefix(line[start:], "--")) {
+	if start < 1 || (start < len(line) && !strings.HasPrefix(line[start:], "-")) {
 		return nil
 	}
-	if start == len(line) && len(args) > 4 {
-		for _, flag := range []string{"--key", "--agent", "--port", "--ssh-config", "--jump", "--known-hosts", "--trust"} {
-			if args[len(args)-1] == flag {
-				return nil
+	if start == len(line) && len(args) > 1 && strings.HasPrefix(args[len(args)-1], "-") && !strings.Contains(args[len(args)-1], "=") {
+		switch optionName(args[len(args)-1]) {
+		case "key", "agent", "port", "ssh-config", "jump", "known-hosts", "trust", "host", "name", "user":
+			return nil
+		}
+	}
+	// Guide named entry in LazySSH order; positional commands retain their
+	// established NAME HOST USER syntax and go straight to optional flags.
+	seen := map[string]bool{}
+	positionals := 0
+	for i := 1; i < len(args); i++ {
+		name := optionName(args[i])
+		if strings.HasPrefix(args[i], "-") {
+			seen[name] = true
+			if !strings.Contains(args[i], "=") && name != "yes" && name != "prompt" {
+				i++
+			}
+		} else {
+			positionals++
+		}
+	}
+	options := []string{"-ssh-key ", "--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--known-hosts ", "--trust ", "--prompt", "--yes"}
+	if positionals == 0 {
+		for _, required := range [][2]string{{"host", "-ip "}, {"port", "-port "}, {"user", "-user "}, {"name", "-socket "}} {
+			if !seen[required[0]] {
+				return []string{line[:start] + required[1]}
 			}
 		}
 	}
 	values := []string{}
-	for _, option := range []string{"--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--known-hosts ", "--trust ", "--prompt", "--yes"} {
-		values = append(values, line[:start]+option)
+	for _, option := range options {
+		if !seen[optionName(strings.TrimSpace(option))] {
+			values = append(values, line[:start]+option)
+		}
 	}
 	return values
 }

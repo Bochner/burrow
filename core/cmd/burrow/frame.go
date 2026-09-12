@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -39,26 +40,36 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
-	terminals              *terminalLifetime
-	mouseDisabled          bool
-	workspaces             map[string]*workspaceView
-	paths                  []string
-	active                 string
-	options                launch.Options
-	width, height          int
-	noColor                bool
-	demo                   bool
-	navIndex, navOffset    int
-	modal                  string
-	modalOffset, menuIndex int
-	destination            textinput.Model
-	palette                textinput.Model
-	launchPending          bool
-	launchError            string
-	sequence               uint64
-	inputEpoch             uint64
-	pending                map[uint64]string
-	now                    time.Time
+	terminals           *terminalLifetime
+	mouseDisabled       bool
+	workspaces          map[string]*workspaceView
+	paths               []string
+	active              string
+	options             launch.Options
+	width, height       int
+	noColor             bool
+	demo                bool
+	navIndex, navOffset int
+	modal               string
+	modalOffset         int
+	destination         string
+	form                *huh.Form
+	formTitle           string
+	menu                *huh.Select[int]
+	details             *connectDetails
+	commandArgs         []string
+	closeTarget         connection.State
+	attempt             *authAttempt
+	question            *authQuestion
+	savedForm           *huh.Form
+	savedTitle          string
+	savedModal          string
+	launchPending       bool
+	launchError         string
+	sequence            uint64
+	inputEpoch          uint64
+	pending             map[uint64]string
+	now                 time.Time
 }
 type workspaceMessage struct {
 	workspace string
@@ -70,11 +81,6 @@ type daemonObservation struct {
 	err      error
 	at       time.Time
 	duration time.Duration
-}
-type modalInputResult struct {
-	epoch   uint64
-	modal   string
-	message tea.Msg
 }
 type workspaceOpened struct {
 	info        launch.Info
@@ -173,21 +179,20 @@ func (m *frame) selectWorkspace(i int) tea.Cmd {
 	m.modal = ""
 	return m.check(m.active)
 }
-func (m *frame) openNew() {
+func (m *frame) openNew() tea.Cmd {
 	m.modal = "new"
 	if m.launchPending {
-		return
+		return nil
 	}
 	m.launchError = ""
 	m.inputEpoch++
-	m.destination = textinput.New()
-	styleInput(&m.destination)
-	m.destination.Prompt = "> "
-	m.destination.Placeholder = "/absolute/workspace"
-	m.destination.CharLimit = 2048
-	m.destination.SetWidth(max(1, min(64, min(76, m.width-4)-9)))
-	m.destination.Focus()
+	m.destination = ""
+	return m.workspaceForm()
 }
+func (m *frame) workspaceForm() tea.Cmd {
+	return m.setForm("new", "NEW / OPEN WORKSPACE", newForm(huh.NewGroup(huh.NewInput().Key("workspace").Title("Exact destination").Description("Enter launches · Ctrl+O browse").Placeholder("/absolute/workspace").Value(&m.destination).CharLimit(2048).Validate(canonicalWorkspace))))
+}
+
 func (m *frame) submitWorkspace() tea.Cmd {
 	if m.demo {
 		m.launchError = "Sample data preview · workspace launch disabled"
@@ -196,7 +201,7 @@ func (m *frame) submitWorkspace() tea.Cmd {
 	if m.launchPending {
 		return nil
 	}
-	path := m.destination.Value()
+	path := m.destination
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		m.launchError = "Use an absolute canonical path (no trailing / or ..)."
 		return nil
@@ -216,6 +221,10 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	w := m.workspaces[path]
 	model, cmd := w.management.Update(msg)
 	w.management = model.(ui)
+	if w.management.quitting {
+		w.management.quitting = false
+		return m.setForm("quit", "Quit Burrow?", quitForm())
+	}
 	if w.management.help {
 		v := w.management.helpViewport(m.width, m.height)
 		w.management.helpOffset = v.YOffset()
@@ -224,6 +233,30 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 }
 func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case formMessage:
+		if v.path != m.active || v.epoch != m.inputEpoch {
+			return m, nil
+		}
+		if ready, ok := v.msg.(browserReady); ok {
+			return m, m.setForm("browse", m.formTitle, ready.form)
+		}
+		return m, m.updateForm(v.msg)
+	case authQuestionReady:
+		if m.attempt != v.attempt || v.attempt.ctx.Err() != nil {
+			return m, nil
+		}
+		m.question = &v.question
+		return m, m.setForm("auth", "SSH authentication", promptForm(v.question.prompt))
+	case authFinished:
+		if m.attempt != v.attempt {
+			return m, nil
+		}
+		m.attempt = nil
+		if m.modal == "auth" {
+			m.dismissForm()
+		}
+		return m, m.updateManagement(v.attempt.path, connectionResult{v.result, v.err})
+
 	case workspaceMessage:
 		path, ok := m.pending[v.request]
 		if !ok || path != v.workspace {
@@ -239,11 +272,20 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch result := v.message.(type) {
 		case authenticationRequested:
-			a := &authenticate{workspace: path, args: result.args}
-			m.sequence++
-			id := m.sequence
-			m.pending[id] = path
-			return m, tea.Exec(a, func(err error) tea.Msg { return workspaceMessage{path, id, connectionResult{a.result, err}} })
+			if path != m.active {
+				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("connection request cancelled after workspace switch")})
+			}
+			return m, m.reviewCommand(result.args)
+		case commandReview:
+			if path != m.active || m.modal != "review" || m.commandArgs == nil || result.epoch != m.inputEpoch {
+				return m, nil
+			}
+			if result.err != nil {
+				m.dismissForm()
+				return m, m.updateManagement(path, connectionResult{nil, result.err})
+			}
+			m.closeTarget = result.target
+			return m, m.setForm("review", "Review exact target", confirmForm("Proceed?", publicPrompt(connection.Prompt{Text: result.review}), "Proceed", "Cancel"))
 		case cliOpened, cliScreen, cliClosed:
 			return m, m.terminalResult(path, result)
 		case tea.QuitMsg:
@@ -284,23 +326,14 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case modalInputResult:
-			if path != m.active || result.epoch != m.inputEpoch || result.modal != m.modal || (result.modal == "new" && m.launchPending) {
-				return m, nil
-			}
-			if batch, ok := result.message.(tea.BatchMsg); ok {
-				var cmds []tea.Cmd
-				for _, cmd := range batch {
-					cmds = append(cmds, m.inputCommand(result.modal, cmd))
-				}
-				return m, tea.Batch(cmds...)
-			}
-			return m, m.updateModalInput(result.modal, result.message)
 		case workspaceOpened:
 			m.launchPending = false
 			if result.err != nil {
 				m.launchError = "REFUSED: " + safe(result.err.Error())
 				m.workspaces[path].management.output = m.launchError
+				if m.modal == "new" && path == m.active && m.destination == result.destination {
+					return m, m.workspaceForm()
+				}
 				return m, nil
 			}
 			destination := result.info.Workspace
@@ -312,7 +345,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.resize()
 			// Esc may dismiss a pending launch, but its completion never steals selection.
-			if m.modal == "new" && m.active == path && m.destination.Value() == result.destination {
+			if m.modal == "new" && m.active == path && m.destination == result.destination {
 				for i, p := range m.paths {
 					if p == destination {
 						return m, tea.Batch(init, m.selectWorkspace(i))
@@ -327,8 +360,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
 		m.resize()
-		m.destination.SetWidth(max(1, min(64, min(76, m.width-4)-9)))
-		m.palette.SetWidth(max(1, min(76, m.width-4)-9))
+		m.sizeForm()
 		return m, nil
 	case tea.ResumeMsg:
 		return m, tea.RequestWindowSize
@@ -349,7 +381,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mouseDisabled {
 			return m, nil
 		}
-		if hit.ID() == "terminal" && m.modal == "" && !m.current().management.help && !m.current().management.quitting {
+		if hit.ID() == "terminal" && m.modal == "" && !m.current().management.help {
 			if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
 				m.current().focus = "terminal"
 			}
@@ -371,16 +403,16 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.modal == "menu" {
-				m.menuIndex = max(0, min(len(m.menuMatches())-1, m.menuIndex+delta))
-				return m, nil
+				code := tea.KeyDown
+				if delta < 0 {
+					code = tea.KeyUp
+				}
+				return m, m.updateForm(tea.KeyPressMsg{Code: code})
 			}
 			if m.modal != "" && m.modal != "navigation" {
 				if m.modal == "metadata" {
 					m.scrollMetadata(delta)
 				}
-				return m, nil
-			}
-			if m.current().management.quitting {
 				return m, nil
 			}
 			if strings.HasPrefix(hit.ID(), "workspace:") || hit.ID() == "workspaces" {
@@ -401,35 +433,24 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if click, ok := msg.(tea.MouseClickMsg); !ok || click.Button != tea.MouseLeft {
 			return m, nil
 		}
-		if m.current().management.help || m.current().management.quitting {
+		if m.current().management.help {
 			switch hit.ID() {
-			case "quit-leave":
-				return m, tea.Quit
 			case "dismiss":
 				m.current().management.help = false
-				m.current().management.quitting = false
 			}
 			return m, nil
 		}
 		return m, m.activate(hit.ID())
 	case tea.PasteMsg:
-		if m.tooSmall() || m.current().management.help || m.current().management.quitting {
+		if m.tooSmall() || m.current().management.help {
 			return m, nil
 		}
 		if m.terminalFocused() {
 			m.sendTerminal(v.Content)
 			return m, nil
 		}
-		if m.modal == "menu" {
-			m.palette.SetValue(m.palette.Value() + safe(v.Content))
-			m.palette.CursorEnd()
-			m.menuIndex = 0
-			return m, nil
-		}
-		if m.modal == "new" && !m.launchPending {
-			m.destination.SetValue(m.destination.Value() + safe(v.Content))
-			m.destination.CursorEnd()
-			return m, nil
+		if m.form != nil {
+			return m, m.updateForm(tea.PasteMsg{Content: safe(v.Content)})
 		}
 		if m.modal != "" || m.current().focus != "prompt" || m.current().tab != "" {
 			return m, nil
@@ -441,7 +462,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.current().management.help || m.current().management.quitting {
+		if m.current().management.help {
 			return m, m.updateManagement(m.active, msg)
 		}
 		if m.modal != "" {
@@ -468,11 +489,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mouseDisabled = !m.mouseDisabled
 			return m, nil
 		case key.Matches(v, newWorkspace):
-			m.openNew()
-			return m, nil
+			return m, m.openNew()
 		case key.Matches(v, openMenu):
-			m.openPalette()
-			return m, nil
+			return m, m.openPalette()
 		case key.Matches(v, openNavigation):
 			m.modal = "navigation"
 			return m, nil
@@ -561,16 +580,50 @@ var menuActions = []string{"Check daemon", "Metadata", "New workspace", "Keyboar
 
 func (m *frame) activate(id string) tea.Cmd {
 	if m.modal != "" && m.modal != "navigation" {
+		if m.modal == "connect" && strings.HasPrefix(id, "field:") && m.form != nil {
+			target := strings.TrimPrefix(id, "field:")
+			current, next := -1, -1
+			for i, field := range connectFields {
+				if field.key == m.form.GetFocusedField().GetKey() {
+					current = i
+				}
+				if field.key == target {
+					next = i
+				}
+			}
+			var cmds []tea.Cmd
+			for current >= 0 && next >= 0 && current != next {
+				if current < next {
+					cmds = append(cmds, m.form.NextField())
+					current++
+				} else {
+					cmds = append(cmds, m.form.PrevField())
+					current--
+				}
+			}
+			return formCommand(m.active, m.inputEpoch, tea.Batch(cmds...))
+		}
+		if id == "browse" {
+			return m.browse()
+		}
 		if id == "dismiss" {
-			m.modal = ""
+			m.dismissForm()
 			return nil
 		}
 		if m.modal == "new" && id == "submit" {
-			return m.submitWorkspace()
+			return m.updateForm(tea.KeyPressMsg{Code: tea.KeyEnter})
 		}
 		if m.modal == "menu" && strings.HasPrefix(id, "action:") {
 			i, _ := strconv.Atoi(strings.TrimPrefix(id, "action:"))
-			return m.menuAction(i)
+			m.menu.Value(&i)
+			return m.updateForm(tea.KeyPressMsg{Code: tea.KeyEnter})
+		}
+		if strings.HasPrefix(id, "confirm-") && m.form != nil {
+			if c, ok := m.form.GetFocusedField().(*huh.Confirm); ok {
+				approve := id == "confirm-accept"
+				c.Value(&approve)
+				return m.updateForm(tea.KeyPressMsg{Code: tea.KeyEnter})
+			}
 		}
 		return nil
 	}
@@ -589,9 +642,9 @@ func (m *frame) activate(id string) tea.Cmd {
 	}
 	switch id {
 	case "new":
-		m.openNew()
+		return m.openNew()
 	case "menu":
-		m.openPalette()
+		return m.openPalette()
 	case "navigation":
 		m.modal = "navigation"
 	case "daemon":
@@ -609,57 +662,28 @@ func (m *frame) activate(id string) tea.Cmd {
 	case "shells":
 		m.current().focus = "shells"
 	case "dismiss":
-		m.modal = ""
+		m.dismissForm()
 	}
 	return nil
 }
-func (m *frame) openPalette() {
+func (m *frame) openPalette() tea.Cmd {
 	m.modal = "menu"
-	m.menuIndex = 0
 	m.inputEpoch++
-	m.palette = textinput.New()
-	styleInput(&m.palette)
-	m.palette.Prompt = "› "
-	m.palette.Placeholder = "Type to filter"
-	m.palette.CharLimit = 128
-	m.palette.SetWidth(max(1, min(76, m.width-4)-9))
-	m.palette.Focus()
-}
-func (m *frame) menuMatches() []int {
-	// ponytail: substring filtering for five actions; use fuzzy matching if this catalog grows.
-	var matches []int
-	query := strings.ToLower(m.palette.Value())
-	for i, action := range menuActions {
-		if strings.Contains(strings.ToLower(action), query) {
-			matches = append(matches, i)
-		}
+	options := make([]huh.Option[int], len(menuActions))
+	for i, label := range menuActions {
+		options[i] = huh.NewOption(label, i)
 	}
-	return matches
+	m.menu = huh.NewSelect[int]().Key("action").Title("Type to filter").Description("Type to filter").Options(options...).Filtering(true)
+	m.formTitle = "Menu"
+	m.form = newForm(huh.NewGroup(m.menu)).WithShowHelp(false)
+	m.sizeForm()
+	return formCommand(m.active, m.inputEpoch, m.form.Init())
 }
 
 // Clipboard results belong to the input instance that requested them, just as
 // daemon results belong to their originating workspace.
-func (m *frame) inputCommand(modal string, cmd tea.Cmd) tea.Cmd {
-	if cmd == nil {
-		return nil
-	}
-	epoch := m.inputEpoch
-	return m.dispatch(m.active, func() tea.Msg { return modalInputResult{epoch, modal, cmd()} })
-}
-func (m *frame) updateModalInput(modal string, msg tea.Msg) tea.Cmd {
-	input := &m.palette
-	if modal == "new" {
-		input = &m.destination
-	}
-	before := input.Value()
-	model, cmd := input.Update(msg)
-	*input = model
-	if modal == "menu" && input.Value() != before {
-		m.menuIndex = 0
-	}
-	return m.inputCommand(modal, cmd)
-}
 func (m *frame) menuAction(i int) tea.Cmd {
+	m.form = nil
 	m.modal = ""
 	switch i {
 	case 0:
@@ -668,12 +692,11 @@ func (m *frame) menuAction(i int) tea.Cmd {
 		m.modal = "metadata"
 		m.modalOffset = 0
 	case 2:
-		m.openNew()
+		return m.openNew()
 	case 3:
 		m.current().management.help = true
 	case 4:
-		m.current().management.quitting = true
-		m.current().management.leave = false
+		return m.setForm("quit", "Quit Burrow?", quitForm())
 	case 5:
 		return m.openCLI()
 	case 6:
@@ -684,41 +707,24 @@ func (m *frame) menuAction(i int) tea.Cmd {
 	return nil
 }
 func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
-	if key.Matches(v, escape) {
-		m.modal = ""
+	if key.Matches(v, escape, quit) {
+		m.dismissForm()
 		return nil
 	}
 	switch m.modal {
-	case "new":
-		if key.Matches(v, enter) {
-			return m.submitWorkspace()
+	case "new", "menu", "connect", "review", "auth", "quit", "browse":
+		if v.String() == "ctrl+o" {
+			return m.browse()
 		}
-		if !m.launchPending {
-			return m.updateModalInput("new", v)
-		}
-	case "menu":
-		matches := m.menuMatches()
-		if key.Matches(v, previous) || v.String() == "ctrl+p" {
-			if len(matches) > 0 {
-				m.menuIndex = (m.menuIndex - 1 + len(matches)) % len(matches)
-			}
-		} else if key.Matches(v, next) || v.String() == "ctrl+n" {
-			if len(matches) > 0 {
-				m.menuIndex = (m.menuIndex + 1) % len(matches)
-			}
-		} else if key.Matches(v, enter) {
-			if len(matches) > 0 {
-				return m.menuAction(matches[m.menuIndex])
-			}
-		} else {
-			return m.updateModalInput("menu", v)
+		if m.modal != "new" || !m.launchPending {
+			return m.updateForm(v)
 		}
 	case "navigation":
 		if key.Matches(v, newWorkspace) {
-			m.openNew()
+			return m.openNew()
 		}
 		if key.Matches(v, openMenu) {
-			m.openPalette()
+			return m.openPalette()
 		}
 		if key.Matches(v, previous) {
 			m.navIndex = max(0, m.navIndex-1)
@@ -999,13 +1005,8 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			bw := pw - 6
 			text := ""
 			switch m.modal {
-			case "new":
-				text = centered(current.management.paint(accent, "NEW / OPEN WORKSPACE"), bw) + "\n\nExact destination (Enter launches):\n" + m.destination.View() + "\n\n" + current.management.paint(errorStyle, m.launchError)
-				if m.launchPending {
-					text += "\nLaunching and verifying…"
-				}
-			case "menu":
-				text = current.management.paletteTitle(bw) + "\n\n" + m.palette.View()
+			case "new", "menu", "connect", "review", "auth", "quit", "browse":
+				text = m.formText()
 			case "metadata":
 				v := scrollBody(m.metadata(), bw, ph-6, m.modalOffset)
 				text = v.View()
@@ -1015,20 +1016,37 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			control := func(id, text string, y int) {
 				layers = append(layers, lipgloss.NewLayer(solid(text, bw, 1, popupColor, m.noColor)).ID(id).X(x+3).Y(y).Z(4))
 			}
-			if m.modal == "menu" {
-				matches := m.menuMatches()
-				count := max(1, ph-9)
-				start := max(0, m.menuIndex-count+1)
-				for j := start; j < min(len(matches), start+count); j++ {
-					i := matches[j]
-					control(fmt.Sprintf("action:%d", i), current.management.choice(menuActions[i], j == m.menuIndex, bw), y+6+j-start)
-				}
-				if len(matches) == 0 {
-					control("no-matches", current.management.paint(secondary, "No matching commands"), y+6)
+			for id, row := range m.formControls(text) {
+				if row < ph-5 {
+					control(id, strings.Split(text, "\n")[row], y+2+row)
 				}
 			}
-			if m.modal == "new" {
-				control("submit", centered(current.management.paint(heading, "[Launch exact destination]"), bw), y+ph-4)
+			if m.form != nil {
+				for row, line := range strings.Split(text, "\n") {
+					if row >= ph-5 {
+						break
+					}
+					plain := ansi.Strip(line)
+					for _, label := range []string{"Proceed", "Cancel", "Trust host", "Reject", "Quit", "Keep working"} {
+						if at := strings.Index(plain, label+"]"); at >= 0 {
+							start := ansi.StringWidth(plain[:at])
+							id := "confirm-reject"
+							if label == "Proceed" || label == "Trust host" || label == "Quit" {
+								id = "confirm-accept"
+							}
+							layers = append(layers, lipgloss.NewLayer(solid(ansi.Cut(line, start, start+len(label)), len(label), 1, popupColor, m.noColor)).ID(id).X(x+3+start).Y(y+2+row).Z(5))
+						}
+					}
+				}
+			}
+			if m.modal == "new" && !m.launchPending {
+				control("submit", current.management.paint(heading, "[Launch exact destination]"), y+ph-4)
+			}
+			if m.form != nil && (m.modal == "new" || m.modal == "connect") {
+				if input, ok := m.form.GetFocusedField().(*huh.Input); ok && (m.modal == "new" || input.GetKey() == "key" || input.GetKey() == "config" || input.GetKey() == "hosts") {
+					label := current.management.paint(heading, "[Browse paths]")
+					layers = append(layers, lipgloss.NewLayer(solid(label, 14, 1, popupColor, m.noColor)).ID("browse").X(x+pw-17).Y(y+ph-4).Z(5))
+				}
 			}
 			hint := "[Esc close]"
 			if m.modal == "menu" {
@@ -1041,13 +1059,22 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			control("dismiss", hint, y+ph-3)
 		}
 	}
-	if current.management.help || current.management.quitting {
+	if current.management.help {
 		return current.management.overlay(lipgloss.NewCompositor(layers...).Render(), w, h)
 	}
 	return lipgloss.NewCompositor(layers...)
 }
 func (m *frame) dialogBounds() image.Rectangle {
 	pw, ph := min(76, m.width-4), min(18, m.height-4)
+	if m.modal == "quit" {
+		pw, ph = min(64, m.width-4), min(18, m.height-4)
+	}
+	if m.modal == "review" {
+		ph = min(28, m.height-4)
+	}
+	if m.modal == "connect" {
+		pw, ph = min(96, m.width-4), min(34, m.height-4)
+	}
 	x, y := (m.width-pw)/2, (m.height-ph)/2
 	return image.Rect(x, y, x+pw, y+ph)
 }
@@ -1079,19 +1106,10 @@ func (m *frame) View() tea.View {
 	if m.terminalFocused() && m.current().cli != nil && m.current().cli.screen.MouseMotion && !m.mouseDisabled {
 		v.MouseMode = tea.MouseModeAllMotion
 	}
-	if !m.current().management.help && !m.current().management.quitting {
+	if !m.current().management.help {
 		x, y := 0, 0
 		switch m.modal {
-		case "menu":
-			v.Cursor = m.palette.Cursor()
-			r := m.dialogBounds()
-			x, y = r.Min.X+3, r.Min.Y+4
-		case "new":
-			if !m.launchPending {
-				v.Cursor = m.destination.Cursor()
-				r := m.dialogBounds()
-				x, y = r.Min.X+3, r.Min.Y+5
-			}
+
 		case "":
 			if m.terminalFocused() && m.current().cli != nil {
 				s := m.current().cli.screen
@@ -1115,5 +1133,21 @@ func (m *frame) View() tea.View {
 			}
 		}
 	}
+	if m.noColor && m.form != nil && !m.current().management.help {
+		// Huh exposes its caret as a reverse-video cell, not a public Cursor().
+		// Recover that exact cell before NO_COLOR stripping; reuse the compositor's
+		// native cell parser rather than duplicating textinput's editing offsets.
+		r := m.dialogBounds()
+		canvas := lipgloss.NewCanvas(r.Dx()-6, r.Dy()-6).Compose(lipgloss.NewLayer(m.formText()))
+		for row := 0; row < r.Dy()-6; row++ {
+			for col := 0; col < r.Dx()-6; col++ {
+				if cell := canvas.CellAt(col, row); cell != nil && cell.Style.Attrs&uv.AttrReverse != 0 {
+					v.Cursor = tea.NewCursor(r.Min.X+3+col, r.Min.Y+2+row)
+					return v
+				}
+			}
+		}
+	}
+
 	return v
 }

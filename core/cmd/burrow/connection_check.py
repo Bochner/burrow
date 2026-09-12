@@ -8,12 +8,20 @@ import tempfile
 binary = str(Path(sys.argv[1]).resolve())
 with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
     workspace = Path(scratch) / "untouched"
-    for name in ("../escape", "-option", "a b", "é", "x" * 25):
+    for name in ("../escape", "a b", "é", "x" * 25):
         result = subprocess.run([binary, "--workspace", str(workspace), "connect", name,
                                  "localhost", "tester", "--yes"], capture_output=True, text=True)
         assert result.returncode != 0 and "name must" in result.stderr, result
         assert not workspace.exists()
     for args, message in [
+        (["connect", "-ip", "localhost", "-user", "tester", "-socket", "valid", "-ssh-key", "relative"], "absolute"),
+        (["connect", "--port", "0", "valid", "localhost", "tester"], "port"),
+        (["connect", "valid", "localhost", "tester", "-ip", "other"], "duplicate"),
+        (["connect", "-socket", "valid", "-ip", "localhost"], "NAME HOST USER"),
+        (["connect", "valid", "localhost", "tester", "-ssh-key", "/tmp/key", "--key", "/tmp/other"], "duplicate"),
+        (["connect", "valid", "localhost", "tester", "-no-term"], "invalid connection options"),
+        (["connect", "valid", "localhost", "tester", "-proxy", "1080"], "invalid connection options"),
+        (["connect", "valid", "localhost", "tester", "-shell", "bash"], "invalid connection options"),
         (["connect", "valid", "localhost", "tester", "--ssh-config", "relative"], "absolute"),
         (["connect", "valid", "localhost", "tester", "--jump", "bad;command"], "jump"),
         (["connect", "valid", "localhost", "tester", "--key", "/tmp/key", "--port", "0"], "port"),

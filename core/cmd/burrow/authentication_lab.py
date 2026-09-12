@@ -1,5 +1,6 @@
 """Issue #46: real terminal secret delivery through the retained Hovel owner."""
 import fcntl
+import json
 import os
 from pathlib import Path
 import pty
@@ -11,7 +12,7 @@ import termios
 import time
 
 
-def authentication_matrix(binary, workspace, root, env, container, port, key, fingerprint, burrow, wait):
+def authentication_matrix(binary, workspace, root, env, container, port, key, fingerprint, burrow, wait, screen_check):
     secret = "synthetic-auth-" + os.urandom(16).hex()
     encrypted = root / "auth-key"
     subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", secret, "-f", str(encrypted)], check=True, capture_output=True)
@@ -35,7 +36,7 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                 assert secret.encode() not in data, "secret persisted in workspace"
                 assert b"BEGIN OPENSSH PRIVATE KEY" not in data, "private key persisted in workspace"
 
-    def terminal(args, answers, success=True, size=(30, 120), terminal_env=None):
+    def terminal(args, answers, success=True, size=(30, 120), terminal_env=None, redirect=False):
         outer, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", *size, 0, 0))
         before = termios.tcgetattr(slave)
@@ -45,7 +46,7 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
             fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
         p = subprocess.Popen([binary, "--workspace", str(workspace), *map(str, args)],
-                             stdin=slave, stdout=slave, stderr=slave, env=terminal_env or env,
+                             stdin=slave, stdout=subprocess.PIPE if redirect else slave, stderr=slave, env=terminal_env or env,
                              preexec_fn=controlling)
         output = bytearray()
 
@@ -56,15 +57,24 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
 
         try:
             offset = 0
+            previous = None
             for needle, answer in answers:
                 deadline = time.monotonic() + 20
-                while needle.encode() not in read()[offset:]:
+                while True:
+                    data=read()
+                    screen=subprocess.run([screen_check,str(size[1]),str(size[0])],input=data,capture_output=True,check=True).stdout
+                    if needle.encode() in screen and (needle!=previous or needle.encode() in data[offset:]):
+                        break
                     assert time.monotonic() < deadline and p.poll() is None, ("missing prompt", needle, bytes(output))
                 offset = len(output)
+                previous = needle
                 if needle.startswith(("SSH password", "SSH key passphrase")):
                     assert not termios.tcgetattr(slave)[3] & termios.ECHO, "secret prompt published with echo enabled"
                 no_leaks(output)
-                os.write(outer, answer)
+                if answer is None:
+                    p.send_signal(signal.SIGTERM)
+                else:
+                    os.write(outer, answer)
             deadline = time.monotonic() + 20
             while p.poll() is None:
                 read()
@@ -73,6 +83,10 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
             no_leaks(output)
             assert (p.returncode == 0) == success, bytes(output)
             assert termios.tcgetattr(slave) == before, "terminal modes not restored"
+            if redirect:
+                result=p.stdout.read()
+                no_leaks(result)
+                assert json.loads(result)["state"]=="connected", "forms contaminated JSON stdout"
             return bytes(output)
         finally:
             if p.poll() is None:
@@ -105,15 +119,16 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
             assert not (workspace / "burrow" / name).exists()
     finally:
         trust_file.write_bytes(saved_trust)
-    terminal(["connect", "password", *base], [("SSH password", secret.encode()+b"\r")])
+    terminal(["connect", "password", *base], [("SSH password", secret.encode()+b"\r")],redirect=True)
     assert burrow(workspace, "inspect", "password")["state"] == "connected"
     burrow(workspace, "close", "password", "--yes")
     terminal(["connect", "passphrase", *base, "--key", encrypted], [("SSH key passphrase", secret.encode()+b"\r")])
     assert burrow(workspace, "inspect", "passphrase")["state"] == "connected"
     burrow(workspace, "close", "passphrase", "--yes")
+    terminal(["connect", "signal-cancel", *base],[("SSH password",None)],success=False)
     terminal(["connect", "cancel-key", *base, "--key", encrypted], [("SSH key passphrase", b"\x03")], success=False)
     terminal(["connect", "bad-password", *base], [("SSH password", b"wrong\r")] * 3, success=False)
-    for name in ("cancel-key", "bad-password"):
+    for name in ("cancel-key", "bad-password", "signal-cancel"):
         assert not (workspace / "burrow" / name).exists(), "failed authentication left a reservation"
 
     # The target is reachable from the container only at port 2222. Both the
@@ -123,9 +138,9 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                       "Host lab-target\n HostName 127.0.0.1\n Port 2222\n User tester\n ProxyJump lab-jump\n"
                       "Host *\n StrictHostKeyChecking no\n UserKnownHostsFile /dev/null\n")
     alias_args = ["lab-target", "-", "--ssh-config", config, "--key", key, "--prompt", "--yes"]
-    terminal(["connect", "reject-trust", *alias_args], [("Trust this host?", b"no\r")], success=False)
+    terminal(["connect", "reject-trust", *alias_args], [("Trust this host?", b"\r")], success=False)
     assert not (workspace / "burrow/reject-trust").exists()
-    terminal(["connect", "jumped", *alias_args], [("Trust this host?", b"yes\r")])
+    terminal(["connect", "jumped", *alias_args], [("Trust this host?", b"\t\r")])
     jumped = burrow(workspace, "inspect", "jumped")
     assert jumped["state"] == "connected" and jumped["port"] == 2222 and jumped["host"] == "127.0.0.1"
     burrow(workspace, "close", "jumped", "--yes")
@@ -194,21 +209,22 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
             trust.write_text(approved)
     bad = root / "bad-config"
     bad.write_text(config.read_text().replace(f"Port {port}", "Port 1"))
-    terminal(["connect", "jump-failed", *alias_args, "--ssh-config", bad], [], success=False)
+    terminal(["connect", "jump-failed", *[bad if a == config else a for a in alias_args]], [], success=False)
     assert not (workspace / "burrow/jump-failed").exists()
     terminal(["connect", "missing-agent", *base, "--agent", root / "absent-agent"], [("SSH password", b"\x03")], success=False)
     terminal(["connect", "missing-key", *base, "--key", root / "absent-key"], [("SSH password", b"\x03")], success=False)
 
     # LazySSH-style guided entry, review rejection, and a completed password
     # connection work on a narrow no-color terminal without command secrets.
-    answers = [("Connection name", b"guided\r"), ("Hostname, IP", b"127.0.0.1\r"),
-               ("Username", b"tester\r"), ("SSH port", str(port).encode()+b"\r"),
-               ("SSH key path", b"\r"), ("Jump host", b"\r"), ("Proceed?", b"yes\r"),
+    answers = [("Host / IP", b"127.0.0.1\r"), ("SSH port", str(port).encode()+b"\r"),
+               ("Username", b"tester\r"), ("Connection name", b"guided\r"),
+               ("SSH key path", b"\r"), ("Jump host", b"\r"), ("Agent socket", b"\r"),
+               ("SSH config path", b"\r"), ("Known-hosts path", b"\r"), ("Proceed?", b"\t\r"),
                ("SSH password", secret.encode()+b"\r")]
     terminal(["connect"], answers, size=(24, 80))
     burrow(workspace, "close", "guided", "--yes")
     terminal(["connect", "review-cancel", "127.0.0.1", "tester", "--port", port, "--prompt"],
-             [("Proceed?", b"no\r")], success=False)
+             [("Proceed?", b"\r")], success=False)
     assert not (workspace / "burrow/review-cancel").exists()
     no_leaks()
     print("PASS password/encrypted-key prompts, no-echo, cancellation, aliases, per-hop agents, IdentitiesOnly, trust bounds, jump trust/failure, guided review and leakage checks", flush=True)

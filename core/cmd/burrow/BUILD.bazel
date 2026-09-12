@@ -34,9 +34,9 @@ py_test(
 
 go_binary(
     name = "burrow",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go"],
     deps = [
-        "@org_golang_x_sys//unix",
+        "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
         "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",
@@ -70,9 +70,9 @@ py_test(
 
 go_test(
     name = "interaction_test",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "frame_test.go", "presentation_test.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "frame_test.go", "presentation_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
-        "@org_golang_x_sys//unix",
+        "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
         "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",

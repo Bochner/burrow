@@ -210,15 +210,6 @@ func (m ui) paletteTitle(width int) string {
 func centered(text string, width int) string {
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, ansi.Truncate(text, width, "…"))
 }
-func (m ui) button(label string, selected bool, width int) string {
-	prefix := "  "
-	style := pageStyle
-	if selected {
-		prefix = "› "
-		style = selectedStyle
-	}
-	return m.paint(style, centered(prefix+label, width))
-}
 
 // LazySSH separates field roles; mapped to Catppuccin rather than decoration.
 var hostStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f5c2e7"))

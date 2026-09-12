@@ -56,21 +56,21 @@ func connectionTimer() tea.Cmd {
 }
 
 type ui struct {
-	info                                 launch.Info
-	input                                textinput.Model
-	width, height                        int
-	noColor, busy, help, quitting, leave bool
-	demo                                 bool
-	connectionObserved                   bool
-	output                               string
-	history                              []string
-	historyIndex                         int
-	draft                                string
-	outputOffset                         int
-	connectionOffset                     int
-	connections                          []connection.State
-	connectionError                      string
-	helpOffset                           int
+	info                          launch.Info
+	input                         textinput.Model
+	width, height                 int
+	noColor, busy, help, quitting bool
+	demo                          bool
+	connectionObserved            bool
+	output                        string
+	history                       []string
+	historyIndex                  int
+	draft                         string
+	outputOffset                  int
+	connectionOffset              int
+	connections                   []connection.State
+	connectionError               string
+	helpOffset                    int
 }
 
 func newUI(info launch.Info, noColor bool) ui {
@@ -89,6 +89,7 @@ func newUI(info launch.Info, noColor bool) ui {
 }
 
 func terminal(m *frame, noColor bool) error {
+	defer m.stopAuthentication()
 	defer m.terminals.close()
 	opts := []tea.ProgramOption{}
 	// Aspect captures stdout; keep rendering on the actual controlling terminal.
@@ -146,7 +147,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BackgroundColorMsg:
 		// The owner selected Herdr's Catppuccin Mocha; keep the explicit dark palette.
 	case tea.PasteMsg:
-		if m.help || m.quitting {
+		if m.help {
 			return m, nil
 		}
 		m.input.SetValue(m.input.Value() + safe(v.Content))
@@ -154,20 +155,6 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.SetSuggestions(connection.CommandSuggestions(m.input.Value(), m.connections))
 		return m, nil
 	case tea.KeyPressMsg:
-		if m.quitting {
-			switch {
-			case key.Matches(v, escape):
-				m.quitting = false
-			case key.Matches(v, choose):
-				m.leave = !m.leave
-			case key.Matches(v, enter):
-				if m.leave {
-					return m, tea.Quit
-				}
-				m.quitting = false
-			}
-			return m, nil
-		}
 		if m.help {
 			if key.Matches(v, escape, help) {
 				m.help = false
@@ -195,7 +182,6 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(v, quit):
 			m.quitting = true
-			m.leave = false
 			return m, nil
 		case key.Matches(v, help):
 			m.help = true
@@ -243,7 +229,6 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.helpOffset = 0
 			case "quit":
 				m.quitting = true
-				m.leave = false
 			case "status":
 				m.busy = true
 				return m, func() tea.Msg { return statusRequested{} }
@@ -262,7 +247,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.busy = true
 				m.output = "Running reviewed command through Hovel…"
 				workspace := m.info.Workspace
-				if args[0] == "connect" || args[0] == "reconnect" {
+				if args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
 				return m, func() tea.Msg {
@@ -371,7 +356,7 @@ func (m ui) View() tea.View {
 	}
 	b.WriteString("\n" + m.paint(secondary, footer) + "\n" + m.paint(accent, "╭─ workspace › management") + "\n" + m.input.View())
 	base := fit(b.String(), w, h)
-	if !m.help && !m.quitting && m.input.Value() != "" && m.input.ShowSuggestions {
+	if !m.help && m.input.Value() != "" && m.input.ShowSuggestions {
 		matches := m.input.MatchedSuggestions()
 		if len(matches) > 0 {
 			rows := []string{"COMPLETION · ↑↓ select · Tab accept"}
@@ -393,7 +378,7 @@ func (m ui) View() tea.View {
 			base = lipgloss.NewCompositor(lipgloss.NewLayer(base), lipgloss.NewLayer(popup).Y(max(0, h-3-lipgloss.Height(popup))).Z(1)).Render()
 		}
 	}
-	if m.help || m.quitting {
+	if m.help {
 		base = m.overlay(base, w, h).Render()
 	}
 
@@ -410,35 +395,15 @@ func (m ui) helpViewport(w, h int) viewport.Model {
 	return scrollBody(m.syntax(m.helpText()), max(1, min(96, w-4)-6), max(1, min(30, h-4)-8), m.helpOffset)
 }
 func (m ui) overlay(base string, w, h int) *lipgloss.Compositor {
-	pw, ph := min(96, w-4), min(30, h-4)
-	if m.quitting {
-		pw, ph = min(64, w-4), 10
-	}
-	pw, ph = max(8, pw), max(8, min(ph, h))
+	pw, ph := max(8, min(96, w-4)), max(8, min(30, h-4))
 	x, y := (w-pw)/2, (h-ph)/2
 	bodyW := pw - 6
-	title := m.paint(accent, "BURROW COMMAND MENU")
-	body := m.helpViewport(w, h).View()
-	footer := m.paint(secondary, "↑↓ scroll · Esc returns")
-	if m.quitting {
-		title = centered(m.paint(accent, "Quit Burrow?"), bodyW)
-		body = centered("Daemon and workspace resources remain.", bodyW)
-		footer = centered(m.paint(secondary, "Tab choose · Enter confirm · Esc cancel"), bodyW)
-	}
-	text := title + "\n\n" + body
+	text := m.paint(accent, "BURROW COMMAND MENU") + "\n\n" + m.helpViewport(w, h).View()
 	popup := dialogStyle.Width(pw).Height(ph).Render(fit(text, bodyW, ph-4))
-	layers := []*lipgloss.Layer{lipgloss.NewLayer(solid(m.paint(secondary, ansi.Strip(base)), w, h, baseColor, m.noColor)).ID("modal-backdrop"), lipgloss.NewLayer(solid(popup, pw, ph, popupColor, m.noColor)).X(x).Y(y).Z(1).ID("child-modal")}
-	if m.quitting {
-		layers = append(layers, lipgloss.NewLayer(solid(footer, bodyW, 1, popupColor, m.noColor)).X(x+3).Y(y+ph-3).Z(2).ID("modal-footer"))
-		bw := min(20, (bodyW-2)/2)
-		buttonsX := x + 3 + (bodyW-(2*bw+2))/2
-		keepLabel := "Keep working"
-		if bw < 14 {
-			keepLabel = "Keep"
-		}
-		layers = append(layers, lipgloss.NewLayer(solid(m.button("Quit", m.leave, bw), bw, 1, popupColor, m.noColor)).X(buttonsX).Y(y+ph-4).Z(2).ID("quit-leave"), lipgloss.NewLayer(solid(m.button(keepLabel, !m.leave, bw), bw, 1, popupColor, m.noColor)).X(buttonsX+2+bw).Y(y+ph-4).Z(2).ID("dismiss"))
-	} else {
-		layers = append(layers, lipgloss.NewLayer(solid(footer, bodyW, 1, popupColor, m.noColor)).X(x+3).Y(y+ph-3).Z(2).ID("dismiss"))
-	}
-	return lipgloss.NewCompositor(layers...)
+	footer := m.paint(secondary, "↑↓ scroll · Esc returns")
+	return lipgloss.NewCompositor(
+		lipgloss.NewLayer(solid(m.paint(secondary, ansi.Strip(base)), w, h, baseColor, m.noColor)).ID("modal-backdrop"),
+		lipgloss.NewLayer(solid(popup, pw, ph, popupColor, m.noColor)).X(x).Y(y).Z(1).ID("child-modal"),
+		lipgloss.NewLayer(solid(footer, bodyW, 1, popupColor, m.noColor)).X(x+3).Y(y+ph-3).Z(2).ID("dismiss"),
+	)
 }

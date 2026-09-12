@@ -46,7 +46,7 @@ def wait(check):
 with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
     root = Path(scratch)
     env = {k: v for k, v in os.environ.items() if not k.startswith(("HOVEL_", "SSH_"))}
-    env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1")
+    env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
     daemons = []
     children = []
     container = None
@@ -198,7 +198,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             if path.is_file():
                 assert canary.encode() not in path.read_bytes(), path
                 assert b"BEGIN OPENSSH PRIVATE KEY" not in path.read_bytes(), path
-        auth_secret, auth_key = authentication_matrix(binary, w, root, env, container, port, key, fingerprint, burrow, wait)
+        auth_secret, auth_key = authentication_matrix(binary, w, root, env, container, port, key, fingerprint, burrow, wait, screen_check)
         trusted = trust_file.read_bytes()  # Includes the explicitly approved jump destination.
         # Actual TUI commands, terminal restoration, narrow rendering and quit
         # retention. The screen oracle is the existing pinned VT emulator.
@@ -216,10 +216,10 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
                                preexec_fn=controlling)
         output = bytearray()
         dimensions = ["160", "40"]
-        def screen_contains(needle):
+        def screen_contains(needle, cursor=False):
             if select.select([outer], [], [], .1)[0]:
                 output.extend(os.read(outer, 65536))
-            rendered = subprocess.run([screen_check, *dimensions], input=bytes(output), capture_output=True)
+            rendered = subprocess.run([screen_check, *dimensions, *(["--cursor-line"] if cursor else [])], input=bytes(output), capture_output=True)
             assert rendered.returncode == 0, rendered.stderr
             return needle in rendered.stdout
         try:
@@ -250,18 +250,23 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             os.write(outer, b"\x1b[6~" * 5)  # PgDn reveals the remaining inspect fields
             wait(lambda: screen_contains(b"socketInode"))
             os.write(outer, b"close gateway\r")
-            wait(lambda: screen_contains(b"review"))
+            wait(lambda: screen_contains(b"Close gateway"))
+            os.write(outer,b"\r")
+            wait(lambda: not screen_contains(b"Proceed?"))
             assert burrow(w, "inspect", "gateway")["state"] == "connected"
             os.write(outer, b"ins")
             wait(lambda: screen_contains(b"COMPLETION"))
             os.write(outer, b"\x1b[B" * 7)
             wait(lambda: screen_contains("› inspect row6".encode()))
             os.write(outer, b"\x15")  # Clear the completion draft before the next command.
-            ui_command = shlex.join(["connect", "terminal", "127.0.0.1", "tester", "--key", str(key), "--port", str(port), "--yes"])
+            ui_command = shlex.join(["connect", "-ip", "127.0.0.1", "-socket", "terminal", "-user", "tester", "-ssh-key", str(key), "-port", str(port), "--yes"])
             os.write(outer, ui_command.encode() + b"\r")
             wait(lambda: screen_contains(b'"terminal"'))
             wait(lambda: state_is(w, "terminal", "connected"))
-            os.write(outer, b"close terminal --yes\r")
+            os.write(outer,b"close terminal\r")
+            wait(lambda: screen_contains(b"Close terminal"))
+            assert screen_contains(b"Proceed]")
+            os.write(outer,b"\t\r")
             wait(lambda: screen_contains(b'"closed"'))
             assert all(s["name"] != "terminal" for s in burrow(w, "connections"))
             # Secret entry is exercised from the real management command, with
@@ -269,6 +274,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             ui_command = shlex.join(["connect", "terminal-secret", "127.0.0.1", "tester", "--port", str(port), "--yes"])
             os.write(outer, ui_command.encode() + b"\r")
             wait(lambda: screen_contains(b"SSH password"))
+            assert screen_contains(b"WORKSPACES"), "authentication lost management backdrop"
+            assert b"\x1b[?1049l" not in output, "authentication released alternate screen"
             os.write(outer, auth_secret.encode() + b"\r")
             wait(lambda: screen_contains(b'"terminal-secret"'))
             assert burrow(w, "inspect", "terminal-secret")["state"] == "connected"
@@ -282,6 +289,44 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             wait(lambda: screen_contains(b"attempt closed"))
             assert not (w / "burrow/terminal-cancel").exists()
             assert auth_secret.encode() not in output
+            # First-use trust is an embedded default-reject confirmation with
+            # the actual endpoint and fingerprint, independent of --yes.
+            trust_file.write_bytes(b"")
+            for name,answer in [("tui-reject",b"\r"),("tui-trust",b"\t\r")]:
+                ui_command=shlex.join(["connect",name,"127.0.0.1","tester","--key",str(key),"--port",str(port),"--yes"])
+                os.write(outer,ui_command.encode()+b"\r")
+                wait(lambda: screen_contains(b"Trust host"))
+                assert screen_contains(fingerprint.encode()) and screen_contains(b"127.0.0.1")
+                assert screen_contains(b"WORKSPACES")
+                os.write(outer,answer)
+                if name=="tui-reject":
+                    wait(lambda: screen_contains(b"attempt closed"))
+                    assert not (w/"burrow"/name).exists()
+                else:
+                    wait(lambda: screen_contains(b'"tui-trust"'))
+                    assert burrow(w,"inspect",name)["state"]=="connected"
+                    os.write(outer,b"close tui-trust --yes\r")
+                    wait(lambda: screen_contains(b'"closed"'))
+            trust_file.write_bytes(trusted)
+            # Bare connect is optional guided entry in the same production frame.
+            os.write(outer,b"connect\r")
+            for label,value in [(b"Host / IP",b"127.0.0.1"),(b"SSH port",str(port).encode()),
+                                (b"Username",b"tester"),(b"Connection name",b"guided-tui"),
+                                (b"SSH key path",str(key).encode()),(b"Jump host",b""),(b"Agent socket",b""),
+                                (b"SSH config path",b""),(b"Known-hosts path",b"")]:
+                # Every label is visible now; wait for the actual caret before
+                # sending the next field's value through the real PTY.
+                wait(lambda: screen_contains(label, cursor=True))
+                assert screen_contains(b"WORKSPACES")
+                os.write(outer,value+b"\r")
+            wait(lambda: screen_contains(b"Proceed?"))
+            assert screen_contains(b"Proceed]")
+            assert screen_contains(b"127.0.0.1")
+            os.write(outer,b"\t\r")
+            wait(lambda: screen_contains(b'"guided-tui"'))
+            assert burrow(w,"inspect","guided-tui")["state"]=="connected"
+            os.write(outer,b"close guided-tui --yes\r")
+            wait(lambda: screen_contains(b'"closed"'))
             # Repaint after resize starts a new screen; do not replay old 160-column
             # cursor coordinates into an emulator that was only ever 120 columns.
             while select.select([outer], [], [], 0)[0]:

@@ -11,7 +11,12 @@ require (
 )
 
 require (
+	charm.land/huh/v2 v2.0.3
+	github.com/catppuccin/go v0.2.0 // indirect
 	github.com/charmbracelet/harmonica v0.2.0 // indirect
+	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 )
 
 require (
