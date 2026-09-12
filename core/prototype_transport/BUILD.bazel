@@ -3,6 +3,14 @@ load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 py_binary(
+    name = "live",
+    srcs = ["live.py"],
+    args = ["$(location :burrow-transport-prototype)"],
+    data = [":burrow-transport-prototype"],
+    legacy_create_init = 0,
+)
+
+py_binary(
     name = "lab",
     srcs = ["lab.py"],
     args = ["$(location :burrow-transport-prototype)"],

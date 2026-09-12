@@ -1,11 +1,28 @@
 # Disposable command-first terminal prototype
 
-This is the next review artifact for [Which terminal interaction model fits the agreed boundaries?](https://github.com/Bochner/burrow/issues/15).
+Current status: owner accepted the base UI on 2026-09-12. Help now opens as a large centered overlay with a dimmed backdrop, isolated input focus and Esc restoration. See `docs/research/terminal-design.md` and `docs/research/terminal-mvp-coverage.md` for the accepted reference and remaining runtime work. Earlier walkthrough notes below retain historical context.
+
+Current theme: **Dracula Classic**, researched against the [official spec](https://draculatheme.com/spec). This supersedes earlier Hovel/rose references below. Tables, help, prompt, dialogs, progress and the management background share the official palette. `--color` forces Dracula truecolor; `NO_COLOR` retains terminal defaults.
+
+
+This is the owner-review artifact for [What initial terminal design should Burrow build on before milestone planning?](https://github.com/Bochner/burrow/issues/42).
+
+The current candidate uses the newest verified stable Charm v2 family, a persistent
+resource overview, Dracula Classic throughout, and the accepted command-first workflow.
+See [current design, version provenance and walkthrough](../../docs/research/terminal-design.md).
+
+The revised design follows LazySSH's stacked table order and adds a visible
+Up/Down-selectable completion dropdown, required-first connection arguments,
+F1/`help TOPIC`, structured file listings, and `mget PATTERN` → review → `confirm`
+with overall/current-file progress, speed, elapsed time, ETA and per-file results.
+See [full MVP coverage](../../docs/research/terminal-mvp-coverage.md) for the product
+requirements and remaining runtime integration. This is still a local design proof.
+The owner accepted this base UI on 2026-09-12; production integration remains subsequent work.
 It runs in a Linux/WSL terminal, not a browser. The real Go frontend uses a
 contextual bottom prompt, typed modes, completion/history, Hovel colors and
 readable file listings. All connections and tunnels are explicitly simulated.
 
-## Internal VT candidate for owner walkthrough
+## Internal VT shell walkthrough
 
 For [How should local shells restore full-screen terminal state?](https://github.com/Bochner/burrow/issues/31):
 
@@ -18,10 +35,10 @@ Type `connect`, then `shell`. Try a local full-screen program such as `vi` or
 `top`, press **Ctrl-]**, open another `shell`, background it, and `resume 1`.
 Resize while in management, then resume. `quit` ends the frontend's local shells.
 This is the same local-only disposable fixture; no SSH/Hovel operations occur.
-The default invocation preserves the previously accepted plain-output baseline.
+VT is now the default. `--vt=false` preserves the earlier plain-output baseline.
 
 The candidate embeds `github.com/charmbracelet/x/vt` at
-`v0.0.0-20260901172002-a5dee49b2863` ([source](https://github.com/charmbracelet/x/tree/a5dee49b28632257cd9a475e8ca36e98a62ff155/vt)).
+`v0.0.0-20260906004030-3986e9119cf9` ([source](https://github.com/charmbracelet/x/tree/3986e9119cf9/vt)).
 Each shell continuously feeds its own VT screen while hidden. Bubble Tea's public
 `Exec` handoff releases the terminal while the attachment handles raw bytes,
 then restores management. Return redraws cells, styles and cursor rather than a
@@ -33,8 +50,8 @@ embedded Ghostty approach and Rust/Zig cost. This candidate adds no managed
 runtime executable or new build toolchain. It does add six Go modules (VT,
 Ultraviolet, ordered, termios, Windows helpers and x/sync), and raises six existing
 module versions (ANSI, colorprofile, displaywidth, uax29, go-colorful, runewidth).
-Exact versions and hashes are in the shared proof go.mod/go.sum. Bubble Tea,
-Bubbles and Lip Gloss stay at their accepted pins. Upstream changes do not enter
+Exact versions and hashes are in the shared proof go.mod/go.sum. The current design revision upgrades Bubble Tea, Bubbles and Lip Gloss to v2;
+see the version table in the current design reference. Upstream changes do not enter
 a build until we deliberately update those pins and rerun the checks; pinning
 does not remove upgrade/security maintenance. Library access stays in the local
 shell screen code so an eventual replacement need not affect SSH operations.
@@ -53,7 +70,7 @@ Ctrl-] is reserved for management; cursor position/visibility are restored, but
 cursor shape/color are not yet mirrored. Management's fixture transfer timer pauses
 during the blocking shell handoff; real transfer execution must stay independent
 of rendering during implementation. Clipboard/title forwarding is not enabled.
-This is a candidate pending owner feedback, not a resolved architecture decision.
+The shell mechanism and base UI are accepted; production acceptance remains separate.
 
 An exploratory host-pinned tmux 3.6 comparison parsed fragmented screen state,
 but its raw-NUL attachment check failed; no tmux parity claim was established.
@@ -64,7 +81,7 @@ that tmux cannot deliver the behavior with different integration.
 ## Run in WSL
 
 ```sh
-cd /home/bochner/dev/burrow-ssh-specification
+cd /home/bochner/dev/burrow
 aspect burrow-prototype terminal
 ```
 
@@ -74,7 +91,7 @@ layout. `NO_COLOR=1` or `aspect burrow-prototype terminal -- --no-color` disable
 colors. The terminal controls the background; no Nerd Font is required. Mouse
 capture is off so normal terminal selection/copy remains available.
 
-Try typing this sequence, using Tab completion and Up/Down history:
+Try typing this sequence, using Ctrl-N/P to choose suggestions, Tab to accept, and Up/Down history:
 
 ```text
 connections
@@ -95,22 +112,22 @@ to Burrow management. Type `sessions`, open another `shell`, background it, and
 one shell; `quit` from management ends the frontend and all local fixture shells.
 Use `close --yes` to explicitly end the selected simulated connection and its
 shells/transfers. `loss` demonstrates disconnect; reconnect does not restore
-old tunnels. `tunnel 1080`, `tunnels`, and `run` demonstrate selection/context,
+old tunnels. `proxy 1080`, `tunnels`, and `run` demonstrate selection/context,
 but open no sockets and execute no remote tools.
 
 Files under remote-looking paths are ordinary temporary local files. `get` and
 `put` actually copy bytes inside the fixture, refuse overwrites, and report
 measured progress. The UI deliberately copies one 64 KiB chunk per 100 ms so the
 progress is visible; this is demonstration pacing, not a transport benchmark.
-`cancel` removes the incomplete destination. `lcd`/`lls` address local fixture
-paths; downloads default to `/downloads`, uploads to the local working directory
-(initially `/uploads`). Quoted filenames are accepted; input is not evaluated as
+`cancel` removes the incomplete destination. `lcd`/`lls` address the download directory, matching LazySSH; downloads default
+to `/downloads`. Uploads use the separate `/uploads` fixture directory. Both
+download and upload paths appear in the file-mode prompt. Quoted filenames are accepted; input is not evaluated as
 a shell command by management/file mode.
 
 **Shells are real local `/bin/sh` processes, not SSH and not a security sandbox.**
 Their working directory starts in the selected fixture. They run with your normal
-user permissions. The header and shell prompt identify this throughout. Use plain
-commands for this walkthrough: arbitrary full-screen applications are not supported.
+user permissions. The header and shell prompt identify this throughout. The default VT path supports the bounded full-screen walkthrough described above;
+`--vt=false` supports plain output only.
 All scratch files are removed when the prototype exits. Production daemon retention
 is an already-decided contract; this throwaway fixture does not implement it.
 
@@ -141,9 +158,10 @@ prove remote SSH, Hovel lifecycle/confirmation/audit, or arbitrary VT restoratio
 
 ## Component proposal and limits
 
-This proof uses Hovel's pinned **Bubble Tea v1.3.10, Bubbles v1.0.0 and Lip Gloss
-v1.1.1-0.20250404203927-76690c660834** from its
-[pinned module](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/core/go.mod).
+This revision pins **Bubble Tea v2.0.9, Bubbles v2.2.1 and Lip Gloss v2.0.6**.
+The owner selected newest stable dependencies unless they conflict with Hovel.
+Hovel's daemon/API and public module SDK do not require its frontend's Charm v1
+versions in Burrow. See the current design reference for verified sources.
 Dependencies and transitive checksums are recorded in the existing shared proof
 manifest `../prototype_sdk/go.mod` and `go.sum`; this is not a new production SDK.
 The frontend imports public Charm packages, not Hovel internals. Styling follows
@@ -158,7 +176,7 @@ Command behavior stays in `commands.go`, separate from terminal rendering.
 The Linux PTY mechanism follows the earlier `prototype_transport/local_terminal.py`
 proof. Shell output retains at most 64 KiB per shell and strips terminal control
 sequences for plain-output display. Management keeps 400 lines and in-memory
-history keeps 100 commands. **This is not a VT terminal emulator**: cursor-addressed
+history keeps 100 commands. **The optional plain-output baseline is not a VT terminal emulator**: cursor-addressed
 screens, exact raw-input parity and arbitrary full-screen restoration remain the
 [separate restoration decision](https://github.com/Bochner/burrow/issues/31).
 The prompt shows known file-mode paths, not an inferred remote shell cwd.
@@ -166,8 +184,8 @@ The prompt shows known file-mode paths, not an inferred remote shell cwd.
 The owner tested and accepted this command-first interaction on 2026-09-11,
 with full color treatment and real functionality still to be developed. The
 [terminal interaction ticket](https://github.com/Bochner/burrow/issues/15) records
-the canonical resolution and carry-forward limits. The separate full-screen
-restoration proof remains open. Preserve this bounded prototype on the shared
+the canonical resolution and carry-forward limits. The full-screen restoration mechanism was subsequently accepted; the current visual
+revision remains open in the terminal-design decision. Preserve this bounded prototype on the shared
 milestone branch until its next validated consolidation.
 
 # Earlier browser sketch
@@ -219,3 +237,20 @@ prototype above for the current command-first direction.
 Keep this asset on the shared SSH-specification milestone branch until its next
 validated consolidation. Approval of the direction is not acceptance of an
 unimplemented frontend.
+
+
+Current workspace controls: **Ctrl+K** opens the command menu, **Ctrl+C** opens
+quit confirmation (Keep working is the default), **F1** opens help, and
+**Ctrl+Up/Down** scrolls overflowing resource tables. **Up/Down** selects prompt
+suggestions and **Tab** advances through command arguments. The sidebar appears
+at 110 columns; smaller terminals retain the prompt and compact resource context.
+
+The Aspect launcher now renders through `/dev/tty` when stdout is captured so
+terminal size and color detection work. `NO_COLOR` remains respected; explicitly
+preview Dracula truecolor with `aspect burrow-prototype terminal -- --color`.
+
+Help follows LazySSH's semantic highlighting: rose commands/headings, cyan flags,
+yellow arguments, muted optional brackets, and green examples. Try `help connect`
+for required/optional parameters; arrows scroll and Tab/Shift+Tab cycles topics.
+The pink accent is softened to `#b84b8a`. SOCKS appears in the connection's PROXY
+column, while the tunnel table contains local/reverse forwards only.
