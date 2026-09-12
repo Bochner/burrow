@@ -109,7 +109,7 @@ func run(args []string) error {
 	if command == "status" {
 		return json.NewEncoder(os.Stdout).Encode(info)
 	}
-	return terminal(info, noColor || os.Getenv("NO_COLOR") != "")
+	return terminal(info, noColor || os.Getenv("NO_COLOR") != "", o)
 }
 
 // Read-only inspection through the public SDK. It cannot bootstrap another

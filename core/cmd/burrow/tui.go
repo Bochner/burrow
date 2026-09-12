@@ -40,10 +40,6 @@ var pageDown = key.NewBinding(key.WithKeys("pgdown"))
 var inventoryUp = key.NewBinding(key.WithKeys("alt+up"))
 var inventoryDown = key.NewBinding(key.WithKeys("alt+down"))
 
-type checked struct {
-	info launch.Info
-	err  error
-}
 type connectionTick struct{}
 type connectionList struct {
 	states []connection.State
@@ -82,7 +78,7 @@ type ui struct {
 	helpOffset                           int
 }
 
-func terminal(info launch.Info, noColor bool) error {
+func newUI(info launch.Info, noColor bool) ui {
 	input := textinput.New()
 	input.Prompt = "╰─ "
 	input.Placeholder = "connect · connections · help · quit"
@@ -93,7 +89,11 @@ func terminal(info launch.Info, noColor bool) error {
 	input.KeyMap.PrevSuggestion = previous
 	input.CharLimit = 2048
 	input.Focus()
-	m := ui{info: info, input: input, noColor: noColor, output: "Verified daemon · quit retains workspace resources."}
+	return ui{info: info, input: input, noColor: noColor, output: "Verified daemon · quit retains workspace resources."}
+}
+
+func terminal(info launch.Info, noColor bool, options launch.Options) error {
+	m := newFrame(info, noColor, options)
 	opts := []tea.ProgramOption{}
 	// Aspect captures stdout; keep rendering on the actual controlling terminal.
 	if !term.IsTerminal(os.Stdout.Fd()) {
@@ -148,16 +148,6 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.noColor = m.noColor || v.Profile == colorprofile.ASCII
 	case tea.BackgroundColorMsg:
 		// The owner selected Dracula Classic; terminal background doesn't change it.
-	case checked:
-		m.busy = false
-		m.outputOffset = 0
-		if v.err != nil {
-			m.info.Health = "UNVERIFIED (last known PID)"
-			m.output = "REFUSED: " + safe(v.err.Error())
-		} else {
-			m.info = v.info
-			m.output = fmt.Sprintf("Verified daemon PID %d · %s", v.info.PID, safe(v.info.Health))
-		}
 	case tea.PasteMsg:
 		if m.help || m.quitting {
 			return m, nil
@@ -252,13 +242,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.quitting = true
 			case "status":
 				m.busy = true
-				workspace := m.info.Workspace
-				return m, func() tea.Msg {
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-					i, e := launch.Status(ctx, workspace)
-					return checked{i, e}
-				}
+				return m, func() tea.Msg { return statusRequested{} }
 			default:
 				args, e := connection.Split(command)
 				if e == nil {
@@ -351,7 +335,7 @@ func (m ui) activeConnections(w int) string {
 }
 func (m ui) View() tea.View {
 	w, h := max(1, m.width), max(1, m.height)
-	if h < 16 || w < 24 {
+	if h < 12 || w < 24 {
 		text := "Resize window\nCtrl+C to quit"
 		if m.quitting {
 			text = "Quit?\nTab: choose\nEnter: keep"
@@ -372,10 +356,6 @@ func (m ui) View() tea.View {
 	var b strings.Builder
 	b.WriteString(m.paint(cyan, safe(m.info.Workspace)) + m.paint(purple, " · Burrow") + "\n\n")
 	bodyW := w
-	sidebar := w >= 110
-	if sidebar {
-		bodyW -= 32
-	}
 	content := m.resource("SAVED CONNECTION CONFIGURATIONS", []string{"NAME", "HOST", "USER", "PORT", "AUTH", "SHELL"}, bodyW) + "\n\n" +
 		m.activeConnections(bodyW) + "\n\n" +
 		m.resource("TUNNELS · grouped by connection", []string{"CONNECTION", "ID", "TYPE", "LISTEN", "DESTINATION"}, bodyW)
@@ -387,10 +367,6 @@ func (m ui) View() tea.View {
 	outputLines := strings.Split(ansi.Wrap(m.output, bodyW, ""), "\n")
 	start := min(m.outputOffset, len(outputLines)-1)
 	content += "\n\n" + m.paint(cyan, "COMMAND OUTPUT · PgUp/PgDn scroll") + "\n" + strings.Join(outputLines[start:], "\n")
-	if sidebar {
-		side := m.paint(purple, "B U R R O W\n\nWORKSPACE") + "\n" + safe(m.info.Workspace) + "\n\n" + m.paint(purple, "DAEMON") + fmt.Sprintf("\nPID %d\n%s\n\nSHELLS / RUNS / TRANSFERS\nNot implemented", m.info.PID, safe(m.info.Health))
-		content = lipgloss.JoinHorizontal(lipgloss.Top, fit(content, bodyW, max(1, h-5)), "  ", fit(side, 30, max(1, h-5)))
-	}
 	b.WriteString(fit(content, w, max(0, h-5)))
 	footer := "F1 help · Tab completion · Ctrl+C quit"
 	if m.busy {
@@ -421,29 +397,9 @@ func (m ui) View() tea.View {
 		}
 	}
 	if m.help || m.quitting {
-		text := "BURROW COMMAND MENU · ↑↓ scroll · Esc returns\n\nstatus   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\n" + connection.Help + "\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
-		if m.quitting {
-			text = "Quit Burrow?\n\nDaemon and workspace resources remain.\n\n  Quit   › Keep working\nTab choose · Enter confirm · Esc cancel"
-			if h < 12 || w < 50 {
-				text = "Quit Burrow?\n  Quit   › Keep\nTab choose · Enter\nEsc cancels"
-			}
-			if m.leave {
-				text = strings.Replace(text, "  Quit   › Keep", "› Quit     Keep", 1)
-			}
-		}
-		pw := max(1, min(64, w-2))
-		if m.help {
-			lines := strings.Split(ansi.Wrap(text, max(1, pw-6), ""), "\n")
-			start := min(m.helpOffset, max(0, len(lines)-1))
-			text = strings.Join(lines[start:], "\n")
-		}
-		popup := fit(text, max(1, pw-6), max(1, min(strings.Count(text, "\n")+1, h-6)))
-		if !m.noColor {
-			popup = dialog.Width(pw).Render(popup)
-			base = muted.Render(ansi.Strip(base))
-		}
-		base = lipgloss.NewCompositor(lipgloss.NewLayer(base), lipgloss.NewLayer(popup).X(max(0, (w-lipgloss.Width(popup))/2)).Y(max(0, (h-lipgloss.Height(popup))/2)).Z(1)).Render()
+		base = m.overlay(base, w, h)
 	}
+
 	if !m.noColor {
 		base = surface.Width(w).Height(h).Render(base)
 	} else {
@@ -452,4 +408,31 @@ func (m ui) View() tea.View {
 	v := tea.NewView(fit(base, w, h))
 	v.AltScreen = true
 	return v
+}
+
+func (m ui) overlay(base string, w, h int) string {
+	text := "BURROW COMMAND MENU · ↑↓ scroll · Esc returns\n\nstatus   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources.\nArrows select; Enter activates; Esc returns to prompt.\nAlt+N New, Alt+M Menu, Alt+W workspace drawer.\nTab completes the prompt. Click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
+	if m.quitting {
+		text = "Quit Burrow?\n\nDaemon and workspace resources remain.\n\n  Quit   › Keep working\nTab choose · Enter confirm · Esc cancel"
+		if h < 12 || w < 50 {
+			text = "Quit Burrow?\n  Quit   › Keep\nTab choose · Enter\nEsc cancels"
+		}
+		if m.leave {
+			text = strings.Replace(text, "  Quit   › Keep", "› Quit     Keep", 1)
+		}
+	}
+	pw := max(1, min(64, w-2))
+	if m.help {
+		lines := strings.Split(ansi.Wrap(text, max(1, pw-6), ""), "\n")
+		start := min(m.helpOffset, max(0, len(lines)-1))
+		text = strings.Join(lines[start:], "\n")
+	}
+	popup := fit(text, max(1, pw-6), max(1, min(strings.Count(text, "\n")+1, h-6)))
+	if !m.noColor {
+		popup = dialog.Width(pw).Render(popup)
+		base = muted.Render(ansi.Strip(base))
+	}
+	base = lipgloss.NewCompositor(lipgloss.NewLayer(base), lipgloss.NewLayer(popup).X(max(0, (w-lipgloss.Width(popup))/2)).Y(max(0, (h-lipgloss.Height(popup))/2)).Z(1)).Render()
+
+	return base
 }

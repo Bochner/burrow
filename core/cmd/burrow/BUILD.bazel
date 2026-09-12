@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_binary")
+load("@rules_go//go:def.bzl", "go_binary", "go_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -23,7 +23,7 @@ py_test(
 
 go_binary(
     name = "burrow",
-    srcs = ["main.go", "tui.go"],
+    srcs = ["main.go", "tui.go", "frame.go"],
     deps = [
         "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput",
@@ -53,4 +53,16 @@ py_test(
     size = "medium",
     tags = ["no-sandbox"],
     legacy_create_init = 0,
+)
+
+go_test(
+    name = "interaction_test",
+    srcs = ["main.go", "tui.go", "frame.go", "frame_test.go"],
+    deps = [
+        "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
+        "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput",
+        "@land_charm_bubbles_v2//key", "@land_charm_lipgloss_v2//:lipgloss",
+        "@land_charm_lipgloss_v2//table", "@com_github_charmbracelet_x_ansi//:ansi",
+        "@com_github_charmbracelet_x_term//:term", "@com_github_charmbracelet_colorprofile//:colorprofile",
+    ],
 )

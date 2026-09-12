@@ -81,7 +81,7 @@ func install(ctx context.Context, o Options) (string, error) {
 				response.Body.Close()
 				return "", fmt.Errorf("Hovel download returned HTTP %d; retry or supply --hovel-package FILE", response.StatusCode)
 			}
-			source = response.Body
+			source, e = response.Body, nil
 		}
 		if e != nil {
 			return "", fmt.Errorf("Hovel package unavailable: %w", e)

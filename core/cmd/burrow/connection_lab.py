@@ -216,6 +216,19 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         try:
             wait(lambda: screen_contains(b"gateway"))
             wait(lambda: screen_contains(b"of 8"))
+            # The same named connection in another workspace stays independent
+            # when selected through production navigation, with drafts retained.
+            os.write(outer, b"ins\x1bn")
+            wait(lambda: screen_contains(b"Exact destination"))
+            os.write(outer, str(other).encode() + b"\r")
+            wait(lambda: screen_contains(str(other).encode()))
+            wait(lambda: screen_contains(b"gateway"))
+            assert burrow(other, "inspect", "gateway")["socket"] != first["socket"]
+            os.write(outer, b"\x1bw")
+            wait(lambda: screen_contains(b"[Esc close]"))
+            os.write(outer, b"\x1b[A\r")
+            wait(lambda: screen_contains(b"COMPLETION"))
+            os.write(outer, b"\x15")
             os.write(outer, b"\x1b[1;3B" * 8)  # Alt+Down scrolls connection inventory
             wait(lambda: screen_contains(b"row6"))
             os.write(outer, b"\x1b[1;3A" * 8)

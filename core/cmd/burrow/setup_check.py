@@ -253,6 +253,32 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             raise AssertionError((needle, subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3).stdout, bytes(fresh)))
         try:
             read_until(b"SAVED CONNECTION")
+            # Real New form launches through the shared verified Open operation.
+            created = root / "nav-created"
+            os.write(master, b"\x1bn")  # Alt+N
+            read_until(b"Exact destination")
+            assert not created.exists(), "opening New mutated the destination"
+            os.write(master, str(created).encode() + b"\r")
+            read_until(str(created).encode())
+            created_info = run(created, "--offline")
+            assert created_info["pid"] != info["pid"]
+            os.write(master, b"draft-created\x1bw")  # preserve draft, open drawer
+            read_until(b"[Esc close]")
+            os.write(master, b"\x1b[A\r")
+            read_until(str(w).encode())
+            # Mouse opens midpoint New at the resized 80x24 geometry.
+            os.write(master, b"\x1b[<0;3;13M\x1b[<0;3;13m")
+            read_until(b"Exact destination")
+            os.write(master, b"\x1b")
+            time.sleep(.2)
+            os.write(master, b"\x1bw")
+            read_until(b"[Esc close]")
+            os.write(master, b"\x1b[B\r")
+            read_until(b"draft-created")
+            os.write(master, b"\x1bw")
+            read_until(b"[Esc close]")
+            os.write(master, b"\x1b[A\r")
+            read_until(str(w).encode())
             os.write(master, b"sta\x1bOP")  # draft, F1
             read_until(b"BURROW COMMAND MENU")
             os.write(master, b"\x1b")
