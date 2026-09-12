@@ -5,8 +5,8 @@ For [Can remote script runs satisfy Hovel execution and cleanup contracts?](http
 **Finding: the synchronous confirmed throw path does not satisfy retained script
 execution after caller loss at the pinned Hovel revision.** This is a prerequisite
 failure reproduction, not the full script implementation or an accepted workaround.
-The retained-session follow-up below tests a candidate workaround. Owner review
-is pending. The full ticket requirements remain in force.
+The owner accepted the retained-session sequence and explicit-collection limit
+below. The remaining invocation/cleanup matrix is still open.
 
 Run `aspect burrow-prototype transport` or `aspect burrow-check`. The latter also
 builds the SDK package/frontend and checks the SDK protocol and documentation.
@@ -62,7 +62,8 @@ next proof is a run represented by a retained Hovel session, with confirmed star
 and explicit status/cancel/result collection through supported operations. This
 must prove final artifact persistence, confirmation coverage, remote cancellation
 and cleanup; a returned session reference alone is insufficient. The follow-up
-below implements that bounded candidate, not an accepted production contract.
+below proves the now-accepted lifetime/collection sequence; the remaining
+workflow matrix is not yet a complete production contract.
 An upstream retained-run contract remains the other route.
 
 Do not claim the remaining ticket matrix has passed: operator-selected local
@@ -74,7 +75,13 @@ new job framework, audit database or production SSH code is introduced.
 
 ## Retained-session follow-up
 
-The owner authorized testing retained Hovel sessions for script execution. The
+Owner acceptance: initial runs use explicit collection; uncollected output may
+be lost on daemon/module failure. [The script decision](https://github.com/Bochner/burrow/issues/26)
+records the acceptance. [The nonblocking Hovel handoff](https://github.com/Bochner/burrow/issues/39)
+requests durable completion without a foreground collector.
+
+The owner authorized testing retained Hovel sessions and accepted this bounded
+sequence after reviewing its collection tradeoff. The
 candidate reuses the daemon-owned connection above and adds one result-bearing
 SDK session per inert run. It introduces no job registry or audit database.
 The same Aspect transport gate runs both the original failure reproduction and
@@ -129,7 +136,7 @@ already-retained owner. Sources: pinned
 [SDK dispatch](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/sdk/go/hovel/server.go),
 and [throw confirmation/artifact collection](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/core/internal/app/commands/catalog.go).
 
-### Remaining decision and limits
+### Accepted collection limit and remaining proof
 
 This candidate makes **prepare, launch, inspect/cancel, collect, close** explicit.
 Until collection succeeds, final output lives in the retained module's memory,
@@ -153,5 +160,5 @@ independent stdin files, streaming through this retained path, injected cleanup
 failure, and a final output/retention policy. The original streamed synchronous
 probe is separate evidence, not proof of those features in this candidate.
 Do not close the ticket or unblock final slice planning merely because this
-bounded gate passes. Review the concrete lifetime/collection tradeoff with the
-owner before promoting it to the accepted scripting contract.
+bounded gate passes. The lifetime/collection tradeoff is accepted; the remaining workflow matrix
+must still be demonstrated before resolving the complete scripting ticket.

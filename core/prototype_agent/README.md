@@ -1,70 +1,79 @@
-# Disposable agent installation proof
+# Disposable direct-skill installation proof
 
-For [Can Hovel-aligned Burrow skills install and drive an AI tunnel workflow?](https://github.com/Bochner/burrow/issues/36).
-The owner narrowed this session to mirroring Hovel's skills and installation
-conventions, excluding required MCP setup, and requested minimal model-token
-use. This is installation evidence, not the production skill suite or a claim
-that the agent tunnel acceptance scenarios have passed.
+The owner selected direct skill installation, deferring plugin packaging until
+its distribution features are needed. This supersedes the native plugin setup
+in the [original installation decision](https://github.com/Bochner/burrow/issues/36).
+The canonical product skills and CLI-oriented operating guidance remain.
+This is a bounded installer proof, not the complete production skill suite.
 
-Run `aspect burrow-prototype agent`. It uses no model calls, mounts disposable
-client configuration over the usual paths using Bubblewrap, and deletes the
-scratch tree on completion. It requires Linux, `/usr/bin/bwrap`, Claude Code
-2.1.268 and Codex CLI 0.154.0. Real user configuration is not changed.
-`aspect burrow-check` includes it; `aspect burrow-check ci` builds the installer
-without requiring these locally installed clients.
+```sh
+aspect burrow-prototype agent-install -- agent install codex --scope project --dry-run
+aspect burrow-prototype agent-install -- agent install codex --scope project
+aspect burrow-prototype agent
+# Optional, with Claude Code, Codex and Linux Bubblewrap installed:
+aspect burrow-prototype agent-discovery
+```
 
-## Mirrored from Hovel
+`burrow agent install <host>` installs the bundled skills. `--source` accepts a
+trusted local directory containing `burrow*/SKILL.md` folders and their supporting
+files. It no longer accepts generated plugin packages. The default scope is user;
+project scope installs beneath the current directory.
 
-Upstream main was verified as `c461ba282a8aecc7aa3a079a4613bf5e2640c388`
-on 2026-09-11. Inspected primary sources:
+| Client | User skills | Project skills |
+| --- | --- | --- |
+| Claude Code | `~/.claude/skills` | `.claude/skills` |
+| Codex | `~/.agents/skills` | `.agents/skills` |
+| OpenCode | `~/.config/opencode/skills` | `.opencode/skills` |
 
-- [Canonical skills and router](https://github.com/vibepwners/hovel/tree/c461ba282a8aecc7aa3a079a4613bf5e2640c388/agent/skills).
-- [Package generator](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/agent/tools/package_agent.py).
-- [Installer](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/core/internal/infra/agentintegration/installer.go).
-- [Published installation contract](https://github.com/vibepwners/hovel/blob/c461ba282a8aecc7aa3a079a4613bf5e2640c388/docs/site/src/content/spec/agent-integrations.html).
+Claude's `CLAUDE_CONFIG_DIR` and OpenCode's `XDG_CONFIG_HOME` override their user
+config roots. The installer follows the documented standalone locations:
+[Claude skills](https://code.claude.com/docs/en/skills),
+[Codex skills](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills),
+and [OpenCode skills](https://opencode.ai/docs/skills/), inspected 2026-09-11.
 
-This prototype mirrors the canonical `agent/skills/` source tree, a root skill
-and focused workflow skill, compatibility metadata, separate product identity,
-host-specific manifests, native Claude/Codex user installation, and portable
-Codex/OpenCode project paths. The entrypoint follows
-`burrow agent install <host> --scope user|project --source <package> --dry-run`.
-It installs the suite together. MCP files and configuration edits are omitted.
-The small fixture has only root and tunnel skills; the approved inspect,
-execute, transfer and tunnel workflows remain the production inventory.
+Installation validates skill folder names and required discovery metadata,
+refuses symlinked sources/destinations, and preflights the suite before writing.
+An installed skill's `.burrow-installed.json` records its installed file hashes.
+Identical content is a no-op. An update replaces only skills whose current files
+still match that baseline; edited or differing unmanaged skills are preserved
+and reported as conflicts. Move a conflicting skill aside and reconcile it
+manually before retrying. There is no force-overwrite switch.
 
-Hovel's Go installer remains internal and hardcodes its own identity. Burrow
-does not import it. Hovel's Apache-2.0 sources are the design provenance; this
-small Python proof implements the selected conventions independently.
+Updates preserve the previous directory in `burrow-skill-backups/` beside the
+`skills/` directory, outside the agents' skill discovery trees. Review/remove
+those backups manually when no longer needed. Each replacement is staged first;
+a failed replacement attempts to restore its backup. This is per-skill recovery,
+not an all-or-nothing suite transaction or a lock against concurrent editors.
+Skills omitted from a newer source remain installed until removed manually.
+Unrelated skills, existing Hovel integrations and client configuration are kept.
+Installation creates no plugin manifests, marketplaces or MCP configuration and
+never launches an agent client.
 
-## Observations and limits
+## Checks and discovery
 
-- Native Claude and Codex install, dry-run, repeat install and plugin discovery
-  pass through the prototype entrypoint in disposable user configurations.
-- Changed-content/version update passes using Claude marketplace/plugin update
-  and Codex remove/add. No model invocation is needed for these checks.
-- All three generated layouts carry host/version/source metadata. Portable
-  skill placement preserves an existing Hovel skill and MCP configuration,
-  accepts identical contents and refuses changed contents. This checks fixture
-  preservation, not a live Hovel plugin installation in all three clients.
-- Codex 0.154.0 resolves a local plugin source relative to the package root.
-  Hovel's nested package placement failed native installation in this probe.
-  Burrow's generated `plugins/burrow` path matches that resolution.
-- OpenCode is not installed on this host. Its package/portable filesystem
-  behavior is checked; native discovery is not claimed.
-- The installer accepts trusted local fixture packages only. Release downloads,
-  checksums, durable version cache, `--force` backup/update behavior, all scope
-  combinations and malicious-package validation remain production work.
-  Existing changed portable skills are refused rather than overwritten.
-- One tiny Codex clarification probe asked for the missing destination, but
-  reported it could not read the skill under the probe's shell restriction.
-  That is not successful loaded-skill execution evidence. Claude's live attempt
-  returned a revoked OAuth-token error. Neither result gates this packaging
-  decision; no more model calls are retained in the check.
+`aspect burrow-prototype agent` tests all six documented locations, bundled CLI
+installation, dry-run/no-op behavior, changed-content update, prior-version
+preservation, edited/unmanaged conflict refusal, invalid metadata and symlink
+refusal, and coexistence with Hovel/client configuration. This portable test runs
+in both `aspect burrow-check` and `aspect burrow-check ci`. Neither gate requires
+Claude, Codex, OpenCode, Bubblewrap or model access for the installer checks.
 
-The CLI route is present in Hovel's public command catalog: `session list`,
-`session commands`, and `session call --arg … --json`, with explicit workspace
-selection. Session calls do not automatically apply throw confirmation. This
-proof creates no tunnels. Actual agent-selected connection/tunnel creation,
-traffic, random high port, occupied port, rejected confirmation, and untrusted
-remote-output cases remain implementation acceptance, alongside the existing
-connection/tunnel proof. Skills cannot establish missing runtime behavior.
+The separate opt-in discovery check starts installed Claude and Codex clients in
+scratch configurations with networking disabled. Codex's `skills/list` response
+and Claude's initialization command list verify both standalone skills in user
+and project scopes. No prompt is submitted and no model call is made. There is
+no exact client-version assertion in the default gate. Native discovery was
+observed with Codex 0.154.0 and Claude Code 2.1.269; the opt-in probe exercises
+client interfaces that may change independently of the installer.
+
+OpenCode is absent on this host: its documented file layout is checked, native
+loading is not claimed. On an OpenCode installation, verify both names in the
+available skill tool list. Claude users can inspect `/skills`; Codex users can
+inspect its skill selector. Restart a running client if it has not refreshed.
+The skill files retain the same names and instructions, without plugin namespaces.
+
+The production inspect/execute/transfer/tunnel inventory, release downloads and
+checksums, and actual agent-driven SSH acceptance remain implementation work.
+Skills cannot establish runtime operations or bypass Hovel confirmations.
+Historical plugin evidence is preserved in Git history; plugin distribution is
+deferred, not a requirement on the runtime or default validation gate.
