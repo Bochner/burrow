@@ -89,7 +89,7 @@ func newUI(info launch.Info, noColor bool) ui {
 	input.KeyMap.PrevSuggestion = previous
 	input.CharLimit = 2048
 	input.Focus()
-	return ui{info: info, input: input, noColor: noColor, output: "Verified daemon · quit retains workspace resources."}
+	return ui{info: info, input: input, noColor: noColor, output: "Verified daemon · quit reviews connections: keep or close."}
 }
 
 func terminal(m *frame, noColor bool) error {
@@ -417,7 +417,7 @@ func (m ui) View() tea.View {
 }
 
 func (m ui) helpText() string {
-	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources, saved. Saved: Enter actions; arrows select.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P menu (Alt+M), Alt+N New, Alt+W workspace drawer.\nTab completes the prompt. Click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
+	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Review connections; keep running or close and quit\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources, saved. Saved: Enter actions; arrows select.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P menu (Alt+M), Alt+N New, Alt+W workspace drawer.\nDrag selects only the middle panel; Ctrl+C or Copy copies (no auto-copy).\nEsc clears selection; Ctrl+Shift+V pastes. Ctrl+Shift+C copies if forwarded.\nAlt+S toggles native selection (includes sidebars). Alt+mouse sends to Hovel.\nTab completes the prompt. With mouse controls enabled, click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
 }
 func (m ui) helpViewport(w, h int) viewport.Model {
 	return scrollBody(m.syntax(m.helpText()), max(1, min(96, w-4)-6), max(1, min(30, h-4)-8), m.helpOffset)

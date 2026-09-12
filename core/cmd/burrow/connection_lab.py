@@ -456,8 +456,9 @@ launch:
             os.kill(tui.pid, signal.SIGWINCH)
             wait(lambda: screen_contains(b"gateway"))
             os.write(outer, b"\x03")
-            wait(lambda: screen_contains(b"Quit Burrow?"))
-            os.write(outer, b"\t\r")
+            wait(lambda: screen_contains(b"Keep running"))
+            assert screen_contains(b"gateway")
+            os.write(outer, b"\r")
             assert tui.wait(timeout=5) == 0
             assert termios.tcgetattr(slave) == before
             assert b"38;2;" not in output
@@ -495,9 +496,37 @@ launch:
         leftover.write_text("not owned by connection")
         burrow(w, "close", "gateway", "--yes", ok=False)
         assert leftover.read_text() == "not owned by connection" and evidence.read_text() == "retain evidence"
-        leftover.unlink()  # the harness owns this injected conflict
-        burrow(w, "close", "gateway", "--yes")
-        burrow(other, "close", "gateway", "--yes")
+        # Quit reviews both opened workspaces and refuses to exit on uncertain cleanup.
+        outer, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+        before = termios.tcgetattr(slave)
+        tui = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"],
+                               env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+        output = bytearray()
+        dimensions = ["160", "40"]
+        try:
+            wait(lambda: screen_contains(b"gateway"))
+            os.write(outer, b"\x1bn")
+            wait(lambda: screen_contains(b"Exact destination"))
+            os.write(outer, str(other).encode() + b"\r")
+            wait(lambda: screen_contains(("● " + other.name).encode()))
+            wait(lambda: screen_contains(b"gateway"))
+            os.write(outer, b"\x03")
+            wait(lambda: screen_contains(b"Close connections"))
+            assert screen_contains(str(w).encode()) and screen_contains(str(other).encode())
+            os.write(outer, b"\t\r")  # explicit cleanup, default is Keep running
+            wait(lambda: screen_contains(b"Connections remain or changed"))
+            assert tui.poll() is None and leftover.exists()
+            assert burrow(other, "connections") == []
+            leftover.unlink()  # harness owns this injected conflict
+            os.write(outer, b"\t\r")  # retry the freshly reviewed remaining owner
+            assert tui.wait(timeout=10) == 0
+            assert termios.tcgetattr(slave) == before
+            assert burrow(w, "connections") == []
+        finally:
+            if tui.poll() is None:
+                tui.kill(); tui.wait()
+            os.close(outer); os.close(slave)
         assert not Path(first["socket"]).parent.exists()
         assert evidence.read_text() == "retain evidence" and trust_file.read_bytes() == trusted
         # Hovel's dangerous-operation allowance is required before module launch.

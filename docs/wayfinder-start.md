@@ -20,6 +20,15 @@ shipping the full rewrite is the subsequent implementation effort.
 
 ## Standing preferences from the owner
 
+- Follow-up owner instruction (2026-09-12): every normal Burrow quit reviews
+  connections across opened workspaces and offers keep running or clean teardown,
+  with cancellation. Cleanup must preserve saved settings/evidence and refuse
+  uncertain ownership. This supersedes automatic connection retention on quit;
+  the daemon remains running in either case. The owner’s manual test found native selection included sidebars; drag must
+  select only the middle panel. The owner accepted Ctrl+C and a Copy button for
+  explicit copying without terminal key remapping. There is no auto-copy.
+  Ctrl+Shift+C is supported when forwarded; Ctrl+Shift+V remains terminal paste.
+
 - On 2026-09-12 the owner accepted the base terminal UI in #42, including the
   Charm-native layout and dimmed help overlay. Preserve the reviewed source, then
   resolve the first-slice acceptance and complete implementation sequence in #16.

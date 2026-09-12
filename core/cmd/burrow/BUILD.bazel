@@ -41,7 +41,7 @@ go_binary(
 
 go_binary(
     name = "burrow",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go"],
+    srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go"],
     deps = [
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
@@ -77,7 +77,7 @@ py_test(
 
 go_test(
     name = "interaction_test",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "frame_test.go", "presentation_test.go"],
+    srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "frame_test.go", "presentation_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",

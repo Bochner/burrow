@@ -345,7 +345,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                 time.sleep(.1)
                 assert terminal.poll() is None
             os.write(master, b"\x03")
-            read_until(b"Quit Burrow?")
+            read_until(b"Keep working")
             os.write(master, b"\t\r")
             terminal.wait(timeout=5)
             assert terminal.returncode == 0
@@ -389,7 +389,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             assert info["health"].encode() not in screen, screen
             assert str(w).encode() in screen, screen
             os.write(master, b"\x03")
-            read_until(b"Quit Burrow?")
+            read_until(b"Keep working")
             os.write(master, b"\t\r")
             # Keep consuming terminal repaint bytes while the renderer shuts down.
             deadline = time.monotonic() + 5
@@ -416,7 +416,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             screen = read_until(b"production")
             assert b"DEMO" in screen and b"5432" in screen, screen
             os.write(master, b"\x03")
-            read_until(b"Quit Burrow?")
+            read_until(b"Keep working")
             os.write(master, b"\t\r")
             assert terminal.wait(timeout=5) == 0
             assert not demo_cache.exists(), "demo installed Hovel"

@@ -42,6 +42,9 @@ type workspaceView struct {
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
 	terminals           *terminalLifetime
+	quitReview          quitSnapshot
+	quitClosing         bool
+	selection           *textSelection
 	mouseDisabled       bool
 	workspaces          map[string]*workspaceView
 	paths               []string
@@ -155,6 +158,7 @@ func (w *workspaceView) health(now time.Time) (string, lipgloss.Style) {
 	return "connected", successStyle
 }
 func (m *frame) resize() {
+	m.selection = nil
 	left, right := m.columns()
 	for _, w := range m.workspaces {
 		w.management.width = max(1, m.width-left-right-4)
@@ -226,7 +230,7 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	w.management = model.(ui)
 	if w.management.quitting {
 		w.management.quitting = false
-		return m.setForm("quit", "Quit Burrow?", quitForm())
+		return m.openQuit()
 	}
 	if w.management.help {
 		v := w.management.helpViewport(m.width, m.height)
@@ -239,6 +243,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case formMessage:
 		if v.path != m.active || v.epoch != m.inputEpoch {
 			return m, nil
+		}
+		if ready, ok := v.msg.(quitSnapshot); ok {
+			return m, m.showQuit(ready)
 		}
 		if ready, ok := v.msg.(browserReady); ok {
 			return m, m.setForm("browse", m.formTitle, ready.form)
@@ -408,6 +415,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mouseDisabled {
 			return m, nil
 		}
+		if handled, cmd := m.selectionMouse(v, hit.ID()); handled {
+			return m, cmd
+		}
 		if hit.ID() == "terminal" && m.modal == "" && !m.current().management.help {
 			if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
 				m.current().focus = "terminal"
@@ -421,6 +431,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			delta := 1
 			if wheel.Button == tea.MouseWheelUp {
 				delta = -1
+			}
+			if m.modal == "quit" {
+				m.modalOffset = max(0, m.modalOffset+delta)
+				return m, nil
 			}
 			if m.current().management.help {
 				u := &m.current().management
@@ -472,7 +486,13 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.activate(hit.ID())
+	case clipboardResult:
+		if m.selection == v.selection {
+			m.selection.notice = v.notice
+		}
+		return m, nil
 	case tea.PasteMsg:
+		m.selection = nil
 		if m.tooSmall() || m.current().management.help {
 			return m, nil
 		}
@@ -487,9 +507,35 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.KeyPressMsg:
+		if m.hasSelection() {
+			if key.Matches(v, copySelection) {
+				return m, m.copySelection()
+			}
+			m.selection = nil
+			if key.Matches(v, escape) {
+				return m, nil
+			}
+		}
+		if key.Matches(v, toggleMouse) {
+			m.mouseDisabled = !m.mouseDisabled
+			m.selection = nil
+			return m, nil
+		}
 		if m.tooSmall() {
+			if m.modal == "quit" {
+				if m.quitClosing {
+					return m, nil
+				}
+				if key.Matches(v, quit) {
+					return m, tea.Quit
+				}
+				if key.Matches(v, escape) {
+					m.dismissForm()
+				}
+				return m, nil
+			}
 			if key.Matches(v, quit) {
-				return m, tea.Quit
+				return m, m.openQuit()
 			}
 			return m, nil
 		}
@@ -516,9 +562,6 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch {
-		case key.Matches(v, toggleMouse):
-			m.mouseDisabled = !m.mouseDisabled
-			return m, nil
 		case key.Matches(v, newWorkspace):
 			return m, m.openNew()
 		case key.Matches(v, openMenu):
@@ -751,7 +794,7 @@ func (m *frame) menuAction(i int) tea.Cmd {
 	case 3:
 		m.current().management.help = true
 	case 4:
-		return m.setForm("quit", "Quit Burrow?", quitForm())
+		return m.openQuit()
 	case 5:
 		return m.openCLI()
 	case 6:
@@ -762,6 +805,17 @@ func (m *frame) menuAction(i int) tea.Cmd {
 	return nil
 }
 func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
+	if m.modal == "quit" && m.quitClosing {
+		return nil
+	}
+	if m.modal == "quit" && key.Matches(v, pageUp, pageDown, previous, next) {
+		delta := 1
+		if key.Matches(v, pageUp, previous) {
+			delta = -1
+		}
+		m.modalOffset = max(0, m.modalOffset+delta)
+		return nil
+	}
 	if key.Matches(v, escape, quit) {
 		m.dismissForm()
 		return nil
@@ -1111,11 +1165,11 @@ func (m *frame) compositor() *lipgloss.Compositor {
 						break
 					}
 					plain := ansi.Strip(line)
-					for _, label := range []string{"Proceed", "Cancel", "Trust host", "Reject", "Quit", "Keep working"} {
+					for _, label := range []string{"Proceed", "Cancel", "Trust host", "Reject", "Quit", "Keep working", "Keep running", "Close connections"} {
 						if at := strings.Index(plain, label+"]"); at >= 0 {
 							start := ansi.StringWidth(plain[:at])
 							id := "confirm-reject"
-							if label == "Proceed" || label == "Trust host" || label == "Quit" {
+							if label == "Proceed" || label == "Trust host" || label == "Quit" || label == "Keep running" {
 								id = "confirm-accept"
 							}
 							layers = append(layers, lipgloss.NewLayer(solid(ansi.Cut(line, start, start+len(label)), len(label), 1, popupColor, m.noColor)).ID(id).X(x+3+start).Y(y+2+row).Z(5))
@@ -1133,6 +1187,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				}
 			}
 			hint := "[Esc close]"
+			if m.modal == "quit" {
+				hint = "↑↓ scroll connections · Esc cancel"
+			}
 			if m.modal == "menu" {
 				hint = "↑↓ select · Enter run · Esc close"
 			}
@@ -1151,7 +1208,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 func (m *frame) dialogBounds() image.Rectangle {
 	pw, ph := min(76, m.width-4), min(18, m.height-4)
 	if m.modal == "quit" {
-		pw, ph = min(64, m.width-4), min(18, m.height-4)
+		pw, ph = min(76, m.width-4), min(26, m.height-4)
 	}
 	if m.modal == "review" {
 		ph = min(28, m.height-4)
@@ -1164,6 +1221,15 @@ func (m *frame) dialogBounds() image.Rectangle {
 }
 func (m *frame) View() tea.View {
 	if m.tooSmall() {
+		if m.modal == "quit" {
+			text := "Quit?\nCtrl+C: keep and quit\nEsc: cancel\nResize to review/close\n" + m.quitSummary()
+			if m.quitClosing {
+				text = "Closing connections…\nWaiting for verified cleanup."
+			}
+			v := tea.NewView(fit(text, m.width, m.height))
+			v.AltScreen = true
+			return v
+		}
 		// Keep the application visible even in a terminal too small for controls.
 		preview := *m
 		preview.width, preview.height = max(minimumWidth, m.width), max(minimumHeight, m.height)
@@ -1181,7 +1247,7 @@ func (m *frame) View() tea.View {
 	} else {
 		base = solid(base, m.width, m.height, baseColor, false)
 	}
-	v := tea.NewView(fit(base, m.width, m.height))
+	v := tea.NewView(m.selectionView(fit(base, m.width, m.height)))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	if m.mouseDisabled {
@@ -1190,7 +1256,7 @@ func (m *frame) View() tea.View {
 	if m.terminalFocused() && m.current().cli != nil && m.current().cli.screen.MouseMotion && !m.mouseDisabled {
 		v.MouseMode = tea.MouseModeAllMotion
 	}
-	if !m.current().management.help {
+	if !m.current().management.help && !m.hasSelection() {
 		x, y := 0, 0
 		switch m.modal {
 

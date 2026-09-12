@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 )
@@ -43,8 +44,12 @@ func capturePresentation(t *testing.T, m *frame, name string) *vt.Emulator {
 					r, g, b, _ := c.RGBA()
 					return fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
 				}
-				fmt.Fprintf(&svg, `<rect x="%d" y="%d" width="9" height="19" fill="%s"/>`, x*9, y*19, hex(cell.Style.Bg, "#000000"))
-				fmt.Fprintf(&svg, `<text x="%d" y="%d" fill="%s" font-family="DejaVu Sans Mono,monospace" font-size="14">%s</text>`, x*9, y*19+14, hex(cell.Style.Fg, "#ffffff"), html.EscapeString(cell.Content))
+				fg, bg := hex(cell.Style.Fg, "#ffffff"), hex(cell.Style.Bg, "#000000")
+				if cell.Style.Attrs&uv.AttrReverse != 0 {
+					fg, bg = bg, fg
+				}
+				fmt.Fprintf(&svg, `<rect x="%d" y="%d" width="9" height="19" fill="%s"/>`, x*9, y*19, bg)
+				fmt.Fprintf(&svg, `<text x="%d" y="%d" fill="%s" font-family="DejaVu Sans Mono,monospace" font-size="14">%s</text>`, x*9, y*19+14, fg, html.EscapeString(cell.Content))
 			}
 		}
 		svg.WriteString("</svg>")

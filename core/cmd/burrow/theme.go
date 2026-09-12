@@ -182,14 +182,23 @@ func (m *frame) commandHelp() string {
 		return key.NewBinding(key.WithKeys(strings.ToLower(keys)), key.WithHelp(keys, label))
 	}
 	keys := []key.Binding{showHovel, binding("Ctrl+P", "menu"), binding("F1", "help"), binding("Ctrl+C", "quit")}
-	if m.terminalFocused() {
-		keys = []key.Binding{showBurrow, binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
-		if m.current().canRestartCLI() {
-			keys = []key.Binding{restartTerminal, showBurrow, binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls")}
+	selection := binding("Alt+S", "native selection")
+	if m.mouseDisabled {
+		selection = binding("Alt+S", "panel selection")
+		keys = []key.Binding{selection, binding("drag", "highlight"), binding("Ctrl+Shift+C/V", "copy/paste"), showHovel}
+		if m.terminalFocused() {
+			keys[len(keys)-1] = showBurrow
 		}
 		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 	}
-	keys = append(keys, binding("Alt+S", "mouse / select"))
+	if m.terminalFocused() {
+		keys = []key.Binding{showBurrow, binding("drag", "select text"), selection, binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
+		if m.current().canRestartCLI() {
+			keys = []key.Binding{restartTerminal, showBurrow, binding("drag", "select text"), binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls")}
+		}
+		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
+	}
+	keys = append(keys, binding("drag", "select text"), selection)
 	if m.current().focus == "prompt" && m.current().tab == "" {
 		keys = append(keys, binding("Tab", "complete"), binding("↑↓", "history"))
 	} else {

@@ -1,4 +1,5 @@
 """Drive the real embedded Hovel CLI; all mutations use disposable workspaces."""
+import base64
 import fcntl
 import json
 import os
@@ -19,7 +20,7 @@ binary, wheel, package, decoder = [str(Path(p).resolve()) for p in sys.argv[1:]]
 with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
     root = Path(scratch)
     env = {k: v for k, v in os.environ.items() if not k.startswith("HOVEL_")}
-    env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
+    env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color", DISPLAY="", WAYLAND_DISPLAY="")
     daemons = []
     terminal = None
     master, slave = pty.openpty()
@@ -109,9 +110,22 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         hostile = env | {"HOVEL_DAEMON_ENDPOINT": str(b / "hoveld.sock"), "HOVEL_CONFIG": str(root / "absent")}
         terminal = subprocess.Popen([binary, "--workspace", str(a), "--offline"], env=hostile, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
         wait("SAVED CONNECTION")
+        assert re.search(rb"\x1b\[\?100[0236]h", output), "panel selection needs mouse events"
+        assert b"\x1b]52;" not in output, "unexpected clipboard operation"
         send("management-draft")
         click(39, 1)
         wait("h0v3l>")
+        view = wait("modules: 1")
+        expected = "\n".join(line[28:126].rstrip() for line in view.splitlines()[3:6])
+        send(b"\x1b[<0;29;4M\x1b[<32;160;6M\x1b[<0;160;6m")
+        wait("[Copy]")
+        assert b"\x1b]52;" not in output, "drag release copied automatically"
+        send(b"\x03")
+        wait("Copy sent to terminal")
+        payloads = re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)", output)
+        assert payloads and base64.b64decode(payloads[-1]).decode() == expected, payloads
+        assert terminal.poll() is None, "Ctrl+C selection copy quit the TUI"
+        send(b"\x1b")
         wait("modules: 1")
         # A harmless read-only module still travels through Hovel's plan/confirm contract.
         command("op create embedded-a", "Operation selected: embedded-a")
@@ -164,12 +178,15 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         wait("management-draft")
         send(b"\x1bh")  # Alt+H restores this workspace's existing CLI.
         wait("embedded-a/check")
+        send(b"\x1bs")  # restore native selection while Hovel retains focus
+        wait("Ctrl+Shift+C/V")
         send(b"\x1b[200~op create pasted\n\x1b[201~")
         time.sleep(.3)
         assert "pasted" not in cli(a, "op", "list"), "paste executed a command"
         send(b"\x03")
         time.sleep(.2)
         assert terminal.poll() is None, "Ctrl-C quit outer UI"
+        send(b"\x1bs")  # re-enable pointer controls for the remaining click scenarios
         for width, height in [(120, 30), (80, 24), (200, 50), (160, 40)]:
             while select.select([master], [], [], .05)[0]:
                 output.extend(os.read(master, 65536))
@@ -205,7 +222,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         children = cli_children()
         assert children, "B's background CLI was lost"
         send(b"\x1d\x03")
-        wait("Quit Burrow?")
+        wait("Keep working")
         send(b"\t\r")
         assert terminal.wait(timeout=10) == 0
         assert all(not Path(f"/proc/{pid}").exists() for pid in children), "frontend did not reap its CLI processes"

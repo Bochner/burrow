@@ -90,10 +90,9 @@ func TestEmbeddedTerminalKeepsFrameAndBackgroundOutput(t *testing.T) {
 		}
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	}
-	frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
 	frameEvent(m, tea.KeyPressMsg{Code: 's', Mod: tea.ModAlt})
 	if m.View().MouseMode != tea.MouseModeNone {
-		t.Fatal("mouse text selection unavailable")
+		t.Fatal("mouse text selection unavailable while Hovel is focused")
 	}
 }
 
@@ -447,7 +446,7 @@ func TestBareConnectKeepsManagement(t *testing.T) {
 // commands remain explicit in these tests; real program timing is checked by PTY.
 func frameEvent(m *frame, msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.Update(msg)
-	if m.form == nil || cmd == nil {
+	if (m.form == nil && m.modal != "quit") || cmd == nil {
 		return model, cmd
 	}
 	events := make(chan tea.Msg, 128)
@@ -467,7 +466,7 @@ func frameEvent(m *frame, msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else if _, ok := event.(formMessage); ok {
 				_, next := m.Update(event)
-				if m.form != nil {
+				if m.form != nil || m.modal == "quit" {
 					run(next)
 				}
 			}
@@ -708,4 +707,216 @@ func TestReviewedApprovalOverridesExplicitNo(t *testing.T) {
 	if err != nil || !approved {
 		t.Fatal("explicit no prevented later interactive approval", err)
 	}
+}
+
+func TestPanelSelectionDefaultsAcrossTabs(t *testing.T) {
+	m := newDemoFrame(true)
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	for _, tab := range []string{"burrow", "hovel"} {
+		m.activate(tab)
+		if m.View().MouseMode != tea.MouseModeCellMotion {
+			t.Fatal("panel selection unavailable in", tab)
+		}
+		if !strings.Contains(m.View().Content, "drag") {
+			t.Fatal("clipboard help missing", tab)
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: 's', Mod: tea.ModAlt})
+		if m.View().MouseMode != tea.MouseModeNone {
+			t.Fatal("optional native selection unavailable", tab)
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: 's', Mod: tea.ModAlt})
+	}
+}
+
+func TestQuitReviewsAllOpenedConnections(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	q := quitSnapshot{paths: []string{"/tmp/one", "/tmp/two"}, states: map[string][]connection.State{
+		"/tmp/one": {{Name: "gateway", State: "connected", Host: "one.example", User: "tester", Port: 22}},
+		"/tmp/two": {{Name: "jump", State: "lost", Host: "two.example", User: "tester", Port: 22}},
+	}}
+	m.paths = append([]string{}, q.paths...)
+	frameEvent(m, formMessage{m.active, m.inputEpoch, q})
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		capturePresentation(t, m, fmt.Sprintf("%dx%d-quit-connections", size.X, size.Y))
+		for _, label := range []string{"gateway", "jump", "/tmp/one", "/tmp/two", "Keep running", "Close connections"} {
+			if !strings.Contains(m.View().Content, label) {
+				t.Fatal("quit omitted", size, label, m.View().Content)
+			}
+		}
+	}
+	if !m.form.GetFocusedField().GetValue().(bool) {
+		t.Fatal("quit defaults to destructive cleanup")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.modal != "" {
+		t.Fatal("quit cancellation unavailable")
+	}
+	// A dismissed inventory result cannot reopen the dialog.
+	frameEvent(m, formMessage{m.active, m.inputEpoch - 1, q})
+	if m.modal != "" {
+		t.Fatal("stale quit inventory reopened dialog")
+	}
+}
+
+func TestQuitSuppressesHiddenCleanupAndRechecksWorkspaces(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	q := quitSnapshot{paths: []string{"/tmp/one"}, states: map[string][]connection.State{"/tmp/one": {{Name: "gateway", State: "connected"}}}}
+	frameEvent(m, formMessage{m.active, m.inputEpoch, q})
+	frameEvent(m, tea.WindowSizeMsg{Width: 1, Height: 1})
+	for _, code := range []rune{tea.KeyTab, tea.KeyEnter} {
+		_, cmd := m.Update(tea.KeyPressMsg{Code: code})
+		if cmd != nil || m.quitClosing {
+			t.Fatal("hidden controls triggered teardown")
+		}
+	}
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.paths = append(m.paths, "/tmp/two")
+	q.closing = true
+	q.states = nil
+	_, cmd := m.Update(formMessage{m.active, m.inputEpoch, q})
+	if cmd == nil || m.modal != "quit" {
+		t.Fatal("changed workspace set was not reloaded")
+	}
+	if _, ok := cmd().(tea.QuitMsg); ok {
+		t.Fatal("quit skipped newly opened workspace")
+	}
+}
+
+func TestPanelSelectionAndExplicitCopy(t *testing.T) {
+	clipboardDir := t.TempDir()
+	result := filepath.Join(clipboardDir, "copied")
+	// Exercise the OS command without touching the operator's clipboard.
+	if err := os.WriteFile(filepath.Join(clipboardDir, "xclip"), []byte("#!/bin/sh\n/bin/cat > '"+result+"'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", clipboardDir)
+	t.Setenv("DISPLAY", ":test")
+	t.Setenv("WAYLAND_DISPLAY", "")
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, tab := range []string{"burrow", "hovel"} {
+			m := newDemoFrame(true)
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			m.activate(tab)
+			if tab == "hovel" {
+				m.current().cli = &cliTab{screen: ptyhost.Snapshot{Screen: "alpha界é\nsecond line\nthird line"}}
+			}
+			r := m.selectionBounds()
+			before := m.View().Content
+			_, cmd := m.Update(tea.MouseClickMsg{X: r.Min.X, Y: r.Min.Y, Button: tea.MouseLeft})
+			if cmd != nil {
+				t.Fatal("selection press ran a command")
+			}
+			for _, event := range []tea.Msg{tea.MouseMotionMsg{X: size.X - 1, Y: r.Min.Y + 2, Button: tea.MouseLeft}, tea.MouseReleaseMsg{X: size.X - 1, Y: r.Min.Y + 2, Button: tea.MouseLeft}} {
+				_, cmd = m.Update(event)
+				if cmd != nil {
+					t.Fatal("drag or release automatically copied")
+				}
+			}
+			if !m.hasSelection() {
+				t.Fatal("missing selection", size, tab)
+			}
+			selected := m.selection.text()
+			if strings.Contains(selected, "WORKSPACES") || strings.Contains(selected, "burrow v") {
+				t.Fatal("sidebar included", selected)
+			}
+			for y, line := range strings.Split(m.View().Content, "\n") {
+				if y == size.Y-1 {
+					continue
+				}
+				old := strings.Split(before, "\n")[y]
+				if ansi.Strip(ansi.Cut(line, 0, r.Min.X)) != ansi.Strip(ansi.Cut(old, 0, r.Min.X)) || ansi.Strip(ansi.Cut(line, r.Max.X, size.X)) != ansi.Strip(ansi.Cut(old, r.Max.X, size.X)) {
+					t.Fatal("selection changed sidebar")
+				}
+			}
+			if tab == "hovel" {
+				if selected != "alpha界é\nsecond line\nthird line" {
+					t.Fatal("copy text", selected)
+				}
+				m.current().cli.screen.Screen = "background replacement"
+				if strings.Contains(m.View().Content, "background replacement") {
+					t.Fatal("selected snapshot changed")
+				}
+			}
+			screen := capturePresentation(t, m, fmt.Sprintf("%dx%d-selection-%s", size.X, size.Y, tab))
+			if screen.CellAt(r.Min.X, r.Min.Y).Style.Attrs&uv.AttrReverse == 0 || screen.CellAt(r.Min.X-1, r.Min.Y).Style.Attrs&uv.AttrReverse != 0 {
+				t.Fatal("highlight missing or crosses sidebar")
+			}
+			footer := ansi.Strip(strings.Split(m.View().Content, "\n")[size.Y-1])
+			if ansi.Cut(footer, m.copyBounds().Min.X, m.copyBounds().Max.X) != "[Copy]" {
+				t.Fatal("Copy button hit region differs from display")
+			}
+			if err := os.Remove(result); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			_, cmd = m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+			if cmd == nil || m.modal != "" {
+				t.Fatal("copy key quit or interrupted")
+			}
+			msg := cmd()
+			if _, ok := msg.(clipboardResult); !ok {
+				t.Fatalf("unexpected copy result %T", msg)
+			}
+			m.Update(msg)
+			data, err := os.ReadFile(result)
+			if err != nil || string(data) != selected {
+				t.Fatal("clipboard mismatch", string(data), err)
+			}
+			_, cmd = m.Update(tea.MouseClickMsg{X: m.copyBounds().Min.X, Y: m.copyBounds().Min.Y, Button: tea.MouseLeft})
+			if cmd == nil {
+				t.Fatal("Copy button unavailable")
+			}
+			m.Update(cmd())
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			if m.hasSelection() {
+				t.Fatal("Esc did not clear selection")
+			}
+		}
+	}
+	// A drag beginning in a sidebar cannot select center text. Wide glyphs and
+	// combining accents survive partial-cell endpoints and backward selection.
+	m := newDemoFrame(true)
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.Update(tea.MouseClickMsg{X: 159, Y: 4, Button: tea.MouseLeft})
+	m.Update(tea.MouseMotionMsg{X: 50, Y: 5, Button: tea.MouseLeft})
+	if m.hasSelection() {
+		t.Fatal("sidebar drag selected text")
+	}
+	s := textSelection{bounds: image.Rect(0, 0, 10, 1), lines: []string{"a界éz"}, start: image.Pt(3, 0), end: image.Pt(2, 0)}
+	if s.text() != "界é" {
+		t.Fatal("partial unicode selection", s.text())
+	}
+}
+
+func TestSelectionHidesNewBackgroundControls(t *testing.T) {
+	m := newDemoFrame(true)
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.activate("hovel")
+	m.current().cli = &cliTab{screen: ptyhost.Snapshot{Screen: "running"}, host: &ptyhost.Host{}}
+	r := m.selectionBounds()
+	m.Update(tea.MouseClickMsg{X: r.Min.X, Y: r.Min.Y, Button: tea.MouseLeft})
+	m.Update(tea.MouseMotionMsg{X: r.Min.X + 4, Y: r.Min.Y, Button: tea.MouseLeft})
+	m.Update(tea.MouseReleaseMsg{X: r.Min.X + 4, Y: r.Min.Y, Button: tea.MouseLeft})
+	m.current().cli.screen.Exited = true
+	if strings.Contains(m.View().Content, "[Restart CLI]") {
+		t.Fatal("live control leaked into snapshot")
+	}
+	// A click on old text must not execute a new control underneath it.
+	_, cmd := m.Update(tea.MouseClickMsg{X: r.Min.X + 1, Y: m.height - 3, Button: tea.MouseLeft})
+	if cmd != nil || m.current().cli.pending {
+		t.Fatal("invisible restart was activated")
+	}
+	if m.hasSelection() || !strings.Contains(m.View().Content, "[Restart CLI]") {
+		t.Fatal("click did not restore the live page")
+	}
+	// Avoid touching the deliberately inert host when the test lifetime closes.
+	m.current().cli.host = nil
 }

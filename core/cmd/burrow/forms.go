@@ -244,6 +244,9 @@ func (m *frame) sizeForm() {
 	}
 }
 func (m *frame) dismissForm() {
+	if m.modal == "quit" && m.quitClosing {
+		return
+	}
 	if m.modal == "browse" && m.savedForm != nil {
 		m.form, m.modal, m.formTitle = m.savedForm, m.savedModal, m.savedTitle
 		m.savedForm = nil
@@ -289,6 +292,12 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 	m.inputEpoch++
 	switch m.modal {
 	case "quit":
+		if m.quitChanged() {
+			return m.openQuit()
+		}
+		if m.quitReview.count() > 0 && !completed.GetBool("approved") {
+			return m.closeForQuit()
+		}
 		m.modal = ""
 		if completed.GetBool("approved") {
 			return tea.Quit
@@ -502,6 +511,11 @@ func (m *frame) formText() string {
 	} else {
 		text = centered(m.current().management.paint(accent, text), m.dialogBounds().Dx()-6)
 	}
+	if m.modal == "quit" {
+		bounds := m.dialogBounds()
+		v := scrollBody(m.quitSummary(), bounds.Dx()-6, max(1, bounds.Dy()-14), m.modalOffset)
+		text += "\n\n" + v.View()
+	}
 	if m.form != nil {
 		body := m.form.View()
 		if m.modal == "menu" {
@@ -552,7 +566,7 @@ func (m *frame) formControls(text string) map[string]int {
 }
 
 func quitForm() *huh.Form {
-	return confirmForm("", "Daemon and workspace resources remain.\nFrontend-local terminals end when Burrow exits.", "Quit", "Keep working")
+	return confirmForm("", "No connections to close. Daemon remains.\nFrontend-local terminals end when Burrow exits.", "Quit", "Keep working")
 }
 
 func (m *frame) stopAuthentication() {
