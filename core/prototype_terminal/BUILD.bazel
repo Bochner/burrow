@@ -1,0 +1,49 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+
+js_test(
+    name = "check",
+    size = "small",
+    entry_point = "check.cjs",
+    data = ["index.html"],
+)
+
+load("@rules_go//go:def.bzl", "go_binary", "go_test")
+
+TERMINAL_SRCS = ["commands.go", "main.go", "shell_linux.go", "screen_linux.go"]
+TERMINAL_DEPS = [
+    "@com_github_charmbracelet_x_vt//:vt",
+    "@com_github_charmbracelet_bubbles//textinput",
+    "@com_github_charmbracelet_bubbletea//:bubbletea",
+    "@com_github_charmbracelet_lipgloss//:lipgloss",
+    "@com_github_charmbracelet_x_ansi//:ansi",
+    "@com_github_charmbracelet_x_term//:term",
+    "@com_github_muesli_termenv//:termenv",
+    "@org_golang_x_sys//unix",
+]
+go_binary(name = "terminal", srcs = TERMINAL_SRCS, deps = TERMINAL_DEPS)
+go_test(name = "terminal_test", srcs = TERMINAL_SRCS + ["terminal_test.go"], deps = TERMINAL_DEPS)
+
+load("@rules_python//python:defs.bzl", "py_test")
+py_test(
+    name = "cli_test",
+    srcs = ["cli_check.py"],
+    main = "cli_check.py",
+    args = ["$(location :terminal)"],
+    data = [":terminal"],
+    legacy_create_init = 0,
+)
+
+go_test(
+    name = "vt_test",
+    srcs = ["vt_test.go"],
+    deps = ["@com_github_charmbracelet_x_vt//:vt"],
+)
+
+py_test(
+    name = "vt_cli_test",
+    srcs = ["vt_cli_check.py"],
+    main = "vt_cli_check.py",
+    args = ["$(location :terminal)"],
+    data = [":terminal"],
+    legacy_create_init = 0,
+)
