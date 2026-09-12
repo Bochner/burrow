@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_binary")
+load("@rules_go//go:def.bzl", "go_binary", "go_test")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -10,11 +10,14 @@ py_binary(
     legacy_create_init = 0,
 )
 
+_PROOF_SOURCES = ["main.go", "ownership.go", "script_boundary.go", "retained_script.go", "direct_script.go", "tunnel_boundary.go"]
+_PROOF_DEPS = ["@hovel_sdk//:hovel", "@org_golang_x_crypto//ssh", "@com_github_pkg_sftp//:sftp"]
+
 go_binary(
     name = "burrow-transport-prototype",
-    srcs = ["main.go", "ownership.go", "script_boundary.go", "retained_script.go", "direct_script.go", "tunnel_boundary.go"],
+    srcs = _PROOF_SOURCES,
     embedsrcs = ["script_fixture.py"],
-    deps = ["@hovel_sdk//:hovel", "@org_golang_x_crypto//ssh", "@com_github_pkg_sftp//:sftp"],
+    deps = _PROOF_DEPS,
 )
 
 pkg_tar(
@@ -30,4 +33,11 @@ py_binary(
     args = ["$(location :burrow-transport-prototype)", "$(location :package)", "$(location @hovel_linux_wheel//file)", "$(location local_terminal.py)"],
     data = [":burrow-transport-prototype", ":package", "@hovel_linux_wheel//file", "local_terminal.py"],
     legacy_create_init = 0,
+)
+
+go_test(
+    name = "direct_script_test",
+    srcs = _PROOF_SOURCES + ["direct_script_test.go"],
+    embedsrcs = ["script_fixture.py"],
+    deps = _PROOF_DEPS,
 )

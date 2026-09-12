@@ -10,7 +10,11 @@ below. The follow-ups extend that sequence. The owner rejected promoting the Pyt
 fixture and 64 KiB output prefix into product requirements; the direct OpenSSH
 and full-output proof below supersedes those proposals.
 
-Run `aspect burrow-prototype transport` or `aspect burrow-check`. The latter also
+For local output-code iteration, run `aspect burrow-prototype scripts-check`.
+It checks full capture versus the bounded preview, resumable reads, storage
+failures, Markdown metadata and artifact-path refusal without SSH or Hovel.
+Run `aspect burrow-prototype transport` or `aspect burrow-check` at integration
+and milestone boundaries. The latter also
 builds the SDK package/frontend and checks the SDK protocol and documentation.
 Use the [transport pins and local prerequisites](README.md) and the accepted
 [connection ownership mechanism](OWNERSHIP.md). Hovel is v0.4.2, source
