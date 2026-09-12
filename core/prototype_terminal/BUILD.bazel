@@ -9,8 +9,9 @@ js_test(
 
 load("@rules_go//go:def.bzl", "go_binary", "go_test")
 
-TERMINAL_SRCS = ["commands.go", "main.go", "shell_linux.go"]
+TERMINAL_SRCS = ["commands.go", "main.go", "shell_linux.go", "screen_linux.go"]
 TERMINAL_DEPS = [
+    "@com_github_charmbracelet_x_vt//:vt",
     "@com_github_charmbracelet_bubbles//textinput",
     "@com_github_charmbracelet_bubbletea//:bubbletea",
     "@com_github_charmbracelet_lipgloss//:lipgloss",
@@ -27,6 +28,21 @@ py_test(
     name = "cli_test",
     srcs = ["cli_check.py"],
     main = "cli_check.py",
+    args = ["$(location :terminal)"],
+    data = [":terminal"],
+    legacy_create_init = 0,
+)
+
+go_test(
+    name = "vt_test",
+    srcs = ["vt_test.go"],
+    deps = ["@com_github_charmbracelet_x_vt//:vt"],
+)
+
+py_test(
+    name = "vt_cli_test",
+    srcs = ["vt_cli_check.py"],
+    main = "vt_cli_check.py",
     args = ["$(location :terminal)"],
     data = [":terminal"],
     legacy_create_init = 0,

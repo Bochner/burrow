@@ -35,6 +35,7 @@ type model struct {
 	shells                []*localShell
 	active                int
 	color                 bool
+	vtMode                bool
 }
 
 func newModel(f *fixture, color bool) *model {
@@ -113,7 +114,7 @@ func (m *model) submit(line string) {
 			m.log("ERROR: connect explicitly first")
 			return
 		}
-		s, err := openShell(filepath.Join(m.f.root, m.f.current().name), m.f.current().name, m.width, m.height-3)
+		s, err := openShell(filepath.Join(m.f.root, m.f.current().name), m.f.current().name, m.width, m.height-3, m.vtMode)
 		if err != nil {
 			m.log("ERROR: " + err.Error())
 			return
@@ -237,6 +238,13 @@ func shellKey(k tea.KeyMsg) []byte {
 }
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case shellReturned:
+		m.active = -1
+		if v.err != nil {
+			m.log("Shell: " + v.err.Error())
+		}
+		m.log("Returned to management; sessions / resume ID.")
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = max(12, v.Width)
 		m.height = max(6, v.Height)
@@ -293,6 +301,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.historyIndex = len(m.history)
 				m.submit(line)
+			}
+			if m.vtMode && m.active >= 0 {
+				m.input.Reset()
+				return m, tea.Exec(&shellAttachment{s: m.shells[m.active]}, func(err error) tea.Msg { return shellReturned{err} })
 			}
 			m.input.Reset()
 			if m.f.quit {
@@ -393,6 +405,7 @@ func fitLines(text string, width, height, offset int) string {
 }
 
 func run() int {
+	vtMode := flag.Bool("vt", false, "candidate internal full-screen shell emulator")
 	jsonOutput := flag.Bool("json", false, "JSON results for fixture command/script mode")
 	script := flag.String("script", "", "read fixture commands from file, or - for stdin")
 	noColor := flag.Bool("no-color", false, "disable color")
@@ -477,6 +490,7 @@ func run() int {
 		lipgloss.SetColorProfile(termenv.Ascii)
 	}
 	m := newModel(f, color)
+	m.vtMode = *vtMode
 	defer func() {
 		for _, s := range m.shells {
 			s.close()

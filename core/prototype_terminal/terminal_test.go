@@ -133,6 +133,7 @@ func TestLocalShellBackground(t *testing.T) {
 	}
 	defer f.close()
 	m := newModel(f, false)
+	m.vtMode = true
 	m.submit("connect")
 	m.submit("shell")
 	if len(m.shells) != 1 {
@@ -182,7 +183,10 @@ func TestLocalShellBackground(t *testing.T) {
 	}
 	waitFor(func() bool {
 		tail, discarded, _ := s.snapshot()
-		return discarded > 0 && len(tail) <= 65536 && strings.Contains(tail, "BOUND_FINISHED")
+		s.mu.Lock()
+		screenOK := s.screen.em.ScrollbackLen() <= 128 && strings.Contains(s.screen.em.String(), "BOUND_FINISHED")
+		s.mu.Unlock()
+		return screenOK && discarded > 0 && len(tail) <= 65536 && strings.Contains(tail, "BOUND_FINISHED")
 	})
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	m.submit("shell")

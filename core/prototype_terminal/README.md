@@ -5,6 +5,62 @@ It runs in a Linux/WSL terminal, not a browser. The real Go frontend uses a
 contextual bottom prompt, typed modes, completion/history, Hovel colors and
 readable file listings. All connections and tunnels are explicitly simulated.
 
+## Internal VT candidate for owner walkthrough
+
+For [How should local shells restore full-screen terminal state?](https://github.com/Bochner/burrow/issues/31):
+
+```sh
+aspect burrow-prototype terminal -- --vt
+aspect burrow-prototype vt-check
+```
+
+Type `connect`, then `shell`. Try a local full-screen program such as `vi` or
+`top`, press **Ctrl-]**, open another `shell`, background it, and `resume 1`.
+Resize while in management, then resume. `quit` ends the frontend's local shells.
+This is the same local-only disposable fixture; no SSH/Hovel operations occur.
+The default invocation preserves the previously accepted plain-output baseline.
+
+The candidate embeds `github.com/charmbracelet/x/vt` at
+`v0.0.0-20260901172002-a5dee49b2863` ([source](https://github.com/charmbracelet/x/tree/a5dee49b28632257cd9a475e8ca36e98a62ff155/vt)).
+Each shell continuously feeds its own VT screen while hidden. Bubble Tea's public
+`Exec` handoff releases the terminal while the attachment handles raw bytes,
+then restores management. Return redraws cells, styles and cursor rather than a
+truncated byte tail. Supported input modes are mirrored; terminal replies return
+to the PTY. The old 64 KiB tail remains only for baseline diagnostics/checks.
+
+[Herdr comparison](../../docs/research/herdr-terminal-state.md) explains its
+embedded Ghostty approach and Rust/Zig cost. This candidate adds no managed
+runtime executable or new build toolchain. It does add six Go modules (VT,
+Ultraviolet, ordered, termios, Windows helpers and x/sync), and raises six existing
+module versions (ANSI, colorprofile, displaywidth, uax29, go-colorful, runewidth).
+Exact versions and hashes are in the shared proof go.mod/go.sum. Bubble Tea,
+Bubbles and Lip Gloss stay at their accepted pins. Upstream changes do not enter
+a build until we deliberately update those pins and rerun the checks; pinning
+does not remove upgrade/security maintenance. Library access stays in the local
+shell screen code so an eventual replacement need not affect SSH operations.
+
+The screen and executable checks cover fragmented UTF-8/CSI, main/alternate
+buffers, styled render reconstruction, terminal cursor replies, bounded history,
+independent shells, raw NUL, Ctrl-C, management switching, resize and exact termios
+restoration. The existing shell behavior check also feeds background output beyond
+64 KiB through a real PTY and verifies its current VT screen and history bound.
+
+Limits: 320×120 maximum screen, 128 history lines, the library's 4 MiB control-data
+parser bound, and full-screen redraw with 30 ms idle polling. These are not a total process
+memory guarantee or a throughput benchmark. No claim of universal xterm, graphics,
+kitty keyboard, arbitrary Unicode grapheme or full application compatibility.
+Ctrl-] is reserved for management; cursor position/visibility are restored, but
+cursor shape/color are not yet mirrored. Management's fixture transfer timer pauses
+during the blocking shell handoff; real transfer execution must stay independent
+of rendering during implementation. Clipboard/title forwarding is not enabled.
+This is a candidate pending owner feedback, not a resolved architecture decision.
+
+An exploratory host-pinned tmux 3.6 comparison parsed fragmented screen state,
+but its raw-NUL attachment check failed; no tmux parity claim was established.
+It was not carried into the candidate or dependency graph after the owner expressed
+an internal preference. That failure is a bounded fixture observation, not proof
+that tmux cannot deliver the behavior with different integration.
+
 ## Run in WSL
 
 ```sh
