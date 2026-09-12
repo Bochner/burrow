@@ -52,12 +52,16 @@ Run the relevant gate before completion and state what it proves. Add behavior
 checks and expand the gate when application code arrives. Prefer declared,
 pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
 
-During initial setup, the owner authorizes merging completed, validated work.
-Finish on clean, synchronized `main`; preserve research commits before removing
-merged branches and temporary worktrees. Do not discard unrelated changes.
-Use one shared branch and a larger PR per milestone, rather than a branch for
-each small task or decision ticket. Consolidate validated prototype source into
-`main` at milestone boundaries; keep prototype labels and open decisions explicit.
+Work in the user's current checkout. When creating a branch, switch that
+checkout to it and stay on it until the owner explicitly requests a PR and merge.
+Create PRs and merge only when the owner requests them; milestone completion
+alone is not authorization. Use one shared branch per milestone rather than
+branches for individual tickets. Research follows the same branch policy,
+overriding skill suggestions for throwaway research branches. Use additional
+worktrees only when the owner requests them.
+After an authorized merge, return the checkout to clean, synchronized `main`
+and remove merged branches and temporary worktrees after preserving all work.
+Do not discard unrelated changes. Keep prototype labels and open decisions explicit.
 
 ## Agent skills
 
