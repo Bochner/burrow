@@ -137,20 +137,10 @@ func Call(ctx context.Context, workspace, method string, input, output any) erro
 // HovelCLI preserves the public CLI's persisted throw plans, confirmation and
 // launch-key policy. These contracts are not replicated in a Burrow plan store.
 func HovelCLI(ctx context.Context, workspace string, args ...string) ([]byte, error) {
-	if _, e := Status(ctx, workspace); e != nil {
-		return nil, e
-	}
-	exe, e := install(ctx, Options{Offline: true})
+	cmd, e := hovelCommand(ctx, workspace, "run", args...)
 	if e != nil {
 		return nil, e
 	}
-	cmd := exec.CommandContext(ctx, exe, append([]string{"run", "--workspace", workspace}, args...)...)
-	for _, v := range os.Environ() {
-		if !strings.HasPrefix(v, "HOVEL_") {
-			cmd.Env = append(cmd.Env, v)
-		}
-	}
-	cmd.Env = append(cmd.Env, "HOVEL_DAEMON_ENDPOINT="+filepath.Join(workspace, "hoveld.sock"))
 	var out, diagnostic bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &diagnostic
 	if e = cmd.Run(); e != nil {
@@ -160,6 +150,34 @@ func HovelCLI(ctx context.Context, workspace string, args ...string) ([]byte, er
 		return nil, e
 	}
 	return out.Bytes(), nil
+}
+
+// HovelShell prepares the verified interactive CLI. Verification is bounded by
+// ctx; the terminal host owns the resulting process lifetime, not that deadline.
+func HovelShell(ctx context.Context, workspace string) (*exec.Cmd, error) {
+	return hovelCommand(ctx, workspace, "shell")
+}
+
+func hovelCommand(ctx context.Context, workspace, role string, args ...string) (*exec.Cmd, error) {
+	if _, e := Status(ctx, workspace); e != nil {
+		return nil, e
+	}
+	exe, e := install(ctx, Options{Offline: true})
+	if e != nil {
+		return nil, e
+	}
+	cmd := exec.Command(exe, append([]string{role, "--workspace", workspace}, args...)...)
+	if role == "run" {
+		cmd = exec.CommandContext(ctx, exe, cmd.Args[1:]...)
+	}
+	for _, v := range os.Environ() {
+		if !strings.HasPrefix(v, "HOVEL_") {
+			cmd.Env = append(cmd.Env, v)
+		}
+	}
+	cmd.Env = append(cmd.Env, "HOVEL_DAEMON_ENDPOINT="+filepath.Join(workspace, "hoveld.sock"))
+	cmd.Dir = workspace
+	return cmd, nil
 }
 
 // CacheModule publishes an immutable, private copy of this executable and its

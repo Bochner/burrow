@@ -172,6 +172,11 @@ func (m *frame) commandHelp() string {
 		return key.NewBinding(key.WithKeys(strings.ToLower(keys)), key.WithHelp(keys, label))
 	}
 	keys := []key.Binding{binding("Ctrl+P", "menu"), binding("F1", "help"), binding("Ctrl+C", "quit")}
+	if m.terminalFocused() {
+		keys = []key.Binding{binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
+		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
+	}
+	keys = append(keys, binding("Alt+S", "mouse / select"))
 	if m.current().focus == "prompt" && m.current().tab == "" {
 		keys = append(keys, binding("Tab", "complete"), binding("↑↓", "history"))
 	} else {

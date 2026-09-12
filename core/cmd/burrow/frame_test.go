@@ -2,10 +2,15 @@ package main
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"context"
 	"fmt"
 	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
+	ptyhost "github.com/Bochner/burrow/core/terminal"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	"image"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +30,98 @@ func TestWorkspaceFrame(t *testing.T) {
 		t.Fatal("New must show destination before launch")
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+}
+
+func TestEmbeddedTerminalKeepsFrameAndBackgroundOutput(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{})
+	defer m.terminals.close()
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.Update(tea.PasteMsg{Content: "saved draft"})
+	r := m.terminalBounds()
+	h, err := ptyhost.Start(context.Background(), exec.Command("/bin/sh", "-c", "stty -echo; printf ready; read line; printf '\\033[2J\\033[Hbackground-result\\033[3;4H'; read line"), r.Dx(), r.Dy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	tab := &cliTab{host: h}
+	m.current().cli = tab
+	m.activate("hovel")
+	refresh := func(needle string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			m.Update(m.readCLI(m.active, tab)())
+			if strings.Contains(tab.screen.Screen, needle) {
+				return
+			}
+		}
+		t.Fatal(tab.screen)
+	}
+	refresh("ready")
+	m.Update(tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
+	if m.current().focus != "tabs" {
+		t.Fatal("missing frame escape")
+	}
+	m.activate("burrow")
+	h.Send("continue")
+	h.Send(uv.KeyPressEvent{Code: uv.KeyEnter})
+	refresh("background-result")
+	if !strings.Contains(m.View().Content, "saved draft") {
+		t.Fatal("background output replaced overview draft")
+	}
+	m.activate("hovel")
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		m.Update(tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		m.Update(m.readCLI(m.active, tab)())
+		view := m.View()
+		if !strings.Contains(view.Content, "background-result") || !strings.Contains(view.Content, "[New]") || !strings.Contains(view.Content, "[Menu]") || !strings.Contains(view.Content, "WORKSPACES") {
+			t.Fatal(view.Content)
+		}
+		r := m.terminalBounds()
+		if view.Cursor == nil || !image.Pt(view.Cursor.Position.X, view.Cursor.Position.Y).In(r) {
+			t.Fatalf("cursor must stay in pane: %+v %+v", view.Cursor, r)
+		}
+		m.Update(tea.MouseClickMsg{X: 2, Y: size.Y / 2, Button: tea.MouseLeft})
+		if m.modal != "new" {
+			t.Fatal("terminal intercepted New")
+		}
+		m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	}
+	m.Update(tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
+	m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModAlt})
+	if m.View().MouseMode != tea.MouseModeNone {
+		t.Fatal("mouse text selection unavailable")
+	}
+}
+
+func TestHovelTabStartsOnlyOnExplicitAction(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/absent-hovel-tab"}, true, launch.Options{Offline: true})
+	defer m.terminals.close()
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	_, cmd := m.Update(tea.MouseClickMsg{X: 39, Y: 1, Button: tea.MouseLeft})
+	if cmd == nil {
+		t.Fatal("Hovel click must request verified interactive launch")
+	}
+	_, duplicate := m.Update(tea.MouseClickMsg{X: 39, Y: 1, Button: tea.MouseLeft})
+	if duplicate != nil {
+		t.Fatal("pending launch must not be duplicated")
+	}
+	m.Update(cmd())
+	if !strings.Contains(m.View().Content, "REFUSED") {
+		t.Fatal("unavailable daemon must refuse the tab")
+	}
+	_, retry := m.Update(tea.MouseClickMsg{X: 39, Y: 1, Button: tea.MouseLeft})
+	if retry != nil {
+		t.Fatal("selecting a failed tab must not retry")
+	}
+	late := newFrame(launch.Info{Workspace: "/tmp/late-hovel-tab"}, true, launch.Options{Offline: true})
+	late.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	_, pending := late.Update(tea.MouseClickMsg{X: 39, Y: 1, Button: tea.MouseLeft})
+	late.terminals.close()
+	late.Update(pending())
+	if late.current().cli.host != nil {
+		t.Fatal("queued launch survived frontend shutdown")
+	}
 }
 
 // Events and operation completions are the existing production interaction seam.

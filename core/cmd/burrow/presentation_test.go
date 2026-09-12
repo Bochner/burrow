@@ -399,6 +399,36 @@ func TestDemoPreview(t *testing.T) {
 
 // Project presentation contract: compare final rendered cells to semantic roles,
 // not merely the palette function's return value.
+func TestTerminalStatusRoles(t *testing.T) {
+	for _, pending := range []bool{true, false} {
+		m := newFrame(launch.Info{Workspace: "/tmp/terminal"}, false, launch.Options{})
+		m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+		m.current().tab = "hovel"
+		m.current().cli = &cliTab{pending: pending}
+		label, hex := "opening / closing", "#f9e2af"
+		if !pending {
+			m.current().cli.error = "REFUSED: unavailable"
+			label, hex = "REFUSED", "#f38ba8"
+		}
+		screen := capturePresentation(t, m, fmt.Sprintf("terminal-status-%t", pending))
+		r := m.terminalBounds()
+		rows := []int{m.height - 2}
+		if !pending {
+			rows = append(rows, r.Min.Y)
+		}
+		for _, y := range rows {
+			if !colorMatches(screen.CellAt(r.Min.X, y).Style.Fg, lipgloss.Color(hex)) {
+				t.Fatalf("%s lost semantic color at row %d", label, y)
+			}
+		}
+		m.noColor, m.current().management.noColor = true, true
+		content := m.View().Content
+		if ansi.Strip(content) != content || !strings.Contains(content, label) {
+			t.Fatal("NO_COLOR lost terminal status or leaked styles")
+		}
+	}
+}
+
 func TestTableAndMetadataRoles(t *testing.T) {
 	m := newDemoFrame(false)
 	m.current().selected = ""

@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/Bochner/burrow/core/launch"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -25,6 +26,7 @@ var openNavigation = key.NewBinding(key.WithKeys("alt+w"))
 const freshFor = 8 * time.Second
 
 type workspaceView struct {
+	cli                   *cliTab
 	management            ui
 	focus, tab, selected  string
 	shellOffset           int
@@ -37,6 +39,8 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
+	terminals              *terminalLifetime
+	mouseDisabled          bool
 	workspaces             map[string]*workspaceView
 	paths                  []string
 	active                 string
@@ -82,6 +86,8 @@ type statusRequested struct{}
 
 func newFrame(info launch.Info, noColor bool, options launch.Options) *frame {
 	m := &frame{workspaces: make(map[string]*workspaceView), active: info.Workspace, paths: []string{info.Workspace}, options: options, noColor: noColor, pending: make(map[uint64]string), now: time.Now()}
+	m.terminals = &terminalLifetime{}
+	m.terminals.context, m.terminals.cancel = context.WithCancel(context.Background())
 	m.workspaces[info.Workspace] = &workspaceView{management: newUI(info, noColor), focus: "prompt"}
 	return m
 }
@@ -145,6 +151,12 @@ func (m *frame) resize() {
 		w.management.width = max(1, m.width-left-right-4)
 		w.management.height = max(1, m.height-4)
 		w.management.input.SetWidth(max(1, w.management.width-4))
+		if w.cli != nil && w.cli.host != nil {
+			r := m.terminalBounds()
+			if err := w.cli.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil && !w.cli.screen.Exited {
+				w.cli.error = safe(err.Error())
+			}
+		}
 	}
 }
 
@@ -226,6 +238,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 		switch result := v.message.(type) {
+		case cliOpened, cliScreen, cliClosed:
+			return m, m.terminalResult(path, result)
 		case tea.QuitMsg:
 			return m, tea.Quit
 		case frameTick:
@@ -310,6 +324,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.destination.SetWidth(max(1, min(64, min(76, m.width-4)-9)))
 		m.palette.SetWidth(max(1, min(76, m.width-4)-9))
 		return m, nil
+	case tea.ResumeMsg:
+		return m, tea.RequestWindowSize
 	case tea.ColorProfileMsg:
 		for path := range m.workspaces {
 			m.updateManagement(path, v)
@@ -324,6 +340,18 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// help/quit overlay. An unnamed visual layer cannot allow click-through.
 		mouse := v.Mouse()
 		hit := m.compositor().Hit(mouse.X, mouse.Y)
+		if m.mouseDisabled {
+			return m, nil
+		}
+		if hit.ID() == "terminal" && m.modal == "" && !m.current().management.help && !m.current().management.quitting {
+			if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
+				m.current().focus = "terminal"
+			}
+			if m.terminalFocused() {
+				m.terminalMouse(v)
+			}
+			return m, nil
+		}
 		if wheel, ok := msg.(tea.MouseWheelMsg); ok {
 			delta := 1
 			if wheel.Button == tea.MouseWheelUp {
@@ -382,6 +410,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tooSmall() || m.current().management.help || m.current().management.quitting {
 			return m, nil
 		}
+		if m.terminalFocused() {
+			m.sendTerminal(v.Content)
+			return m, nil
+		}
 		if m.modal == "menu" {
 			m.palette.SetValue(m.palette.Value() + safe(v.Content))
 			m.palette.CursorEnd()
@@ -409,7 +441,18 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.modal != "" {
 			return m, m.modalKey(v)
 		}
+		if m.terminalFocused() {
+			if key.Matches(v, terminalEscape) {
+				m.current().focus = "tabs"
+			} else {
+				m.sendTerminal(uv.KeyPressEvent(v))
+			}
+			return m, nil
+		}
 		switch {
+		case key.Matches(v, toggleMouse):
+			m.mouseDisabled = !m.mouseDisabled
+			return m, nil
 		case key.Matches(v, newWorkspace):
 			m.openNew()
 			return m, nil
@@ -457,6 +500,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "shells":
 				w.shellOffset = max(0, min(len(m.paths)-1, w.shellOffset+delta))
 			case "tabs":
+				if key.Matches(v, enter) && w.tab == "hovel" {
+					return m, m.openCLI()
+				}
 				if key.Matches(v, choose, previous, next) {
 					if w.tab == "" {
 						w.tab = "hovel"
@@ -497,7 +543,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, m.updateManagement(m.active, msg)
 }
 
-var menuActions = []string{"Check daemon", "Metadata", "New workspace", "Keyboard help", "Quit"}
+var menuActions = []string{"Check daemon", "Metadata", "New workspace", "Keyboard help", "Quit", "Open Hovel CLI", "Close Hovel CLI", "Toggle mouse / text selection"}
 
 func (m *frame) activate(id string) tea.Cmd {
 	if m.modal != "" && m.modal != "navigation" {
@@ -541,8 +587,7 @@ func (m *frame) activate(id string) tea.Cmd {
 		m.current().tab = ""
 		m.current().focus = "prompt"
 	case "hovel":
-		m.current().tab = "hovel"
-		m.current().focus = "tabs"
+		return m.openCLI()
 	case "center":
 		m.current().focus = "prompt"
 	case "shells":
@@ -613,6 +658,12 @@ func (m *frame) menuAction(i int) tea.Cmd {
 	case 4:
 		m.current().management.quitting = true
 		m.current().management.leave = false
+	case 5:
+		return m.openCLI()
+	case 6:
+		return m.closeCLI()
+	case 7:
+		m.mouseDisabled = !m.mouseDisabled
 	}
 	return nil
 }
@@ -791,10 +842,10 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	}
 	add("daemon", status, w-right+2, 1, max(1, min(26, right-2)), 1, 2)
 	tabStyle, hovelStyle := activeStyle, secondary
-	tabLabel, hovelLabel := "› Burrow", "  Hovel · soon"
+	tabLabel, hovelLabel := "› Burrow", "  Hovel"
 	if current.tab != "" {
 		tabStyle, hovelStyle = secondary, activeStyle
-		tabLabel, hovelLabel = "  Burrow", "› Hovel · soon"
+		tabLabel, hovelLabel = "  Burrow", "› Hovel"
 	}
 	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, 10, 1, 1)
 	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(16, w-cx-10), 1, 1)
@@ -830,7 +881,29 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	}
 
 	if current.tab != "" {
-		add("center", "Hovel CLI · not implemented (#68)\n\nThe embedded terminal will appear here.\nEsc or Burrow tab returns to management.", cx, 3, cw, max(1, h-4), 3)
+		text := "Select Hovel or press Enter to start the CLI."
+		status := "Hovel · " + safe(m.active)
+		statusStyle := secondary
+		if tab := current.cli; tab != nil {
+			text = tab.screen.Screen
+			if tab.pending {
+				status = "Hovel · opening / closing…"
+				statusStyle = warningStyle
+			}
+			if tab.screen.Exited {
+				status = "Hovel · exited · close tab to start again"
+			}
+			if tab.error != "" {
+				status = tab.error
+				statusStyle = errorStyle
+				if tab.host == nil {
+					text = current.management.paint(errorStyle, tab.error)
+				}
+			}
+		}
+		r := m.terminalBounds()
+		add("terminal", text, r.Min.X, r.Min.Y, r.Dx(), r.Dy(), 3)
+		add("terminal-status", current.management.paint(statusStyle, status), cx, h-2, cw, 1, 3)
 	}
 	add("footer", current.management.paint(secondary, "Management · focus: "+current.focus), cx, h-4, cw, 1, 2)
 	if right > 0 {
@@ -973,6 +1046,12 @@ func (m *frame) View() tea.View {
 	v := tea.NewView(fit(base, m.width, m.height))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
+	if m.mouseDisabled {
+		v.MouseMode = tea.MouseModeNone
+	}
+	if m.terminalFocused() && m.current().cli != nil && m.current().cli.screen.MouseMotion && !m.mouseDisabled {
+		v.MouseMode = tea.MouseModeAllMotion
+	}
 	if !m.current().management.help && !m.current().management.quitting {
 		x, y := 0, 0
 		switch m.modal {
@@ -987,6 +1066,14 @@ func (m *frame) View() tea.View {
 				x, y = r.Min.X+3, r.Min.Y+5
 			}
 		case "":
+			if m.terminalFocused() && m.current().cli != nil {
+				s := m.current().cli.screen
+				r := m.terminalBounds()
+				if s.Visible && !s.Exited && s.Cursor.In(image.Rect(0, 0, r.Dx(), r.Dy())) {
+					v.Cursor = tea.NewCursor(s.Cursor.X, s.Cursor.Y)
+					x, y = r.Min.X, r.Min.Y
+				}
+			}
 			if m.current().focus == "prompt" && m.current().tab == "" {
 				v.Cursor = m.current().management.input.Cursor()
 				left, _ := m.columns()

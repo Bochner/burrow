@@ -3,6 +3,17 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 py_test(
+    name = "terminal_test",
+    srcs = ["terminal_check.py"],
+    main = "terminal_check.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :package)", "$(location :screen_check)"],
+    data = [":burrow", ":package", ":screen_check", "@hovel_linux_wheel//file"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)
+
+py_test(
     name = "connection_test",
     srcs = ["connection_check.py"],
     main = "connection_check.py",
@@ -23,8 +34,9 @@ py_test(
 
 go_binary(
     name = "burrow",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go"],
     deps = [
+        "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
         "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",
         "@land_charm_bubbles_v2//help", "@land_charm_bubbles_v2//key", "@land_charm_lipgloss_v2//:lipgloss",
@@ -57,8 +69,9 @@ py_test(
 
 go_test(
     name = "interaction_test",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "frame_test.go", "presentation_test.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "frame_test.go", "presentation_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
+        "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
         "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",
         "@land_charm_bubbles_v2//help", "@land_charm_bubbles_v2//key", "@land_charm_lipgloss_v2//:lipgloss",

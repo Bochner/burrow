@@ -89,6 +89,7 @@ func newUI(info launch.Info, noColor bool) ui {
 }
 
 func terminal(m *frame, noColor bool) error {
+	defer m.terminals.close()
 	opts := []tea.ProgramOption{}
 	// Aspect captures stdout; keep rendering on the actual controlling terminal.
 	if !term.IsTerminal(os.Stdout.Fd()) {
