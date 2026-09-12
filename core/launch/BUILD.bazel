@@ -1,0 +1,8 @@
+load("@rules_go//go:def.bzl", "go_library")
+go_library(
+    name = "launch",
+    srcs = ["files_linux.go", "package.go", "daemon_linux.go"],
+    importpath = "github.com/Bochner/burrow/core/launch",
+    visibility = ["//visibility:public"],
+    deps = ["@org_golang_x_sys//unix"],
+)

@@ -1,0 +1,27 @@
+def _impl(ctx: TaskContext) -> int:
+    root = ctx.std.env.aspect_root_dir()
+    if ctx.args.mode[0] == "format":
+        for paths in [["core/launch/files_linux.go", "core/launch/package.go", "core/launch/daemon_linux.go"], ["core/cmd/burrow/main.go", "core/cmd/burrow/tui.go", "core/cmd/burrow/screen_check.go"]]:
+            status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt"] + [root + "/" + p for p in paths]).current_dir(root).spawn().wait()
+            if status.code:
+                return status.code
+        return 0
+    commands = {
+        "run": ["run", "//core/cmd/burrow:burrow", "--"] + ctx.args.options,
+        "check": ["test", "//core/cmd/burrow:setup_test"],
+        "package": ["build", "//core/cmd/burrow:package"],
+    }
+    mode = ctx.args.mode[0]
+    if mode not in commands:
+        print("expected run, check, package, or format")
+        return 2
+    return ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait().code or 0
+
+burrow = task(
+    args = {
+        "mode": args.positional(default = ["check"], minimum = 0, maximum = 1),
+        "options": args.trailing_var_args(description = "Burrow options, starting with --workspace PATH."),
+    },
+    summary = "Run, check, format or package the production Linux frontend.",
+    implementation = _impl,
+)

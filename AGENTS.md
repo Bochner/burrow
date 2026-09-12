@@ -54,9 +54,11 @@ pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
 
 Work in the user's current checkout. When creating a branch, switch that
 checkout to it and stay on it until the owner explicitly requests a PR and merge.
-Create PRs and merge only when the owner requests them; milestone completion
-alone is not authorization. Use one shared branch per milestone rather than
-branches for individual tickets. Research follows the same branch policy,
+The active implementation branch is `mvp1`, starting with issue #44. Keep all
+MVP work and commits local on this shared branch until the entire MVP is done.
+Do not push, create a PR, or merge until the owner explicitly requests it;
+completion of a ticket or milestone does not authorize any of these actions.
+Use this shared branch across MVP tickets and milestones. Research follows the same branch policy,
 overriding skill suggestions for throwaway research branches. Use additional
 worktrees only when the owner requests them.
 After an authorized merge, return the checkout to clean, synchronized `main`
