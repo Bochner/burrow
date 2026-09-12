@@ -284,6 +284,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                 terminal.wait()
             os.close(master)
             os.close(slave)
+        assert run(w, "--offline")["pid"] == info["pid"]
         # A short color terminal must visibly show both quit choices.
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 8, 30, 0, 0))
@@ -300,6 +301,21 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\t")
             read_until("› Quit".encode())
             assert b"38;2;189;147;249" in output, "Dracula purple missing"
+            os.write(master, b"\x1b")
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 120, 0, 0))
+            screen_dimensions = ["120", "32"]
+            os.kill(terminal.pid, signal.SIGWINCH)
+            read_until(f"PID {info['pid']}".encode())
+            # A failed refresh must invalidate the visible daemon identity.
+            os.kill(info["pid"], signal.SIGTERM)
+            processes.remove(info["pid"])
+            time.sleep(.2)
+            os.write(master, b"status\r")
+            screen = read_until(b"UNVERIFIED")
+            assert info["health"].encode() not in screen, screen
+            assert str(w).encode() in screen, screen
+            os.write(master, b"\x03")
+            read_until(b"Quit Burrow?")
             os.write(master, b"\r")
             assert terminal.wait(timeout=5) == 0
             assert terminal.stdout.read() == b"", "TUI leaked into captured stdout"
@@ -310,11 +326,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                 terminal.wait()
             os.close(master)
             os.close(slave)
-        assert run(w, "--offline")["pid"] == info["pid"]
         # Daemon loss remains an explicit refusal, never an automatic restart.
-        os.kill(info["pid"], signal.SIGTERM)
-        processes.remove(info["pid"])
-        time.sleep(.2)
         run(w, "--offline", ok=False)
         assert receipt.read_text() == original and evidence.read_text() == "keep this evidence"
         canary = b"synthetic-secret-canary-invalid-wheel"

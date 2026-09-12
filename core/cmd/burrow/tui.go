@@ -95,6 +95,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.outputOffset = 0
 		if v.err != nil {
+			m.info.Health = "UNVERIFIED (last known PID)"
 			m.output = "REFUSED: " + safe(v.err.Error())
 		} else {
 			m.info = v.info
