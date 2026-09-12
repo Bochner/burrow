@@ -437,8 +437,15 @@ func TestTableAndMetadataRoles(t *testing.T) {
 		t.Fatal("empty observed snapshot not disconnected")
 	}
 	live.current().management.connectionError = "owner unavailable"
-	if !strings.Contains(live.metadata(), "UNVERIFIED") {
-		t.Fatal("failed observation presented as disconnected")
+	if !strings.Contains(live.metadata(), "UNVERIFIED") || !strings.Contains(live.metadata(), "Active in workspace: Unknown") {
+		t.Fatal("failed observation presented as disconnected or a measured zero")
+	}
+	live.current().management.connections = []connection.State{{Name: "existing", State: "connected"}}
+	if !strings.Contains(live.metadata(), "Active in workspace: Unknown") {
+		t.Fatal("failed refresh advertises stale connection count")
+	}
+	if !strings.Contains(live.metadata(), "Check duration: Unavailable") || strings.Contains(live.metadata(), "Latency") {
+		t.Fatal("unmeasured verification duration presented as latency")
 	}
 	m.noColor = true
 	m.current().management.noColor = true

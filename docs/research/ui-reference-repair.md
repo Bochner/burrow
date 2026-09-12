@@ -332,3 +332,35 @@ Updated empty/populated and centered-dialog captures are in
 
 Refinement validation: `aspect burrow format` and the full `aspect burrow-check`
 gate passed, including all 15 portable checks and the Docker SSH lab.
+
+## Owner acceptance and issue 67 closeout
+
+On 2026-09-12 the owner explicitly approved local `cd11ffb` as the starting
+baseline. This supersedes earlier pending-acceptance statements in this record.
+The final table, metadata and resize policy is recorded in
+[the TUI standard](../agents/tui.md) and the
+[LazySSH follow-up](lazyssh-table-metadata.md). Preserve this baseline for later
+MVP features; Hovel CLI attachment, real shells, saved profiles, tunnels and
+transfers remain separate implementation tickets.
+
+The Matt Pocock `implement`/`code-review` closeout compared
+`da63ee6514bce23ba589321ab618963c7aa5ab1b...cd11ffb` against issue #67 and the
+owner's subsequent refinements, with independent Standards and Spec reviewers.
+
+### Standards
+
+One finding, resolved: a failed inventory refresh must show an unknown active
+count rather than zero or a stale count. Rendered metadata assertions cover
+empty and retained-populated failed observations. No outstanding standards
+findings or additional judgement-based refactoring recommendations.
+
+### Spec
+
+One finding, resolved: label local verification timing “Check duration,” not
+“Latency”; show Unavailable before any observation. The presentation check
+asserts both semantics. No outstanding spec findings. The production book and
+Wayfinder brief now reflect the accepted colors, menu, resize behavior and
+owner acceptance.
+
+Closeout validation: `aspect burrow-check` passed all 15 portable checks and the
+production Docker SSH lab; `aspect burrow-site check` passed the book checks.

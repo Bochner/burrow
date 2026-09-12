@@ -735,7 +735,7 @@ func (m *frame) metadata() string {
 		transferNote = "Sample downloads"
 	}
 	count := fmt.Sprint(connected)
-	if !u.connectionObserved && len(u.connections) == 0 {
+	if u.connectionError != "" || (!u.connectionObserved && len(u.connections) == 0) {
 		count = "Unknown"
 	}
 	text := section("SELECTED CONNECTION") + "\n" + u.paint(connectionColor.Bold(true), connectionState) + "\n" + selected + "\n" + field("Active in workspace", count, numberStyle) + "\n\n" +
@@ -748,7 +748,11 @@ func (m *frame) metadata() string {
 	if !w.lastSuccess.IsZero() {
 		age = fmt.Sprintf("%ds ago", max(0, int(m.now.Sub(w.lastSuccess).Seconds())))
 	}
-	text += u.paint(statusStyle, strings.ToUpper(state)) + "\n" + field("Last success", age, infoStyle) + "\n" + field("Latency", w.duration.Round(time.Millisecond).String(), numberStyle) + "\n" + u.paint(secondary, "Last known ") + u.paint(numberStyle, fmt.Sprintf("PID %d", u.info.PID))
+	duration := "Unavailable"
+	if !w.observed.IsZero() {
+		duration = w.duration.Round(time.Millisecond).String()
+	}
+	text += u.paint(statusStyle, strings.ToUpper(state)) + "\n" + field("Last success", age, infoStyle) + "\n" + field("Check duration", duration, numberStyle) + "\n" + u.paint(secondary, "Last known ") + u.paint(numberStyle, fmt.Sprintf("PID %d", u.info.PID))
 	// Keep identity paths after operational metrics so narrow sidebars show health first.
 	text += "\n\n" + section("WORKSPACE") + "\n" + u.paint(secondary, safe(m.active)) + "\n" + field("Endpoint", safe(filepath.Join(m.active, "hoveld.sock")), secondary) + details
 	if w.failure != "" {
