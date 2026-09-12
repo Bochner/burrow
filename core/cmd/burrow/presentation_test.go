@@ -255,33 +255,70 @@ func TestCommandPalette(t *testing.T) {
 	}
 }
 
-func TestMinimumTerminalSize(t *testing.T) {
+func TestShrinkingCenter(t *testing.T) {
 	m := newDemoFrame(true)
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	m.Update(tea.PasteMsg{Content: "saved draft"})
-	for _, size := range [][2]int{{159, 40}, {160, 39}, {80, 24}, {40, 16}, {1, 1}} {
+	for _, size := range [][2]int{{160, 40}, {120, 30}, {100, 24}, {80, 24}, {40, 16}, {1, 1}} {
 		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-		_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-		m.Update(tea.PasteMsg{Content: "hidden paste"})
-		m.Update(tea.MouseClickMsg{X: 2, Y: 20, Button: tea.MouseLeft})
-		if cmd != nil || m.current().management.busy || m.View().Cursor != nil || m.modal != "" || m.current().management.input.Value() != "saved draft" {
-			t.Fatal("undersized terminal accepted hidden input")
-		}
 		plain := ansi.Strip(m.View().Content)
-		if size[0] >= 40 && (!strings.Contains(plain, "160 × 40") || strings.Contains(plain, "ACTIVE SSH")) {
-			t.Fatal(plain)
+		if strings.Contains(plain, "Resize window") || strings.Contains(plain, "Minimum") {
+			t.Fatal("resize gate returned", plain)
 		}
-		capturePresentation(t, m, fmt.Sprintf("%dx%d-resize", size[0], size[1]))
+		if size[0] >= 80 && (!strings.Contains(plain, "SAVED CONNECTIONS") || !strings.Contains(plain, "ACTIVE SSH CONNECTIONS")) {
+			t.Fatal("center hidden", plain)
+		}
+		if size[0] >= 80 && m.View().Cursor == nil {
+			t.Fatal("visible prompt blocked")
+		}
+		for _, line := range strings.Split(plain, "\n") {
+			if ansi.StringWidth(line) > size[0] {
+				t.Fatal("overflow", line)
+			}
+		}
+		capturePresentation(t, m, fmt.Sprintf("%dx%d-shrink", size[0], size[1]))
 	}
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m.Update(tea.PasteMsg{Content: " editable"})
+	if m.current().management.input.Value() != "saved draft editable" {
+		t.Fatal("resize discarded or blocked draft")
+	}
+	m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+	if !strings.Contains(ansi.Strip(m.View().Content), "Type to filter") {
+		t.Fatal("menu blocked below 160x40")
+	}
+}
+
+func TestTableCentering(t *testing.T) {
+	u := newUI(launch.Info{}, true)
+	lines := strings.Split(ansi.Strip(u.dataTable("SECTION", []string{"NAME", "PORT"}, [][]string{{"node", "22"}}, 40)), "\n")
+	if lines[0] != "SECTION" {
+		t.Fatal("section title moved", lines[0])
+	}
+	for _, item := range []struct {
+		row    int
+		value  string
+		center int
+	}{{1, "NAME", 20}, {1, "PORT", 60}, {3, "node", 20}, {3, "22", 60}} {
+		at := strings.Index(lines[item.row], item.value)
+		if at < 0 || absInt(2*at+len(item.value)-item.center) > 1 {
+			t.Fatal("cell not centered", lines)
+		}
+	}
+	m := newDemoFrame(true)
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
-	if plain := ansi.Strip(m.View().Content); !strings.Contains(plain, "gateway") || !strings.Contains(plain, "saved draft") {
-		t.Fatal("resize lost state", plain)
+	selected := strings.Split(m.View().Content, "\n")
+	m.current().selected = ""
+	unselected := strings.Split(m.View().Content, "\n")
+	for y, line := range selected {
+		if strings.Contains(line, "›") && strings.Contains(line, "gateway") {
+			if strings.Replace(strings.Split(line, "│")[1], "›", " ", 1) != strings.Split(unselected[y], "│")[1] {
+				t.Fatal("selection shifted cells", line, unselected[y])
+			}
+			return
+		}
 	}
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	if cmd == nil {
-		t.Fatal("undersized terminal cannot quit")
-	}
+	t.Fatal("missing selected row")
 }
 
 func TestPaletteClipboardOrigin(t *testing.T) {
@@ -367,7 +404,7 @@ func TestTableAndMetadataRoles(t *testing.T) {
 	m.current().selected = ""
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	screen := capturePresentation(t, m, "160x40-semantic-tables")
-	expect := map[string]string{"production": "#b4befe", "gateway.example.com": "#f5c2e7", "operator": "#a6e3a1", "2222": "#f9e2af", "id_ed25519": "#94e2d5", "48.6 MiB": "#fab387"}
+	expect := map[string]string{"production": "#b4befe", "10.20.0.10": "#f5c2e7", "operator": "#a6e3a1", "2222": "#f9e2af", "id_ed25519": "#94e2d5", "48.6 MiB": "#fab387"}
 	for value, hex := range expect {
 		found := false
 		for y := 0; y < m.height; y++ {

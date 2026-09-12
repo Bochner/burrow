@@ -148,10 +148,10 @@ func (m *frame) resize() {
 	}
 }
 
-const minimumWidth, minimumHeight = 160, 40
+const minimumWidth, minimumHeight = 28, 16
 
 func (m *frame) tooSmall() bool      { return m.width < minimumWidth || m.height < minimumHeight }
-func (m *frame) columns() (int, int) { return 26, 32 }
+func (m *frame) columns() (int, int) { return min(26, m.width/5), min(32, m.width/5) }
 func (m *frame) selectWorkspace(i int) tea.Cmd {
 	if i < 0 || i >= len(m.paths) {
 		return nil
@@ -785,7 +785,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	if m.demo {
 		status = current.management.paint(warningStyle, "DEMO · sample data")
 	}
-	add("daemon", status, w-26, 1, 26, 1, 2)
+	add("daemon", status, w-right+2, 1, max(1, min(26, right-2)), 1, 2)
 	tabStyle, hovelStyle := activeStyle, secondary
 	tabLabel, hovelLabel := "› Burrow", "  Hovel · soon"
 	if current.tab != "" {
@@ -801,29 +801,28 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	add("center", center, cx, 3, cw, h-4, 1)
 	// Identified row layers reuse the rendered cells rather than guessing table
 	// border or wrapping offsets in the pointer handler.
-	inActive := false
+	activeLine := -1
+	start := min(management.connectionOffset, max(0, len(management.connections)-management.connectionRows()))
 	for y, line := range strings.Split(center, "\n") {
 		plain := ansi.Strip(line)
-		if strings.Contains(plain, "ACTIVE SSH CONNECTIONS") {
-			inActive = true
+		if strings.Contains(plain, "ACTIVE SSH CONNECTIONS") && management.connectionError == "" {
+			activeLine = 0
 			continue
 		}
-		if strings.HasPrefix(strings.TrimSpace(plain), "TUNNELS") {
-			inActive = false
-		}
-		if !inActive {
+		if activeLine < 0 {
 			continue
 		}
-		for i, row := range current.management.connections {
-			fields := strings.Fields(plain)
-			if len(fields) > 0 && fields[0] == row.Name {
-				if current.selected == row.Name {
-					line = current.management.choice(strings.TrimPrefix(plain, "  "), true, cw)
-				}
-				add(fmt.Sprintf("resource:%d", i), line, cx, y+3, cw, 1, 2)
-				break
-			}
+		// Wrap(false) gives one header, one separator, then one line per row.
+		activeLine++
+		i := start + activeLine - 3
+		if i < start || i >= min(len(management.connections), start+management.connectionRows()) {
+			continue
 		}
+		if current.selected == management.connections[i].Name {
+			// Use the first padding cell for the marker; keep all column positions.
+			line = management.paint(selectedStyle.Width(cw), "›"+strings.TrimPrefix(plain, " "))
+		}
+		add(fmt.Sprintf("resource:%d", i), line, cx, y+3, cw, 1, 2)
 	}
 
 	if current.tab != "" {
@@ -950,9 +949,14 @@ func (m *frame) dialogBounds() image.Rectangle {
 }
 func (m *frame) View() tea.View {
 	if m.tooSmall() {
-		text := fmt.Sprintf("Resize window\nMinimum %d × %d\nCurrent %d × %d\nCtrl+C to quit", minimumWidth, minimumHeight, m.width, m.height)
-		text = m.current().management.paint(accent, text)
-		v := tea.NewView(solid(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, fit(text, m.width, min(4, m.height))), m.width, m.height, baseColor, m.noColor))
+		// Keep the application visible even in a terminal too small for controls.
+		preview := *m
+		preview.width, preview.height = max(minimumWidth, m.width), max(minimumHeight, m.height)
+		text := preview.compositor().Render()
+		if m.noColor {
+			text = ansi.Strip(text)
+		}
+		v := tea.NewView(fit(text, m.width, m.height))
 		v.AltScreen = true
 		return v
 	}

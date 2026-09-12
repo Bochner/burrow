@@ -295,7 +295,7 @@ func fit(s string, w, h int) string {
 	}
 	return strings.Join(lines, "\n")
 }
-func (m ui) connectionRows() int { return 5 }
+func (m ui) connectionRows() int { return max(1, min(5, m.height-24)) }
 func (m ui) activeConnections(w int) string {
 	title := m.paint(heading, "ACTIVE SSH CONNECTIONS")
 	if m.connectionError != "" {
@@ -322,7 +322,7 @@ func (m ui) activeConnections(w int) string {
 		if socket == "" {
 			socket = "—"
 		}
-		rows = append(rows, []string{"  " + safe(row.Name), safe(row.Host), safe(row.User), fmt.Sprint(row.Port), proxy, terminal, tunnels, socket})
+		rows = append(rows, []string{safe(row.Name), safe(row.Host), safe(row.User), fmt.Sprint(row.Port), proxy, terminal, tunnels, socket})
 	}
 	return m.dataTable("ACTIVE SSH CONNECTIONS", headers, rows, w) + overflow
 }
@@ -332,14 +332,14 @@ func (m ui) dataTable(title string, headers []string, rows [][]string, w int) st
 	return m.paint(heading, title) + "\n" + table.New().Headers(headers...).Rows(rows...).Width(w).Wrap(false).
 		Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderStyle(separatorStyle).
 		StyleFunc(func(row, col int) lipgloss.Style {
-			style := fieldStyle(headers[col]).PaddingRight(1)
+			style := fieldStyle(headers[col])
 			if row == table.HeaderRow {
-				return accent.PaddingRight(1)
+				style = accent
 			}
-			if rows[row][col] == "—" {
-				return secondary.PaddingRight(1)
+			if row >= 0 && rows[row][col] == "—" {
+				style = secondary
 			}
-			return style
+			return style.Padding(0, 1).Align(lipgloss.Center)
 		}).String()
 }
 func (m ui) View() tea.View {

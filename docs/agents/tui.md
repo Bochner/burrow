@@ -45,11 +45,14 @@ Use aligned columns and shared per-field styles, with headers distinct from
 values. Reserve selection space so selecting a row never shifts its columns.
 Keep consistent section gaps, interior padding and sidebar separators.
 
-Require a minimum terminal of **160 columns × 40 rows**. Below it, show a
-resize notice with required/current dimensions, preserve state, block hidden
-input, and allow Ctrl+C to exit. Above it, keep both sidebars and all table
-columns; extra space can expand the center. Use one layout, without compact
-column sets, hidden sidebars or abbreviated section variants.
+Keep table section titles left aligned and center headers and values within each
+column, including selected rows. Shrink the center with the available terminal
+width using native table sizing; retain columns and truncate long cell text.
+Keep both sidebars visible, allowing them to narrow when needed. Preserve drafts
+and selection through resize. A 160x40 terminal is a useful full-detail preview,
+not a launch or viewing requirement: never replace the application with a
+blocking resize notice. At extremely small sizes, keep a clipped application
+view and allow Ctrl+C to exit while suppressing hidden controls.
 
 Keep command instructions in help. Empty states remain concise and truthful; sample data belongs only in explicitly labeled preview mode.
 
@@ -84,7 +87,7 @@ the relevant Aspect gate before completion. `aspect burrow-check` includes these
 checks and the production PTY/SSH checks.
 
 Inspect empty and populated captures at 160x40 and a larger terminal, plus
-below-minimum resize notices and changed modal states. Use
+smaller terminals (120x30 and 80x24) and changed modal states. Use
 `aspect burrow run -- --demo` for sample data.
 A passing automated check does not establish subjective owner acceptance.
 

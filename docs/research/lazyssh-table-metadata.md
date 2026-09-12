@@ -104,10 +104,20 @@ unavailable in the current state API. The sidebar separates observed SSH state,
 workspace download totals and daemon health. Download totals remain Unavailable
 in live mode; demo totals are samples.
 
-The owner chose a 160×40 minimum terminal to simplify layout behavior. Below that
-size Burrow shows a resize notice, preserves drafts/state, blocks hidden input
-and permits Ctrl+C to exit. Supported sizes retain both sidebars and full tables;
-compact table/section variants have been removed.
+The latest owner feedback supersedes the earlier 160×40 minimum. The center now
+shrinks with available width, using native Lip Gloss column sizing and centered
+headers/data. Sidebars remain present and can narrow. Small windows retain the
+application view rather than a blocking resize notice. Demo endpoints use private
+IP addresses, including the tunnel destination.
+
+LazySSH explicitly sets `justify="center"` on every saved/active/tunnel column in
+ui.py:91–184. Its `create_standard_table` leaves width unspecified, delegating
+allocation to Rich; `create_sidebar_layout` reserves a 30-column sidebar and gives
+the remaining width to the main layout (ui.py:296–304). This supports native width
+allocation rather than a hard application-size gate; it does not imply LazySSH
+uses Burrow's three-panel layout. Context7 `/charmbracelet/lipgloss` confirms
+`StyleFunc` with `Align(lipgloss.Center)` for cell alignment. Burrow keeps its
+existing pinned Lip Gloss dependency and symmetric padding.
 
 The required future implementation and presentation checks are recorded in
 [the project TUI standard](../agents/tui.md), linked from AGENTS.md.

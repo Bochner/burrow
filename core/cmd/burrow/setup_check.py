@@ -320,17 +320,17 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.close(master)
             os.close(slave)
         assert run(w, "--offline")["pid"] == info["pid"]
-        # An undersized color terminal shows a resize notice and recovers.
+        # A smaller color terminal keeps the application visible and recovers.
         master, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 8, 30, 0, 0))
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
         before = termios.tcgetattr(slave)
         color_env = env | {"COLORTERM": "truecolor"}
         color_env.pop("NO_COLOR")
         terminal = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"], env=color_env, stdin=slave, stdout=subprocess.PIPE, stderr=slave, preexec_fn=controlling)
         output = bytearray()
-        screen_dimensions = ["30", "8"]
+        screen_dimensions = ["120", "30"]
         try:
-            read_until(b"Resize window")
+            read_until(b"SAVED CONNECTIONS")
             assert b"38;2;180;190;254" in output, "Catppuccin lavender missing"
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
             screen_dimensions = ["160", "40"]

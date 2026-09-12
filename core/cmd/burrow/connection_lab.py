@@ -256,15 +256,17 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             wait(lambda: screen_contains(b'"closed"'))
             assert all(s["name"] != "terminal" for s in burrow(w, "connections"))
             # Repaint after resize starts a new screen; do not replay old 160-column
-            # cursor coordinates into an emulator that was only ever 40 columns.
+            # cursor coordinates into an emulator that was only ever 120 columns.
             while select.select([outer], [], [], 0)[0]:
                 os.read(outer, 65536)
             output.clear()
-            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 16, 40, 0, 0))
-            dimensions = ["40", "16"]
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
+            dimensions = ["120", "30"]
             os.kill(tui.pid, signal.SIGWINCH)
-            wait(lambda: screen_contains("160 × 40".encode()))
-            os.write(outer, b"\x03")  # Quit remains available below minimum size.
+            wait(lambda: screen_contains(b"gateway"))
+            os.write(outer, b"\x03")
+            wait(lambda: screen_contains(b"Quit Burrow?"))
+            os.write(outer, b"\t\r")
             assert tui.wait(timeout=5) == 0
             assert termios.tcgetattr(slave) == before
             assert b"38;2;" not in output
