@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -58,11 +57,10 @@ func run(args []string) error {
 		return connection.Askpass(args[0])
 	}
 	if len(args) == 1 && args[0] == "connection-module" {
-		hovel.Serve(connection.Module{})
-		return nil
+		return fmt.Errorf("legacy connection-module entry point retired; use burrow module with connection settings; existing retained owners remain available through connections/inspect/close")
 	}
 	if len(args) == 1 && args[0] == "module" {
-		hovel.Serve(workspaceModule{})
+		hovel.Serve(connection.Module{})
 		return nil
 	}
 	fs := flag.NewFlagSet("burrow", flag.ContinueOnError)
@@ -170,58 +168,17 @@ func run(args []string) error {
 	return terminal(newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o), noColor || os.Getenv("NO_COLOR") != "")
 }
 
-//go:embed hovel-module.yaml
-var workspaceManifest []byte
-
 func openWorkspace(ctx context.Context, options launch.Options) (launch.Info, error) {
 	info, err := launch.Open(ctx, options)
 	if err == nil {
 		err = connection.EnsureProfiles(ctx, options.Workspace)
 	}
 	if err == nil {
-		err = launch.RegisterModule(ctx, options.Workspace, "burrow@0.1.0", workspaceManifest)
+		err = launch.RegisterModule(ctx, options.Workspace, "burrow@0.1.0", connection.Manifest)
 	}
 	return info, err
 }
 
-// Read-only inspection through the public SDK. It cannot bootstrap another
-// daemon from inside Hovel, and shares the frontend's verification command.
-type workspaceModule struct{}
-
-func (workspaceModule) Info() hovel.Info {
-	return hovel.Info{Name: "burrow", Version: "0.1.0", Type: hovel.TypeSurvey, Summary: "Inspect a verified Burrow workspace"}
-}
-func (workspaceModule) Schema() hovel.Schema {
-	return hovel.Schema{ChainConfig: []hovel.Requirement{hovel.Req("workspace", "string", "Explicit canonical Burrow workspace"), hovel.Requirement{Key: "command", Type: "string", Description: "Saved-profile command; empty inspects workspace"}}}
-}
-func (workspaceModule) Run(ctx *hovel.Context) (hovel.Result, error) {
-	c, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	info, e := launch.Status(c, ctx.InputString("workspace", ""))
-	if e != nil {
-		return hovel.Result{}, e
-	}
-	if line := ctx.InputString("command", ""); line != "" {
-		if os.Getppid() != info.PID {
-			return hovel.Result{}, fmt.Errorf("profile commands must run in the verified workspace daemon")
-		}
-		args, err := connection.Split(line)
-		if err != nil {
-			return hovel.Result{}, err
-		}
-		if len(args) == 0 || (args[0] != "profile" && args[0] != "profiles" && args[0] != "history") || (len(args) > 1 && args[1] == "connect") {
-			return hovel.Result{}, fmt.Errorf("expected saved-profile management command; use the connection module for authentication")
-		}
-		result, err := connection.Execute(c, info.Workspace, args)
-		if err != nil {
-			return hovel.Result{}, err
-		}
-		ctx.Log.Info("saved-profile management completed")
-		return hovel.Ok(map[string]any{"result": result}), nil
-	}
-	ctx.Log.Info("verified Burrow workspace identity")
-	return hovel.Ok(map[string]any{"workspacePath": info.Workspace, "pid": info.PID}, hovel.WithSummary(fmt.Sprintf("Verified Burrow workspace %s · daemon PID %d", safe(info.Workspace), info.PID))), nil
-}
 func main() {
 	if e := run(os.Args[1:]); e != nil {
 		fmt.Fprintln(os.Stderr, "Burrow: "+safe(e.Error()))

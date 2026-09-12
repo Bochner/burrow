@@ -199,7 +199,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             assert result.returncode == 0, result.stdout + result.stderr
             return result.stdout
         installed = json.loads(hovel("module", "installed", "--json"))["modules"]
-        assert any(m["name"] == "burrow" for m in installed), installed
+        assert [m["name"] for m in installed if m["name"].startswith("burrow")] == ["burrow"], installed
         module = next(m for m in installed if m["name"] == "burrow")
         source = Path(module["source"])
         assert module["linked"] and module["installed"], module
@@ -232,13 +232,13 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         hovel("chain", "add", "burrow@0.1.0", operator=True)
         hovel("target", "add", "local://workspace", operator=True)
         hovel("chain", "config", "set", "workspace", str(w), operator=True)
-        result = json.loads(hovel("throw", "--now", "--json", operator=True))["results"][0]
+        result = json.loads(hovel("throw", "--now", "--allow-dangerous", "--json", operator=True))["results"][0]
         assert result["state"] == "succeeded", result
         assert str(w) in json.dumps(result), result
 
         # Real public SDK framing, including the shared verified status operation.
         with subprocess.Popen([binary, "module"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as module:
-            def rpc(method, params=None):
+            def rpc(method, params=None, error=None):
                 body = json.dumps(dict(jsonrpc="2.0", id=1, method=method, params=params or {})).encode()
                 module.stdin.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
                 module.stdin.flush()
@@ -248,12 +248,22 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                     assert module.stdout.readline() == b"\r\n"
                     response = json.loads(module.stdout.read(int(header.split(b":")[1])))
                     if "id" in response:
+                        if error:
+                            assert error in json.dumps(response.get("error")), response
+                            return
                         assert "error" not in response, response
                         return response["result"]
             assert "burrow" in json.dumps(rpc("handshake"))
             assert "workspace" in json.dumps(rpc("schema"))
+            assert "connection" in json.dumps(rpc("schema"))
             result = rpc("execute", dict(runId="setup-check", moduleId="burrow@0.1.0", target="local", chainConfig={"workspace": str(w)}))
             assert str(w) in json.dumps(result), result
+            # Ambiguous actions and cross-workspace connection inputs never launch.
+            params = dict(runId="refused", moduleId="burrow@0.1.0", target="local",
+                          chainConfig={"workspace": str(w), "command": "profiles", "connection": "{}"})
+            rpc("execute", params, error="mutually exclusive")
+            params["chainConfig"] = {"workspace": str(w), "connection": json.dumps({"workspace": str(root / "other")})}
+            rpc("execute", params, error="workspace must match")
             rpc("shutdown")
             assert module.wait(timeout=5) == 0
             assert module.stdout.read() == b""

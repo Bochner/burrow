@@ -111,8 +111,8 @@ burrow --workspace /home/alice/lab history
 # Through the existing burrow@0.1.0 Hovel module in a chosen chain:
 chain config set workspace /home/alice/lab
 chain config set command "profile create nas 192.168.1.20 alice"
-throw --now</code></pre>
-<p>The module's optional <code>command</code> input accepts the same saved-profile management commands and returns structured results. It must run under the verified workspace daemon. Connection authentication uses the separate connection module/private frontend path. Keep explicit operation/chain selection when automating Hovel. Management history uses Hovel's retained logs and timestamps; authentication answers and invalid commands from the Burrow command seam are excluded. History follows Hovel's existing retention policy, not an unlimited transcript. Module stdout remains framed JSON-RPC.</p>
+throw --now --allow-dangerous</code></pre>
+<p>The module's optional <code>command</code> input accepts the same saved-profile management commands and returns structured results. It must run under the verified workspace daemon. Connection authentication uses the same <code>burrow@0.1.0</code> module with its <code>connection</code> JSON input and private frontend prompts. Do not combine <code>command</code> and <code>connection</code>. Hovel’s danger allowance is module-wide, so workspace/profile throws also require <code>--allow-dangerous</code>; profile edit/delete review checks still apply. Keep explicit operation/chain selection when automating Hovel. Management history uses Hovel's retained logs and timestamps; authentication answers and invalid commands from the Burrow command seam are excluded. History follows Hovel's existing retention policy, not an unlimited transcript. Module stdout remains framed JSON-RPC.</p>
 <h2>Validation</h2>
 <pre><code>aspect test //core/cmd/burrow:profile_test
 aspect test //core/cmd/burrow:interaction_test

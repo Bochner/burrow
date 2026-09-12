@@ -223,7 +223,7 @@ func CacheModule(ctx context.Context, manifest []byte) (string, error) {
 }
 
 // RegisterModule installs this build through Hovel and verifies its live catalog.
-// The workspace lock also serializes connection-module registration with setup.
+// The workspace lock also serializes module registration with setup.
 func RegisterModule(ctx context.Context, workspace, id string, manifest []byte) error {
 	if _, err := Status(ctx, workspace); err != nil {
 		return err

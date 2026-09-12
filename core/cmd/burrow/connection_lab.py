@@ -22,11 +22,11 @@ import time
 from core.cmd.burrow.authentication_lab import authentication_matrix
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("paths", nargs=4, metavar="PATH")
+parser.add_argument("paths", nargs=5, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 args = parser.parse_args()
 smoke = args.smoke
-binary, wheel, image_file, screen_check = [str(Path(p).resolve()) for p in args.paths]
+binary, wheel, image_file, screen_check, legacy_binary = [str(Path(p).resolve()) for p in args.paths]
 image = Path(image_file).read_text().strip()
 started = stage_started = time.monotonic()
 
@@ -90,6 +90,14 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         w = root / "w"
         info = burrow(w, "--hovel-package", wheel, "status")
         daemons.append(info["pid"])
+        hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+        def hv(*args, chain="consolidation"):
+            return command(hovel, "run", "--workspace", w, "--daemon-endpoint", w / "hoveld.sock",
+                           "--op", "burrow", "--chain", chain, "--", *args, env=env)
+        def catalog():
+            modules = json.loads(hv("module", "list", "--json"))["modules"]
+            return sorted(m["id"] for m in modules if m["name"].startswith("burrow"))
+        assert catalog() == ["burrow@0.1.0"]
         timing("fixture and workspace setup")
         options = ["--key", str(key), "--port", str(port), "--trust", fingerprint, "--yes"]
         def state_is(w, name, expected):
@@ -113,6 +121,17 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             assert state["state"] != "lost", state
             return state if state["state"] == "connected" else None
         first = wait(connected)
+        # Both production capabilities use the one public identity.
+        assert catalog() == ["burrow@0.1.0"]
+        hv("chain", "create", "consolidation")
+        hv("chain", "add", "burrow@0.1.0")
+        hv("target", "add", "local")
+        hv("chain", "config", "set", "workspace", str(w))
+        hv("chain", "config", "set", "command", "profile create catalog-profile host user")
+        profile_result = json.loads(hv("throw", "--now", "--allow-dangerous", "--json"))
+        assert profile_result["results"][0]["state"] == "succeeded", profile_result
+        assert burrow(w, "profile", "select", "catalog-profile")["host"] == "host"
+        assert catalog() == ["burrow@0.1.0"]
         burrow(w,"profile","save","gateway","--as","saved-gateway")
         profile = burrow(w,"profile","select","saved-gateway")
         assert profile["key"] == str(key) and "trust" not in profile and "promptSocket" not in profile
@@ -141,6 +160,55 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             timing("explicit close")
             print("PASS SSH smoke only; full authentication/PTY/lifecycle matrix not run", flush=True)
             raise SystemExit(0)
+        # Test-only old identity: retain its live owner through installation/setup,
+        # refuse collisions, and close explicitly without affecting the new sibling.
+        legacy_package = root / "legacy-package"
+        legacy_package.mkdir(mode=0o700)
+        (legacy_package / "burrow").write_bytes(Path(legacy_binary).read_bytes())
+        (legacy_package / "burrow").chmod(0o700)
+        (legacy_package / "hovel-module.yaml").write_text("""apiVersion: hovel.dev/v1alpha1
+kind: ModulePackage
+metadata:
+  name: burrow-connection
+  version: 0.1.0
+  moduleType: survey
+runtime:
+  protocol: jsonrpc-stdio
+launch:
+  - selector:
+      os: linux
+      arch: amd64
+    command: ["burrow"]
+""")
+        hv("module", "install", "--link", str(legacy_package), "--no-scripts")
+        hv("chain", "create", "legacy", chain="legacy")
+        hv("chain", "add", "burrow-connection@0.1.0", chain="legacy")
+        hv("target", "add", "ssh://127.0.0.1", chain="legacy")
+        hv("chain", "config", "set", "workspace", str(w), chain="legacy")
+        legacy_config = dict(workspace=str(w), name="legacy", host="127.0.0.1", user="tester",
+                             port=port, key=str(key), knownHosts=str(w / "burrow-known_hosts"))
+        hv("chain", "config", "set", "connection", json.dumps(legacy_config), chain="legacy")
+        result = json.loads(hv("throw", "--now", "--allow-dangerous", "--json", chain="legacy"))
+        assert result["results"][0]["state"] == "succeeded", result
+        legacy = wait(lambda: state_is(w, "legacy", "connected"))
+        evidence = w / "legacy-evidence"
+        evidence.write_text("preserve legacy evidence")
+        assert burrow(w, "--offline", "status")["pid"] == info["pid"]
+        assert burrow(w, "inspect", "legacy")["masterPID"] == legacy["masterPID"]
+        burrow(w, "connect", "legacy", "127.0.0.1", "tester", *options, ok=False)
+        assert burrow(w, "inspect", "legacy")["socketInode"] == legacy["socketInode"]
+        burrow(w, "profile", "save", "legacy", "--as", "legacy-settings")
+        assert "review" in burrow(w, "close", "legacy")
+        burrow(w, "close", "legacy", "--yes")
+        assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
+        assert evidence.read_text() == "preserve legacy evidence"
+        assert burrow(w, "profile", "select", "legacy-settings")["host"] == "127.0.0.1"
+        # Manual uninstall after owners are closed; chain/evidence remain historical.
+        hv("module", "uninstall", "burrow-connection@0.1.0")
+        assert catalog() == ["burrow@0.1.0"]
+        retired = subprocess.run([binary, "connection-module"], env=env, capture_output=True, text=True)
+        assert retired.returncode != 0 and not retired.stdout and "retired" in retired.stderr
+        timing("single module and legacy owner transition")
         # Refusals leave symlinks, unsafe permissions and substituted roots intact.
         alias = w / "burrow/alias"
         alias.symlink_to(Path(first["socket"]).parent, target_is_directory=True)
@@ -438,8 +506,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
                   "--op", "burrow", "--chain", "refused", "--"]
         config = dict(workspace=str(w), name="unconfirmed", host="127.0.0.1", user="tester", port=port,
                       key=str(key), knownHosts=str(trust_file))
-        for args in [("chain", "create", "refused"), ("chain", "add", "burrow-connection@0.1.0"),
-                     ("target", "add", "ssh://127.0.0.1"), ("chain", "config", "set", "connection", json.dumps(config))]:
+        for args in [("chain", "create", "refused"), ("chain", "add", "burrow@0.1.0"),
+                     ("target", "add", "ssh://127.0.0.1"), ("chain", "config", "set", "workspace", str(w)), ("chain", "config", "set", "connection", json.dumps(config))]:
             command(*prefix, *args, env=env)
         denied = subprocess.run(list(map(str, [*prefix, "throw", "--now", "--json"])), env=env, capture_output=True, text=True)
         assert denied.returncode != 0 and "dangerous" in (denied.stdout + denied.stderr).lower()

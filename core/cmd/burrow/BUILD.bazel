@@ -25,16 +25,22 @@ py_test(
     name = "connection_lab",
     srcs = ["connection_lab.py", "authentication_lab.py"],
     main = "connection_lab.py",
-    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)"],
-    data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check"],
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)"],
+    data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check", ":legacy_module"],
     tags = ["local", "external"],
     size = "large",
     legacy_create_init = 0,
 )
 
 go_binary(
+    name = "legacy_module",
+    srcs = ["legacy_module.go"],
+    deps = ["//core/connection", "@hovel_sdk//:hovel"],
+    testonly = True,
+)
+
+go_binary(
     name = "burrow",
-    embedsrcs = ["hovel-module.yaml"],
     srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go"],
     deps = [
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
@@ -48,7 +54,7 @@ go_binary(
 )
 pkg_tar(
     name = "package",
-    srcs = [":burrow", "hovel-module.yaml", "@hovel_sdk//:LICENSE"],
+    srcs = [":burrow", "//core/connection:hovel-module.yaml", "@hovel_sdk//:LICENSE"],
     extension = "tgz",
     mode = "0755",
 )
@@ -71,7 +77,6 @@ py_test(
 
 go_test(
     name = "interaction_test",
-    embedsrcs = ["hovel-module.yaml"],
     srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "frame_test.go", "presentation_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",

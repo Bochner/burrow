@@ -56,24 +56,12 @@ Aliases use OpenSSH HostName/User/Port/IdentityFile/IdentityAgent/ProxyJump.
 ProxyCommand and config forwarding/commands/trust overrides are not imported.
 Agent sockets must be accessible to the daemon; select the current socket with
 frontend SSH_AUTH_SOCK or --agent. No vault or daemon environment refresh.
+Hovel catalog/chain identity: burrow@0.1.0 for every capability.
+Hovel throws require --allow-dangerous, including workspace/profile actions.
+Existing burrow-connection@0.1.0 owners remain inspectable/closeable; no adoption.
+Retire old chain submissions, close their owners explicitly, then manually
+uninstall the old module through Hovel; retain chains/evidence for inspection.
 Unknown reservations require manual investigation; no force adoption.
-`
-
-const manifest = `apiVersion: hovel.dev/v1alpha1
-kind: ModulePackage
-metadata:
-  name: burrow-connection
-  version: 0.1.0
-  moduleType: survey
-  summary: Manage a retained named SSH connection.
-  license: Apache-2.0
-runtime:
-  protocol: jsonrpc-stdio
-launch:
-  - selector:
-      os: linux
-      arch: amd64
-    command: ["burrow", "connection-module"]
 `
 
 func optionName(arg string) string {
@@ -221,8 +209,9 @@ func List(ctx context.Context, workspace string) ([]State, error) {
 	}
 	states := []State{}
 	names := map[string]bool{}
+	// Compatibility is limited to existing sessions, never a legacy registration.
 	for _, ref := range refs.Sessions {
-		if ref.ModuleID != "burrow-connection@0.1.0" || ref.Kind != "connection" || ref.State == "closed" {
+		if (ref.ModuleID != "burrow@0.1.0" && ref.ModuleID != "burrow-connection@0.1.0") || ref.Kind != "connection" || ref.State == "closed" {
 			continue
 		}
 		result, e := ownerCommand(ctx, workspace, ref.ID, "connection-status", nil)
@@ -379,13 +368,13 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	if _, e = os.Lstat(filepath.Dir(path)); !os.IsNotExist(e) {
 		return nil, fmt.Errorf("connection reservation %q exists or cannot be inspected; inspect ownership before manual recovery", filepath.Dir(path))
 	}
-	if e = launch.RegisterModule(ctx, w, "burrow-connection@0.1.0", []byte(manifest)); e != nil {
+	if e = launch.RegisterModule(ctx, w, "burrow@0.1.0", Manifest); e != nil {
 		return nil, e
 	}
 	chain := "ssh-" + rand.Text()[:12]
 	prefix := []string{"--op", "burrow", "--chain", chain, "--"}
 	config, _ := json.Marshal(c)
-	for _, cmd := range [][]string{{"op", "create", "burrow"}, {"chain", "create", chain}, {"chain", "add", "burrow-connection@0.1.0"}, {"target", "add", "ssh://" + c.Host}, {"chain", "config", "set", "connection", string(config)}} {
+	for _, cmd := range [][]string{{"op", "create", "burrow"}, {"chain", "create", chain}, {"chain", "add", "burrow@0.1.0"}, {"target", "add", "ssh://" + c.Host}, {"chain", "config", "set", "workspace", w}, {"chain", "config", "set", "connection", string(config)}} {
 		if _, e = launch.HovelCLI(ctx, w, append(append([]string{}, prefix...), cmd...)...); e != nil {
 			return nil, e
 		}

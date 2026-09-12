@@ -4,7 +4,8 @@ metadata:
   name: burrow
   version: 0.1.0
   moduleType: survey
-  summary: Inspect a verified Burrow workspace.
+  summary: Manage workspace, saved profiles and retained SSH connections.
+  tags: [dangerous]
   license: Apache-2.0
 runtime:
   protocol: jsonrpc-stdio

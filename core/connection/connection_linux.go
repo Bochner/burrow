@@ -129,15 +129,7 @@ func (f *sshFailure) detail() string {
 	return "SSH ended: authentication failed, cancelled, or transport lost; reconnect explicitly"
 }
 
-type Module struct{}
-
-func (Module) Info() hovel.Info {
-	return hovel.Info{Name: "burrow-connection", Version: "0.1.0", Type: hovel.TypeSurvey, Tags: []string{"dangerous"}, Summary: "Create a retained named SSH connection"}
-}
-func (Module) Schema() hovel.Schema {
-	return hovel.Schema{ChainConfig: []hovel.Requirement{hovel.Req("connection", "string", "Non-secret explicit connection settings")}}
-}
-func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
+func runConnection(ctx *hovel.Context) (hovel.Result, error) {
 	var c Config
 	d := json.NewDecoder(strings.NewReader(ctx.InputString("connection", "")))
 	d.DisallowUnknownFields()
@@ -146,6 +138,9 @@ func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
 	}
 	if d.Decode(new(any)) != io.EOF {
 		return hovel.Result{}, fmt.Errorf("invalid trailing connection settings")
+	}
+	if c.Workspace != ctx.InputString("workspace", "") {
+		return hovel.Result{}, fmt.Errorf("connection workspace must match the module workspace input")
 	}
 	if e := c.Validate(); e != nil {
 		return hovel.Result{}, e

@@ -117,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix="bp-") as scratch:
         hv("chain","add","burrow@0.1.0");hv("target","add","local")
         hv("chain","config","set","workspace",str(w))
         hv("chain","config","set","command","profile create sdk-profile host user")
-        result=json.loads(hv("throw","--now","--json"))
+        result=json.loads(hv("throw","--now","--allow-dangerous","--json"))
         assert result["results"][0]["state"]=="succeeded",result
         assert run("profile","select","sdk-profile")["host"]=="host"
         assert not marker.exists()

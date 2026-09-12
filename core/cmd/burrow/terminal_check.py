@@ -120,7 +120,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         command("target add local://workspace", "local://workspace")
         command(f"chain config set workspace {a}", str(a))
         assert json.loads(cli(a, "throw", "list", "--json")) is None
-        command("throw", "yes", False)
+        command("throw --allow-dangerous", "yes", False)
         # Leave A's actual confirmation pending while operating B's independent CLI.
         click(2, 20)
         wait("Exact destination")
@@ -141,7 +141,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         assert "embedded-a" not in cli(b, "op", "list")
         command("review", "yes", False)
         command("yes", "confirmed")
-        command("throw", "Verified Burrow workspace")
+        command("throw --allow-dangerous", "Verified Burrow workspace")
         # Scroll the real CLI back to its historical startup banner, then resume.
         send(b"\x1b[1;2H")  # Shift+Home
         wait("modules: 1")
