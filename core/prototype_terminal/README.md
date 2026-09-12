@@ -107,12 +107,12 @@ screens, exact raw-input parity and arbitrary full-screen restoration remain the
 [separate restoration decision](https://github.com/Bochner/burrow/issues/31).
 The prompt shows known file-mode paths, not an inferred remote shell cwd.
 
-Pending owner feedback: does the real command-first interaction feel right, and
-is this component combination suitable to carry forward? Optional mouse shortcuts,
-full filesystem parity, production credential/history policies and noninteractive
-operation coverage beyond the representative fixture remain explicit follow-ups.
-Preserve the prototype on the shared milestone branch; close the interaction ticket
-only after the owner's live feedback and a scoped resolution.
+The owner tested and accepted this command-first interaction on 2026-09-11,
+with full color treatment and real functionality still to be developed. The
+[terminal interaction ticket](https://github.com/Bochner/burrow/issues/15) records
+the canonical resolution and carry-forward limits. The separate full-screen
+restoration proof remains open. Preserve this bounded prototype on the shared
+milestone branch until its next validated consolidation.
 
 # Earlier browser sketch
 
