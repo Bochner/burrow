@@ -31,6 +31,7 @@ type retainedScript struct {
 	done     chan struct{}
 	report   map[string]any
 	request  []byte
+	direct   *directRun
 }
 
 func (p *ownership) startRetainedScript(ctx *hovel.Context) (hovel.Result, error) {
@@ -102,6 +103,9 @@ func (s *retainedScript) launch() error {
 	if err != nil {
 		s.mu.Lock()
 		s.report = map[string]any{"state": "not-started", "cleanup": "not-needed"}
+		if s.direct != nil && s.direct.staged {
+			s.report = map[string]any{"state": "staging-or-launch-failed", "cleanup": "unconfirmed"}
+		}
 		s.mu.Unlock()
 		close(s.done)
 	}
@@ -109,6 +113,9 @@ func (s *retainedScript) launch() error {
 }
 
 func (s *retainedScript) startProcess() error {
+	if s.direct != nil {
+		return s.direct.start(s)
+	}
 	var err error
 	s.input, err = s.process.StdinPipe()
 	if err != nil {
@@ -187,10 +194,17 @@ func (s *retainedScript) Write([]byte) error {
 }
 
 func (s *retainedScript) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "script-launch", Destructive: true}, {Name: "script-status", ReadOnly: true}, {Name: "script-cancel", Destructive: true}}, nil
+	commands := []hovel.PayloadCommand{{Name: "script-launch", Destructive: true}, {Name: "script-status", ReadOnly: true}, {Name: "script-cancel", Destructive: true}}
+	if s.direct != nil {
+		commands = append(commands, hovel.PayloadCommand{Name: "script-output", ReadOnly: true})
+	}
+	return commands, nil
 }
 
 func (s *retainedScript) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
+	if s.direct != nil && req.Command == "script-output" {
+		return s.direct.readOutput(req, s.Closed())
+	}
 	if len(req.Args) != 0 || req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" || len(req.Config) != 0 || s.Closed() {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported or closed fixture request")
 	}
@@ -207,8 +221,18 @@ func (s *retainedScript) RunPayloadCommand(req hovel.PayloadCommandRequest) (hov
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	data, err := json.Marshal(s.report)
-	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(data), Fields: map[string]string{"state": fmt.Sprint(s.report["state"])}}, err
+	report := s.report
+	fields := map[string]string{"state": fmt.Sprint(report["state"])}
+	if s.direct != nil {
+		report = s.direct.decorate(report)
+		if s.direct.markdown {
+			fields["outputFormat"] = "markdown"
+		}
+		fields["stdoutPath"] = filepath.Join(s.direct.dir, "stdout")
+		fields["stderrPath"] = filepath.Join(s.direct.dir, "stderr")
+	}
+	data, err := json.Marshal(report)
+	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(data), Fields: fields}, err
 }
 
 func (s *retainedScript) cancel() error {
@@ -226,7 +250,14 @@ func (s *retainedScript) cancel() error {
 		return nil
 	default:
 	}
-	if _, err := io.WriteString(s.input, "cancel\n"); err != nil {
+	if s.direct != nil {
+		s.direct.mu.Lock()
+		s.direct.cancelled = true
+		s.direct.mu.Unlock()
+		if err := s.process.Process.Kill(); err != nil && err != os.ErrProcessDone {
+			return err
+		}
+	} else if _, err := io.WriteString(s.input, "cancel\n"); err != nil {
 		return err
 	}
 	select {
@@ -246,5 +277,10 @@ func (s *retainedScript) Close(reason string) error {
 		s.input.Close()
 	}
 	s.LineShellSession.Close(reason)
+	if s.direct != nil {
+		s.direct.stdout.Close()
+		s.direct.stderr.Close()
+		os.RemoveAll(s.direct.dir)
+	}
 	return err
 }

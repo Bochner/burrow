@@ -80,7 +80,7 @@ func main() {
 		return
 	}
 	if os.Args[1] == "format" {
-		for _, name := range []string{"main.go", "ownership.go", "script_boundary.go", "retained_script.go", "tunnel_boundary.go"} {
+		for _, name := range []string{"main.go", "ownership.go", "script_boundary.go", "retained_script.go", "direct_script.go", "tunnel_boundary.go"} {
 			path := filepath.Join(os.Getenv("BUILD_WORKSPACE_DIRECTORY"), "core/prototype_transport", name)
 			data, err := os.ReadFile(path)
 			must(err)

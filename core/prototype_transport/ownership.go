@@ -67,6 +67,20 @@ func (p *ownership) ListMeshListeners(hovel.MeshListenerListRequest) ([]hovel.Me
 }
 
 func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
+	if ctx.InputString("proof_action", "") == "script-direct" {
+		return p.prepareDirectScript(ctx)
+	}
+	if ctx.InputString("proof_action", "") == "script-signal" {
+		var pid int
+		if _, err := fmt.Sscan(ctx.InputString("proof_pid", ""), &pid); err != nil {
+			return hovel.Result{}, err
+		}
+		err := signalFixtureGroup(os.Getenv("BURROW_OWNER_CONFIG"), filepath.Join(os.Getenv("BURROW_OWNER_ROOT"), "gateway", "master"), pid, ctx.InputString("proof_starttime", ""))
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		return hovel.Ok(nil, hovel.WithSummary("Signal sent to matching fixture group; termination requires observation")), nil
+	}
 	if ctx.InputString("proof_action", "connect") == "tunnel-probe" {
 		result, err := ownerCommand(ctx.InputString("proof_session", ""), "tunnel-probe", []string{ctx.InputString("proof_tunnel", ""), ctx.InputString("proof_nonce", "")})
 		if err != nil {
@@ -100,6 +114,13 @@ func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
 		}
 		if result.Fields["state"] == "running" || result.Fields["state"] == "prepared" {
 			return hovel.Result{}, fmt.Errorf("run is still active; collect later")
+		}
+		if result.Fields["stdoutPath"] != "" {
+			artifacts, err := directArtifacts(result)
+			if err != nil {
+				return hovel.Result{}, err
+			}
+			return hovel.Ok(nil, hovel.WithArtifacts(artifacts...)), nil
 		}
 		return hovel.Ok(nil, hovel.WithArtifacts(hovel.JSONArtifact("retained-script-result", result))), nil
 	}
