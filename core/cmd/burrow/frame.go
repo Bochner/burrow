@@ -43,6 +43,7 @@ type frame struct {
 	options                launch.Options
 	width, height          int
 	noColor                bool
+	demo                   bool
 	navIndex, navOffset    int
 	modal                  string
 	modalOffset, menuIndex int
@@ -98,12 +99,18 @@ func (m *frame) dispatch(workspace string, cmd tea.Cmd) tea.Cmd {
 	return func() tea.Msg { return workspaceMessage{workspace, id, cmd()} }
 }
 func (m *frame) Init() tea.Cmd {
+	if m.demo {
+		return nil
+	}
 	return tea.Batch(m.dispatch(m.active, m.current().management.Init()), m.check(m.active), m.tick())
 }
 func (m *frame) tick() tea.Cmd {
 	return m.dispatch(m.active, tea.Tick(time.Second, func(t time.Time) tea.Msg { return frameTick(t) }))
 }
 func (m *frame) check(path string) tea.Cmd {
+	if m.demo {
+		return nil
+	}
 	w := m.workspaces[path]
 	if w.checking {
 		return nil
@@ -176,6 +183,10 @@ func (m *frame) openNew() {
 	m.destination.Focus()
 }
 func (m *frame) submitWorkspace() tea.Cmd {
+	if m.demo {
+		m.launchError = "Sample data preview · workspace launch disabled"
+		return nil
+	}
 	if m.launchPending {
 		return nil
 	}
@@ -691,6 +702,9 @@ func (m *frame) metadata() string {
 			selected = fmt.Sprintf("%s\n%s@%s:%d\nSSH: %s", safe(row.Name), safe(row.User), safe(row.Host), row.Port, safe(row.State))
 		}
 	}
+	if m.demo {
+		return "SAMPLE DATA\n\n" + selected + "\n\nPreview only\nNo daemon or remote connections."
+	}
 	owner := "No connection owner observed"
 	if len(w.management.connections) > 0 {
 		owner = "Connection owner observed"
@@ -739,6 +753,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		statusWidth = w / 2
 		status = current.management.paint(style, "Hovel: "+state)
 	}
+	if m.demo {
+		status = current.management.paint(warningStyle, "DEMO · sample data")
+	}
 	add("daemon", status, w-statusWidth, statusY, statusWidth, 1, 2)
 	if left == 0 {
 		add("navigation", current.management.paint(heading, "[Workspaces]"), 1, 0, min(14, w/2-1), 1, 2)
@@ -775,7 +792,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			fields := strings.Fields(plain)
 			if len(fields) > 0 && fields[0] == row.Name {
 				if current.selected == row.Name {
-					line = current.management.choice(plain, true, cw)
+					line = current.management.choice(strings.TrimPrefix(plain, "  "), true, cw)
 				}
 				add(fmt.Sprintf("resource:%d", i), line, cx, y+3, cw, 1, 2)
 				break
@@ -797,7 +814,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		add("separator", current.management.paint(separatorStyle, strings.Repeat("│\n", h)), width-1, 0, 1, h, z+1)
 		width -= 3
 		midpoint := max(4, h/2)
-		add("workspaces", current.management.paint(heading, label("workspaces", "WORKSPACES"))+"\n"+current.management.paint(secondary, "This session"), 1, 1, width, max(1, midpoint-1), z)
+		add("workspaces", current.management.paint(heading, label("workspaces", "WORKSPACES")), 1, 1, width, max(1, midpoint-1), z)
 		rows := max(1, midpoint-5)
 		start := min(m.navOffset, max(0, len(m.paths)-1))
 		end := min(len(m.paths), start+rows)
@@ -814,11 +831,11 @@ func (m *frame) compositor() *lipgloss.Compositor {
 					return activeStyle.Width(width)
 				}
 				return pageStyle
-			}(), ansi.Truncate(prefix+safe(filepath.Base(m.paths[i])), width, "…")), 1, 4+i-start, width, 1, z+1)
+			}(), ansi.Truncate(prefix+safe(filepath.Base(m.paths[i])), width, "…")), 1, 3+i-start, width, 1, z+1)
 		}
-		add("workspaces", fmt.Sprintf("%d–%d/%d · ↑↓ / wheel", start+1, end, len(m.paths)), 1, midpoint-1, width, 1, z+1)
+
 		add("new", current.management.paint(heading, label("new", "[New]")), 1, midpoint, width/2, 1, z+1)
-		add("menu", current.management.paint(heading, label("menu", "[Menu]")), 1+width/2, midpoint, width-width/2, 1, z+1)
+		add("menu", lipgloss.PlaceHorizontal(width-width/2, lipgloss.Right, current.management.paint(heading, label("menu", "[Menu]"))), 1+width/2, midpoint, width-width/2, 1, z+1)
 		gap, groupHeight := "\n\n", 3
 		if h-midpoint-3 < 6 {
 			gap, groupHeight = "\n", 2
@@ -830,7 +847,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		for _, path := range m.paths[start:end] {
 			text += gap + safe(filepath.Base(path)) + "\n  No shells"
 		}
-		text += fmt.Sprintf("\n%d–%d/%d · wheel", start+1, end, len(m.paths))
+		if end-start < len(m.paths) {
+			text += fmt.Sprintf("\n%d–%d/%d", start+1, end, len(m.paths))
+		}
 		add("shells", text, 1, midpoint+2, width, max(1, h-midpoint-3), z)
 	}
 	if left > 0 {
@@ -855,7 +874,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			text := ""
 			switch m.modal {
 			case "new":
-				text = current.management.paint(accent, "NEW / OPEN WORKSPACE") + "\n\nExact destination (Enter launches):\n" + m.destination.View() + "\n\n" + current.management.paint(errorStyle, m.launchError)
+				text = centered(current.management.paint(accent, "NEW / OPEN WORKSPACE"), bw) + "\n\nExact destination (Enter launches):\n" + m.destination.View() + "\n\n" + current.management.paint(errorStyle, m.launchError)
 				if m.launchPending {
 					text += "\nLaunching and verifying…"
 				}
@@ -883,13 +902,17 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				}
 			}
 			if m.modal == "new" {
-				control("submit", current.management.paint(heading, "[Launch exact destination]"), y+ph-4)
+				control("submit", centered(current.management.paint(heading, "[Launch exact destination]"), bw), y+ph-4)
 			}
 			hint := "[Esc close]"
 			if m.modal == "menu" {
 				hint = "↑↓ select · Enter run · Esc close"
 			}
-			control("dismiss", current.management.paint(secondary, hint), y+ph-3)
+			hint = current.management.paint(secondary, hint)
+			if m.modal != "menu" {
+				hint = centered(hint, bw)
+			}
+			control("dismiss", hint, y+ph-3)
 		}
 	}
 	if current.management.help || current.management.quitting {

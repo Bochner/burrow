@@ -18,12 +18,14 @@ import (
 
 const usage = `Burrow — verified Hovel workspace
 Usage: burrow --workspace /absolute/workspace [options] [status|tui|COMMAND]
+       burrow --demo [--no-color]
 
 Required:
   --workspace PATH      Explicit canonical Hovel workspace
 Options:
   --hovel-package FILE  Local copy of the pinned Linux amd64 wheel
   --offline             Use the verified cache only
+  --demo                Preview sample tables without opening a workspace
   --no-color            Disable terminal colors (also respects NO_COLOR)
   --help                Show this help without starting anything
 
@@ -57,10 +59,11 @@ func run(args []string) error {
 	}
 	fs := flag.NewFlagSet("burrow", flag.ContinueOnError)
 	var o launch.Options
-	var noColor bool
+	var noColor, demo bool
 	fs.StringVar(&o.Workspace, "workspace", "", "explicit canonical workspace (required)")
 	fs.StringVar(&o.Package, "hovel-package", "", "pinned wheel file")
 	fs.BoolVar(&o.Offline, "offline", false, "verified cache only")
+	fs.BoolVar(&demo, "demo", false, "sample-data UI preview")
 	fs.BoolVar(&noColor, "no-color", false, "disable colors")
 	fs.Usage = func() { fmt.Fprint(fs.Output(), usage+"\n"+connection.Help) }
 	if e := fs.Parse(args); e != nil {
@@ -68,6 +71,15 @@ func run(args []string) error {
 			return nil
 		}
 		return e
+	}
+	if demo {
+		if fs.NArg() > 0 {
+			return fmt.Errorf("--demo takes no commands")
+		}
+		if !term.IsTerminal(os.Stdin.Fd()) {
+			return fmt.Errorf("demo requires terminal input")
+		}
+		return terminal(newDemoFrame(noColor || os.Getenv("NO_COLOR") != ""), noColor || os.Getenv("NO_COLOR") != "")
 	}
 	if o.Workspace == "" {
 		return fmt.Errorf("--workspace PATH is required; use --help")
@@ -109,7 +121,7 @@ func run(args []string) error {
 	if command == "status" {
 		return json.NewEncoder(os.Stdout).Encode(info)
 	}
-	return terminal(info, noColor || os.Getenv("NO_COLOR") != "", o)
+	return terminal(newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o), noColor || os.Getenv("NO_COLOR") != "")
 }
 
 // Read-only inspection through the public SDK. It cannot bootstrap another

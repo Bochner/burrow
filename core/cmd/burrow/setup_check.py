@@ -367,6 +367,27 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                 terminal.wait()
             os.close(master)
             os.close(slave)
+        # --demo needs neither a workspace nor a Hovel cache, and makes no resources.
+        master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+        demo_cache = root / "unused-demo-cache"
+        terminal = subprocess.Popen([binary, "--demo"], env=env | {"XDG_CACHE_HOME": str(demo_cache)}, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+        output = bytearray()
+        screen_dimensions = ["80", "24"]
+        try:
+            screen = read_until(b"production")
+            assert b"DEMO" in screen and b"127.0.0.1:5432" in screen, screen
+            os.write(master, b"\x03")
+            read_until(b"Quit Burrow?")
+            os.write(master, b"\t\r")
+            assert terminal.wait(timeout=5) == 0
+            assert not demo_cache.exists(), "demo installed Hovel"
+        finally:
+            if terminal.poll() is None:
+                terminal.kill()
+                terminal.wait()
+            os.close(master)
+            os.close(slave)
         # Daemon loss remains an explicit refusal, never an automatic restart.
         run(w, "--offline", ok=False)
         assert receipt.read_text() == original and evidence.read_text() == "keep this evidence"

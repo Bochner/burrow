@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
@@ -189,7 +190,7 @@ func TestNavigationPresentation(t *testing.T) {
 			t.Fatalf("selected workspace offscreen: %s", want)
 		}
 	}
-	if !strings.Contains(m.View().Content, "1–2/10 · wheel") {
+	if !strings.Contains(m.View().Content, "1–2/10") {
 		t.Fatal("shell footer clipped", m.View().Content)
 	}
 	m.activate("hovel")
@@ -249,7 +250,7 @@ func TestCommandPalette(t *testing.T) {
 			t.Fatal("footer background missing")
 		}
 	}
-	if !strings.Contains(ansi.Strip(m.commandHelp()), "Ctrl+P commands") {
+	if !strings.Contains(ansi.Strip(m.commandHelp()), "Ctrl+P menu") {
 		t.Fatal("footer missing command shortcut")
 	}
 }
@@ -269,7 +270,7 @@ func TestNarrowRecovery(t *testing.T) {
 		t.Fatal("narrow controls overlap", content)
 	}
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
-	if !strings.Contains(m.View().Content, "1–1/1 · wheel") {
+	if !strings.Contains(m.View().Content, "No shells") {
 		t.Fatal("short sidebar footer clipped")
 	}
 	if m.current().management.input.Value() != "status" {
@@ -292,5 +293,63 @@ func TestPaletteClipboardOrigin(t *testing.T) {
 	m.Update(late)
 	if m.palette.Value() != "" {
 		t.Fatal("late clipboard changed reopened palette")
+	}
+}
+
+func TestRefinedPresentation(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {160, 40}} {
+		m := newFrame(launch.Info{Workspace: "/tmp/one"}, false, launch.Options{})
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		plain := ansi.Strip(m.View().Content)
+		for _, unwanted := range []string{"This session", "connect NAME HOST", "1–1/1", "AUTH", "DESTINATION"} {
+			if strings.Contains(plain, unwanted) {
+				t.Fatalf("unwanted chrome: %s", unwanted)
+			}
+		}
+		m.current().management.connections = []connection.State{{Name: "gateway", Host: "example.com", User: "operator", Port: 22, State: "connected"}, {Name: "build", Host: "build.example.com", User: "runner", Port: 2222, State: "connecting"}}
+		capturePresentation(t, m, fmt.Sprintf("%dx%d-populated", size[0], size[1]))
+		m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+		lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+		for _, line := range lines {
+			if at := strings.Index(line, "Quit Burrow?"); at >= 0 {
+				left := ansi.StringWidth(line[:at])
+				if absInt(2*left+12-m.width) > 1 {
+					t.Fatal("quit title not centered", line)
+				}
+			}
+		}
+	}
+}
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+func TestDemoPreview(t *testing.T) {
+	m := newDemoFrame(false)
+	if m.Init() != nil || m.check(m.active) != nil {
+		t.Fatal("demo started I/O")
+	}
+	for _, size := range [][2]int{{80, 24}, {160, 40}} {
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		capturePresentation(t, m, fmt.Sprintf("%dx%d-demo", size[0], size[1]))
+		plain := ansi.Strip(m.View().Content)
+		for _, label := range []string{"DEMO", "production", "gateway", "127.0.0.1"} {
+			if !strings.Contains(plain, label) {
+				t.Fatal("missing sample data", label, plain)
+			}
+		}
+	}
+	m.Update(tea.PasteMsg{Content: "connect real host user --key /tmp/key"})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil || m.current().management.busy {
+		t.Fatal("demo executed command")
+	}
+	m.openNew()
+	m.destination.SetValue("/tmp/must-not-launch-demo")
+	if m.submitWorkspace() != nil || m.launchPending {
+		t.Fatal("demo launched workspace")
 	}
 }

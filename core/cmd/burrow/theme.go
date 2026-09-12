@@ -172,7 +172,7 @@ func (m *frame) commandHelp() string {
 	binding := func(keys, label string) key.Binding {
 		return key.NewBinding(key.WithKeys(strings.ToLower(keys)), key.WithHelp(keys, label))
 	}
-	keys := []key.Binding{binding("Ctrl+P", "commands"), binding("F1", "help"), binding("Ctrl+C", "quit")}
+	keys := []key.Binding{binding("Ctrl+P", "menu"), binding("F1", "help"), binding("Ctrl+C", "quit")}
 	if m.current().focus == "prompt" && m.current().tab == "" {
 		keys = append(keys, binding("Tab", "complete"), binding("↑↓", "history"))
 	} else {
@@ -183,9 +183,22 @@ func (m *frame) commandHelp() string {
 }
 
 func (m ui) paletteTitle(width int) string {
-	title := m.paint(accent, "Commands ")
-	for _, c := range lipgloss.Blend1D(max(0, width-9), lipgloss.Color(lavenderColor), lipgloss.Color("#cba6f7")) {
+	title := m.paint(accent, "Menu ")
+	for _, c := range lipgloss.Blend1D(max(0, width-5), lipgloss.Color(lavenderColor), lipgloss.Color("#cba6f7")) {
 		title += m.paint(lipgloss.NewStyle().Foreground(c), "╱")
 	}
 	return title
+}
+
+func centered(text string, width int) string {
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, ansi.Truncate(text, width, "…"))
+}
+func (m ui) button(label string, selected bool, width int) string {
+	prefix := "  "
+	style := pageStyle
+	if selected {
+		prefix = "› "
+		style = selectedStyle
+	}
+	return m.paint(style, centered(prefix+label, width))
 }

@@ -60,6 +60,7 @@ type ui struct {
 	input                                textinput.Model
 	width, height                        int
 	noColor, busy, help, quitting, leave bool
+	demo                                 bool
 	output                               string
 	history                              []string
 	historyIndex                         int
@@ -86,8 +87,7 @@ func newUI(info launch.Info, noColor bool) ui {
 	return ui{info: info, input: input, noColor: noColor, output: "Verified daemon · quit retains workspace resources."}
 }
 
-func terminal(info launch.Info, noColor bool, options launch.Options) error {
-	m := newFrame(info, noColor, options)
+func terminal(m *frame, noColor bool) error {
 	opts := []tea.ProgramOption{}
 	// Aspect captures stdout; keep rendering on the actual controlling terminal.
 	if !term.IsTerminal(os.Stdout.Fd()) {
@@ -217,6 +217,10 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(v, enter):
 			command := strings.TrimSpace(m.input.Value())
+			if m.demo && command != "help" && command != "quit" {
+				m.output = "Sample data only · commands are disabled in preview."
+				return m, nil
+			}
 			if command == "" {
 				return m, nil
 			}
@@ -289,24 +293,14 @@ func fit(s string, w, h int) string {
 	}
 	return strings.Join(lines, "\n")
 }
-func (m ui) resource(title string, headers []string, w int) string {
-	t := table.New().Headers(headers...).Width(w).Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderStyle(separatorStyle).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return tableCell.Bold(true)
-			}
-			return tableCell
-		})
-	return m.paint(heading, title) + "\n" + t.String() + "\n" + m.paint(secondary, "No resources — this capability is not implemented yet.")
-}
-func (m ui) connectionRows() int { return max(1, min(5, m.height-16)) }
+func (m ui) connectionRows() int { return max(1, min(5, m.height-18)) }
 func (m ui) activeConnections(w int) string {
 	title := m.paint(heading, "ACTIVE SSH CONNECTIONS")
 	if m.connectionError != "" {
 		return title + "\n" + m.paint(errorStyle, m.connectionError)
 	}
 	if len(m.connections) == 0 {
-		return title + "\n" + m.paint(secondary, "No connections · ") + m.syntax("connect NAME HOST USER --key PATH")
+		return title + "\n" + m.paint(secondary, "No connections")
 	}
 	start := min(m.connectionOffset, max(0, len(m.connections)-m.connectionRows()))
 	end := min(len(m.connections), start+m.connectionRows())
@@ -317,21 +311,23 @@ func (m ui) activeConnections(w int) string {
 	}
 	var rows [][]string
 	for _, s := range visible {
-		rows = append(rows, []string{safe(s.Name), safe(s.Host), safe(s.User), fmt.Sprint(s.Port), m.paint(connectionStyle(s.State), safe(s.State))})
+		rows = append(rows, []string{"  " + safe(s.Name), m.paint(connectionStyle(s.State), safe(s.State)), fmt.Sprintf("%s@%s:%d", safe(s.User), safe(s.Host), s.Port)})
 	}
 	if w < 60 {
 		var b strings.Builder
 		b.WriteString(title)
 		for _, s := range visible {
-			fmt.Fprintf(&b, "\n%s · %s · %s@%s:%d", safe(s.Name), m.paint(connectionStyle(s.State), safe(s.State)), safe(s.User), safe(s.Host), s.Port)
+			fmt.Fprintf(&b, "\n  %s · %s · %s@%s:%d", safe(s.Name), m.paint(connectionStyle(s.State), safe(s.State)), safe(s.User), safe(s.Host), s.Port)
 		}
 		return b.String() + overflow
 	}
-	return title + "\n" + table.New().Headers("NAME", "HOST", "USER", "PORT", "STATE").Rows(rows...).Width(w).Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderStyle(separatorStyle).StyleFunc(func(row, col int) lipgloss.Style {
+	return title + "\n" + table.New().Headers("  NAME", "STATE", "ENDPOINT").Rows(rows...).Width(w).Wrap(false).Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderStyle(separatorStyle).StyleFunc(func(row, col int) lipgloss.Style {
+		widths := []int{w / 4, min(18, w/4), w - w/4 - min(18, w/4)}
+		cellStyle := tableCell.PaddingLeft(0).PaddingRight(2).Width(widths[col])
 		if row == table.HeaderRow {
-			return tableCell.Foreground(lipgloss.Color(subtextColor)).Bold(true)
+			return cellStyle.Foreground(lipgloss.Color(subtextColor)).Bold(true)
 		}
-		return tableCell
+		return cellStyle
 	}).String() + overflow
 }
 func (m ui) View() tea.View {
@@ -357,17 +353,18 @@ func (m ui) View() tea.View {
 	var b strings.Builder
 
 	bodyW := w
-	content := m.resource("SAVED CONNECTION CONFIGURATIONS", []string{"NAME", "HOST", "USER", "PORT", "AUTH", "SHELL"}, bodyW) + "\n\n" +
-		m.activeConnections(bodyW) + "\n\n" +
-		m.resource("TUNNELS · grouped by connection", []string{"CONNECTION", "ID", "TYPE", "LISTEN", "DESTINATION"}, bodyW)
-	if h < 34 || bodyW < 60 {
-		content = m.paint(heading, "SAVED CONNECTIONS") + m.paint(secondary, " · not implemented") + "\n\n" + m.activeConnections(bodyW) + "\n\n" + m.paint(heading, "TUNNELS") + m.paint(secondary, " · not implemented")
+	content := m.paint(heading, "SAVED CONNECTIONS") + "\n" + m.paint(secondary, "Not implemented") + "\n\n" +
+		m.activeConnections(bodyW) + "\n\n" + m.paint(heading, "TUNNELS") + "\n" + m.paint(secondary, "Not implemented")
+	if m.demo {
+		content = m.demoResources(bodyW)
 	}
 	// Reserve command output space even when endpoint text wraps in the table.
-	content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-7)))
-	outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
-	start := min(m.outputOffset, len(outputLines)-1)
-	content += "\n\n" + m.paint(heading, "COMMAND OUTPUT · PgUp/PgDn scroll") + "\n" + strings.Join(outputLines[start:], "\n")
+	if !m.demo || h >= 30 {
+		content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-7)))
+		outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
+		start := min(m.outputOffset, len(outputLines)-1)
+		content += "\n\n" + m.paint(heading, "COMMAND OUTPUT") + "\n" + strings.Join(outputLines[start:], "\n")
+	}
 	b.WriteString(fit(content, w, max(0, h-3)))
 	footer := "F1 help · Tab completion · Ctrl+C quit"
 	if m.busy {
@@ -408,7 +405,7 @@ func (m ui) View() tea.View {
 }
 
 func (m ui) helpText() string {
-	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P commands (Alt+M), Alt+N New, Alt+W workspace drawer.\nTab completes the prompt. Click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
+	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P menu (Alt+M), Alt+N New, Alt+W workspace drawer.\nTab completes the prompt. Click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
 }
 func (m ui) helpViewport(w, h int) viewport.Model {
 	return scrollBody(m.syntax(m.helpText()), max(1, min(96, w-4)-6), max(1, min(30, h-4)-8), m.helpOffset)
@@ -425,9 +422,9 @@ func (m ui) overlay(base string, w, h int) *lipgloss.Compositor {
 	body := m.helpViewport(w, h).View()
 	footer := m.paint(secondary, "↑↓ scroll · Esc returns")
 	if m.quitting {
-		title = m.paint(accent, "Quit Burrow?")
-		body = fit("Daemon and workspace resources remain.", bodyW, 1)
-		footer = m.paint(secondary, "Tab choose · Enter confirm · Esc cancel")
+		title = centered(m.paint(accent, "Quit Burrow?"), bodyW)
+		body = centered("Daemon and workspace resources remain.", bodyW)
+		footer = centered(m.paint(secondary, "Tab choose · Enter confirm · Esc cancel"), bodyW)
 	}
 	text := title + "\n\n" + body
 	popup := dialogStyle.Width(pw).Height(ph).Render(fit(text, bodyW, ph-4))
@@ -435,11 +432,12 @@ func (m ui) overlay(base string, w, h int) *lipgloss.Compositor {
 	if m.quitting {
 		layers = append(layers, lipgloss.NewLayer(solid(footer, bodyW, 1, popupColor, m.noColor)).X(x+3).Y(y+ph-3).Z(2).ID("modal-footer"))
 		bw := min(20, (bodyW-2)/2)
+		buttonsX := x + 3 + (bodyW-(2*bw+2))/2
 		keepLabel := "Keep working"
 		if bw < 14 {
 			keepLabel = "Keep"
 		}
-		layers = append(layers, lipgloss.NewLayer(solid(m.choice("Quit", m.leave, bw), bw, 1, popupColor, m.noColor)).X(x+3).Y(y+ph-4).Z(2).ID("quit-leave"), lipgloss.NewLayer(solid(m.choice(keepLabel, !m.leave, bw), bw, 1, popupColor, m.noColor)).X(x+5+bw).Y(y+ph-4).Z(2).ID("dismiss"))
+		layers = append(layers, lipgloss.NewLayer(solid(m.button("Quit", m.leave, bw), bw, 1, popupColor, m.noColor)).X(buttonsX).Y(y+ph-4).Z(2).ID("quit-leave"), lipgloss.NewLayer(solid(m.button(keepLabel, !m.leave, bw), bw, 1, popupColor, m.noColor)).X(buttonsX+2+bw).Y(y+ph-4).Z(2).ID("dismiss"))
 	} else {
 		layers = append(layers, lipgloss.NewLayer(solid(footer, bodyW, 1, popupColor, m.noColor)).X(x+3).Y(y+ph-3).Z(2).ID("dismiss"))
 	}

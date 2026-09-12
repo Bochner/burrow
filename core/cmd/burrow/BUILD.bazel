@@ -23,7 +23,7 @@ py_test(
 
 go_binary(
     name = "burrow",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go"],
     deps = [
         "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",
@@ -57,7 +57,7 @@ py_test(
 
 go_test(
     name = "interaction_test",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "frame_test.go", "presentation_test.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "frame_test.go", "presentation_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
         "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",

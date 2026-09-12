@@ -133,7 +133,7 @@ func TestOverflowAndResourceSelection(t *testing.T) {
 	}
 	m.Update(tea.MouseWheelMsg{X: 2, Y: 4, Button: tea.MouseWheelDown})
 	// A wheel changes the list, never the independently anchored controls.
-	if !strings.Contains(m.View().Content, "2–8/21") {
+	if m.navOffset != 1 || !strings.Contains(m.View().Content, "workspace-00") || strings.Contains(m.View().Content, "● one") {
 		t.Fatal(m.View().Content)
 	}
 	m.Update(tea.MouseClickMsg{X: 2, Y: 12, Button: tea.MouseLeft})
@@ -187,7 +187,7 @@ func TestReviewRegressions(t *testing.T) {
 	}
 	m.Update(m.dispatch(m.active, func() tea.Msg { return connectionList{states: rows} })())
 	for i := 0; i < 9; i++ {
-		m.Update(tea.MouseWheelMsg{X: 24, Y: 6, Button: tea.MouseWheelDown})
+		m.Update(tea.MouseWheelMsg{X: 24, Y: 7, Button: tea.MouseWheelDown})
 	}
 	if !strings.Contains(m.View().Content, "row8 · connected") {
 		t.Fatal("mouse cannot scroll inventory", m.View().Content)

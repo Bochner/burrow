@@ -309,3 +309,26 @@ owner acceptance remains a separate walkthrough; this file does not declare it.
 Final validation: `aspect burrow format` and `aspect burrow-check` passed on
 2026-09-12. The gate passed all 15 portable checks and the digest-pinned Docker
 SSH lab, including cross-workspace connection isolation and real PTY workflows.
+
+## Owner refinement and sample preview
+
+The follow-up critique removes the sidebar's “This session” and workspace
+range/wheel labels, aligns New/Menu at opposite inset edges, renames the palette
+heading to Menu, and centers confirmation text/action groups. Context7's Lip
+Gloss placement and table styling documentation was checked before using
+`PlaceHorizontal` and fixed per-column widths. Saved configurations and tunnels
+now use consistent empty-state sections instead of empty header-only tables;
+active SSH instructions remain in help. Active rows reserve a selection gutter
+so highlighting does not shift their columns.
+
+The requested sample data is available with `aspect burrow run -- --demo`.
+It shows saved configurations, SSH states, and tunnels in the same frame, with a
+persistent DEMO label. It skips workspace launch/polling and refuses operational
+commands and workspace creation. It is a presentation preview, not evidence of
+implemented saved-configuration or tunnel capabilities. A real PTY check starts
+it without a workspace or Hovel cache and verifies sample rows and quit.
+Updated empty/populated and centered-dialog captures are in
+`/tmp/burrow-ui-refined/`.
+
+Refinement validation: `aspect burrow format` and the full `aspect burrow-check`
+gate passed, including all 15 portable checks and the Docker SSH lab.
