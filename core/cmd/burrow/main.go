@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -137,7 +138,7 @@ func run(args []string) error {
 	if command == "tui" {
 		fmt.Fprintln(os.Stderr, "Verifying Hovel package and workspace…")
 	}
-	info, e := launch.Open(ctx, o)
+	info, e := openWorkspace(ctx, o)
 	if e != nil {
 		return e
 	}
@@ -145,6 +146,17 @@ func run(args []string) error {
 		return json.NewEncoder(os.Stdout).Encode(info)
 	}
 	return terminal(newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o), noColor || os.Getenv("NO_COLOR") != "")
+}
+
+//go:embed hovel-module.yaml
+var workspaceManifest []byte
+
+func openWorkspace(ctx context.Context, options launch.Options) (launch.Info, error) {
+	info, err := launch.Open(ctx, options)
+	if err == nil {
+		err = launch.RegisterModule(ctx, options.Workspace, "burrow@0.1.0", workspaceManifest)
+	}
+	return info, err
 }
 
 // Read-only inspection through the public SDK. It cannot bootstrap another

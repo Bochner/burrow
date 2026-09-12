@@ -127,6 +127,52 @@ func TestHovelTabStartsOnlyOnExplicitAction(t *testing.T) {
 	}
 }
 
+func TestExitedHovelScrollback(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/scrollback"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	r := m.terminalBounds()
+	h, err := ptyhost.Start(context.Background(), exec.Command("/bin/sh", "-c", "printf '\\033[38;2;180;190;254moldest-row\\033[0m\\n'; i=0; while [ $i -lt 90 ]; do printf 'later-row\\n'; i=$((i+1)); done"), r.Dx(), r.Dy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	select {
+	case <-h.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("fixture did not exit")
+	}
+	m.current().cli = &cliTab{host: h, screen: h.Snapshot()}
+	m.activate("hovel")
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModShift})
+		view := m.View()
+		if !strings.Contains(view.Content, "oldest-row") || !strings.Contains(view.Content, "History") || view.Cursor != nil {
+			t.Fatal(view.Content)
+		}
+		if view.Content != ansi.Strip(view.Content) {
+			t.Fatal("history ignored NO_COLOR")
+		}
+		m.noColor = false
+		screen := capturePresentation(t, m, fmt.Sprintf("hovel-history-%dx%d", size.X, size.Y))
+		bounds := m.terminalBounds()
+		if cell := screen.CellAt(bounds.Min.X, bounds.Min.Y); cell.Content != "o" || !colorMatches(cell.Style.Fg, accent.GetForeground()) {
+			t.Fatal("history lost terminal cell styling", cell)
+		}
+		m.noColor = true
+		frameEvent(m, tea.KeyPressMsg{Code: 'b', Mod: tea.ModAlt})
+		frameEvent(m, tea.KeyPressMsg{Code: 'h', Mod: tea.ModAlt})
+		if !strings.Contains(m.View().Content, "oldest-row") {
+			t.Fatal("tab switch lost scrollback position")
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd, Mod: tea.ModShift})
+		if strings.Contains(m.View().Content, "oldest-row") {
+			t.Fatal("did not return to final output")
+		}
+	}
+}
+
 func TestWorkspaceTabShortcuts(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{Offline: true})
 	defer m.terminals.close()

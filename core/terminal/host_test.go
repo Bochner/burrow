@@ -38,6 +38,15 @@ func TestPTYFixture(t *testing.T) {
 			os.Exit(0)
 		}
 		switch buf[0] {
+		case 'H':
+			fmt.Print("\x1b[?1000l")
+			for i := 0; i < 10045; i++ {
+				fmt.Printf("history-%02d\r\n", i)
+			}
+			if os.Getenv("BURROW_SCROLL_FIXTURE") == "1" {
+				io.ReadFull(os.NewFile(3, "continue"), buf)
+				fmt.Print("ASYNC\r\n")
+			}
 		case 'G':
 			size, _ := unix.IoctlGetWinsize(0, unix.TIOCGWINSZ)
 			fmt.Printf("\r\nSIZE=%dx%d\r\n", size.Col, size.Row)
@@ -54,6 +63,100 @@ func TestPTYFixture(t *testing.T) {
 			fmt.Printf("%02x ", buf[0])
 		}
 	}
+}
+
+func TestPTYScrollback(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestPTYFixture$")
+	cmd.Env = append(os.Environ(), "BURROW_PTY_FIXTURE=1", "BURROW_SCROLL_FIXTURE=1")
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	cmd.ExtraFiles = []*os.File{r}
+	h, err := terminal.Start(context.Background(), cmd, 60, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	wait := func(needle string) terminal.Snapshot {
+		t.Helper()
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+			s := h.Snapshot()
+			if strings.Contains(s.Screen, needle) {
+				return s
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("missing %q: %s", needle, h.Snapshot().Screen)
+		return terminal.Snapshot{}
+	}
+	wait("READY")
+	if err := h.Send(uv.KeyPressEvent{Code: 'H'}); err != nil {
+		t.Fatal(err)
+	}
+	wait("history-10044")
+	h.Send(uv.KeyPressEvent{Code: uv.KeyHome, Mod: uv.ModShift})
+	s := wait("history-00")
+	if s.Visible {
+		t.Fatal("live cursor shown over history")
+	}
+	if _, err := w.Write([]byte("continue")); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(3 * time.Second); h.Snapshot().HistoryLines == s.HistoryLines && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if after := h.Snapshot(); after.Screen != s.Screen || after.HistoryLines <= s.HistoryLines {
+		t.Fatal("background output moved history or stopped draining", after)
+	}
+	if err := h.Send(uv.KeyPressEvent{Code: uv.KeyEnd, Mod: uv.ModShift}); err != nil {
+		t.Fatal(err)
+	}
+	wait("ASYNC")
+	waitOffset := func(offset int) {
+		t.Helper()
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+			if h.Snapshot().ScrollOffset == offset {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("scroll offset: got %d, want %d", h.Snapshot().ScrollOffset, offset)
+	}
+	h.Send(uv.MouseWheelEvent{Button: uv.MouseWheelUp})
+	waitOffset(3)
+	h.Send(uv.KeyPressEvent{Code: uv.KeyPgUp, Mod: uv.ModShift})
+	waitOffset(12)
+	h.Send(uv.KeyPressEvent{Code: uv.KeyPgDown, Mod: uv.ModShift})
+	waitOffset(3)
+	// Adjacent resize/scroll events must use the new pane height in queue order.
+	h.Send(image.Pt(60, 20))
+	h.Send(uv.KeyPressEvent{Code: uv.KeyEnd, Mod: uv.ModShift})
+	h.Send(uv.KeyPressEvent{Code: uv.KeyPgUp, Mod: uv.ModShift})
+	waitOffset(19)
+	h.Send(uv.KeyPressEvent{Code: 'G'})
+	h.Send(uv.KeyPressEvent{Code: uv.KeyHome, Mod: uv.ModShift})
+	wait("history-00")
+	h.Send(uv.KeyPressEvent{Code: 'a', Mod: uv.ModCtrl})
+	wait("alternate")
+	h.Send(uv.KeyPressEvent{Code: uv.KeyHome, Mod: uv.ModShift})
+	if h.Snapshot().ScrollOffset != 0 {
+		t.Fatal("main history leaked into alternate screen")
+	}
+	h.Send(uv.KeyPressEvent{Code: 'b', Mod: uv.ModCtrl})
+	wait("ASYNC")
+	h.Send(uv.KeyPressEvent{Code: 'x', Mod: uv.ModCtrl})
+	select {
+	case <-h.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("fixture did not exit")
+	}
+	if err := h.Send(uv.KeyPressEvent{Code: uv.KeyHome, Mod: uv.ModShift}); err != nil {
+		t.Fatal(err)
+	}
+	wait("history-00")
 }
 func TestOwnedPTY(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

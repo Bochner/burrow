@@ -186,12 +186,13 @@ func (m *frame) closeCLI() tea.Cmd {
 }
 func (m *frame) sendTerminal(event any) {
 	tab := m.current().cli
-	if tab == nil || tab.pending || tab.host == nil || tab.screen.Exited {
+	if tab == nil || tab.pending || tab.host == nil {
 		return
 	}
 	if err := tab.host.Send(event); err != nil {
 		tab.error = safe(err.Error())
 	}
+	tab.screen = tab.host.Snapshot()
 }
 func (m *frame) terminalMouse(msg tea.MouseMsg) {
 	r := m.terminalBounds()

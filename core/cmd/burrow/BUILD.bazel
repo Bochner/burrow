@@ -34,6 +34,7 @@ py_test(
 
 go_binary(
     name = "burrow",
+    embedsrcs = ["hovel-module.yaml"],
     srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go"],
     deps = [
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
@@ -70,6 +71,7 @@ py_test(
 
 go_test(
     name = "interaction_test",
+    embedsrcs = ["hovel-module.yaml"],
     srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "frame_test.go", "presentation_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",

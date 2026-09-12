@@ -2,6 +2,7 @@
 import concurrent.futures
 import fcntl
 import json
+import hashlib
 import os
 from pathlib import Path
 import pty
@@ -197,7 +198,35 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             result = subprocess.run(prefix + ["--", *args], env=env, capture_output=True, text=True, timeout=20)
             assert result.returncode == 0, result.stdout + result.stderr
             return result.stdout
-        hovel("module", "install", package)
+        installed = json.loads(hovel("module", "installed", "--json"))["modules"]
+        assert any(m["name"] == "burrow" for m in installed), installed
+        module = next(m for m in installed if m["name"] == "burrow")
+        source = Path(module["source"])
+        assert module["linked"] and module["installed"], module
+        assert hashlib.sha256((source / "burrow").read_bytes()).digest() == hashlib.sha256(Path(binary).read_bytes()).digest()
+        lock = w / "module-lock.yaml"
+        registered = lock.read_bytes()
+        installed_at = lock.stat().st_mtime_ns
+        assert run(w, "--offline")["pid"] == info["pid"]
+        assert lock.read_bytes() == registered and lock.stat().st_mtime_ns == installed_at, "matching build was reinstalled"
+        # Matching module ID/version is not proof of build provenance.
+        alternate = root / "other-build"
+        alternate.mkdir(mode=0o700)
+        (alternate / "hovel-module.yaml").write_bytes((source / "hovel-module.yaml").read_bytes())
+        (alternate / "burrow").write_bytes(Path(binary).read_bytes() + b"different-build")
+        (alternate / "burrow").chmod(0o700)
+        hovel("module", "install", "--link", str(alternate), "--replace", "--no-scripts")
+        assert run(w, "--offline")["pid"] == info["pid"]
+        assert json.loads(hovel("module", "installed", "--json"))["modules"][0]["source"] == str(source)
+        # Actual installer write failure must refuse setup, retaining the daemon.
+        hovel("module", "uninstall", "burrow@0.1.0")
+        lock.chmod(0o400)
+        try:
+            assert "installation failed" in run(w, "--offline", ok=False)
+        finally:
+            lock.chmod(0o600)
+        assert run(w, "--offline")["pid"] == info["pid"]
+        assert evidence.read_text() == "keep this evidence"
         hovel("op", "create", "setup-check")
         hovel("chain", "create", "setup-check", operator=True)
         hovel("chain", "add", "burrow@0.1.0", operator=True)

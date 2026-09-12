@@ -351,11 +351,7 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	if _, e = os.Lstat(filepath.Dir(path)); !os.IsNotExist(e) {
 		return nil, fmt.Errorf("connection reservation %q exists or cannot be inspected; inspect ownership before manual recovery", filepath.Dir(path))
 	}
-	module, e := launch.CacheModule(ctx, []byte(manifest))
-	if e != nil {
-		return nil, e
-	}
-	if _, e = launch.HovelCLI(ctx, w, "--", "module", "install", "--link", module, "--no-scripts"); e != nil {
+	if e = launch.RegisterModule(ctx, w, "burrow-connection@0.1.0", []byte(manifest)); e != nil {
 		return nil, e
 	}
 	chain := "ssh-" + rand.Text()[:12]

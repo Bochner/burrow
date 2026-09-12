@@ -213,7 +213,7 @@ func (m *frame) submitWorkspace() tea.Cmd {
 	return m.dispatch(m.active, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		info, err := launch.Open(ctx, options)
+		info, err := openWorkspace(ctx, options)
 		return workspaceOpened{info, err, path}
 	})
 }
@@ -928,6 +928,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				if tab.host == nil {
 					text = current.management.paint(errorStyle, tab.error)
 				}
+			}
+			if tab.screen.ScrollOffset > 0 {
+				status = fmt.Sprintf("History %d/%d · %s", tab.screen.ScrollOffset, tab.screen.HistoryLines, status)
 			}
 		}
 		r := m.terminalBounds()

@@ -195,7 +195,7 @@ func CacheModule(ctx context.Context, manifest []byte) (string, error) {
 	if e != nil {
 		return "", e
 	}
-	path := filepath.Join(cache, "burrow", "modules", sum(binary))
+	path := filepath.Join(cache, "burrow", "modules", sum(binary), sum(manifest))
 	dir, e := directory(path, true, true)
 	if e != nil {
 		return "", e
@@ -220,6 +220,65 @@ func CacheModule(ctx context.Context, manifest []byte) (string, error) {
 		}
 	}
 	return path, nil
+}
+
+// RegisterModule installs this build through Hovel and verifies its live catalog.
+// The workspace lock also serializes connection-module registration with setup.
+func RegisterModule(ctx context.Context, workspace, id string, manifest []byte) error {
+	if _, err := Status(ctx, workspace); err != nil {
+		return err
+	}
+	root, err := CacheModule(ctx, manifest)
+	if err != nil {
+		return err
+	}
+	dir, err := directory(workspace, false, false)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	if err = lock(ctx, dir); err != nil {
+		return err
+	}
+	data, err := HovelCLI(ctx, workspace, "--", "module", "installed", "--json")
+	if err != nil {
+		return err
+	}
+	var inventory struct {
+		Modules []struct {
+			ID, Source        string
+			Linked, Installed bool
+		}
+	}
+	if err = json.Unmarshal(data, &inventory); err != nil {
+		return fmt.Errorf("invalid Hovel module inventory")
+	}
+	matching := false
+	for _, module := range inventory.Modules {
+		if module.ID == id && module.Source == root && module.Linked && module.Installed {
+			matching = true
+		}
+	}
+	if !matching {
+		if _, err = HovelCLI(ctx, workspace, "--", "module", "install", "--link", root, "--no-scripts", "--replace"); err != nil {
+			return fmt.Errorf("Burrow module installation failed: %w", err)
+		}
+	}
+	var catalog struct {
+		Modules []struct {
+			ID      string
+			Enabled bool
+		}
+	}
+	if err = Call(ctx, workspace, "GetModuleCatalog", struct{}{}, &catalog); err != nil {
+		return fmt.Errorf("Burrow module discovery failed: %w", err)
+	}
+	for _, module := range catalog.Modules {
+		if module.ID == id && module.Enabled {
+			return nil
+		}
+	}
+	return fmt.Errorf("Burrow module %s is unavailable in the daemon catalog", id)
 }
 
 func rpcInput(conn net.Conn, method string, input, output any) error {

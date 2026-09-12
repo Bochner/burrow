@@ -183,9 +183,9 @@ func (m *frame) commandHelp() string {
 	}
 	keys := []key.Binding{showHovel, binding("Ctrl+P", "menu"), binding("F1", "help"), binding("Ctrl+C", "quit")}
 	if m.terminalFocused() {
-		keys = []key.Binding{showBurrow, binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
+		keys = []key.Binding{showBurrow, binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
 		if m.current().canRestartCLI() {
-			keys = []key.Binding{restartTerminal, showBurrow, binding("Ctrl+]", "frame controls")}
+			keys = []key.Binding{restartTerminal, showBurrow, binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls")}
 		}
 		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 	}

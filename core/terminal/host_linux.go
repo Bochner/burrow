@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,10 +26,11 @@ type Snapshot struct {
 	Cursor                       image.Point
 	Visible, Exited, MouseMotion bool
 	Err                          error
+	ScrollOffset, HistoryLines   int
 }
 
 // Host accepts ordered input/resize events while independently draining output.
-// Screens are memory only; no command transcript or history is recorded here.
+// Screens and scrollback are memory only; no transcript is written to disk.
 type Host struct {
 	mu      sync.Mutex
 	em      *vt.Emulator
@@ -40,6 +42,7 @@ type Host struct {
 	done    chan struct{}
 	stopped chan struct{}
 	stop    sync.Once
+	offset  int
 }
 
 func Start(ctx context.Context, cmd *exec.Cmd, width, height int) (*Host, error) {
@@ -91,7 +94,9 @@ func Start(ctx context.Context, cmd *exec.Cmd, width, height int) (*Host, error)
 	}
 	s := &Host{em: vt.NewEmulator(width, height), pty: master, cmd: cmd, input: make(chan any, 128), done: make(chan struct{}), stopped: make(chan struct{}), modes: make(map[ansi.Mode]bool)}
 	s.state.Visible = true
-	s.em.SetScrollbackSize(0)
+	// Retain this CLI's complete scrollback until it clears history or closes.
+	// The VT allocates lines on demand, not MaxInt cells up front.
+	s.em.SetScrollbackSize(math.MaxInt)
 	s.em.SetCallbacks(vt.Callbacks{
 		CursorVisibility: func(on bool) { s.state.Visible = on },
 		EnableMode:       func(mode ansi.Mode) { s.modes[mode] = true },
@@ -109,7 +114,14 @@ func Start(ctx context.Context, cmd *exec.Cmd, width, height int) (*Host, error)
 			n, err := master.Read(buf)
 			if n > 0 {
 				s.mu.Lock()
+				before := s.em.ScrollbackLen()
 				s.em.Write(buf[:n])
+				if s.offset > 0 {
+					s.offset = min(s.em.ScrollbackLen(), max(0, s.offset+s.em.ScrollbackLen()-before))
+				}
+				if s.em.IsAltScreen() {
+					s.offset = 0
+				}
 				s.mu.Unlock()
 			}
 			if err != nil {
@@ -192,6 +204,12 @@ func (s *Host) Done() <-chan struct{} { return s.stopped }
 func (s *Host) Send(event any) error {
 	select {
 	case <-s.done:
+		s.mu.Lock()
+		local := s.scrollEvent(event)
+		s.mu.Unlock()
+		if local {
+			return nil
+		}
 		return fmt.Errorf("terminal exited")
 	default:
 	}
@@ -209,9 +227,70 @@ func (s *Host) Snapshot() Snapshot {
 	v.Screen = s.em.Render()
 	v.Cursor = s.em.CursorPosition()
 	v.MouseMotion = s.modes[ansi.ModeMouseAnyEvent]
+	v.HistoryLines = s.em.ScrollbackLen()
+	v.ScrollOffset = min(s.offset, v.HistoryLines)
+	if v.ScrollOffset > 0 && !s.em.IsAltScreen() {
+		buf := uv.NewRenderBuffer(s.em.Width(), s.em.Height())
+		start := v.HistoryLines - v.ScrollOffset
+		for y := range s.em.Height() {
+			for x := range s.em.Width() {
+				cell := s.em.ScrollbackCellAt(x, start+y)
+				if start+y >= v.HistoryLines {
+					cell = s.em.CellAt(x, start+y-v.HistoryLines)
+				}
+				buf.SetCell(x, y, cell)
+			}
+		}
+		v.Screen, v.Visible = buf.Render(), false
+	}
 	return v
 }
+
+// Shift navigation belongs to the host. Ordinary keys still reach interactive apps.
+func (s *Host) scrollEvent(event any) bool {
+	if s.em.IsAltScreen() {
+		return false
+	}
+	delta := 0
+	switch v := event.(type) {
+	case uv.KeyPressEvent:
+		if v.Mod != uv.ModShift {
+			return false
+		}
+		switch v.Code {
+		case uv.KeyPgUp:
+			delta = max(1, s.em.Height()-1)
+		case uv.KeyPgDown:
+			delta = -max(1, s.em.Height()-1)
+		case uv.KeyHome:
+			delta = s.em.ScrollbackLen()
+		case uv.KeyEnd:
+			delta = -s.offset
+		default:
+			return false
+		}
+	case uv.MouseWheelEvent:
+		if s.modes[ansi.ModeMouseNormal] || s.modes[ansi.ModeMouseButtonEvent] || s.modes[ansi.ModeMouseAnyEvent] || s.modes[ansi.ModeMouseX10] {
+			return false
+		}
+		switch v.Button {
+		case uv.MouseWheelUp:
+			delta = 3
+		case uv.MouseWheelDown:
+			delta = -3
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+	s.offset = max(0, min(s.em.ScrollbackLen(), s.offset+delta))
+	return true
+}
 func (s *Host) inputEvent(event any) {
+	if s.scrollEvent(event) {
+		return
+	}
 	switch v := event.(type) {
 	case image.Point:
 		if v.X < 1 || v.Y < 1 || v.X > 1000 || v.Y > 1000 {
@@ -234,6 +313,7 @@ func (s *Host) inputEvent(event any) {
 			s.state.Err = err
 		}
 	case uv.KeyPressEvent:
+		s.offset = 0
 		// x/vt's legacy matcher compares the whole struct; discard event metadata.
 		if v.Text != "" && v.Mod & ^uv.ModShift == 0 {
 			s.em.SendText(v.Text)
@@ -241,6 +321,7 @@ func (s *Host) inputEvent(event any) {
 			s.em.SendKey(uv.KeyPressEvent{Code: v.Code, Mod: v.Mod})
 		}
 	case string:
+		s.offset = 0
 		// Unbracketed pasted newlines must not execute commands implicitly.
 		if !s.modes[ansi.ModeBracketedPaste] {
 			v = strings.NewReplacer("\r", " ", "\n", " ").Replace(v)

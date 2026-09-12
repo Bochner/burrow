@@ -100,7 +100,6 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
     try:
         a, b = root / "a", root / "b"
         info_a, info_b = status(a), status(b)
-        cli(a, "module", "install", package)
         executable = root / "cache/burrow/hovel/0.4.2/hovel"
         absent = root / "no-start"
         refused = subprocess.run([str(executable), "shell", "--workspace", str(absent)], env=env | {"HOVEL_DAEMON_ENDPOINT": str(absent / "hoveld.sock")}, capture_output=True, timeout=10)
@@ -113,6 +112,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         send("management-draft")
         click(39, 1)
         wait("h0v3l>")
+        wait("modules: 1")
         # A harmless read-only module still travels through Hovel's plan/confirm contract.
         command("op create embedded-a", "Operation selected: embedded-a")
         command("chain create check", "steps:0")
@@ -142,6 +142,16 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         command("review", "yes", False)
         command("yes", "confirmed")
         command("throw", "Verified Burrow workspace")
+        # Scroll the real CLI back to its historical startup banner, then resume.
+        send(b"\x1b[1;2H")  # Shift+Home
+        wait("modules: 1")
+        wait("History")
+        send(b"\x1b[1;2F")  # Shift+End
+        wait("h0v3l", True)
+        send(b"\x1b[<64;45;15M")  # wheel up inside the CLI pane
+        wait("History")
+        send(b"\x1b[1;2F")
+        wait("h0v3l", True)
         completed = cli(a, "throw", "inspect", plan_id, "--events", "--json")
         assert "hovel.throw.started" in completed and "hovel.throw.completed" in completed, completed
         click(2, 4)
