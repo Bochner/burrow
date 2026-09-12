@@ -16,6 +16,12 @@ specification. `core/prototype_*` contains bounded proofs, not a production SSH 
   workflows in `.aspect/*.axl` and cacheable work in declared Bazel targets.
 - Pin upstream versions and record provenance. Prefer the public Hovel SDK and
   protocol; do not import `core/internal` or duplicate daemon-owned state.
+- Expose all Burrow capabilities through the single base `burrow` Hovel module.
+  A second public module identity requires an explicit owner requirement recorded
+  in the originating issue, with the reason the base module cannot satisfy it.
+  Internal Go packages, subprocesses and retained sessions may remain separate;
+  they do not justify another public module. Review module registration changes
+  against this rule.
 - Keep Go application behavior independent of terminal rendering. Hovel module
   stdout belongs exclusively to framed JSON-RPC; progress uses SDK logging.
 - Reuse existing code, the Go standard library, and Hovel capabilities before
