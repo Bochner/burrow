@@ -147,17 +147,11 @@ func (m *frame) resize() {
 		w.management.input.SetWidth(max(1, w.management.width-4))
 	}
 }
-func (m *frame) columns() (int, int) {
-	left, right := 0, 0
-	if m.width >= 70 {
-		left = 22
-	}
-	if m.width >= 128 {
-		left = 26
-		right = 32
-	}
-	return left, right
-}
+
+const minimumWidth, minimumHeight = 160, 40
+
+func (m *frame) tooSmall() bool      { return m.width < minimumWidth || m.height < minimumHeight }
+func (m *frame) columns() (int, int) { return 26, 32 }
 func (m *frame) selectWorkspace(i int) tea.Cmd {
 	if i < 0 || i >= len(m.paths) {
 		return nil
@@ -323,7 +317,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.noColor = m.current().management.noColor
 		return m, nil
 	case tea.MouseMsg:
-		if m.width < 28 || m.height < 16 {
+		if m.tooSmall() {
 			return m, nil
 		}
 		// All pointer types are captured by the active modal, including the child's
@@ -385,7 +379,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.activate(hit.ID())
 	case tea.PasteMsg:
-		if m.width < 28 || m.height < 16 || m.current().management.help || m.current().management.quitting {
+		if m.tooSmall() || m.current().management.help || m.current().management.quitting {
 			return m, nil
 		}
 		if m.modal == "menu" {
@@ -403,14 +397,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.KeyPressMsg:
-		if (m.width < 28 || m.height < 16) && !m.current().management.quitting {
+		if m.tooSmall() {
 			if key.Matches(v, quit) {
-				m.current().management.help = false
-				return m, m.updateManagement(m.active, v)
-			}
-			if key.Matches(v, escape) {
-				m.modal = ""
-				m.current().management.help = false
+				return m, tea.Quit
 			}
 			return m, nil
 		}
@@ -691,30 +680,79 @@ func (m *frame) scrollMetadata(delta int) {
 }
 func (m *frame) metadata() string {
 	w := m.current()
-	state, _ := w.health(m.now)
-	age := "never"
+	u := w.management
+	field := func(label, value string, style lipgloss.Style) string {
+		if value == "Unavailable" || value == "Unknown" || value == "Never" {
+			style = secondary
+		}
+		return u.paint(secondary, label+": ") + u.paint(style, value)
+	}
+	section := func(label string) string { return u.paint(accent, label) }
+	state, statusStyle := w.health(m.now)
+	connected := 0
+	for _, row := range u.connections {
+		if row.State == "connected" || row.State == "active" {
+			connected++
+		}
+	}
+	connectionState := "DISCONNECTED"
+	connectionColor := errorStyle
+	if !u.connectionObserved && len(u.connections) == 0 {
+		connectionState = "UNKNOWN"
+		connectionColor = secondary
+	}
+	if connected > 0 {
+		connectionState = "CONNECTED"
+		connectionColor = successStyle
+	}
+	selected := field("Selection", "None", secondary)
+	details := ""
+	for _, row := range u.connections {
+		if row.Name != w.selected {
+			continue
+		}
+		connectionState = strings.ToUpper(safe(row.State))
+		if row.State == "closed" || row.State == "lost" {
+			connectionState = "DISCONNECTED · " + strings.ToUpper(row.State)
+		}
+		connectionColor = connectionStyle(row.State)
+		selected = field("Name", safe(row.Name), accent) + "\n" + field("Host", safe(row.Host), hostStyle) + "\n" + field("User", safe(row.User), successStyle) + "\n" + field("Port", fmt.Sprint(row.Port), warningStyle)
+		socket := safe(row.Socket)
+		if socket == "" {
+			socket = "Unavailable"
+		}
+		details = "\n\n" + section("CONNECTION DETAILS") + "\n" + field("Socket", socket, secondary) + "\n" + field("Owner PID", fmt.Sprint(row.OwnerPID), numberStyle) + "\n" + field("Master PID", fmt.Sprint(row.MasterPID), numberStyle)
+		break
+	}
+	if u.connectionError != "" {
+		connectionState = "UNVERIFIED"
+		connectionColor = warningStyle
+	}
+	files, bytes := "Unavailable", "Unavailable"
+	transferNote := "Transfers not implemented"
+	if m.demo {
+		files, bytes = "12", "48.6 MiB"
+		transferNote = "Sample downloads"
+	}
+	count := fmt.Sprint(connected)
+	if !u.connectionObserved && len(u.connections) == 0 {
+		count = "Unknown"
+	}
+	text := section("SELECTED CONNECTION") + "\n" + u.paint(connectionColor.Bold(true), connectionState) + "\n" + selected + "\n" + field("Active in workspace", count, numberStyle) + "\n\n" +
+		section("WORKSPACE DOWNLOADS") + "\n" + field("Files", files, numberStyle) + "\n" + field("Total size", bytes, numberStyle) + "\n" + u.paint(secondary, transferNote) + "\n\n" +
+		section("HOVEL DAEMON") + "\n"
+	if m.demo {
+		return text + u.paint(warningStyle, "DEMO · no daemon") + details
+	}
+	age := "Never"
 	if !w.lastSuccess.IsZero() {
 		age = fmt.Sprintf("%ds ago", max(0, int(m.now.Sub(w.lastSuccess).Seconds())))
 	}
-	selected := "None · F6 resources, ↑↓ select"
-	for _, row := range w.management.connections {
-		if row.Name == w.selected {
-			selected = fmt.Sprintf("%s\n%s@%s:%d\nSSH: %s", safe(row.Name), safe(row.User), safe(row.Host), row.Port, safe(row.State))
-		}
-	}
-	if m.demo {
-		return "SAMPLE DATA\n\n" + selected + "\n\nPreview only\nNo daemon or remote connections."
-	}
-	owner := "No connection owner observed"
-	if len(w.management.connections) > 0 {
-		owner = "Connection owner observed"
-	}
-	if w.management.connectionError != "" {
-		owner = w.management.connectionError
-	}
-	text := fmt.Sprintf("SELECTED CONNECTION\n%s\n\nRESOURCES\n%d SSH connections (snapshot)\n%s\nShells / runs / transfers:\nNot implemented\n\nHOVEL DAEMON: %s\nLast success: %s\nVerification duration: %s\nLast known PID %d\nEndpoint: %s\nWorkspace: %s\n%s", selected, len(w.management.connections), owner, state, age, w.duration.Round(time.Millisecond), w.management.info.PID, safe(filepath.Join(m.active, "hoveld.sock")), safe(m.active), w.failure)
-	for _, label := range []string{"SELECTED CONNECTION", "RESOURCES", "HOVEL DAEMON"} {
-		text = strings.Replace(text, label, w.management.paint(heading, label), 1)
+	text += u.paint(statusStyle, strings.ToUpper(state)) + "\n" + field("Last success", age, infoStyle) + "\n" + field("Latency", w.duration.Round(time.Millisecond).String(), numberStyle) + "\n" + u.paint(secondary, "Last known ") + u.paint(numberStyle, fmt.Sprintf("PID %d", u.info.PID))
+	// Keep identity paths after operational metrics so narrow sidebars show health first.
+	text += "\n\n" + section("WORKSPACE") + "\n" + u.paint(secondary, safe(m.active)) + "\n" + field("Endpoint", safe(filepath.Join(m.active, "hoveld.sock")), secondary) + details
+	if w.failure != "" {
+		text += "\n" + u.paint(errorStyle, w.failure)
 	}
 	return text
 }
@@ -744,22 +782,10 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	state, style := current.health(m.now)
 	status := current.management.paint(style, "● Hovel: "+state)
 	cx, cw := left+2, w-left-right-4
-	statusY := 1
-	statusWidth := min(w, 26)
-	if w-27 < cx+26 {
-		statusY = 0
-	}
-	if left == 0 && w < 54 {
-		statusWidth = w / 2
-		status = current.management.paint(style, "Hovel: "+state)
-	}
 	if m.demo {
 		status = current.management.paint(warningStyle, "DEMO · sample data")
 	}
-	add("daemon", status, w-statusWidth, statusY, statusWidth, 1, 2)
-	if left == 0 {
-		add("navigation", current.management.paint(heading, "[Workspaces]"), 1, 0, min(14, w/2-1), 1, 2)
-	}
+	add("daemon", status, w-26, 1, 26, 1, 2)
 	tabStyle, hovelStyle := activeStyle, secondary
 	tabLabel, hovelLabel := "› Burrow", "  Hovel · soon"
 	if current.tab != "" {
@@ -782,7 +808,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			inActive = true
 			continue
 		}
-		if strings.Contains(plain, "TUNNELS") {
+		if strings.HasPrefix(strings.TrimSpace(plain), "TUNNELS") {
 			inActive = false
 		}
 		if !inActive {
@@ -837,9 +863,6 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		add("new", current.management.paint(heading, label("new", "[New]")), 1, midpoint, width/2, 1, z+1)
 		add("menu", lipgloss.PlaceHorizontal(width-width/2, lipgloss.Right, current.management.paint(heading, label("menu", "[Menu]"))), 1+width/2, midpoint, width-width/2, 1, z+1)
 		gap, groupHeight := "\n\n", 3
-		if h-midpoint-3 < 6 {
-			gap, groupHeight = "\n", 2
-		}
 		rows = max(1, (h-midpoint-6)/groupHeight)
 		start = min(current.shellOffset, max(0, len(m.paths)-1))
 		end = min(len(m.paths), start+rows)
@@ -926,12 +949,12 @@ func (m *frame) dialogBounds() image.Rectangle {
 	return image.Rect(x, y, x+pw, y+ph)
 }
 func (m *frame) View() tea.View {
-	// Preserve the existing tiny-terminal quit recovery, with no stale click targets.
-	if m.height < 16 || m.width < 28 {
-		u := m.current().management
-		u.width = m.width
-		u.height = min(m.height, 11)
-		return u.View()
+	if m.tooSmall() {
+		text := fmt.Sprintf("Resize window\nMinimum %d × %d\nCurrent %d × %d\nCtrl+C to quit", minimumWidth, minimumHeight, m.width, m.height)
+		text = m.current().management.paint(accent, text)
+		v := tea.NewView(solid(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, fit(text, m.width, min(4, m.height))), m.width, m.height, baseColor, m.noColor))
+		v.AltScreen = true
+		return v
 	}
 	base := m.compositor().Render()
 	if m.noColor {

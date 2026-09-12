@@ -58,7 +58,7 @@ func capturePresentation(t *testing.T, m *frame, name string) *vt.Emulator {
 	return screen
 }
 func TestPresentation(t *testing.T) {
-	for _, size := range [][2]int{{80, 24}, {160, 40}} {
+	for _, size := range [][2]int{{160, 40}, {200, 50}} {
 		m := newFrame(launch.Info{Workspace: "/tmp/presentation-workspace", PID: 123}, false, launch.Options{})
 		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		prefix := fmt.Sprintf("%dx%d", size[0], size[1])
@@ -175,7 +175,7 @@ func TestSemanticOutput(t *testing.T) {
 
 func TestNavigationPresentation(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{})
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	for i := 0; i < 9; i++ {
 		p := fmt.Sprintf("/tmp/ws%d", i)
 		m.paths = append(m.paths, p)
@@ -190,7 +190,7 @@ func TestNavigationPresentation(t *testing.T) {
 			t.Fatalf("selected workspace offscreen: %s", want)
 		}
 	}
-	if !strings.Contains(m.View().Content, "1–2/10") {
+	if !strings.Contains(m.View().Content, "1–4/10") {
 		t.Fatal("shell footer clipped", m.View().Content)
 	}
 	m.activate("hovel")
@@ -201,7 +201,7 @@ func TestNavigationPresentation(t *testing.T) {
 
 func TestCommandPalette(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, false, launch.Options{})
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	m.Update(tea.PasteMsg{Content: "saved draft"})
 	m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
 	if m.modal != "menu" {
@@ -216,7 +216,7 @@ func TestCommandPalette(t *testing.T) {
 	if m.menuIndex != 0 || len(m.menuMatches()) != 1 {
 		t.Fatal("filter did not reset selection")
 	}
-	capturePresentation(t, m, "80x24-palette-filtered")
+	capturePresentation(t, m, "160x40-palette-filtered")
 	if helpBorders(m.View().Content) != original {
 		t.Fatal("filter resized palette")
 	}
@@ -232,7 +232,7 @@ func TestCommandPalette(t *testing.T) {
 	if m.View().Content == bottom {
 		t.Fatal("metadata scroll stuck beyond end")
 	}
-	capturePresentation(t, m, "80x24-metadata")
+	capturePresentation(t, m, "160x40-metadata")
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
 	m.Update(tea.PasteMsg{Content: "no such command"})
@@ -244,7 +244,7 @@ func TestCommandPalette(t *testing.T) {
 	if m.current().management.input.Value() != "saved draft" {
 		t.Fatal("palette changed prompt")
 	}
-	screen := capturePresentation(t, m, "80x24-command-footer")
+	screen := capturePresentation(t, m, "160x40-command-footer")
 	for x := 0; x < m.width; x++ {
 		if !colorMatches(screen.CellAt(x, m.height-1).Style.Bg, lipgloss.Color("#11111b")) {
 			t.Fatal("footer background missing")
@@ -255,32 +255,38 @@ func TestCommandPalette(t *testing.T) {
 	}
 }
 
-func TestNarrowRecovery(t *testing.T) {
-	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{})
+func TestMinimumTerminalSize(t *testing.T) {
+	m := newDemoFrame(true)
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.Update(tea.PasteMsg{Content: "saved draft"})
+	for _, size := range [][2]int{{159, 40}, {160, 39}, {80, 24}, {40, 16}, {1, 1}} {
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m.Update(tea.PasteMsg{Content: "hidden paste"})
+		m.Update(tea.MouseClickMsg{X: 2, Y: 20, Button: tea.MouseLeft})
+		if cmd != nil || m.current().management.busy || m.View().Cursor != nil || m.modal != "" || m.current().management.input.Value() != "saved draft" {
+			t.Fatal("undersized terminal accepted hidden input")
+		}
+		plain := ansi.Strip(m.View().Content)
+		if size[0] >= 40 && (!strings.Contains(plain, "160 × 40") || strings.Contains(plain, "ACTIVE SSH")) {
+			t.Fatal(plain)
+		}
+		capturePresentation(t, m, fmt.Sprintf("%dx%d-resize", size[0], size[1]))
+	}
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	if plain := ansi.Strip(m.View().Content); !strings.Contains(plain, "gateway") || !strings.Contains(plain, "saved draft") {
+		t.Fatal("resize lost state", plain)
+	}
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m.Update(tea.PasteMsg{Content: "status"})
-	m.Update(tea.WindowSizeMsg{Width: 24, Height: 24})
-	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd != nil || m.current().management.busy || m.View().Cursor != nil {
-		t.Fatal("hidden prompt remained active")
-	}
-	m.Update(tea.WindowSizeMsg{Width: 32, Height: 24})
-	content := m.View().Content
-	if !strings.Contains(content, "[Workspaces]") || !strings.Contains(content, "Hovel: unknown") {
-		t.Fatal("narrow controls overlap", content)
-	}
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
-	if !strings.Contains(m.View().Content, "No shells") {
-		t.Fatal("short sidebar footer clipped")
-	}
-	if m.current().management.input.Value() != "status" {
-		t.Fatal("resize lost draft")
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if cmd == nil {
+		t.Fatal("undersized terminal cannot quit")
 	}
 }
 
 func TestPaletteClipboardOrigin(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{})
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	m.Update(tea.PasteMsg{Content: "draft"})
 	m.openPalette()
 	paste := func() tea.Msg { return tea.PasteMsg{Content: "meta"} }
@@ -297,7 +303,7 @@ func TestPaletteClipboardOrigin(t *testing.T) {
 }
 
 func TestRefinedPresentation(t *testing.T) {
-	for _, size := range [][2]int{{80, 24}, {160, 40}} {
+	for _, size := range [][2]int{{160, 40}, {200, 50}} {
 		m := newFrame(launch.Info{Workspace: "/tmp/one"}, false, launch.Options{})
 		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		plain := ansi.Strip(m.View().Content)
@@ -332,11 +338,11 @@ func TestDemoPreview(t *testing.T) {
 	if m.Init() != nil || m.check(m.active) != nil {
 		t.Fatal("demo started I/O")
 	}
-	for _, size := range [][2]int{{80, 24}, {160, 40}} {
+	for _, size := range [][2]int{{160, 40}, {200, 50}} {
 		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		capturePresentation(t, m, fmt.Sprintf("%dx%d-demo", size[0], size[1]))
 		plain := ansi.Strip(m.View().Content)
-		for _, label := range []string{"DEMO", "production", "gateway", "127.0.0.1"} {
+		for _, label := range []string{"DEMO", "production", "gateway", "5432"} {
 			if !strings.Contains(plain, label) {
 				t.Fatal("missing sample data", label, plain)
 			}
@@ -351,5 +357,55 @@ func TestDemoPreview(t *testing.T) {
 	m.destination.SetValue("/tmp/must-not-launch-demo")
 	if m.submitWorkspace() != nil || m.launchPending {
 		t.Fatal("demo launched workspace")
+	}
+}
+
+// Project presentation contract: compare final rendered cells to semantic roles,
+// not merely the palette function's return value.
+func TestTableAndMetadataRoles(t *testing.T) {
+	m := newDemoFrame(false)
+	m.current().selected = ""
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	screen := capturePresentation(t, m, "160x40-semantic-tables")
+	expect := map[string]string{"production": "#b4befe", "gateway.example.com": "#f5c2e7", "operator": "#a6e3a1", "2222": "#f9e2af", "id_ed25519": "#94e2d5", "48.6 MiB": "#fab387"}
+	for value, hex := range expect {
+		found := false
+		for y := 0; y < m.height; y++ {
+			var line strings.Builder
+			for x := 0; x < m.width; x++ {
+				line.WriteString(screen.CellAt(x, y).Content)
+			}
+			at := strings.Index(line.String(), value)
+			if at < 0 {
+				continue
+			}
+			x := ansi.StringWidth(line.String()[:at])
+			if !colorMatches(screen.CellAt(x, y).Style.Fg, lipgloss.Color(hex)) {
+				t.Fatalf("%s lost semantic color %s", value, hex)
+			}
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("required field/value missing: %s", value)
+		}
+	}
+	live := newFrame(launch.Info{Workspace: "/tmp/live"}, true, launch.Options{})
+	live.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	if !strings.Contains(live.metadata(), "Files: Unavailable") || strings.Contains(live.metadata(), "Files: 0") {
+		t.Fatal("unavailable downloads misreported")
+	}
+	live.current().management.connectionObserved = true
+	if !strings.Contains(live.metadata(), "DISCONNECTED") {
+		t.Fatal("empty observed snapshot not disconnected")
+	}
+	live.current().management.connectionError = "owner unavailable"
+	if !strings.Contains(live.metadata(), "UNVERIFIED") {
+		t.Fatal("failed observation presented as disconnected")
+	}
+	m.noColor = true
+	m.current().management.noColor = true
+	if ansi.Strip(m.View().Content) != m.View().Content {
+		t.Fatal("NO_COLOR leaked styles")
 	}
 }

@@ -40,7 +40,6 @@ var errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f38ba8"))
 var numberStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#fab387"))
 var keywordStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#cba6f7"))
 var dialogStyle = pageStyle.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(lavenderColor)).Padding(1, 2)
-var tableCell = pageStyle.Padding(0, 1)
 
 // Adapted from the accepted prototype's overlay: fill only unspecified cells.
 // Styling an ANSI string after composition leaves reset/background holes; forcing
@@ -154,7 +153,7 @@ func connectionStyle(state string) lipgloss.Style {
 	switch state {
 	case "connected", "active":
 		return successStyle
-	case "failed", "unverified":
+	case "failed", "lost", "closed", "disconnected", "unverified":
 		return errorStyle
 	case "connecting", "reconnecting":
 		return warningStyle
@@ -201,4 +200,31 @@ func (m ui) button(label string, selected bool, width int) string {
 		style = selectedStyle
 	}
 	return m.paint(style, centered(prefix+label, width))
+}
+
+// LazySSH separates field roles; mapped to Catppuccin rather than decoration.
+var hostStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f5c2e7"))
+var infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
+
+func fieldStyle(header string) lipgloss.Style {
+	switch header {
+	case "NAME", "ID", "CONNECTION":
+		return accent
+	case "HOST", "REMOTE":
+		return hostStyle
+	case "USER":
+		return successStyle
+	case "PORT", "LOCAL PORT":
+		return warningStyle
+	case "KEY", "SHELL", "PROXY":
+		return infoStyle
+	case "TERM", "TYPE":
+		return keywordStyle
+	case "TUNNELS":
+		return numberStyle
+	case "SOCKET", "NO-TERM":
+		return secondary
+	default:
+		return pageStyle
+	}
 }

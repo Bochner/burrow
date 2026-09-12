@@ -231,14 +231,14 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
 
         # Real PTY input, draft-preserving help, safe paste, resizing and quit.
         master, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         before = termios.tcgetattr(slave)
         def controlling():
             os.setsid()
             fcntl.ioctl(0, termios.TIOCSCTTY, 0)
         terminal = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"], env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
         output = bytearray()
-        screen_dimensions = ["80", "24"]
+        screen_dimensions = ["160", "40"]
         def read_until(needle):
             deadline = time.monotonic() + 8
             fresh = bytearray()
@@ -275,8 +275,8 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[A\r")
             read_until(("● " + w.name).encode())
-            # Mouse opens midpoint New at the resized 80x24 geometry.
-            os.write(master, b"\x1b[<0;3;13M\x1b[<0;3;13m")
+            # Mouse opens midpoint New at the 160x40 geometry.
+            os.write(master, b"\x1b[<0;3;21M\x1b[<0;3;21m")
             read_until(b"Exact destination")
             os.write(master, b"\x1b")
             time.sleep(.2)
@@ -300,7 +300,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             time.sleep(.1)
             assert terminal.poll() is None, "paste executed"
             os.write(master, b"\x15")  # discard pasted draft
-            for height, width in [(8, 30), (2, 8), (32, 160), (24, 80)]:
+            for height, width in [(8, 30), (2, 8), (50, 200), (40, 160)]:
                 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
                 os.kill(terminal.pid, signal.SIGWINCH)
                 time.sleep(.1)
@@ -320,7 +320,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.close(master)
             os.close(slave)
         assert run(w, "--offline")["pid"] == info["pid"]
-        # A short color terminal must visibly show both quit choices.
+        # An undersized color terminal shows a resize notice and recovers.
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 8, 30, 0, 0))
         before = termios.tcgetattr(slave)
@@ -331,15 +331,9 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         screen_dimensions = ["30", "8"]
         try:
             read_until(b"Resize window")
-            os.write(master, b"\x03")
-            read_until("› Keep".encode())
-            os.write(master, b"\t")
-            read_until("› Quit".encode())
             assert b"38;2;180;190;254" in output, "Catppuccin lavender missing"
-            os.write(master, b"\x1b")
-            read_until(b"Resize window")
-            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 160, 0, 0))
-            screen_dimensions = ["160", "32"]
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+            screen_dimensions = ["160", "40"]
             os.kill(terminal.pid, signal.SIGWINCH)
             read_until(f"PID {info['pid']}".encode())
             os.write(master, b"\x10")
@@ -369,14 +363,14 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.close(slave)
         # --demo needs neither a workspace nor a Hovel cache, and makes no resources.
         master, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         demo_cache = root / "unused-demo-cache"
         terminal = subprocess.Popen([binary, "--demo"], env=env | {"XDG_CACHE_HOME": str(demo_cache)}, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
         output = bytearray()
-        screen_dimensions = ["80", "24"]
+        screen_dimensions = ["160", "40"]
         try:
             screen = read_until(b"production")
-            assert b"DEMO" in screen and b"127.0.0.1:5432" in screen, screen
+            assert b"DEMO" in screen and b"5432" in screen, screen
             os.write(master, b"\x03")
             read_until(b"Quit Burrow?")
             os.write(master, b"\t\r")

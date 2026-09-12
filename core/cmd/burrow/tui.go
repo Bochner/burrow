@@ -61,6 +61,7 @@ type ui struct {
 	width, height                        int
 	noColor, busy, help, quitting, leave bool
 	demo                                 bool
+	connectionObserved                   bool
 	output                               string
 	history                              []string
 	historyIndex                         int
@@ -110,6 +111,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connectionTick:
 		return m, refreshConnections(m.info.Workspace)
 	case connectionList:
+		m.connectionObserved = true
 		if v.err != nil {
 			m.connectionError = "UNVERIFIED · connection owner status unavailable"
 			for i := range m.connections {
@@ -293,7 +295,7 @@ func fit(s string, w, h int) string {
 	}
 	return strings.Join(lines, "\n")
 }
-func (m ui) connectionRows() int { return max(1, min(5, m.height-18)) }
+func (m ui) connectionRows() int { return 5 }
 func (m ui) activeConnections(w int) string {
 	title := m.paint(heading, "ACTIVE SSH CONNECTIONS")
 	if m.connectionError != "" {
@@ -309,47 +311,39 @@ func (m ui) activeConnections(w int) string {
 	if len(visible) < len(m.connections) {
 		overflow = fmt.Sprintf("\n%d–%d of %d · Alt+↑↓ scroll", start+1, end, len(m.connections))
 	}
+	headers := []string{"NAME", "HOST", "USER", "PORT", "PROXY", "TERM", "TUNNELS", "SOCKET"}
 	var rows [][]string
-	for _, s := range visible {
-		rows = append(rows, []string{"  " + safe(s.Name), m.paint(connectionStyle(s.State), safe(s.State)), fmt.Sprintf("%s@%s:%d", safe(s.User), safe(s.Host), s.Port)})
-	}
-	if w < 60 {
-		var b strings.Builder
-		b.WriteString(title)
-		for _, s := range visible {
-			fmt.Fprintf(&b, "\n  %s · %s · %s@%s:%d", safe(s.Name), m.paint(connectionStyle(s.State), safe(s.State)), safe(s.User), safe(s.Host), s.Port)
+	for _, row := range visible {
+		proxy, terminal, tunnels := "—", "—", "—"
+		if m.demo {
+			proxy, terminal, tunnels = "1080", "Native", "2"
 		}
-		return b.String() + overflow
-	}
-	return title + "\n" + table.New().Headers("  NAME", "STATE", "ENDPOINT").Rows(rows...).Width(w).Wrap(false).Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderStyle(separatorStyle).StyleFunc(func(row, col int) lipgloss.Style {
-		widths := []int{w / 4, min(18, w/4), w - w/4 - min(18, w/4)}
-		cellStyle := tableCell.PaddingLeft(0).PaddingRight(2).Width(widths[col])
-		if row == table.HeaderRow {
-			return cellStyle.Foreground(lipgloss.Color(subtextColor)).Bold(true)
+		socket := safe(row.Socket)
+		if socket == "" {
+			socket = "—"
 		}
-		return cellStyle
-	}).String() + overflow
+		rows = append(rows, []string{"  " + safe(row.Name), safe(row.Host), safe(row.User), fmt.Sprint(row.Port), proxy, terminal, tunnels, socket})
+	}
+	return m.dataTable("ACTIVE SSH CONNECTIONS", headers, rows, w) + overflow
+}
+
+// Preserve field identity through color, padding and headers.
+func (m ui) dataTable(title string, headers []string, rows [][]string, w int) string {
+	return m.paint(heading, title) + "\n" + table.New().Headers(headers...).Rows(rows...).Width(w).Wrap(false).
+		Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderStyle(separatorStyle).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			style := fieldStyle(headers[col]).PaddingRight(1)
+			if row == table.HeaderRow {
+				return accent.PaddingRight(1)
+			}
+			if rows[row][col] == "—" {
+				return secondary.PaddingRight(1)
+			}
+			return style
+		}).String()
 }
 func (m ui) View() tea.View {
 	w, h := max(1, m.width), max(1, m.height)
-	if h < 12 || w < 24 {
-		text := "Resize window\nCtrl+C to quit"
-		if m.quitting {
-			text = "Quit?\nTab: choose\nEnter: keep"
-			if m.leave {
-				text = "Quit?\nTab: choose\nEnter: quit"
-			}
-		}
-		if m.quitting && h >= 6 && w >= 24 {
-			text = "Quit Burrow?\n  Quit   › Keep\nTab choose · Enter\nEsc cancels"
-			if m.leave {
-				text = strings.Replace(text, "  Quit   › Keep", "› Quit     Keep", 1)
-			}
-		}
-		v := tea.NewView(fit(m.paint(accent, text), w, h))
-		v.AltScreen = true
-		return v
-	}
 	var b strings.Builder
 
 	bodyW := w
@@ -359,12 +353,10 @@ func (m ui) View() tea.View {
 		content = m.demoResources(bodyW)
 	}
 	// Reserve command output space even when endpoint text wraps in the table.
-	if !m.demo || h >= 30 {
-		content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-7)))
-		outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
-		start := min(m.outputOffset, len(outputLines)-1)
-		content += "\n\n" + m.paint(heading, "COMMAND OUTPUT") + "\n" + strings.Join(outputLines[start:], "\n")
-	}
+	content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-7)))
+	outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
+	start := min(m.outputOffset, len(outputLines)-1)
+	content += "\n\n" + m.paint(heading, "COMMAND OUTPUT") + "\n" + strings.Join(outputLines[start:], "\n")
 	b.WriteString(fit(content, w, max(0, h-3)))
 	footer := "F1 help · Tab completion · Ctrl+C quit"
 	if m.busy {

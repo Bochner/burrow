@@ -30,6 +30,13 @@ specification. `core/prototype_*` contains bounded proofs, not a production SSH 
   check and run the relevant Aspect gate. The current `//:research` target
   only verifies the metadata build graph, not application behavior or docs prose.
 
+## Terminal presentation
+
+Before changing terminal views, tables, syntax highlighting, themes, dialogs,
+or operational metadata, read and follow [the TUI standard](docs/agents/tui.md).
+Its semantic colors, field preservation, formatting and presentation checks
+are project requirements, including for future capability implementations.
+
 ## Repository layout and documentation
 
 Follow the layout in `docs/site/src/content/spec/development-guide.html` when

@@ -197,7 +197,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             burrow(w, "connect", f"row{i}", "127.0.0.1", "tester", *plain)
             wait(lambda: state_is(w, f"row{i}", "connected"))
         outer, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         before = termios.tcgetattr(slave)
         def controlling():
             os.setsid()
@@ -206,7 +206,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
                                env=env | {"TERM": "xterm-256color"}, stdin=slave, stdout=slave, stderr=slave,
                                preexec_fn=controlling)
         output = bytearray()
-        dimensions = ["80", "24"]
+        dimensions = ["160", "40"]
         def screen_contains(needle):
             if select.select([outer], [], [], .1)[0]:
                 output.extend(os.read(outer, 65536))
@@ -255,7 +255,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             os.write(outer, b"close terminal --yes\r")
             wait(lambda: screen_contains(b'"closed"'))
             assert all(s["name"] != "terminal" for s in burrow(w, "connections"))
-            # Repaint after resize starts a new screen; do not replay old 80-column
+            # Repaint after resize starts a new screen; do not replay old 160-column
             # cursor coordinates into an emulator that was only ever 40 columns.
             while select.select([outer], [], [], 0)[0]:
                 os.read(outer, 65536)
@@ -263,10 +263,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 16, 40, 0, 0))
             dimensions = ["40", "16"]
             os.kill(tui.pid, signal.SIGWINCH)
-            wait(lambda: screen_contains(b"gateway"))
-            os.write(outer, b"\x03")
-            wait(lambda: screen_contains(b"Quit Burrow?"))
-            os.write(outer, b"\t\r")
+            wait(lambda: screen_contains("160 × 40".encode()))
+            os.write(outer, b"\x03")  # Quit remains available below minimum size.
             assert tui.wait(timeout=5) == 0
             assert termios.tcgetattr(slave) == before
             assert b"38;2;" not in output
