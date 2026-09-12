@@ -1,6 +1,7 @@
 def _impl(ctx: TaskContext) -> int:
     root = ctx.std.env.aspect_root_dir()
     commands = {
+        "scripts-check": ["test", "//core/prototype_transport:direct_script_test"],
         "vt-check": ["test", "//core/prototype_terminal:vt_test", "//core/prototype_terminal:vt_cli_test"],
         "terminal": ["run", "//core/prototype_terminal:terminal", "--"] + ctx.args.hovel,
         "terminal-check": ["test", "//core/prototype_terminal:terminal_test", "//core/prototype_terminal:cli_test"],
@@ -21,7 +22,7 @@ def _impl(ctx: TaskContext) -> int:
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected terminal, terminal-check, terminal-format, check, package, integration, frontend, interaction, setup, reuse, agent, agent-discovery, agent-install, transport, transport-format, or lab")
+        print("expected scripts-check, terminal, terminal-check, terminal-format, check, package, integration, frontend, interaction, setup, reuse, agent, agent-discovery, agent-install, transport, transport-format, or lab")
         return 2
     status = ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait()
     return status.code or 0

@@ -6,9 +6,15 @@ For [Can remote script runs satisfy Hovel execution and cleanup contracts?](http
 execution after caller loss at the pinned Hovel revision.** This is a prerequisite
 failure reproduction, not the full script implementation or an accepted workaround.
 The owner accepted the retained-session sequence and explicit-collection limit
-below. The remaining invocation/cleanup matrix is still open.
+below. The follow-ups extend that sequence. The owner rejected promoting the Python
+fixture and 64 KiB output prefix into product requirements; the direct OpenSSH
+and full-output proof below supersedes those proposals.
 
-Run `aspect burrow-prototype transport` or `aspect burrow-check`. The latter also
+For local output-code iteration, run `aspect burrow-prototype scripts-check`.
+It checks full capture versus the bounded preview, resumable reads, storage
+failures, Markdown metadata and artifact-path refusal without SSH or Hovel.
+Run `aspect burrow-prototype transport` or `aspect burrow-check` at integration
+and milestone boundaries. The latter also
 builds the SDK package/frontend and checks the SDK protocol and documentation.
 Use the [transport pins and local prerequisites](README.md) and the accepted
 [connection ownership mechanism](OWNERSHIP.md). Hovel is v0.4.2, source
@@ -66,12 +72,9 @@ below proves the now-accepted lifetime/collection sequence; the remaining
 workflow matrix is not yet a complete production contract.
 An upstream retained-run contract remains the other route.
 
-Do not claim the remaining ticket matrix has passed: operator-selected local
-tools driving two connections, remote existing commands/scripts, separate stdin
-files, actual staged-file cleanup and keep behavior, per-run cancellation with a
-child, timeout, connection loss during execution and cleanup, and long-running
-retained status/output still need the selected execution path. No AI integration,
-new job framework, audit database or production SSH code is introduced.
+The original probe alone does not establish the retained workflow. The follow-ups
+below separate the lifetime proof from the complete invocation matrix. No new
+job framework, audit database or production SSH code is introduced.
 
 ## Retained-session follow-up
 
@@ -154,11 +157,179 @@ result integrity, production signal escalation, or cleanup under every failure.
 Transport loss is reported as unknown even when the independent loopback harness
 can observe termination or remove leftover fixture files.
 
-The full ticket still requires local tools selecting between two connections,
-operator-selected scripts/interpreters, existing remote commands/scripts,
-independent stdin files, streaming through this retained path, injected cleanup
-failure, and a final output/retention policy. The original streamed synchronous
-probe is separate evidence, not proof of those features in this candidate.
-Do not close the ticket or unblock final slice planning merely because this
-bounded gate passes. The lifetime/collection tradeoff is accepted; the remaining workflow matrix
-must still be demonstrated before resolving the complete scripting ticket.
+## Invocation and cleanup follow-up
+
+The same retained-session implementation now snapshots a bounded, non-secret
+fixture request before preparation returns. It sends that JSON envelope through
+SSH stdin before the cancellation control stream. Script contents and stdin do
+not enter SSH argv or Hovel configuration; the harness writes the request under
+its private scratch root. This file is fixture input, not a job ledger or a
+production secret-delivery interface.
+
+The added checks exercise these paths through confirmed preparation, launch and
+collection, and verify the collected artifact survives session close:
+
+- Operator-selected local script, explicit `/bin/sh`, separate arguments including
+  empty strings, quotes, metacharacters and Unicode, and independent binary stdin.
+- Staged execution with remove/keep; streamed execution through an inherited pipe
+  with no named remote script; existing remote script without deleting its source.
+- Existing `/bin/cat` command and an alternate explicitly selected Python
+  interpreter. Script input and the program's stdin remain separate.
+- A real cleanup failure: unexpected content prevents removal of the staging
+  directory. The report says `failed`; unrelated content survives. Only the
+  independent harness removes that leftover fixture data.
+- Two daemon-owned masters to the same test server, distinguished by their actual
+  SSH connection tuples. A local Python driver receives the selected config and
+  socket as non-secret argv. After one master closes, selecting its old socket
+  returns SSH 255 without authenticating again; its sibling still works.
+
+The local driver runs under the same public Hovel retained-session/confirmed
+operation mechanism on the operator host. Its outer artifact contains `localExit`
+(the fixture deliberately exits 23), while its inert JSON stdout separately
+reports the SSH child's status. Burrow must not interpret arbitrary tool stdout
+as a trusted remote result. Hovel confirms and records the outer operation, not
+each command an unrestricted local script sends through the socket. Raw external
+socket use remains outside Hovel confirmation and artifact collection. Local
+cancellation can terminate the local process group; it does not establish remote
+termination or cleanup. Use the supervised remote-run path when those guarantees
+are required. No legacy environment-variable API or plugin framework is added.
+
+### Initial limits and owner feedback
+
+- **Not accepted; live/full output feasibility under review.** Retain a 65,536-byte prefix of **each** stream with exact discarded-byte counts;
+  show truncation explicitly. Results are available after completion. Collection
+  persists them in Hovel artifacts; uncollected output can be lost, as already
+  accepted. Larger/full output and live output streaming are subsequent work.
+- **Rejected as a default requirement; historical Python fixture only.** The supervised remote path requires Linux with Python 3 and the selected
+  interpreter. The fixture uses pinned Python 3.12; this does not prove arbitrary
+  targets have it. Implementation must check prerequisites and refuse clearly,
+  without silently downgrading cancellation or installing remote software.
+- **Accepted in the live Wayfinder discussion.** Process-group cancellation covers ordinary descendants, not escaped/daemonized
+  children. Transport loss keeps completion and cleanup unknown. The local-tool
+  path makes no remote termination/cleanup promise.
+- The 64 KiB request and 4 KiB streamed-script bounds are disposable harness
+  limits. They are **not** product script-size limits. Production must transport
+  operator inputs incrementally and preserve independent stdin/cancellation.
+
+No credentials were used in operator inputs: the gate uses generated fixture
+keys and inert data only. General secret-bearing script inputs/output require
+the existing credential/retention contract, not generic saved configuration.
+This proof does not validate arbitrary script safety, hostile-target result
+integrity, production portability, or full LazySSH feature completion.
+
+The comparison was traced against LazySSH's pinned
+[plugin execution source](https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/plugin_manager.py)
+and [execution tests](https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/tests/test_plugin_manager.py):
+interpreter/argv construction, selected connection context, separate output
+streams and failure status inform this fixture. Legacy discovery/environment
+compatibility is already excluded. Unlike LazySSH's streaming entrypoint, this
+bounded retained proof exposes final output only; that difference requires the
+owner's explicit initial-scope decision, not an assertion of full parity.
+
+The owner requested that stronger cancellation guarantees remain visible for
+milestone planning. The script ticket records the detailed follow-up outcomes;
+[the final slice-planning decision](https://github.com/Bochner/burrow/issues/16)
+has a pointer to place escaped-descendant containment, cleanup confirmation after
+transport loss, and local-tool/remote-run boundary checks in the sequence. Their
+order is not decided by this proof. The 64 KiB/final-output-only proposal has not
+been accepted; Hovel's public `FileArtifact` and streaming file materialization
+provide a candidate route for proving live viewing plus file-backed collection
+before resolution. The owner subsequently rejected a mandatory remote Python helper; the direct path below supersedes that proposal.
+
+## Direct OpenSSH and full-output follow-up
+
+Owner direction: execute commands through the existing master, as LazySSH does;
+no mandatory remote Python supervisor and no automatic helper/file staging.
+Prove live viewing and full-output collection now. Keep the already-accepted
+explicit collection boundary and future cancellation work visible in Wayfinder.
+
+The new `script-direct` preparation uses the same retained Hovel session and
+confirmed launch/collection operations. It runs ordinary OpenSSH processes and
+stores stdout/stderr in separate private **local** spool files. The public Hovel
+`FileArtifact` contract copies those files into Hovel's hashed artifact storage
+on explicit collection. No output file paths are accepted from the target, and
+there is no second job registry or evidence database.
+
+### Invocation choices
+
+- Commands and existing scripts: execute the selected absolute command or
+  interpreter with separately quoted arguments; program stdin is independent.
+- Streamed shell scripts: feed source into `/bin/sh -s --`. That mode owns stdin;
+  it explicitly refuses simultaneous separate program input.
+- Inline shell source with separate stdin: use the selected shell's `-c` mode.
+  Source is an SSH exec argument and may be visible in local/remote process arguments;
+  it is unsuitable for secrets and subject to OS argument-size limits. Refuse
+  unsupported/oversized inputs; never silently fall back to staging.
+- Explicit staged-file execution uses ordinary SSH plus `mktemp`/`cat` only when
+  requested. It removes the exact staged file and empty directory by default,
+  supports keep, and reports injected cleanup failure without removing unrelated
+  content. The Python fixture remains historical evidence, not a prerequisite.
+- Local tools execute locally; the SSH socket/config can be passed as non-secret
+  arguments. Their exit status remains distinct from any SSH subprocess status.
+
+### Output contract being proven
+
+Read-only `script-output` requests return at most 32 KiB from an explicit stream
+and byte offset. A viewer can disconnect and resume; capture does not depend on
+its presence. Status retains a 64 KiB preview plus byte counts, while collected
+stdout/stderr files contain all captured bytes, rather than only that preview.
+The fixture checks 2 MiB of stdout and 1 MiB of stderr, including NUL bytes, live
+reads before completion, resumed reads, remote exit 7, repeated collection, and
+artifact survival after the explicit close removes the local spool.
+
+There is an explicit per-stream storage budget (8 MiB default in this disposable
+fixture, adjustable up to 64 MiB). Exceeding it or encountering a real injected
+file-write failure produces `output-incomplete`, preserves available partial
+files and byte counts, and never claims complete capture. The fixture continues
+draining output so a full pipe does not deadlock execution. A bounded fixture
+execution deadline remains; production must expose the budget/error policy and
+must not imply unlimited disk storage or silently truncate a successful result.
+
+Collection is still the authoritative Hovel evidence boundary. Spool files are
+working output, not registered evidence or a recovery index. A daemon/module
+failure before collection can leave private uncollected files; do not promise
+automatic recovery, automatic artifact registration, or safe removal of unknown
+leftovers. The existing nonblocking upstream retained-result handoff remains
+relevant. Adopting a future Hovel fix requires the pin/contract checks; it does
+not justify changing this behavior silently.
+
+### Cancellation and remote footprint
+
+Normal direct execution needs only the chosen command/interpreter and SSH. No
+remote Python/helper is installed, and capture creates no remote output files.
+Stopping the local client or its timeout does **not** prove remote termination;
+those outcomes remain explicitly unconfirmed.
+
+The controlled Linux/OpenSSH fixture separately proves a confirmed group-signal
+operation: its inert workload exposes its PID, the harness checks Linux process
+group/starttime, a mismatched identity is refused, and the matching group signal
+terminates the observed leader and ordinary child without affecting a sibling
+connection user. OpenSSH already establishes the non-PTY process group; no extra
+`setsid` program is needed. These marker files are independent observations
+created by the chosen inert test command, not a default execution mechanism.
+
+PID/starttime checking and signalling are not atomic; leader disappearance,
+PID reuse races, escaped descendants, alternative SSH servers and transport loss
+are not upgraded into generic confirmed cleanup. Product cancellation must
+preserve that uncertainty and avoid treating local SSH termination or a sent
+signal as evidence of remote cleanup. Stronger containment/recovery remains an
+explicit outcome for final milestone planning, as requested by the owner.
+
+### Markdown report outcome
+
+A controlled Markdown report is collected byte-for-byte as `script-report.md`
+with `text/markdown` metadata through the same file artifact path. The owner wants enumeration reports to be readable Markdown and
+opened with **actual Charm Glow** from Burrow. Reuse Glow as a local program;
+do not build a second Markdown reader. The final slice-planning ticket carries
+viewer packaging, terminal handoff/return, and (if needed) PTY-hosted resize and
+persistent-panel checks. This proof does not implement enumeration or claim the
+viewer already exists.
+
+Sources: pinned Hovel public SDK `result.go` (`FileArtifact`) and filesystem
+`registerFileArtifact` (streaming copy/hash); pinned LazySSH `execute_remote_batch`
+and its invocation tests; OpenSSH `session.c` non-PTY session setup and signal
+handling. These were inspected locally or through the primary repositories.
+
+Final validation: `aspect burrow-check` passed in 3m 33s after the named Markdown
+artifact check: ten portable checks plus the expanded live SSH/Hovel gate. This
+proves the bounded behaviors above; it is not production SSH/Glow acceptance.

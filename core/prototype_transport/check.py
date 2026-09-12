@@ -13,6 +13,7 @@ import re
 import select
 import struct
 import signal
+import shlex
 import sqlite3
 import socket
 import subprocess
@@ -1064,6 +1065,100 @@ LogLevel VERBOSE
             stage.unlink()  # Harness-only cleanup of the exact path this fixture created.
             stage.parent.rmdir()
 
+        # Complete invocation matrix through the accepted prepare/launch path.
+        arguments = ["space value", "quote ' double \"", "; $(not-executed)", "☃", ""]
+        source = owner_root / 'selected script.sh'
+        source.write_text("printf '%s\\n' \"$@\"\ncat\nprintf 'selected stderr' >&2\nexit 7\n")
+        stdin_file = owner_root / 'selected stdin.bin'
+        stdin_file.write_bytes(b'input\0with binary\n')
+        expected = ('\n'.join(arguments)+'\n').encode()+stdin_file.read_bytes()
+
+        def invocation(request, connection='gateway', local=False, keep='no', cancel=False):
+            (owner_root / 'invocation.json').write_text(json.dumps(request))
+            script_config('script-prepare', proof_case='invocation', proof_keep=keep,
+                          proof_connection=connection, proof_local='yes' if local else 'no')
+            _, selected = owned_run()
+            assert script_status(selected)['state'] == 'prepared'
+            script_config('script-launch', proof_session=selected)
+            result = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+            assert result['state'] == 'succeeded', result
+            if cancel:
+                wait_for(lambda: 'pid' in script_status(selected))
+                report, evidence, contents = collected(selected, 'script-cancel')
+                wait_for(lambda: not alive(report['pid']))
+            else:
+                wait_for(lambda: script_status(selected)['state'] not in ('prepared', 'running'))
+                report, evidence, contents = collected(selected)
+            assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+            assert evidence.read_bytes() == contents
+            return report
+
+        for mode, keep, cleanup_failure in [('staged', 'no', False), ('streamed', 'no', False),
+                                             ('existing', 'no', False), ('staged', 'yes', False),
+                                             ('staged', 'no', True)]:
+            request = {'mode': mode, 'interpreter': '/bin/sh', 'args': arguments,
+                       'path': str(source), 'scriptBase64': base64.b64encode(source.read_bytes()).decode(),
+                       'stdinBase64': base64.b64encode(stdin_file.read_bytes()).decode(),
+                       'cleanupFailure': cleanup_failure}
+            report = invocation(request, keep=keep)
+            assert report['state'] == 'remote-exit' and report['remoteExit'] == 7, report
+            assert base64.b64decode(report['stdoutBase64']) == expected, report
+            assert base64.b64decode(report['stderrBase64']) == b'selected stderr', report
+            assert report['stdoutDiscarded'] == report['stderrDiscarded'] == 0
+            cleanup = 'failed' if cleanup_failure else 'kept' if keep == 'yes' else 'removed' if mode == 'staged' else 'not-needed'
+            assert report['cleanup'] == cleanup, report
+            assert source.exists() and stdin_file.exists(), 'pre-existing inputs must survive'
+            if mode == 'staged':
+                stage = Path(report['stage'])
+                assert stage.exists() == (keep == 'yes')
+                if cleanup_failure:
+                    assert (stage.parent / 'unrelated').read_text() == 'must survive cleanup'
+                    (stage.parent / 'unrelated').unlink()  # Independent harness cleanup.
+                if keep == 'yes': stage.unlink()
+                if stage.parent.exists(): stage.parent.rmdir()
+            print(f'PASS selected {mode}, keep={keep}, failed-cleanup={cleanup_failure}: retained launch, exact argv/stdin, separate status/output, confirmed artifact, preserve existing files', flush=True)
+        report = invocation({'mode': 'command', 'args': ['/bin/cat'],
+                             'stdinBase64': base64.b64encode(stdin_file.read_bytes()).decode()})
+        assert report['remoteExit'] == 0 and base64.b64decode(report['stdoutBase64']) == stdin_file.read_bytes()
+        report = invocation({'mode': 'streamed', 'interpreter': sys.executable,
+                             'scriptBase64': base64.b64encode(b'import sys; print(repr(sys.argv[1:]))').decode(),
+                             'args': arguments})
+        assert report['remoteExit'] == 0 and base64.b64decode(report['stdoutBase64']).decode() == repr(arguments)+'\n'
+        print('PASS existing remote command and explicit alternate interpreter through retained path', flush=True)
+
+        # Two independent daemon-owned masters, selected by non-secret argv.
+        script_config('connect', proof_connection='second')
+        _, second_connection = owned_run()
+        driver = owner_root / 'local driver.py'
+        driver.write_text("import json, subprocess, sys\n"
+                          "r = subprocess.run(['/usr/bin/ssh', '-F', sys.argv[1], '-S', sys.argv[2], '-o', 'ProxyCommand=/bin/false', '-T', 'target', \"printf '%s' \\\"$SSH_CONNECTION\\\"\"], capture_output=True, text=True)\n"
+                          "print(json.dumps({'sshExit': r.returncode, 'stdout': r.stdout}))\n"
+                          "sys.exit(23)\n")
+        identities = {}
+        for name in ('gateway', 'second'):
+            socket_path = owner_root / name / 'master'
+            identities[name] = run(ssh + ['-S', socket_path, '-o', 'ProxyCommand=/bin/false', 'target', 'printf \"%s\" \"$SSH_CONNECTION\"']).stdout
+            request = {'mode': 'local', 'interpreter': sys.executable, 'path': str(driver),
+                       'args': [str(ssh_config), str(socket_path)]}
+            report = invocation(request, connection=name, local=True)
+            assert report['state'] == 'local-exit' and report['localExit'] == 23 and 'remoteExit' not in report, report
+            result = json.loads(base64.b64decode(report['stdoutBase64']))
+            assert result == {'sshExit': 0, 'stdout': identities[name]}, result
+        assert identities['gateway'] != identities['second'], identities
+        assert rpc('CloseSession', {'SessionID': second_connection})[0] == 200
+        report = invocation(request, connection='second', local=True)
+        result = json.loads(base64.b64decode(report['stdoutBase64']))
+        assert result == {'sshExit': 255, 'stdout': ''}, result
+        assert report['localExit'] == 23 and 'remoteExit' not in report
+        assert run(owned + ['target', 'printf sibling-retained']).stdout == 'sibling-retained'
+        driver.write_text("import time\ntime.sleep(30)\n")
+        report = invocation({'mode': 'local', 'interpreter': sys.executable,
+                             'path': str(driver), 'args': []}, local=True, cancel=True)
+        assert report['state'] == 'cancelled' and report['localExit'] == -signal.SIGTERM and 'remoteExit' not in report, report
+        print('PASS local-driver explicit cancellation terminates its local process; no invented remote exit', flush=True)
+        script_config('script-prepare', proof_connection='gateway', proof_local='no')
+        print('PASS local driver selects two distinct live masters; confirmed retained local result differs from SSH status; missing selected master refuses fallback and preserves sibling', flush=True)
+
         # Kill the launching frontend before Hovel receives/adopts session refs.
         script_config('script-start', proof_case='launch-loss', proof_keep='no')
         before = {item['ID'] for item in rpc('ListSessions', {})[1].get('Sessions', [])}
@@ -1106,6 +1201,182 @@ LogLevel VERBOSE
         assert rpc('CloseSession', {'SessionID': selected})[0] == 200
         assert evidence.read_bytes() == contents
         print('PASS prepared retained session then confirmed launch: caller loss before launch reply preserves run/result; retry does not execute again; confirmed collection persists artifact', flush=True)
+
+        # Direct OpenSSH output: no Python/helper process on the target.
+        def direct_prepare(request, connection='gateway'):
+            (owner_root / 'invocation.json').write_text(json.dumps(request))
+            script_config('script-direct', proof_connection=connection, proof_case='direct')
+            _, selected = owned_run()
+            assert script_status(selected)['state'] == 'prepared'
+            return selected
+
+        def direct_launch(selected):
+            script_config('script-launch', proof_session=selected)
+            result = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+            assert result['state'] == 'succeeded', result
+
+        def direct_read(selected, stream, offset):
+            status, reply = rpc('RunSessionCommand', {'SessionID': selected, 'Request': {'command': 'script-output', 'args': [stream, str(offset)]}})
+            assert status == 200, reply
+            data = base64.b64decode(reply['stdout'])
+            assert int(reply['fields']['nextOffset']) == offset+len(data)
+            return data
+
+        def direct_collect(selected):
+            script_config('script-collect', proof_session=selected)
+            result = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+            assert result['state'] == 'succeeded', result
+            with sqlite3.connect(workspace / 'workspace.db') as db:
+                rows = list(db.execute('select name, path, sha256, kind from artifacts where run_id = ?', (result['runId'],)))
+            assert len(rows) == 3, rows
+            files = {}
+            for name, path, digest, kind in rows:
+                if name == 'script-report.md': assert kind == 'text/markdown'
+                path = workspace / path
+                data = path.read_bytes()
+                assert hashlib.sha256(data).hexdigest() == digest
+                files[name] = (path, data)
+            return files
+
+        # Output appears while running; an absent viewer never stops capture.
+        source_bytes = b"printf 'first chunk\\n'; sleep 2; head -c 2097152 /dev/zero; printf 'last chunk\\n'; head -c 1048576 /dev/zero >&2; exit 7\n"
+        selected = direct_prepare({'mode': 'streamed', 'interpreter': '/bin/sh', 'args': [],
+                                   'scriptBase64': base64.b64encode(source_bytes).decode()})
+        direct_launch(selected)
+        wait_for(lambda: script_status(selected)['stdoutBytes'] > 0)
+        assert script_status(selected)['state'] == 'running'
+        initial = direct_read(selected, 'stdout', 0)
+        assert initial == b'first chunk\n', initial
+        wait_for(lambda: script_status(selected)['state'] != 'running')
+        report = script_status(selected)
+        assert report['remoteExit'] == 7 and report['outputComplete'], report
+        expected = b'first chunk\n'+bytes(2097152)+b'last chunk\n'
+        resumed = bytearray(initial)
+        while len(resumed) < len(expected):
+            chunk = direct_read(selected, 'stdout', len(resumed))
+            assert chunk
+            resumed.extend(chunk)
+        assert bytes(resumed) == expected
+        files = direct_collect(selected)
+        assert files['script-stdout'][1] == expected
+        assert files['script-stderr'][1] == bytes(1048576)
+        retry = direct_collect(selected)
+        assert {k:v[1] for k,v in retry.items()} == {k:v[1] for k,v in files.items()}
+        spool = Path(json.loads(files['direct-script-result'][1])['fields']['stdoutPath']).parent
+        assert spool.stat().st_mode & 0o777 == 0o700
+        assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+        assert not spool.exists() and all(path.read_bytes() == data for path, data in files.values())
+        print('PASS direct sh -s: live binary-safe chunks, disconnected/resumed viewer, full 2 MiB stdout and 1 MiB stderr, remote exit 7, repeatable Hovel file artifacts, private spool removed only on close', flush=True)
+
+        for mode in ('inline', 'existing', 'command'):
+            request = {'mode': mode, 'interpreter': '/bin/sh', 'path': str(source),
+                       'scriptBase64': base64.b64encode(source.read_bytes()).decode(), 'args': arguments,
+                       'stdinBase64': base64.b64encode(stdin_file.read_bytes()).decode()}
+            if mode == 'command': request['args'] = ['/bin/cat']
+            selected = direct_prepare(request)
+            direct_launch(selected)
+            wait_for(lambda: script_status(selected)['state'] != 'running')
+            files = direct_collect(selected)
+            expected = stdin_file.read_bytes() if mode == 'command' else ('\n'.join(arguments)+'\n').encode()+stdin_file.read_bytes()
+            assert files['script-stdout'][1] == expected
+            assert source.exists() and stdin_file.exists()
+            assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+        print('PASS direct command/inline/existing script: independent stdin and argument boundaries, no automatic remote staging or Python prerequisite', flush=True)
+
+        for keep, failure in [(False, False), (True, False), (False, True)]:
+            selected = direct_prepare({'mode': 'staged', 'interpreter': '/bin/sh', 'args': arguments,
+                                       'scriptBase64': base64.b64encode(source.read_bytes()).decode(),
+                                       'stdinBase64': base64.b64encode(stdin_file.read_bytes()).decode(),
+                                       'keep': keep, 'cleanupFailure': failure})
+            direct_launch(selected)
+            wait_for(lambda: script_status(selected)['state'] != 'running')
+            report = script_status(selected)
+            assert report['remoteExit'] == 7 and report['cleanup'] == ('failed' if failure else 'kept' if keep else 'removed'), report
+            stage = Path(report['stage'])
+            assert stage.exists() == keep
+            files = direct_collect(selected)
+            assert files['script-stdout'][1] == ('\n'.join(arguments)+'\n').encode()+stdin_file.read_bytes()
+            assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+            if keep: stage.unlink()
+            if failure:
+                assert (stage.parent / 'unrelated').read_text() == 'preserve'
+                (stage.parent / 'unrelated').unlink()
+            if stage.parent.exists(): stage.parent.rmdir()
+        print('PASS explicitly staged direct shell: selected source/stdin, remote exit 7, cleanup/keep/injected failure, no remote Python', flush=True)
+
+        # Never turn storage exhaustion or an actual failed write into success.
+        for extra, error in [({'limit': 1024}, 'output storage budget exceeded'), ({'failWrite': True}, 'output file write failed')]:
+            selected = direct_prepare({'mode': 'command', 'args': ['/bin/sh', '-c', 'head -c 131072 /dev/zero'], **extra})
+            direct_launch(selected)
+            wait_for(lambda: script_status(selected)['state'] != 'running')
+            report = script_status(selected)
+            assert report['state'] == 'output-incomplete' and not report['outputComplete'] and report['outputError'] == error, report
+            files = direct_collect(selected)
+            assert len(files['script-stdout'][1]) <= extra.get('limit', 131072)
+            assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+        print('PASS direct output budget and injected file-write failure: explicit incomplete result, bounded storage, collectible partial evidence', flush=True)
+
+        # Direct local tools use the same full-output path without remote Python.
+        local_tool = owner_root / 'direct local tool.py'
+        local_tool.write_text("import subprocess, sys\n"
+                              "r = subprocess.run(['/usr/bin/ssh', '-F', sys.argv[1], '-S', sys.argv[2], '-o', 'ProxyCommand=/bin/false', '-T', 'target', 'printf direct-local-tool'], capture_output=True)\n"
+                              "sys.stdout.buffer.write(r.stdout)\nsys.exit(r.returncode)\n")
+        selected = direct_prepare({'mode': 'local', 'interpreter': sys.executable, 'path': str(local_tool),
+                                   'args': [str(ssh_config), str(owner_root / 'gateway' / 'master')]})
+        direct_launch(selected)
+        wait_for(lambda: script_status(selected)['state'] != 'running')
+        assert script_status(selected)['localExit'] == 0 and 'remoteExit' not in script_status(selected)
+        files = direct_collect(selected)
+        assert files['script-stdout'][1] == b'direct-local-tool'
+        assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+
+        # Stop requests never manufacture a remote exit or complete output.
+        for timeout in (0, 100):
+            selected = direct_prepare({'mode': 'command', 'args': ['/bin/sleep', '2'], 'timeoutMillis': timeout})
+            direct_launch(selected)
+            if not timeout:
+                script_config('script-cancel', proof_session=selected)
+                stopped = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+                assert stopped['state'] == 'succeeded', stopped
+            wait_for(lambda: script_status(selected)['state'] != 'running')
+            report = script_status(selected)
+            assert report['state'] == 'local-client-stopped-remote-unconfirmed' and 'remoteExit' not in report and not report['outputComplete'], report
+            direct_collect(selected)
+            assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+        print('PASS direct local-tool file output and direct SSH cancel/timeout: no invented remote termination or complete output', flush=True)
+
+        # Markdown is ordinary preserved evidence; rendering belongs to the frontend.
+        markdown = b'# Enumeration report\n\n## Host\n\n| Field | Value |\n| --- | --- |\n| Host | inert-fixture |\n\n## Findings\n\n- No active probes performed.\n'
+        selected = direct_prepare({'mode': 'command', 'args': ['/bin/cat'], 'stdinBase64': base64.b64encode(markdown).decode(), 'outputFormat': 'markdown'})
+        direct_launch(selected)
+        wait_for(lambda: script_status(selected)['state'] != 'running')
+        files = direct_collect(selected)
+        assert files['script-report.md'][1] == markdown
+        assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+        print('PASS Markdown report bytes survive Hovel file collection and run close; actual Glow viewer remains a planning outcome', flush=True)
+
+        # Direct cancellation only stops the local SSH client. Demonstrate the
+        # stronger optional group signal separately, through a confirmed throw.
+        marker = owner_root / 'direct-group'
+        group_script = "printf '%s' \"$$\" > "+shlex.quote(str(marker))+"; sleep 20 & child=$!; printf '%s' \"$child\" > "+shlex.quote(str(marker)+'.child')+"; wait \"$child\""
+        selected = direct_prepare({'mode': 'command', 'args': ['/bin/sh', '-c', group_script]})
+        direct_launch(selected)
+        wait_for(lambda: marker.exists() and Path(str(marker)+'.child').exists())
+        pid = int(marker.read_text())
+        stat = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+        assert int(stat[2]) == pid, stat
+        script_config('script-signal', proof_pid=str(pid), proof_starttime=str(int(stat[19])+1))
+        refused = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+        assert refused['state'] == 'failed' and alive(pid)
+        script_config('script-signal', proof_starttime=stat[19])
+        sent = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+        assert sent['state'] == 'succeeded', sent
+        wait_for(lambda: not alive(pid) and not alive(int(Path(str(marker)+'.child').read_text())))
+        wait_for(lambda: script_status(selected)['state'] != 'running')
+        direct_collect(selected)
+        assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+        assert run(owned + ['target', 'printf sibling-retained']).stdout == 'sibling-retained'
+        print('PASS OpenSSH-owned ordinary process group: wrong identity refuses; confirmed separate signal kills fixture leader/child and preserves sibling; no Python or extra setsid program', flush=True)
 
         # Connection loss during an accepted run keeps uncertainty explicit.
         script_config('script-start', proof_case='loss', proof_keep='no')

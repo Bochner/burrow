@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -29,12 +30,14 @@ type retainedScript struct {
 	input    io.WriteCloser
 	done     chan struct{}
 	report   map[string]any
+	request  []byte
+	direct   *directRun
 }
 
 func (p *ownership) startRetainedScript(ctx *hovel.Context) (hovel.Result, error) {
 	fixture := ctx.InputString("proof_case", "success")
 	switch fixture {
-	case "success", "nonzero", "cancel", "timeout", "loss", "launch-loss":
+	case "success", "nonzero", "cancel", "timeout", "loss", "launch-loss", "invocation":
 	default:
 		return hovel.Result{}, fmt.Errorf("unsupported inert fixture")
 	}
@@ -45,8 +48,28 @@ func (p *ownership) startRetainedScript(ctx *hovel.Context) (hovel.Result, error
 	root := os.Getenv("BURROW_OWNER_ROOT")
 	marker := filepath.Join(root, "retained-"+fixture)
 	command := "exec " + shellQuote(os.Getenv("BURROW_SCRIPT_PYTHON")) + " -c " + shellQuote(scriptFixture) + " " + shellQuote(fixture) + " " + shellQuote(marker) + " " + shellQuote(keep)
-	cmd := exec.Command("/usr/bin/ssh", "-F", os.Getenv("BURROW_OWNER_CONFIG"), "-S", filepath.Join(root, "gateway", "master"), "-o", "ProxyCommand=/bin/false", "-T", "target", command)
-	s := &retainedScript{deferred: ctx.InputString("proof_action", "") == "script-prepare", process: cmd, done: make(chan struct{}), report: map[string]any{"state": "running", "cleanup": "unconfirmed"}}
+	name := ctx.InputString("proof_connection", "gateway")
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,23}$`).MatchString(name) {
+		return hovel.Result{}, fmt.Errorf("invalid fixture connection")
+	}
+	var request []byte
+	if fixture == "invocation" {
+		// Only the harness-owned, non-secret request file; snapshot before launch.
+		file, err := os.Open(filepath.Join(root, "invocation.json"))
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		request, err = io.ReadAll(io.LimitReader(file, 65537))
+		file.Close()
+		if err != nil || len(request) > 65536 || !json.Valid(request) {
+			return hovel.Result{}, fmt.Errorf("invalid bounded invocation")
+		}
+	}
+	cmd := exec.Command("/usr/bin/ssh", "-F", os.Getenv("BURROW_OWNER_CONFIG"), "-S", filepath.Join(root, name, "master"), "-o", "ProxyCommand=/bin/false", "-T", "target", command)
+	if fixture == "invocation" && ctx.InputString("proof_local", "no") == "yes" {
+		cmd = exec.Command(os.Getenv("BURROW_SCRIPT_PYTHON"), "-c", scriptFixture, fixture, marker, keep)
+	}
+	s := &retainedScript{request: request, deferred: ctx.InputString("proof_action", "") == "script-prepare", process: cmd, done: make(chan struct{}), report: map[string]any{"state": "running", "cleanup": "unconfirmed"}}
 	if s.deferred {
 		s.report["state"] = "prepared"
 	}
@@ -80,6 +103,9 @@ func (s *retainedScript) launch() error {
 	if err != nil {
 		s.mu.Lock()
 		s.report = map[string]any{"state": "not-started", "cleanup": "not-needed"}
+		if s.direct != nil && s.direct.staged {
+			s.report = map[string]any{"state": "staging-or-launch-failed", "cleanup": "unconfirmed"}
+		}
 		s.mu.Unlock()
 		close(s.done)
 	}
@@ -87,6 +113,9 @@ func (s *retainedScript) launch() error {
 }
 
 func (s *retainedScript) startProcess() error {
+	if s.direct != nil {
+		return s.direct.start(s)
+	}
 	var err error
 	s.input, err = s.process.StdinPipe()
 	if err != nil {
@@ -103,6 +132,14 @@ func (s *retainedScript) startProcess() error {
 		out.Close()
 		s.input.Close()
 		return err
+	}
+	if len(s.request) != 0 {
+		if _, err := s.input.Write(append(s.request, '\n')); err != nil {
+			s.process.Process.Kill()
+			s.process.Wait()
+			s.input.Close()
+			return err
+		}
 	}
 	go func() {
 		defer close(s.done)
@@ -157,10 +194,17 @@ func (s *retainedScript) Write([]byte) error {
 }
 
 func (s *retainedScript) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "script-launch", Destructive: true}, {Name: "script-status", ReadOnly: true}, {Name: "script-cancel", Destructive: true}}, nil
+	commands := []hovel.PayloadCommand{{Name: "script-launch", Destructive: true}, {Name: "script-status", ReadOnly: true}, {Name: "script-cancel", Destructive: true}}
+	if s.direct != nil {
+		commands = append(commands, hovel.PayloadCommand{Name: "script-output", ReadOnly: true})
+	}
+	return commands, nil
 }
 
 func (s *retainedScript) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
+	if s.direct != nil && req.Command == "script-output" {
+		return s.direct.readOutput(req, s.Closed())
+	}
 	if len(req.Args) != 0 || req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" || len(req.Config) != 0 || s.Closed() {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported or closed fixture request")
 	}
@@ -177,8 +221,18 @@ func (s *retainedScript) RunPayloadCommand(req hovel.PayloadCommandRequest) (hov
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	data, err := json.Marshal(s.report)
-	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(data), Fields: map[string]string{"state": fmt.Sprint(s.report["state"])}}, err
+	report := s.report
+	fields := map[string]string{"state": fmt.Sprint(report["state"])}
+	if s.direct != nil {
+		report = s.direct.decorate(report)
+		if s.direct.markdown {
+			fields["outputFormat"] = "markdown"
+		}
+		fields["stdoutPath"] = filepath.Join(s.direct.dir, "stdout")
+		fields["stderrPath"] = filepath.Join(s.direct.dir, "stderr")
+	}
+	data, err := json.Marshal(report)
+	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(data), Fields: fields}, err
 }
 
 func (s *retainedScript) cancel() error {
@@ -196,7 +250,14 @@ func (s *retainedScript) cancel() error {
 		return nil
 	default:
 	}
-	if _, err := io.WriteString(s.input, "cancel\n"); err != nil {
+	if s.direct != nil {
+		s.direct.mu.Lock()
+		s.direct.cancelled = true
+		s.direct.mu.Unlock()
+		if err := s.process.Process.Kill(); err != nil && err != os.ErrProcessDone {
+			return err
+		}
+	} else if _, err := io.WriteString(s.input, "cancel\n"); err != nil {
 		return err
 	}
 	select {
@@ -216,5 +277,10 @@ func (s *retainedScript) Close(reason string) error {
 		s.input.Close()
 	}
 	s.LineShellSession.Close(reason)
+	if s.direct != nil {
+		s.direct.stdout.Close()
+		s.direct.stderr.Close()
+		os.RemoveAll(s.direct.dir)
+	}
 	return err
 }
