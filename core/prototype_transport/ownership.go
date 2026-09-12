@@ -22,7 +22,10 @@ import (
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
-type ownership struct{ connection *ownedConnection }
+type ownership struct {
+	connection *ownedConnection
+	script     *retainedScript
+}
 
 func reserveConnection(root, name string) (string, error) {
 	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,23}$`).MatchString(name) {
@@ -76,6 +79,29 @@ func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
 	}
 	if ctx.InputString("proof_action", "connect") == "script" {
 		return scriptBoundary(ctx)
+	}
+	if action := ctx.InputString("proof_action", "connect"); action == "script-start" || action == "script-prepare" {
+		return p.startRetainedScript(ctx)
+	}
+	if action := ctx.InputString("proof_action", "connect"); action == "script-collect" || action == "script-cancel" || action == "script-launch" {
+		command := "script-status"
+		if action != "script-collect" {
+			command = action
+		}
+		result, err := ownerCommand(ctx.InputString("proof_session", ""), command, nil)
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		if action == "script-launch" {
+			if ctx.InputString("proof_case", "") == "launch-loss" {
+				time.Sleep(3 * time.Second)
+			}
+			return hovel.Ok(nil, hovel.WithSummary("Launch request handled; inspect the retained session")), nil
+		}
+		if result.Fields["state"] == "running" || result.Fields["state"] == "prepared" {
+			return hovel.Result{}, fmt.Errorf("run is still active; collect later")
+		}
+		return hovel.Ok(nil, hovel.WithArtifacts(hovel.JSONArtifact("retained-script-result", result))), nil
 	}
 	// Atomic reservation: even a stale directory refuses; never adopt or erase it.
 	dir, err := reserveConnection(os.Getenv("BURROW_OWNER_ROOT"), "gateway")
@@ -223,7 +249,7 @@ func ownerCommand(id, command string, args []string) (hovel.PayloadCommandResult
 		return hovel.PayloadCommandResult{}, fmt.Errorf("selected owner refused command")
 	}
 	var result hovel.PayloadCommandResult
-	if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, 256*1024)).Decode(&result); err != nil {
 		return hovel.PayloadCommandResult{}, err
 	}
 	return result, nil

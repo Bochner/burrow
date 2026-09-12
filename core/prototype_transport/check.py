@@ -447,7 +447,7 @@ LogLevel VERBOSE
         run([probe, 'reserve', long_root, 'gateway'], success=False)
         assert not (long_root / 'gateway').exists()
         print('PASS workspace-local same names, invalid names/permissions/symlinks and stale socket refusal without deletion', flush=True)
-        env.update(BURROW_OWNER_ROOT=str(owner_root), BURROW_OWNER_CONFIG=str(ssh_config))
+        env.update(BURROW_OWNER_ROOT=str(owner_root), BURROW_OWNER_CONFIG=str(ssh_config), BURROW_SCRIPT_PYTHON=sys.executable)
         workspace = root / "owner-workspace"
         env['BURROW_PROOF_DAEMON'] = str(workspace / 'hoveld.sock')
         daemon = spawn([hovel, "daemon", "serve", "--workspace", workspace], "owner-hovel")
@@ -981,6 +981,174 @@ LogLevel VERBOSE
             http_fixture.shutdown()
             http_fixture.server_close()
             http_thread.join(timeout=3)
+        # Retained-run candidate: real confirmed start/collect, existing owner,
+        # and independent fixture observations. No application-side audit store.
+        cli('chain', 'config', 'set', 'proof_action', 'connect', operator=True)
+        _, connection_session = owned_run()
+        owned = ssh + ['-S', owner_root / 'gateway' / 'master', '-o', 'ProxyCommand=/bin/false']
+
+        def script_config(action, **values):
+            for key, value in {'proof_action': action, **values}.items():
+                cli('chain', 'config', 'set', key, value, operator=True)
+
+        def script_status(selected):
+            status, reply = rpc('RunSessionCommand', {'SessionID': selected, 'Request': {'command': 'script-status'}})
+            assert status == 200, reply
+            return json.loads(reply['stdout'])
+
+        def artifact_count():
+            with sqlite3.connect(workspace / 'workspace.db') as db:
+                return db.execute('select count(*) from artifacts').fetchone()[0]
+
+        def collected(selected, action='script-collect'):
+            script_config(action, proof_session=selected)
+            result = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+            assert result['state'] == 'succeeded', result
+            with sqlite3.connect(workspace / 'workspace.db') as db:
+                path, digest = db.execute('select path, sha256 from artifacts where run_id = ?', (result['runId'],)).fetchone()
+                plans = [json.loads(r[0]) for r in db.execute("select p.plan_json from throw_plans p join throw_records r on r.plan_id = p.id, json_each(r.throw_json, '$.runs') j where json_extract(j.value, '$.runId') = ?", (result['runId'],))]
+            data = (workspace / path).read_bytes()
+            assert hashlib.sha256(data).hexdigest() == digest
+            assert plans and all(plan['confirmationId'] for plan in plans)
+            return json.loads(json.loads(data)['stdout']), workspace / path, data
+
+        kept = []
+        for case, keep in [('success', 'no'), ('nonzero', 'no'), ('cancel', 'no'), ('timeout', 'no'), ('success', 'yes')]:
+            marker = owner_root / ('retained-'+case)
+            for suffix in ('.started', '.child', '.finished'):
+                marker.with_name(marker.name+suffix).unlink(missing_ok=True)
+            script_config('script-start', proof_case=case, proof_keep=keep)
+            denied = run([hovel, 'run', '--workspace', workspace, '--op', 'proof', '--chain', 'proof', '--', 'throw', '--now', '--json'], success=False)
+            assert 'dangerous' in denied.stdout.lower()+denied.stderr.lower()
+            assert not Path(str(marker)+'.started').exists()
+            started, selected = owned_run()  # CLI exits here; the remote job continues.
+            wait_for(lambda: Path(str(marker)+'.child').exists())
+            assert script_status(selected)['state'] == 'running'
+            count = artifact_count()
+            if case == 'cancel':
+                report, evidence, contents = collected(selected, 'script-cancel')
+                assert report['state'] == 'cancelled', report
+                # Repeated cancellation only returns the existing terminal result.
+                again, _, _ = collected(selected, 'script-cancel')
+                assert again == report
+            else:
+                wait_for(lambda: script_status(selected)['state'] != 'running')
+                report = script_status(selected)
+                assert artifact_count() == count, 'raw status must not pretend to persist evidence'
+                report, evidence, contents = collected(selected)
+            expected_state = {'success': 'remote-exit', 'nonzero': 'remote-exit', 'cancel': 'cancelled', 'timeout': 'timed-out'}[case]
+            assert report['state'] == expected_state, report
+            assert report['remoteExit'] == (7 if case == 'nonzero' else 0 if case == 'success' else -signal.SIGTERM), report
+            expected = "space ' quote ; $(not-executed) ☃\n".encode()+bytes(70000)
+            assert base64.b64decode(report['stdoutBase64']) == expected[:65536], report
+            assert report['stdoutDiscarded'] == len(expected)-65536
+            assert base64.b64decode(report['stderrBase64']) == b'fixture stderr\n'
+            wait_for(lambda: not alive(report['pid']))
+            child = int(Path(str(marker)+'.child').read_text())
+            wait_for(lambda: not alive(child))
+            stage = Path(report['stage'])
+            assert report['cleanup'] == ('kept' if keep == 'yes' else 'removed'), report
+            assert stage.exists() == (keep == 'yes')
+            if keep == 'yes': kept.append(stage)
+            # A failed selection never destroys the retained result; collection retries.
+            script_config('script-collect', proof_session='missing-run')
+            failed = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+            assert failed['state'] == 'failed'
+            retry, _, _ = collected(selected)
+            assert retry == report
+            assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+            assert evidence.read_bytes() == contents
+            assert run(owned + ['target', 'printf sibling-retained']).stdout == 'sibling-retained'
+            print(f'PASS retained {case}, keep={keep}: confirmed start; frontend exit; separate bounded output; remote status; process/child observations; confirmed repeatable collection; evidence survives close', flush=True)
+        for stage in kept:
+            stage.unlink()  # Harness-only cleanup of the exact path this fixture created.
+            stage.parent.rmdir()
+
+        # Kill the launching frontend before Hovel receives/adopts session refs.
+        script_config('script-start', proof_case='launch-loss', proof_keep='no')
+        before = {item['ID'] for item in rpc('ListSessions', {})[1].get('Sessions', [])}
+        before_artifacts = artifact_count()
+        caller = spawn([hovel, 'run', '--workspace', workspace, '--op', 'proof', '--chain', 'proof', '--', 'throw', '--now', '--allow-dangerous', '--json'], 'retained-launch-caller')
+        marker = owner_root / 'retained-launch-loss'
+        wait_for(lambda: Path(str(marker)+'.child').exists())
+        caller.kill(); caller.wait(timeout=5)
+        wait_for(lambda: not alive(int(Path(str(marker)+'.started').read_text())))
+        after = {item['ID'] for item in rpc('ListSessions', {})[1].get('Sessions', [])}
+        assert after == before and artifact_count() == before_artifacts, (before, after)
+        lost_stage = Path(Path(str(marker)+'.stage').read_text())
+        if lost_stage.exists(): lost_stage.unlink()
+        if lost_stage.parent.exists(): lost_stage.parent.rmdir()
+        print('OBSERVED GAP retained start interrupted before adoption: no discoverable run session or final artifact; remote outcome cannot be reconstructed by the application', flush=True)
+
+        # Avoid the launch gap: retain an idle run session first, then start it
+        # with a confirmed operation. Repeat launch is bound to that same session.
+        for suffix in ('.started', '.child', '.finished', '.stage'):
+            Path(str(marker)+suffix).unlink(missing_ok=True)
+        script_config('script-prepare', proof_case='launch-loss', proof_keep='no')
+        _, selected = owned_run()
+        assert script_status(selected)['state'] == 'prepared'
+        assert not Path(str(marker)+'.started').exists()
+        script_config('script-launch', proof_session=selected)
+        denied = run([hovel, 'run', '--workspace', workspace, '--op', 'proof', '--chain', 'proof', '--', 'throw', '--now', '--json'], success=False)
+        assert 'dangerous' in denied.stdout.lower()+denied.stderr.lower()
+        assert not Path(str(marker)+'.started').exists()
+        caller = spawn([hovel, 'run', '--workspace', workspace, '--op', 'proof', '--chain', 'proof', '--', 'throw', '--now', '--allow-dangerous', '--json'], 'prepared-launch-caller')
+        wait_for(lambda: Path(str(marker)+'.child').exists())
+        remote_pid = Path(str(marker)+'.started').read_text()
+        caller.kill(); caller.wait(timeout=5)
+        wait_for(lambda: script_status(selected)['state'] == 'remote-exit')
+        result = json.loads(cli('throw', '--now', '--allow-dangerous', '--json', operator=True))['results'][0]
+        assert result['state'] == 'succeeded', result
+        assert Path(str(marker)+'.started').read_text() == remote_pid
+        report, evidence, contents = collected(selected)
+        assert report['remoteExit'] == 0 and report['cleanup'] == 'removed', report
+        assert Path(str(marker)+'.finished').read_text() == 'completed'
+        assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+        assert evidence.read_bytes() == contents
+        print('PASS prepared retained session then confirmed launch: caller loss before launch reply preserves run/result; retry does not execute again; confirmed collection persists artifact', flush=True)
+
+        # Connection loss during an accepted run keeps uncertainty explicit.
+        script_config('script-start', proof_case='loss', proof_keep='no')
+        _, selected = owned_run()
+        marker = owner_root / 'retained-loss'
+        wait_for(lambda: Path(str(marker)+'.child').exists())
+        wait_for(lambda: 'stage' in script_status(selected))
+        active = script_status(selected)
+        run(owned + ['-O', 'exit', 'target'])
+        wait_for(lambda: script_status(selected)['state'] != 'running')
+        report, evidence, contents = collected(selected)
+        assert report['state'] == 'transport-or-completion-unknown' and report['cleanup'] == 'unconfirmed', report
+        assert 'remoteExit' not in report
+        wait_for(lambda: not alive(int(Path(str(marker)+'.started').read_text())))
+        wait_for(lambda: not alive(int(Path(str(marker)+'.child').read_text())))
+        assert rpc('CloseSession', {'SessionID': selected})[0] == 200
+        assert rpc('CloseSession', {'SessionID': connection_session})[0] == 200
+        assert evidence.read_bytes() == contents
+        run(owned + ['target', 'printf forbidden-fallback'], success=False)
+        # Only the harness can observe local-loopback remote staging after loss.
+        lost_stage = Path(active['stage'])
+        if lost_stage.exists(): lost_stage.unlink()
+        if lost_stage.parent.exists(): lost_stage.parent.rmdir()
+        print('PASS accepted run master loss: no invented remote exit or cleanup success; uncertainty retained as Hovel artifact; no fallback authentication', flush=True)
+
+        # The explicit collection tradeoff: memory is not a durable artifact store.
+        script_config('connect')
+        _, connection_session = owned_run()
+        script_config('script-start', proof_case='success', proof_keep='no')
+        _, selected = owned_run()
+        wait_for(lambda: script_status(selected)['state'] == 'remote-exit')
+        assert script_status(selected)['remoteExit'] == 0
+        uncollected_count = artifact_count()
+        daemon.kill(); daemon.wait(timeout=5)
+        daemon = spawn([hovel, 'daemon', 'serve', '--workspace', workspace], 'uncollected-restart-hovel')
+        wait_for(restarted_ready)
+        status, state = rpc('ListSessions', {})
+        assert status == 200 and not state.get('Sessions'), state
+        assert artifact_count() == uncollected_count
+        status, state = rpc('RunSessionCommand', {'SessionID': selected, 'Request': {'command': 'script-status'}})
+        assert status != 200, state
+        print('OBSERVED LIMIT daemon dies before collection: completed session result becomes unavailable after restart; no final artifact was silently persisted', flush=True)
+
     finally:
         for process in reversed(processes):
             if process.poll() is None:
