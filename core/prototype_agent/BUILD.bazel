@@ -1,6 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 
-py_binary(
+py_test(
     name = "check",
     srcs = ["check.py", "install.py"],
     args = ["$(location :burrow)"],
@@ -12,6 +12,14 @@ py_binary(
     name = "burrow",
     main = "install.py",
     srcs = ["install.py"],
+    data = glob(["agent/skills/**"]),
+    legacy_create_init = 0,
+)
+
+py_binary(
+    name = "discovery",
+    srcs = ["discovery.py", "install.py"],
+    main = "discovery.py",
     data = glob(["agent/skills/**"]),
     legacy_create_init = 0,
 )

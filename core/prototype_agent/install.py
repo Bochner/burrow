@@ -1,110 +1,127 @@
-"""Disposable local package/install proof; never a production installer.
-
-Layout follows Hovel agent/tools/package_agent.py at c461ba282a8aecc7aa3a079a4613bf5e2640c388.
-Native clients own plugin installation. This proof owns only its package tree.
-"""
-import json
-from pathlib import Path
-import shutil
+"""Disposable direct-skill installer; trusted local sources, no plugin packaging."""
 import argparse
-import subprocess
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import tempfile
 
 
-def write_json(path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n")
+RECEIPT = '.burrow-installed.json'
 
 
-def stage(root, host, version):
-    if root.exists():
-        raise FileExistsError(root)
-    if host not in ("claude", "codex", "opencode") or version not in ("0.0.1", "0.0.2"):
-        raise ValueError("unsupported fixture host/version")
-    root.mkdir(parents=True)
-    write_json(root / "burrow-agent.json", {
-        "name": "burrow", "version": version, "host": host,
-        "hovelSource": "c461ba282a8aecc7aa3a079a4613bf5e2640c388",
-    })
-    if host == "opencode":
-        plugin = root / ".opencode"
-    else:
-        plugin = root / "plugins/burrow"
-    shutil.copytree(Path(__file__).parent / "agent/skills", plugin / "skills")
-    if host == "opencode":
-        return plugin
-    manifest = {"name": "burrow", "version": version,
-                "description": "Disposable Burrow tunnel operator proof"}
-    if host == "codex":
-        manifest["skills"] = "./skills/"
-        write_json(plugin / ".codex-plugin/plugin.json", manifest)
-        marketplace = root / ".agents/plugins/marketplace.json"
-        entry = {"name": "burrow", "source": {"source": "local", "path": "./plugins/burrow"},
-                 "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
-                 "category": "Productivity"}
-        body = {"name": "bochner-burrow", "interface": {"displayName": "Burrow"}, "plugins": [entry]}
-    else:
-        write_json(plugin / ".claude-plugin/plugin.json", manifest)
-        marketplace = root / ".claude-plugin/marketplace.json"
-        body = {"name": "bochner-burrow", "owner": {"name": "Bochner"},
-                "plugins": [{"name": "burrow", "source": "./plugins/burrow"}]}
-    write_json(marketplace, body)
-    return plugin
+def skill_destination(host, scope):
+    home = Path.home()
+    if scope == 'project':
+        return Path.cwd() / {'claude': '.claude', 'codex': '.agents', 'opencode': '.opencode'}[host] / 'skills'
+    return {
+        'claude': Path(os.environ.get('CLAUDE_CONFIG_DIR', home / '.claude')) / 'skills',
+        'codex': home / '.agents/skills',
+        'opencode': Path(os.environ.get('XDG_CONFIG_HOME', home / '.config')) / 'opencode/skills',
+    }[host]
 
 
-def install_skills(source, destination):
-    """Mirror Hovel's identical-content no-op and conflict refusal, without MCP."""
+def snapshot(root):
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(f'expected a real skill directory: {root}')
+    result = {}
+    for path in sorted(root.rglob('*')):
+        if path.is_symlink() or not (path.is_dir() or path.is_file()):
+            raise ValueError(f'unsupported skill entry: {path}')
+        if path.is_file() and path != root / RECEIPT:
+            result[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return result
+
+
+def install_skills(source, destination, dry_run=False):
+    destination = destination.absolute()
     if any(p.is_symlink() for p in (destination, *destination.parents)):
-        raise ValueError("skill destination contains a symlink")
+        raise ValueError('skill destination contains a symlink')
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError('source must be a directory of skill folders')
+    plans = []
+    # Preflight the whole suite so an edited skill refuses before any install.
     for skill in sorted(source.iterdir()):
+        if not re.fullmatch(r'burrow(?:-[a-z0-9]+)*', skill.name):
+            raise ValueError(f'expected a Burrow skill folder: {skill.name}')
+        incoming = snapshot(skill)
+        if (skill / RECEIPT).exists():
+            raise ValueError('source contains installer state')
+        text = (skill / 'SKILL.md').read_text()
+        frontmatter = text.split('---', 2)
+        if len(frontmatter) != 3 or frontmatter[0] or not re.search(r'^name: ' + re.escape(skill.name) + r'\s*$', frontmatter[1], re.M) or not re.search(r'^description: \S.+$', frontmatter[1], re.M):
+            raise ValueError(f'missing matching name/description frontmatter: {skill}')
         target = destination / skill.name
-        if target.exists() or target.is_symlink():
-            if target.is_symlink() or any(p.is_symlink() for p in target.rglob("*")):
-                raise ValueError("installed skill contains a symlink")
-            old = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
-            new = sorted(p.relative_to(skill) for p in skill.rglob("*") if p.is_file())
-            if old != new or any((target / p).read_bytes() != (skill / p).read_bytes() for p in new):
-                raise FileExistsError("existing skill differs; preserve it for owner review: " + str(target))
-        else:
-            shutil.copytree(skill, target)
+        previous = snapshot(target) if target.exists() or target.is_symlink() else None
+        receipt = target / RECEIPT
+        if previous is not None and previous != incoming:
+            if not receipt.is_file() or json.loads(receipt.read_text()) != previous:
+                raise FileExistsError(f'preserved edited/unmanaged skill; move it aside before updating: {target}')
+        plans.append((skill, target, incoming, previous))
+    if not plans:
+        raise ValueError('source contains no skills')
+    for skill, target, incoming, previous in plans:
+        action = 'unchanged' if previous == incoming else 'install' if previous is None else 'update'
+        print(f'{action}: {target / "SKILL.md"}')
+        if dry_run:
+            continue
+        destination.mkdir(parents=True, exist_ok=True)
+        if action == 'unchanged':
+            # Adopt identical pre-existing files without overwriting their contents.
+            if not (target / RECEIPT).exists():
+                (target / RECEIPT).write_text(json.dumps(incoming, sort_keys=True) + '\n')
+            continue
+        with tempfile.TemporaryDirectory(prefix='.burrow-stage-', dir=destination.parent) as temporary:
+            staged = Path(temporary) / skill.name
+            shutil.copytree(skill, staged)
+            if snapshot(staged) != incoming:
+                raise ValueError('source changed during installation')
+            (staged / RECEIPT).write_text(json.dumps(incoming, sort_keys=True) + '\n')
+            backup = None
+            if previous is not None:
+                if snapshot(target) != previous:
+                    raise FileExistsError(f'skill changed during installation: {target}')
+                backup_root = destination.parent / 'burrow-skill-backups'
+                if backup_root.is_symlink():
+                    raise ValueError('backup directory contains a symlink')
+                backup_root.mkdir(exist_ok=True)
+                backup = Path(tempfile.mkdtemp(prefix=skill.name + '-', dir=backup_root)) / skill.name
+                target.rename(backup)
+            try:
+                staged.rename(target)
+            except OSError:
+                if backup is not None and not target.exists():
+                    backup.rename(target)
+                raise
+            if backup is not None:
+                print(f'previous version preserved: {backup}')
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Disposable Burrow agent installer; local packages only")
-    sub = parser.add_subparsers(dest="command", required=True)
-    agent = sub.add_parser("agent").add_subparsers(dest="action", required=True)
-    install = agent.add_parser("install")
-    install.add_argument("host", choices=("claude", "codex", "opencode"))
-    install.add_argument("--scope", choices=("user", "project"), default="user")
-    install.add_argument("--source", type=Path, required=True)
-    install.add_argument("--dry-run", action="store_true")
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='command', required=True)
+    agent = sub.add_parser('agent').add_subparsers(dest='action', required=True)
+    install = agent.add_parser('install')
+    install.add_argument('host', choices=('claude', 'codex', 'opencode'))
+    install.add_argument('--scope', choices=('user', 'project'), default='user')
+    install.add_argument('--source', type=Path, help='directory containing Burrow skill folders (defaults to bundled skills)')
+    install.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
-    source = args.source.resolve(strict=True)
-    metadata = json.loads((source / "burrow-agent.json").read_text())
-    if metadata.get("name") != "burrow" or metadata.get("host") != args.host:
-        parser.error("package identity/host mismatch")
-    commands = []
-    if args.host == "claude":
-        commands = [["claude", "plugin", "marketplace", "add", str(source), "--scope", args.scope],
-                    ["claude", "plugin", "install", "burrow@bochner-burrow", "--scope", args.scope]]
-    elif args.host == "codex" and args.scope == "user":
-        commands = [["codex", "plugin", "marketplace", "add", str(source)],
-                    ["codex", "plugin", "add", "burrow@bochner-burrow"]]
-    else:
-        skills = source / (".opencode/skills" if args.host == "opencode" else "plugins/burrow/skills")
-        if args.host == "codex":
-            destination = Path.cwd() / ".agents/skills"
-        elif args.scope == "project":
-            destination = Path.cwd() / ".opencode/skills"
-        else:
-            destination = Path.home() / ".config/opencode/skills"
-        print("Install skills:", skills, "->", destination)
-        if not args.dry_run:
-            install_skills(skills, destination)
-    for command in commands:
-        print(command)
-        if not args.dry_run:
-            subprocess.run(command, check=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix='burrow-bundled-skills-') as temporary:
+            source = args.source
+            if source is None:
+                # Bazel exposes bundled resources as runfile symlinks. Materialize
+                # only our bundled tree; external sources still reject symlinks.
+                source = Path(temporary) / 'skills'
+                shutil.copytree(Path(__file__).parent / 'agent/skills', source)
+            install_skills(source, skill_destination(args.host, args.scope), args.dry_run)
+    except (OSError, ValueError) as error:
+        parser.exit(1, f'{error}\n')
+    print('Restart the agent if needed, then verify burrow and burrow-tunnels in its skills list.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

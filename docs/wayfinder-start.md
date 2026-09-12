@@ -27,6 +27,9 @@ shipping the full rewrite is the subsequent implementation effort.
   contract before final slice planning. The owner subsequently selected external
   agents driven by CLI-oriented skills, with MCP optional: mirror Hovel's skill
   layout and installation conventions without requiring its MCP integration.
+  The owner subsequently selected direct skill-directory installation and updates,
+  preserving user edits; plugin packaging/distribution and native plugin-install
+  checks are deferred. Native standalone-skill discovery remains an opt-in check.
 - The [transport proof decision](https://github.com/Bochner/burrow/issues/19#issuecomment-5639082720)
   selects ordinary OpenSSH subprocesses over a shared, user-named master, with
   structured Go SFTP over subsystem pipes. It supersedes the initial Go
