@@ -400,20 +400,24 @@ func TestDemoPreview(t *testing.T) {
 // Project presentation contract: compare final rendered cells to semantic roles,
 // not merely the palette function's return value.
 func TestTerminalStatusRoles(t *testing.T) {
-	for _, pending := range []bool{true, false} {
+	for _, state := range []string{"pending", "refused", "exited"} {
 		m := newFrame(launch.Info{Workspace: "/tmp/terminal"}, false, launch.Options{})
 		m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 		m.current().tab = "hovel"
-		m.current().cli = &cliTab{pending: pending}
+		m.current().cli = &cliTab{pending: state == "pending"}
 		label, hex := "opening / closing", "#f9e2af"
-		if !pending {
+		if state == "refused" {
 			m.current().cli.error = "REFUSED: unavailable"
 			label, hex = "REFUSED", "#f38ba8"
 		}
-		screen := capturePresentation(t, m, fmt.Sprintf("terminal-status-%t", pending))
+		if state == "exited" {
+			m.current().cli.screen.Exited = true
+			label, hex = "CLI: exited", "#f38ba8"
+		}
+		screen := capturePresentation(t, m, "terminal-status-"+state)
 		r := m.terminalBounds()
 		rows := []int{m.height - 2}
-		if !pending {
+		if state == "refused" {
 			rows = append(rows, r.Min.Y)
 		}
 		for _, y := range rows {
@@ -425,6 +429,43 @@ func TestTerminalStatusRoles(t *testing.T) {
 		content := m.View().Content
 		if ansi.Strip(content) != content || !strings.Contains(content, label) {
 			t.Fatal("NO_COLOR lost terminal status or leaked styles")
+		}
+	}
+}
+
+func TestSidebarBrand(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, demo := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/brand"}, false, launch.Options{})
+			if demo {
+				m = newDemoFrame(false)
+			}
+			m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			screen := capturePresentation(t, m, fmt.Sprintf("brand-%dx%d-demo-%t", size[0], size[1], demo))
+			_, right := m.columns()
+			x := m.width - right + 2
+			want, rows := "BURROW", 1
+			if size[0] >= 160 {
+				want, rows = burrowWordmark, 6
+			}
+			for y, line := range strings.Split(want, "\n") {
+				for offset, char := range []rune(line) {
+					cell := screen.CellAt(x+offset, y+1)
+					if cell.Content != string(char) || !colorMatches(cell.Style.Fg, lipgloss.Color(lavenderColor)) {
+						t.Fatalf("brand cell changed at %d,%d: %+v", x+offset, y+1, cell)
+					}
+				}
+			}
+			m.Update(tea.MouseClickMsg{X: x, Y: rows + 2, Button: tea.MouseLeft})
+			if m.modal != "metadata" {
+				t.Fatal("branding displaced daemon status pointer target")
+			}
+			m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+			m.noColor, m.current().management.noColor = true, true
+			content := m.View().Content
+			if content != ansi.Strip(content) || !strings.Contains(content, strings.Split(want, "\n")[0]) {
+				t.Fatal("NO_COLOR lost branding or leaked styles")
+			}
 		}
 	}
 }

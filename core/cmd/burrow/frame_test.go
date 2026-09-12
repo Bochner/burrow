@@ -124,6 +124,87 @@ func TestHovelTabStartsOnlyOnExplicitAction(t *testing.T) {
 	}
 }
 
+func TestWorkspaceTabShortcuts(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{Offline: true})
+	defer m.terminals.close()
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.Update(tea.PasteMsg{Content: "saved draft"})
+	m.Update(m.dispatch(m.active, func() tea.Msg {
+		return workspaceOpened{info: launch.Info{Workspace: "/tmp/two"}}
+	})())
+	press := func(code rune) tea.Cmd {
+		_, cmd := m.Update(tea.KeyPressMsg{Code: code, Mod: tea.ModAlt})
+		return cmd
+	}
+	if press('h') == nil || !m.terminalFocused() || m.current().cli == nil {
+		t.Fatal("Alt+H must explicitly open the workspace CLI")
+	}
+	tab := m.current().cli
+	if press('h') != nil || m.current().cli != tab {
+		t.Fatal("Alt+H duplicated a pending launch")
+	}
+	press('b')
+	if m.current().tab != "" || m.current().focus != "prompt" || !strings.Contains(m.View().Content, "saved draft") {
+		t.Fatal("Alt+B must restore the overview and draft")
+	}
+	press('h')
+	if m.current().cli != tab || !m.terminalFocused() {
+		t.Fatal("Alt+H must restore the same CLI")
+	}
+	m.openNew()
+	press('b')
+	if m.modal != "new" || m.current().tab != "hovel" {
+		t.Fatal("shortcut escaped the modal")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	m.selectWorkspace(1)
+	if m.current().tab != "" || m.current().cli != nil {
+		t.Fatal("tab shortcut leaked into another workspace")
+	}
+	press('b')
+	m.selectWorkspace(0)
+	if m.current().tab != "hovel" || m.current().cli != tab {
+		t.Fatal("workspace tab selection was not retained")
+	}
+}
+
+func TestExitedCLIRestartControls(t *testing.T) {
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		m := newFrame(launch.Info{Workspace: "/tmp/restart"}, true, launch.Options{Offline: true})
+		defer m.terminals.close()
+		m.Update(tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		m.current().cli = &cliTab{screen: ptyhost.Snapshot{Exited: true}}
+		m.current().lastSuccess = m.now
+		m.activate("hovel")
+		view := m.View().Content
+		if !strings.Contains(view, "CLI: exited") || !strings.Contains(view, "[Restart CLI]") {
+			t.Fatal(view)
+		}
+		old := m.current().cli
+		r := m.terminalBounds()
+		_, cmd := m.Update(tea.MouseClickMsg{X: r.Min.X + 1, Y: size.Y - 3, Button: tea.MouseLeft})
+		if cmd == nil || m.current().cli == old || !m.current().cli.pending {
+			t.Fatal("restart click must request a new verified launch")
+		}
+		pending := m.current().cli
+		m.activate("restart-cli")
+		if m.current().cli != pending {
+			t.Fatal("duplicate restart replaced pending launch")
+		}
+		m.Update(cmd()) // Refused offline launch remains explicitly retryable.
+		m.openNew()
+		m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
+		if m.current().cli != pending {
+			t.Fatal("restart escaped modal")
+		}
+		m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+		_, cmd = m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
+		if cmd == nil || m.current().cli == pending {
+			t.Fatal("Ctrl+R must retry refused CLI")
+		}
+	}
+}
+
 // Events and operation completions are the existing production interaction seam.
 // Delaying a completion here makes races deterministic without a fake renderer.
 func TestWorkspaceIsolationAndStatus(t *testing.T) {
@@ -158,15 +239,15 @@ func TestWorkspaceIsolationAndStatus(t *testing.T) {
 	now := time.Now()
 	m.now = now
 	send("/tmp/one", daemonObservation{info: launch.Info{Workspace: "/tmp/one", PID: 123}, at: now, duration: 23 * time.Millisecond})
-	if !strings.Contains(m.View().Content, "Hovel: verified") {
+	if !strings.Contains(m.View().Content, "Daemon: connected") {
 		t.Fatal(m.View().Content)
 	}
 	m.now = now.Add(9 * time.Second)
-	if !strings.Contains(m.View().Content, "Hovel: stale") {
+	if !strings.Contains(m.View().Content, "Daemon: stale") {
 		t.Fatal("stale success stayed green")
 	}
 	send("/tmp/one", daemonObservation{err: fmt.Errorf("identity refused"), at: m.now})
-	if !strings.Contains(m.View().Content, "Hovel: UNVERIFIED") {
+	if !strings.Contains(m.View().Content, "Daemon: UNVERIFIED") {
 		t.Fatal(m.View().Content)
 	}
 }

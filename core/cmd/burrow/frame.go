@@ -143,7 +143,7 @@ func (w *workspaceView) health(now time.Time) (string, lipgloss.Style) {
 	if now.Sub(w.lastSuccess) > freshFor {
 		return "stale", warningStyle
 	}
-	return "verified", successStyle
+	return "connected", successStyle
 }
 func (m *frame) resize() {
 	left, right := m.columns()
@@ -441,8 +441,16 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.modal != "" {
 			return m, m.modalKey(v)
 		}
+		if key.Matches(v, showBurrow) {
+			return m, m.activate("burrow")
+		}
+		if key.Matches(v, showHovel) {
+			return m, m.activate("hovel")
+		}
 		if m.terminalFocused() {
-			if key.Matches(v, terminalEscape) {
+			if key.Matches(v, restartTerminal) && m.current().canRestartCLI() {
+				return m, m.restartCLI()
+			} else if key.Matches(v, terminalEscape) {
 				m.current().focus = "tabs"
 			} else {
 				m.sendTerminal(uv.KeyPressEvent(v))
@@ -588,6 +596,8 @@ func (m *frame) activate(id string) tea.Cmd {
 		m.current().focus = "prompt"
 	case "hovel":
 		return m.openCLI()
+	case "restart-cli":
+		return m.restartCLI()
 	case "center":
 		m.current().focus = "prompt"
 	case "shells":
@@ -835,12 +845,17 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		return text
 	}
 	state, style := current.health(m.now)
-	status := current.management.paint(style, "● Hovel: "+state)
+	status := current.management.paint(style, "● Daemon: "+state)
 	cx, cw := left+2, w-left-right-4
 	if m.demo {
 		status = current.management.paint(warningStyle, "DEMO · sample data")
 	}
-	add("daemon", status, w-right+2, 1, max(1, min(26, right-2)), 1, 2)
+	brand, brandHeight := "BURROW", 1
+	if right-4 >= lipgloss.Width(burrowWordmark) && h >= 30 {
+		brand, brandHeight = burrowWordmark, lipgloss.Height(burrowWordmark)
+	}
+	add("brand", current.management.paint(accent, brand), w-right+2, 1, right-4, brandHeight, 2)
+	add("daemon", status, w-right+2, brandHeight+2, max(1, min(26, right-2)), 1, 2)
 	tabStyle, hovelStyle := activeStyle, secondary
 	tabLabel, hovelLabel := "› Burrow", "  Hovel"
 	if current.tab != "" {
@@ -882,16 +897,18 @@ func (m *frame) compositor() *lipgloss.Compositor {
 
 	if current.tab != "" {
 		text := "Select Hovel or press Enter to start the CLI."
-		status := "Hovel · " + safe(m.active)
+		status := "CLI: not started"
 		statusStyle := secondary
 		if tab := current.cli; tab != nil {
 			text = tab.screen.Screen
+			status = "CLI: running · " + safe(m.active)
 			if tab.pending {
 				status = "Hovel · opening / closing…"
 				statusStyle = warningStyle
 			}
 			if tab.screen.Exited {
-				status = "Hovel · exited · close tab to start again"
+				status = "CLI: exited"
+				statusStyle = errorStyle
 			}
 			if tab.error != "" {
 				status = tab.error
@@ -904,11 +921,15 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		r := m.terminalBounds()
 		add("terminal", text, r.Min.X, r.Min.Y, r.Dx(), r.Dy(), 3)
 		add("terminal-status", current.management.paint(statusStyle, status), cx, h-2, cw, 1, 3)
+		if current.canRestartCLI() {
+			add("restart-cli", current.management.paint(activeStyle, "[Restart CLI]"), cx, h-3, min(13, cw), 1, 4)
+		}
 	}
 	add("footer", current.management.paint(secondary, "Management · focus: "+current.focus), cx, h-4, cw, 1, 2)
 	if right > 0 {
 		add("metadata", "", w-right, 0, right, h, 0)
-		add("metadata", ansi.Wrap(m.metadata(), right-4, ""), w-right+2, 3, right-4, h-4, 1)
+		metadataY := brandHeight + 4
+		add("metadata", ansi.Wrap(m.metadata(), right-4, ""), w-right+2, metadataY, right-4, h-metadataY-1, 1)
 		add("separator", current.management.paint(separatorStyle, strings.Repeat("│\n", h)), w-right, 0, 1, h, 2)
 	}
 	sidebar := func(width, z int) {

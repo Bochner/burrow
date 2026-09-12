@@ -15,6 +15,9 @@ import (
 
 var terminalEscape = key.NewBinding(key.WithKeys("ctrl+]"))
 var toggleMouse = key.NewBinding(key.WithKeys("alt+s"))
+var showBurrow = key.NewBinding(key.WithKeys("alt+b"), key.WithHelp("Alt+B", "Burrow"))
+var showHovel = key.NewBinding(key.WithKeys("alt+h"), key.WithHelp("Alt+H", "Hovel"))
+var restartTerminal = key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+R", "restart CLI"))
 
 // Serializes launch registration against shutdown, including commands Bubble
 // Tea has not started yet. Closing waits for every child that actually started.
@@ -98,6 +101,24 @@ func (m *frame) openCLI() tea.Cmd {
 		}
 		return cliOpened{tab, host, err}
 	})
+}
+
+func (w *workspaceView) canRestartCLI() bool {
+	return w.cli != nil && !w.cli.pending && (w.cli.screen.Exited || w.cli.host == nil)
+}
+
+func (m *frame) restartCLI() tea.Cmd {
+	w := m.current()
+	if !w.canRestartCLI() {
+		return nil
+	}
+	old := w.cli.host
+	w.cli = nil
+	start := m.openCLI()
+	if old == nil {
+		return start
+	}
+	return tea.Sequence(func() tea.Msg { old.Close(); return nil }, start)
 }
 func (m *frame) readCLI(path string, tab *cliTab) tea.Cmd {
 	return m.dispatch(path, func() tea.Msg {

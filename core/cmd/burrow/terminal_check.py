@@ -150,9 +150,9 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         assert "embedded-b" not in cli(a, "op", "list")
         click(2, 3)
         wait("embedded-a/check")
-        click(29, 1)
+        send(b"\x1bb")  # Alt+B leaves the live CLI without forwarding the key.
         wait("management-draft")
-        click(39, 1)
+        send(b"\x1bh")  # Alt+H restores this workspace's existing CLI.
         wait("embedded-a/check")
         send(b"\x1b[200~op create pasted\n\x1b[201~")
         time.sleep(.3)
@@ -171,19 +171,17 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
             Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"], f"hovel-{width}x{height}.txt").write_text(capture)
         send(b"\x15")
         wait("h0v3l", True)
-        command("exit", "Hovel · exited", False)
+        command("quit", "CLI: exited", False)
         click(39, 1)
-        wait("Hovel · exited")
-        menu("Close Hovel CLI")
-        wait("CLI closed")
-        click(39, 1)
+        wait("CLI: exited")
+        wait("Daemon: connected")
+        wait("[Restart CLI]")
+        click(29, 37)
         wait("h0v3l", True)
         assert status(a)["pid"] == info_a["pid"]
         send(b"\x04")  # Hovel's actual EOF path, not a Burrow quit binding.
-        wait("Hovel · exited")
-        menu("Close Hovel CLI")
-        wait("CLI closed")
-        click(39, 1)
+        wait("CLI: exited")
+        send(b"\x12")  # Ctrl+R explicitly restarts only the exited CLI.
         wait("h0v3l", True)
         # Daemon loss must not start a replacement or silently retry a tab.
         os.kill(info_a["pid"], signal.SIGTERM)

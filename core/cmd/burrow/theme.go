@@ -28,6 +28,16 @@ const (
 )
 
 var accent = lipgloss.NewStyle().Foreground(lipgloss.Color(lavenderColor)).Bold(true)
+
+// Solid blocks and stippled shadow match pinned Hovel v0.4.2's wide CLI
+// wordmark technique, redrawn for Burrow's 28-cell sidebar.
+const burrowWordmark = `██  █ █ ██  ██  ███ █   █
+█░█ █░█░█░█ █░█ █░█░█░  █░
+██ ░█░█░██ ░██ ░█░█░█░█ █░
+█░█ █░█░█░█ █░█ █░█░█░█░█░
+██ ░███░█░█░█░█░███░ █ █ ░
+ ░░  ░░░ ░ ░ ░ ░ ░░░  ░ ░`
+
 var heading = lipgloss.NewStyle().Foreground(lipgloss.Color(blueColor)).Bold(true)
 var secondary = lipgloss.NewStyle().Foreground(lipgloss.Color(subtextColor))
 var separatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(borderColor))
@@ -171,9 +181,12 @@ func (m *frame) commandHelp() string {
 	binding := func(keys, label string) key.Binding {
 		return key.NewBinding(key.WithKeys(strings.ToLower(keys)), key.WithHelp(keys, label))
 	}
-	keys := []key.Binding{binding("Ctrl+P", "menu"), binding("F1", "help"), binding("Ctrl+C", "quit")}
+	keys := []key.Binding{showHovel, binding("Ctrl+P", "menu"), binding("F1", "help"), binding("Ctrl+C", "quit")}
 	if m.terminalFocused() {
-		keys = []key.Binding{binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
+		keys = []key.Binding{showBurrow, binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
+		if m.current().canRestartCLI() {
+			keys = []key.Binding{restartTerminal, showBurrow, binding("Ctrl+]", "frame controls")}
+		}
 		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 	}
 	keys = append(keys, binding("Alt+S", "mouse / select"))
