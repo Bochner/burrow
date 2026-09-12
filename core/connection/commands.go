@@ -17,16 +17,24 @@ import (
 )
 
 const Help = `connections                         Inspect retained owners
+connect                             Guided connection entry (terminal)
 connect NAME HOST USER [options]     Create shell-free SSH master
 reconnect NAME HOST USER [options]   Explicitly replace a lost owned connection
 inspect NAME                        State, endpoint and socket identity
 close NAME [--yes]                   Review/close all owned connection resources
 
-Required first: NAME HOST USER. Options: --key PATH or --agent PATH,
---port NUMBER (22), --known-hosts PATH (~/.ssh/known_hosts),
---trust SHA256:FINGERPRINT (explicit unknown-host approval), --yes.
-Without --yes, connect/close only show a review. No passwords in commands.
-Keys must be unencrypted or already unlocked in the selected SSH agent.
+Required first: NAME HOST USER (- uses SSH config user). Options:
+--key PATH, --agent PATH (SSH_AUTH_SOCK default), --port NUMBER (config/22),
+--ssh-config PATH (~/.ssh/config), --jump [USER@]HOST[:PORT][,...],
+--known-hosts PATH (~/.ssh/known_hosts), --trust SHA256:FINGERPRINT,
+--prompt (CLI hidden secret entry and host approval), --yes (confirm review).
+TUI connects review and prompt interactively; Ctrl+C/Esc cancels the attempt.
+CLI without --yes reviews; --prompt waits for authentication and cleans failure.
+Passwords/passphrases are terminal-only: never put secrets in commands.
+Aliases use OpenSSH HostName/User/Port/IdentityFile/IdentityAgent/ProxyJump.
+ProxyCommand and config forwarding/commands/trust overrides are not imported.
+Agent sockets must be accessible to the daemon; select the current socket with
+frontend SSH_AUTH_SOCK or --agent. No vault or daemon environment refresh.
 Unknown reservations require manual investigation; no force adoption.
 `
 
@@ -48,7 +56,7 @@ launch:
 `
 
 func Parse(workspace string, args []string) (Config, bool, error) {
-	c := Config{Workspace: workspace, Port: 22, Agent: os.Getenv("SSH_AUTH_SOCK")}
+	c := Config{Workspace: workspace, Agent: os.Getenv("SSH_AUTH_SOCK")}
 	if len(args) < 3 {
 		return c, false, fmt.Errorf("required first: NAME HOST USER; use help")
 	}
@@ -61,16 +69,32 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 		return c, false, e
 	}
 	c.KnownHosts = filepath.Join(home, ".ssh", "known_hosts")
+	c.SSHConfig = filepath.Join(home, ".ssh", "config")
 	fs := flag.NewFlagSet("connect", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&c.Key, "key", "", "key path")
 	fs.StringVar(&c.Agent, "agent", c.Agent, "agent socket")
 	fs.StringVar(&c.KnownHosts, "known-hosts", c.KnownHosts, "known-hosts path")
 	fs.StringVar(&c.Trust, "trust", "", "approved fingerprint")
-	fs.IntVar(&c.Port, "port", 22, "SSH port")
+	fs.StringVar(&c.SSHConfig, "ssh-config", c.SSHConfig, "OpenSSH configuration")
+	fs.StringVar(&c.Jump, "jump", "", "jump hosts")
+	fs.BoolVar(&c.Prompt, "prompt", false, "private terminal authentication")
+	fs.IntVar(&c.Port, "port", 0, "SSH port (configuration or 22)")
 	yes := fs.Bool("yes", false, "confirm reviewed operation")
 	if e = fs.Parse(args[3:]); e != nil || fs.NArg() != 0 {
 		return c, false, fmt.Errorf("invalid connection options; use help (secrets are not accepted)")
+	}
+	var invalidPort bool
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "agent" {
+			c.AgentExplicit = true
+		}
+		if f.Name == "port" && c.Port == 0 {
+			invalidPort = true
+		}
+	})
+	if invalidPort {
+		return c, false, fmt.Errorf("port must be 1–65535")
 	}
 	return c, *yes, c.Validate()
 }
@@ -174,6 +198,10 @@ func closeOwned(ctx context.Context, w string, s State) error {
 
 // Execute is the shared CLI/TUI command boundary. Hovel remains the state owner.
 func Execute(ctx context.Context, w string, args []string) (any, error) {
+	return execute(ctx, w, args, "")
+}
+
+func execute(ctx context.Context, w string, args []string, promptSocket string) (any, error) {
 	if e := ValidateCommand(w, args); e != nil {
 		return nil, e
 	}
@@ -201,8 +229,16 @@ func Execute(ctx context.Context, w string, args []string) (any, error) {
 		return nil, e
 	}
 	if !yes {
-		return map[string]string{"review": fmt.Sprintf("%s %s: authenticate %s@%s:%d using key/agent, retaining a shell-free master after frontend quit. Repeat with --yes to confirm.", args[0], c.Name, c.User, c.Host, c.Port)}, nil
+		c, e = c.resolve(ctx)
+		if e != nil {
+			return nil, e
+		}
+		return map[string]string{"review": fmt.Sprintf("%s %s\nEndpoint: %s@%s:%d\nSSH config: %s\nJump: %s\nKey: %s\nAgent: %s\nHost trust is verified. Retain a shell-free master after frontend quit. Repeat with --yes to confirm.", args[0], c.Name, c.User, c.Host, c.Port, c.SSHConfig, displaySetting(c.Jump, "none"), displaySetting(c.Key, "SSH config/default identities"), displaySetting(c.Agent, "none"))}, nil
 	}
+	if c.Prompt && promptSocket == "" {
+		return nil, fmt.Errorf("--prompt requires a private interactive frontend; secrets cannot be supplied as command inputs")
+	}
+	c.PromptSocket = promptSocket
 	if args[0] == "reconnect" {
 		s, e := selected(ctx, w, c.Name)
 		if e != nil {
@@ -257,12 +293,42 @@ func Execute(ctx context.Context, w string, args []string) (any, error) {
 	return selected(ctx, w, c.Name)
 }
 
+func displaySetting(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
 func Suggestions(states []State) []string {
-	values := []string{"status", "connections", "connect ", "help", "quit"}
+	values := []string{"status", "connections", "connect", "connect ", "help", "quit"}
 	for _, s := range states {
 		for _, verb := range []string{"inspect", "close", "reconnect"} {
 			values = append(values, verb+" "+s.Name)
 		}
+	}
+	return values
+}
+
+func CommandSuggestions(line string, states []State) []string {
+	args, e := Split(line)
+	if e != nil || len(args) < 4 || (args[0] != "connect" && args[0] != "reconnect") {
+		return Suggestions(states)
+	}
+	start := strings.LastIndexByte(line, ' ') + 1
+	if start < 1 || (start < len(line) && !strings.HasPrefix(line[start:], "--")) {
+		return nil
+	}
+	if start == len(line) && len(args) > 4 {
+		for _, flag := range []string{"--key", "--agent", "--port", "--ssh-config", "--jump", "--known-hosts", "--trust"} {
+			if args[len(args)-1] == flag {
+				return nil
+			}
+		}
+	}
+	values := []string{}
+	for _, option := range []string{"--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--known-hosts ", "--trust ", "--prompt", "--yes"} {
+		values = append(values, line[:start]+option)
 	}
 	return values
 }

@@ -49,6 +49,12 @@ func safe(s string) string {
 }
 
 func run(args []string) error {
+	if os.Getenv("BURROW_ASKPASS") == "1" {
+		if len(args) != 1 || term.IsTerminal(os.Stdout.Fd()) {
+			return fmt.Errorf("invalid authentication helper invocation")
+		}
+		return connection.Askpass(args[0])
+	}
 	if len(args) == 1 && args[0] == "connection-module" {
 		hovel.Serve(connection.Module{})
 		return nil
@@ -89,6 +95,23 @@ func run(args []string) error {
 		command = fs.Arg(0)
 	}
 	if command != "status" && command != "tui" {
+		if command == "connect" || command == "reconnect" {
+			interactive := command == "connect" && fs.NArg() == 1
+			if fs.NArg() > 1 {
+				c, yes, err := connection.Parse(o.Workspace, fs.Args()[1:])
+				if err != nil {
+					return err
+				}
+				interactive = c.Prompt || (!yes && term.IsTerminal(os.Stdin.Fd()))
+			}
+			if interactive {
+				a := &authenticate{workspace: o.Workspace, args: fs.Args()}
+				if e := a.Run(); e != nil {
+					return e
+				}
+				return json.NewEncoder(os.Stdout).Encode(a.result)
+			}
+		}
 		if e := connection.ValidateCommand(o.Workspace, fs.Args()); e != nil {
 			return e
 		}

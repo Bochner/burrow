@@ -238,6 +238,12 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 		switch result := v.message.(type) {
+		case authenticationRequested:
+			a := &authenticate{workspace: path, args: result.args}
+			m.sequence++
+			id := m.sequence
+			m.pending[id] = path
+			return m, tea.Exec(a, func(err error) tea.Msg { return workspaceMessage{path, id, connectionResult{a.result, err}} })
 		case cliOpened, cliScreen, cliClosed:
 			return m, m.terminalResult(path, result)
 		case tea.QuitMsg:

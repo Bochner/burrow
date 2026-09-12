@@ -4,7 +4,6 @@ package connection
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,21 +19,26 @@ import (
 
 	"github.com/Bochner/burrow/core/launch"
 	"github.com/vibepwners/hovel/sdk/go/hovel"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
 	"golang.org/x/sys/unix"
 )
 
 type Config struct {
-	Workspace  string `json:"workspace"`
-	Name       string `json:"name"`
-	Host       string `json:"host"`
-	User       string `json:"user"`
-	Port       int    `json:"port"`
-	Key        string `json:"key,omitempty"`
-	Agent      string `json:"agent,omitempty"`
-	KnownHosts string `json:"knownHosts"`
-	Trust      string `json:"trust,omitempty"`
+	identities     []string
+	identitiesOnly bool
+	Workspace      string `json:"workspace"`
+	Name           string `json:"name"`
+	Host           string `json:"host"`
+	User           string `json:"user"`
+	Port           int    `json:"port"`
+	Key            string `json:"key,omitempty"`
+	Agent          string `json:"agent,omitempty"`
+	AgentExplicit  bool   `json:"agentExplicit,omitempty"`
+	KnownHosts     string `json:"knownHosts"`
+	Trust          string `json:"trust,omitempty"`
+	SSHConfig      string `json:"sshConfig,omitempty"`
+	Jump           string `json:"jump,omitempty"`
+	Prompt         bool   `json:"prompt,omitempty"`
+	PromptSocket   string `json:"promptSocket,omitempty"`
 }
 type State struct {
 	Name        string `json:"name"`
@@ -58,127 +61,24 @@ func (c Config) Validate() error {
 	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$`).MatchString(c.Host) {
 		return fmt.Errorf("host must be a literal hostname or IP address")
 	}
-	if !regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`).MatchString(c.User) {
+	if c.User != "-" && !regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`).MatchString(c.User) {
 		return fmt.Errorf("invalid SSH username")
 	}
-	if c.Port < 1 || c.Port > 65535 {
+	if c.Port < 0 || c.Port > 65535 {
 		return fmt.Errorf("port must be 1–65535")
 	}
 	if c.Trust != "" && !regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`).MatchString(c.Trust) {
 		return fmt.Errorf("trust must be a SHA256 host-key fingerprint")
 	}
-	for _, p := range []string{c.Key, c.Agent, c.KnownHosts} {
+	for _, p := range []string{c.Key, c.Agent, c.KnownHosts, c.SSHConfig, c.PromptSocket} {
 		if p != "" && (!filepath.IsAbs(p) || filepath.Clean(p) != p || strings.ContainsAny(p, "\x00\r\n\t\"%")) {
 			return fmt.Errorf("key, agent and known-hosts paths must be absolute canonical paths without SSH expansions or control characters")
 		}
 	}
-	if c.Key == "" && c.Agent == "" {
-		return fmt.Errorf("select --key PATH or --agent PATH (SSH_AUTH_SOCK is the default)")
+	if c.Jump != "" && !regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.:@,\[\]-]{0,1000}$`).MatchString(c.Jump) {
+		return fmt.Errorf("invalid jump host; use [USER@]HOST[:PORT], separated by commas")
 	}
 	return nil
-}
-
-// Trust scans public host keys only; it never sends an authentication credential.
-// Existing trust is authoritative: an approval cannot override a changed key.
-func (c Config) hostKeys(ctx context.Context) ([]byte, error) {
-	store, e := launch.TrustStore(ctx, c.Workspace)
-	if e != nil {
-		return nil, e
-	}
-	defer store.Close()
-	files := []string{store.Name()}
-	if _, e := os.Stat(c.KnownHosts); e == nil {
-		files = append(files, c.KnownHosts)
-	} else if !os.IsNotExist(e) {
-		return nil, fmt.Errorf("cannot read selected known-hosts file")
-	}
-	check, e := knownhosts.New(files...)
-	if e != nil {
-		return nil, fmt.Errorf("cannot parse selected known-hosts file")
-	}
-	address := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
-	// OpenSSH handles hashed names, patterns, revocations and algorithm choice.
-	// Known hosts need no extra unauthenticated connections just to rediscover keys.
-	var existing []byte
-	for _, path := range files {
-		cmd := exec.CommandContext(ctx, "/usr/bin/ssh-keygen", "-F", knownhosts.Normalize(address), "-f", path)
-		var found limitedBuffer
-		cmd.Stdout = &found
-		err := cmd.Run()
-		if err == nil {
-			existing = append(existing, found.data...)
-		} else if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-	}
-	if len(existing) > 0 {
-		return existing, nil
-	}
-	cmd := exec.CommandContext(ctx, "/usr/bin/ssh-keyscan", "-T", "3", "-p", strconv.Itoa(c.Port), "--", c.Host)
-	var scan limitedBuffer
-	cmd.Stdout = &scan
-	if e := cmd.Run(); e != nil {
-		return nil, fmt.Errorf("host-key discovery failed; no authentication attempted")
-	}
-	var accepted []byte
-	var approved []byte
-	var fingerprints []string
-	for _, line := range strings.Split(string(scan.data), "\n") {
-		if strings.HasPrefix(line, "#") || line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
-		}
-		key, _, _, _, e := ssh.ParseAuthorizedKey([]byte(strings.Join(fields[1:], " ")))
-		if e != nil {
-			continue
-		}
-		fingerprint := ssh.FingerprintSHA256(key)
-		fingerprints = append(fingerprints, fingerprint)
-		trusted := false
-		if check != nil {
-			e = check(address, &net.TCPAddr{IP: net.ParseIP(c.Host), Port: c.Port}, key)
-			if e == nil {
-				trusted = true
-			} else {
-				var changed *knownhosts.KeyError
-				if !errors.As(e, &changed) {
-					return nil, fmt.Errorf("changed or revoked host key; refusing authentication")
-				}
-				for _, want := range changed.Want {
-					if want.Key.Type() == key.Type() {
-						return nil, fmt.Errorf("changed host key; refusing authentication even with --trust")
-					}
-				}
-				// A server may offer additional algorithms. Existing trust for a different
-				// algorithm is not a key change and does not approve these extra keys.
-				if len(changed.Want) > 0 {
-					continue
-				}
-			}
-		}
-		if trusted || c.Trust == fingerprint {
-			line := []byte(knownhosts.Normalize(address) + " " + string(ssh.MarshalAuthorizedKey(key)))
-			accepted = append(accepted, line...)
-			if !trusted {
-				approved = append(approved, line...)
-			}
-		}
-	}
-	if len(accepted) == 0 {
-		return nil, fmt.Errorf("unknown host; verify a fingerprint independently, then repeat with --trust FINGERPRINT: %s", strings.Join(fingerprints, " "))
-	}
-	if len(approved) > 0 {
-		if _, e = store.Write(approved); e != nil {
-			return nil, fmt.Errorf("host approval could not be saved")
-		}
-		if e = store.Sync(); e != nil {
-			return nil, fmt.Errorf("host approval sync failed")
-		}
-	}
-	return accepted, nil
 }
 
 // Never retain raw SSH stderr, banners or credential-helper output.
@@ -192,9 +92,12 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 
 // Classify only fixed OpenSSH diagnostics; never expose or persist banners/raw stderr.
 type sshFailure struct {
-	mu      sync.Mutex
-	tail    string
-	changed bool
+	mu          sync.Mutex
+	tail        string
+	changed     bool
+	trust       bool
+	credentials bool
+	transport   bool
 }
 
 func (f *sshFailure) Write(p []byte) (int, error) {
@@ -202,6 +105,9 @@ func (f *sshFailure) Write(p []byte) (int, error) {
 	defer f.mu.Unlock()
 	s := f.tail + string(p)
 	f.changed = f.changed || strings.Contains(s, "HOST IDENTIFICATION HAS CHANGED") || strings.Contains(s, "REVOKED HOST KEY")
+	f.trust = f.trust || strings.Contains(s, "Host key verification failed")
+	f.credentials = f.credentials || strings.Contains(s, "interactive authentication unavailable") || strings.Contains(s, "authentication frontend unavailable")
+	f.transport = f.transport || strings.Contains(s, "Connection refused") || strings.Contains(s, "Connection timed out") || strings.Contains(s, "Could not resolve hostname") || strings.Contains(s, "administratively prohibited")
 	f.tail = s[max(0, len(s)-40):]
 	return len(p), nil
 }
@@ -210,6 +116,15 @@ func (f *sshFailure) detail() string {
 	defer f.mu.Unlock()
 	if f.changed {
 		return "changed or revoked host key; refusing authentication even with --trust"
+	}
+	if f.trust {
+		return "host key verification failed: unknown host approval rejected or unavailable; use --prompt to verify the fingerprint"
+	}
+	if f.credentials {
+		return "SSH authentication failed: terminal entry unavailable; use --prompt for passwords/encrypted keys or select an accessible key/agent"
+	}
+	if f.transport {
+		return "SSH connection or jump failed; check host/port, reachability and jump forwarding permission, then retry explicitly"
 	}
 	return "SSH ended: authentication failed, cancelled, or transport lost; reconnect explicitly"
 }
@@ -258,18 +173,20 @@ func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
 }
 
 type owner struct {
-	mu        sync.Mutex
-	config    Config
-	dir       *os.File
-	state     State
-	master    *exec.Cmd
-	socket    os.FileInfo
-	trustFile os.FileInfo
-	done      chan struct{}
-	cancel    context.CancelFunc
-	closed    bool
-	log       *hovel.Logger
-	logs      int
+	mu         sync.Mutex
+	config     Config
+	dir        *os.File
+	state      State
+	master     *exec.Cmd
+	socket     os.FileInfo
+	trustFile  os.FileInfo
+	configFile os.FileInfo
+	trustBytes int
+	done       chan struct{}
+	cancel     context.CancelFunc
+	closed     bool
+	log        *hovel.Logger
+	logs       int
 }
 
 func (s *owner) milestone(message string) {
@@ -292,10 +209,10 @@ func (s *owner) Open() error {
 }
 func (s *owner) connect(ctx context.Context) {
 	defer close(s.done)
-	auth, cancel := context.WithTimeout(ctx, 12*time.Second)
+	auth, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	keys, e := s.config.hostKeys(auth)
 	s.mu.Lock()
+	keys, e := s.trustSnapshot(auth)
 	if e == nil {
 		e = launch.VerifyReservation(auth, s.config.Workspace, s.dir)
 	}
@@ -310,6 +227,7 @@ func (s *owner) connect(ctx context.Context) {
 	file, e := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if e == nil {
 		_, e = file.Write(keys)
+		s.trustBytes = len(keys)
 		s.trustFile, _ = file.Stat()
 		ce := file.Close()
 		if e == nil {
@@ -322,20 +240,42 @@ func (s *owner) connect(ctx context.Context) {
 		s.mu.Unlock()
 		return
 	}
-	args := []string{"-F", "/dev/null", "-M", "-N", "-T", "-S", s.state.Socket, "-o", "ControlPersist=no", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "GlobalKnownHostsFile=/dev/null", "-o", "UserKnownHostsFile=" + strconv.Quote(path), "-o", "UpdateHostKeys=no", "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=2", "-o", "ServerAliveCountMax=2", "-o", "PreferredAuthentications=publickey", "-p", strconv.Itoa(s.config.Port), "-l", s.config.User}
-	if s.config.Key != "" {
-		args = append(args, "-i", s.config.Key, "-o", "IdentitiesOnly=yes")
+	config, e := s.sshConfig(auth, path)
+	configPath := filepath.Join(s.dir.Name(), "ssh_config")
+	if e == nil {
+		var f *os.File
+		f, e = os.OpenFile(configPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if e == nil {
+			_, e = f.Write(config)
+			s.configFile, _ = f.Stat()
+			ce := f.Close()
+			if e == nil {
+				e = ce
+			}
+		}
 	}
-	agent := s.config.Agent
-	if agent == "" {
-		agent = "none"
+	if e != nil {
+		s.state.State = "lost"
+		s.state.Detail = "SSH configuration refused: " + e.Error()
+		s.mu.Unlock()
+		return
 	}
-	args = append(args, "-o", "IdentityAgent="+strconv.Quote(agent), "--", s.config.Host)
+	args := []string{"-F", configPath, "-M", "-N", "-T", "-S", s.state.Socket, "--", "burrow-hop-0"}
 	s.master = exec.Command("/usr/bin/ssh", args...)
+	// A jump child may hold stderr open after the master exits. Bound Wait so
+	// the owner can reap the entire process group on loss as well as on close.
+	s.master.WaitDelay = 2 * time.Second
 	failure := &sshFailure{}
 	s.master.Stderr = failure
-	s.master.Env = []string{"PATH=/usr/bin:/bin", "LANG=C", "SSH_ASKPASS_REQUIRE=never"}
-	s.master.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
+	executable, e := os.Executable()
+	if e != nil {
+		s.state.State = "lost"
+		s.state.Detail = "authentication helper unavailable"
+		s.mu.Unlock()
+		return
+	}
+	s.master.Env = []string{"PATH=/usr/bin:/bin", "LANG=C", "SSH_ASKPASS_REQUIRE=force", "SSH_ASKPASS=" + executable, "BURROW_ASKPASS=1", "BURROW_PROMPT_SOCKET=" + s.config.PromptSocket, "BURROW_TRUST=" + s.config.Trust}
+	s.master.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM, Setpgid: true}
 	// Linux parent-death signals follow the spawning thread, not the Go process.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -356,13 +296,17 @@ func (s *owner) connect(ctx context.Context) {
 		select {
 		case <-exited:
 			s.mu.Lock()
+			syscall.Kill(-master.Process.Pid, syscall.SIGKILL)
 			s.state.State = "lost"
 			s.state.Detail = failure.detail()
+			if e := s.saveTrust(); e != nil {
+				s.state.Detail = "host approval persistence failed; inspect workspace trust"
+			}
 			s.milestone("connection lost")
 			s.mu.Unlock()
 			return
 		case <-ctx.Done():
-			master.Process.Kill()
+			syscall.Kill(-master.Process.Pid, syscall.SIGKILL)
 			<-exited
 			return
 		case <-time.After(100 * time.Millisecond):
@@ -372,6 +316,11 @@ func (s *owner) connect(ctx context.Context) {
 				if err == nil && st.Mode()&os.ModeSocket != 0 && st.Sys().(*syscall.Stat_t).Uid == uint32(os.Getuid()) {
 					s.socket = st
 					if s.checkMaster() == nil {
+						if e := s.saveTrust(); e != nil {
+							syscall.Kill(-master.Process.Pid, syscall.SIGKILL)
+							s.mu.Unlock()
+							continue
+						}
 						s.state.State = "connected"
 						s.state.SocketInode = st.Sys().(*syscall.Stat_t).Ino
 						s.state.Detail = "shell-free master"
@@ -379,7 +328,7 @@ func (s *owner) connect(ctx context.Context) {
 					}
 				}
 				if auth.Err() != nil {
-					master.Process.Kill()
+					syscall.Kill(-master.Process.Pid, syscall.SIGKILL)
 				}
 			}
 			s.mu.Unlock()
@@ -478,7 +427,11 @@ func (s *owner) Close(reason string) error {
 		s.mu.Unlock()
 		return fmt.Errorf("unidentified master socket preserved; investigate manually")
 	}
-	s.cancel()
+	if s.cancel != nil {
+		s.cancel()
+	} else {
+		close(s.done)
+	}
 	s.mu.Unlock()
 	select {
 	case <-s.done:
@@ -492,7 +445,7 @@ func (s *owner) Close(reason string) error {
 	if e = launch.VerifyReservation(c, s.config.Workspace, s.dir); e != nil {
 		return e
 	}
-	for path, expected := range map[string]os.FileInfo{s.state.Socket: s.socket, filepath.Join(s.dir.Name(), "known_hosts"): s.trustFile} {
+	for path, expected := range map[string]os.FileInfo{s.state.Socket: s.socket, filepath.Join(s.dir.Name(), "known_hosts"): s.trustFile, filepath.Join(s.dir.Name(), "ssh_config"): s.configFile} {
 		st, err := os.Lstat(path)
 		if os.IsNotExist(err) {
 			continue

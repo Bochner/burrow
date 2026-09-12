@@ -23,7 +23,7 @@ py_test(
 )
 py_test(
     name = "connection_lab",
-    srcs = ["connection_lab.py"],
+    srcs = ["connection_lab.py", "authentication_lab.py"],
     main = "connection_lab.py",
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)"],
     data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check"],
@@ -34,8 +34,9 @@ py_test(
 
 go_binary(
     name = "burrow",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go"],
     deps = [
+        "@org_golang_x_sys//unix",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
         "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",
@@ -69,8 +70,9 @@ py_test(
 
 go_test(
     name = "interaction_test",
-    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "frame_test.go", "presentation_test.go"],
+    srcs = ["main.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "frame_test.go", "presentation_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
+        "@org_golang_x_sys//unix",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
         "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",

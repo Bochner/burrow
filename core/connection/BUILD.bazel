@@ -2,8 +2,8 @@ load("@rules_go//go:def.bzl", "go_library")
 exports_files(["lab-image.txt"])
 go_library(
     name = "connection",
-    srcs = ["connection_linux.go", "commands.go"],
+    srcs = ["connection_linux.go", "commands.go", "prompt_linux.go", "ssh_config.go"],
     importpath = "github.com/Bochner/burrow/core/connection",
     visibility = ["//visibility:public"],
-    deps = ["//core/launch", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix", "@org_golang_x_crypto//ssh", "@org_golang_x_crypto//ssh/knownhosts"],
+    deps = ["//core/launch", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],
 )

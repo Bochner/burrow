@@ -19,6 +19,8 @@ import tempfile
 import termios
 import time
 
+from core.cmd.burrow.authentication_lab import authentication_matrix
+
 binary, wheel, image_file, screen_check = [str(Path(p).resolve()) for p in sys.argv[1:]]
 image = Path(image_file).read_text().strip()
 def interrupted(signum, _frame):
@@ -52,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
     command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key)
     try:
         container = command("docker", "run", "-d", "--rm", "--publish", "127.0.0.1::2222",
-                            "--env", "USER_NAME=tester", "--env", "PASSWORD_ACCESS=false",
+                            "--env", "USER_NAME=tester", "--env", "PASSWORD_ACCESS=true",
                             "--env", "PUBLIC_KEY_FILE=/client.pub", "--mount",
                             f"type=bind,src={key}.pub,dst=/client.pub,readonly", image).strip()
         port = int(command("docker", "port", container, "2222/tcp").strip().rsplit(":", 1)[1])
@@ -63,6 +65,10 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             except OSError:
                 return False
         wait(ready)
+        # This sandbox image disables forwarding by default; the jump-host
+        # fixture explicitly enables TCP forwarding and reloads only its sshd.
+        command("docker", "exec", container, "sh", "-c",
+                "sed -i 's/^AllowTcpForwarding no$/AllowTcpForwarding yes/' /config/sshd/sshd_config && kill -HUP $(cat /config/sshd.pid)")
         hostkey = command("docker", "exec", container, "cat", "/config/ssh_host_keys/ssh_host_ed25519_key.pub").split()
         fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(base64.b64decode(hostkey[1])).digest()).decode().rstrip("=")
         def burrow(w, *args, ok=True):
@@ -80,7 +86,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         plain = ["--key", str(key), "--port", str(port), "--yes"]
         burrow(w, "connect", "unknown", "127.0.0.1", "tester", *plain)
         refused = wait(lambda: state_is(w, "unknown", "lost"))
-        assert "unknown host" in refused["detail"] and refused["masterPID"] == 0
+        assert "unknown host" in refused["detail"], refused
+        assert not Path(refused["socket"]).exists()
         burrow(w, "reconnect", "unknown", "127.0.0.1", "tester", *options)
         wait(lambda: state_is(w, "unknown", "connected"))
         burrow(w, "close", "unknown", "--yes")
@@ -191,6 +198,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             if path.is_file():
                 assert canary.encode() not in path.read_bytes(), path
                 assert b"BEGIN OPENSSH PRIVATE KEY" not in path.read_bytes(), path
+        auth_secret, auth_key = authentication_matrix(binary, w, root, env, container, port, key, fingerprint, burrow, wait)
+        trusted = trust_file.read_bytes()  # Includes the explicitly approved jump destination.
         # Actual TUI commands, terminal restoration, narrow rendering and quit
         # retention. The screen oracle is the existing pinned VT emulator.
         for i in range(7):
@@ -255,6 +264,24 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             os.write(outer, b"close terminal --yes\r")
             wait(lambda: screen_contains(b'"closed"'))
             assert all(s["name"] != "terminal" for s in burrow(w, "connections"))
+            # Secret entry is exercised from the real management command, with
+            # no secret in command/history text or the complete terminal stream.
+            ui_command = shlex.join(["connect", "terminal-secret", "127.0.0.1", "tester", "--port", str(port), "--yes"])
+            os.write(outer, ui_command.encode() + b"\r")
+            wait(lambda: screen_contains(b"SSH password"))
+            os.write(outer, auth_secret.encode() + b"\r")
+            wait(lambda: screen_contains(b'"terminal-secret"'))
+            assert burrow(w, "inspect", "terminal-secret")["state"] == "connected"
+            assert auth_secret.encode() not in output
+            os.write(outer, b"close terminal-secret --yes\r")
+            wait(lambda: screen_contains(b'"closed"'))
+            ui_command = shlex.join(["connect", "terminal-cancel", "127.0.0.1", "tester", "--key", str(auth_key), "--port", str(port), "--yes"])
+            os.write(outer, ui_command.encode() + b"\r")
+            wait(lambda: screen_contains(b"SSH key passphrase"))
+            os.write(outer, b"\x03")
+            wait(lambda: screen_contains(b"attempt closed"))
+            assert not (w / "burrow/terminal-cancel").exists()
+            assert auth_secret.encode() not in output
             # Repaint after resize starts a new screen; do not replay old 160-column
             # cursor coordinates into an emulator that was only ever 120 columns.
             while select.select([outer], [], [], 0)[0]:

@@ -121,6 +121,22 @@ func TestPresentation(t *testing.T) {
 	}
 }
 
+func TestConnectionOptionCompletion(t *testing.T) {
+	for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		m := newFrame(launch.Info{Workspace: "/tmp/auth-completion"}, true, launch.Options{})
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m.Update(tea.PasteMsg{Content: "connect gateway host user --j"})
+		if !strings.Contains(ansi.Strip(m.View().Content), "COMPLETION") {
+			t.Fatal("connection option completion unavailable")
+		}
+		m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		if got := m.current().management.input.Value(); got != "connect gateway host user --jump " {
+			t.Fatalf("wrong completed option: %q", got)
+		}
+		capturePresentation(t, m, fmt.Sprintf("%dx%d-connect-options", size[0], size[1]))
+	}
+}
+
 func helpBorders(view string) string {
 	var found []string
 	for y, line := range strings.Split(view, "\n") {

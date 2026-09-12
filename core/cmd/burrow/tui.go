@@ -121,7 +121,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.connectionError = ""
 			m.connections = v.states
-			m.input.SetSuggestions(connection.Suggestions(v.states))
+			m.input.SetSuggestions(connection.CommandSuggestions(m.input.Value(), v.states))
 		}
 		return m, connectionTimer()
 	case connectionResult:
@@ -151,6 +151,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.input.SetValue(m.input.Value() + safe(v.Content))
 		m.input.CursorEnd()
+		m.input.SetSuggestions(connection.CommandSuggestions(m.input.Value(), m.connections))
 		return m, nil
 	case tea.KeyPressMsg:
 		if m.quitting {
@@ -248,7 +249,8 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return statusRequested{} }
 			default:
 				args, e := connection.Split(command)
-				if e == nil {
+				wizard := len(args) == 1 && args[0] == "connect"
+				if e == nil && !wizard {
 					e = connection.ValidateCommand(m.info.Workspace, args)
 				}
 				if e != nil {
@@ -260,6 +262,9 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.busy = true
 				m.output = "Running reviewed command through Hovel…"
 				workspace := m.info.Workspace
+				if args[0] == "connect" || args[0] == "reconnect" {
+					return m, func() tea.Msg { return authenticationRequested{args: args} }
+				}
 				return m, func() tea.Msg {
 					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 					defer cancel()
@@ -274,6 +279,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.input, cmd = m.input.Update(msg)
 	if _, ok := msg.(tea.KeyPressMsg); ok {
 		m.input.ShowSuggestions = true
+		m.input.SetSuggestions(connection.CommandSuggestions(m.input.Value(), m.connections))
 	}
 	return m, cmd
 }
