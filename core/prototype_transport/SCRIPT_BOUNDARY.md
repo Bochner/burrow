@@ -6,7 +6,7 @@ For [Can remote script runs satisfy Hovel execution and cleanup contracts?](http
 execution after caller loss at the pinned Hovel revision.** This is a prerequisite
 failure reproduction, not the full script implementation or an accepted workaround.
 The owner accepted the retained-session sequence and explicit-collection limit
-below. The remaining invocation/cleanup matrix is still open.
+below. The invocation follow-up below extends that sequence; owner acceptance of its final limits is pending.
 
 Run `aspect burrow-prototype transport` or `aspect burrow-check`. The latter also
 builds the SDK package/frontend and checks the SDK protocol and documentation.
@@ -66,12 +66,9 @@ below proves the now-accepted lifetime/collection sequence; the remaining
 workflow matrix is not yet a complete production contract.
 An upstream retained-run contract remains the other route.
 
-Do not claim the remaining ticket matrix has passed: operator-selected local
-tools driving two connections, remote existing commands/scripts, separate stdin
-files, actual staged-file cleanup and keep behavior, per-run cancellation with a
-child, timeout, connection loss during execution and cleanup, and long-running
-retained status/output still need the selected execution path. No AI integration,
-new job framework, audit database or production SSH code is introduced.
+The original probe alone does not establish the retained workflow. The follow-ups
+below separate the lifetime proof from the complete invocation matrix. No new
+job framework, audit database or production SSH code is introduced.
 
 ## Retained-session follow-up
 
@@ -154,11 +151,71 @@ result integrity, production signal escalation, or cleanup under every failure.
 Transport loss is reported as unknown even when the independent loopback harness
 can observe termination or remove leftover fixture files.
 
-The full ticket still requires local tools selecting between two connections,
-operator-selected scripts/interpreters, existing remote commands/scripts,
-independent stdin files, streaming through this retained path, injected cleanup
-failure, and a final output/retention policy. The original streamed synchronous
-probe is separate evidence, not proof of those features in this candidate.
-Do not close the ticket or unblock final slice planning merely because this
-bounded gate passes. The lifetime/collection tradeoff is accepted; the remaining workflow matrix
-must still be demonstrated before resolving the complete scripting ticket.
+## Invocation and cleanup follow-up
+
+The same retained-session implementation now snapshots a bounded, non-secret
+fixture request before preparation returns. It sends that JSON envelope through
+SSH stdin before the cancellation control stream. Script contents and stdin do
+not enter SSH argv or Hovel configuration; the harness writes the request under
+its private scratch root. This file is fixture input, not a job ledger or a
+production secret-delivery interface.
+
+The added checks exercise these paths through confirmed preparation, launch and
+collection, and verify the collected artifact survives session close:
+
+- Operator-selected local script, explicit `/bin/sh`, separate arguments including
+  empty strings, quotes, metacharacters and Unicode, and independent binary stdin.
+- Staged execution with remove/keep; streamed execution through an inherited pipe
+  with no named remote script; existing remote script without deleting its source.
+- Existing `/bin/cat` command and an alternate explicitly selected Python
+  interpreter. Script input and the program's stdin remain separate.
+- A real cleanup failure: unexpected content prevents removal of the staging
+  directory. The report says `failed`; unrelated content survives. Only the
+  independent harness removes that leftover fixture data.
+- Two daemon-owned masters to the same test server, distinguished by their actual
+  SSH connection tuples. A local Python driver receives the selected config and
+  socket as non-secret argv. After one master closes, selecting its old socket
+  returns SSH 255 without authenticating again; its sibling still works.
+
+The local driver runs under the same public Hovel retained-session/confirmed
+operation mechanism on the operator host. Its outer artifact contains `localExit`
+(the fixture deliberately exits 23), while its inert JSON stdout separately
+reports the SSH child's status. Burrow must not interpret arbitrary tool stdout
+as a trusted remote result. Hovel confirms and records the outer operation, not
+each command an unrestricted local script sends through the socket. Raw external
+socket use remains outside Hovel confirmation and artifact collection. Local
+cancellation can terminate the local process group; it does not establish remote
+termination or cleanup. Use the supervised remote-run path when those guarantees
+are required. No legacy environment-variable API or plugin framework is added.
+
+### Proposed initial limits for owner review
+
+- Retain a 65,536-byte prefix of **each** stream with exact discarded-byte counts;
+  show truncation explicitly. Results are available after completion. Collection
+  persists them in Hovel artifacts; uncollected output can be lost, as already
+  accepted. Larger/full output and live output streaming are subsequent work.
+- The supervised remote path requires Linux with Python 3 and the selected
+  interpreter. The fixture uses pinned Python 3.12; this does not prove arbitrary
+  targets have it. Implementation must check prerequisites and refuse clearly,
+  without silently downgrading cancellation or installing remote software.
+- Process-group cancellation covers ordinary descendants, not escaped/daemonized
+  children. Transport loss keeps completion and cleanup unknown. The local-tool
+  path makes no remote termination/cleanup promise.
+- The 64 KiB request and 4 KiB streamed-script bounds are disposable harness
+  limits. They are **not** product script-size limits. Production must transport
+  operator inputs incrementally and preserve independent stdin/cancellation.
+
+No credentials were used in operator inputs: the gate uses generated fixture
+keys and inert data only. General secret-bearing script inputs/output require
+the existing credential/retention contract, not generic saved configuration.
+This proof does not validate arbitrary script safety, hostile-target result
+integrity, production portability, or full LazySSH feature completion.
+
+The comparison was traced against LazySSH's pinned
+[plugin execution source](https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/plugin_manager.py)
+and [execution tests](https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/tests/test_plugin_manager.py):
+interpreter/argv construction, selected connection context, separate output
+streams and failure status inform this fixture. Legacy discovery/environment
+compatibility is already excluded. Unlike LazySSH's streaming entrypoint, this
+bounded retained proof exposes final output only; that difference requires the
+owner's explicit initial-scope decision, not an assertion of full parity.

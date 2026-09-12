@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -29,12 +30,13 @@ type retainedScript struct {
 	input    io.WriteCloser
 	done     chan struct{}
 	report   map[string]any
+	request  []byte
 }
 
 func (p *ownership) startRetainedScript(ctx *hovel.Context) (hovel.Result, error) {
 	fixture := ctx.InputString("proof_case", "success")
 	switch fixture {
-	case "success", "nonzero", "cancel", "timeout", "loss", "launch-loss":
+	case "success", "nonzero", "cancel", "timeout", "loss", "launch-loss", "invocation":
 	default:
 		return hovel.Result{}, fmt.Errorf("unsupported inert fixture")
 	}
@@ -45,8 +47,28 @@ func (p *ownership) startRetainedScript(ctx *hovel.Context) (hovel.Result, error
 	root := os.Getenv("BURROW_OWNER_ROOT")
 	marker := filepath.Join(root, "retained-"+fixture)
 	command := "exec " + shellQuote(os.Getenv("BURROW_SCRIPT_PYTHON")) + " -c " + shellQuote(scriptFixture) + " " + shellQuote(fixture) + " " + shellQuote(marker) + " " + shellQuote(keep)
-	cmd := exec.Command("/usr/bin/ssh", "-F", os.Getenv("BURROW_OWNER_CONFIG"), "-S", filepath.Join(root, "gateway", "master"), "-o", "ProxyCommand=/bin/false", "-T", "target", command)
-	s := &retainedScript{deferred: ctx.InputString("proof_action", "") == "script-prepare", process: cmd, done: make(chan struct{}), report: map[string]any{"state": "running", "cleanup": "unconfirmed"}}
+	name := ctx.InputString("proof_connection", "gateway")
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,23}$`).MatchString(name) {
+		return hovel.Result{}, fmt.Errorf("invalid fixture connection")
+	}
+	var request []byte
+	if fixture == "invocation" {
+		// Only the harness-owned, non-secret request file; snapshot before launch.
+		file, err := os.Open(filepath.Join(root, "invocation.json"))
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		request, err = io.ReadAll(io.LimitReader(file, 65537))
+		file.Close()
+		if err != nil || len(request) > 65536 || !json.Valid(request) {
+			return hovel.Result{}, fmt.Errorf("invalid bounded invocation")
+		}
+	}
+	cmd := exec.Command("/usr/bin/ssh", "-F", os.Getenv("BURROW_OWNER_CONFIG"), "-S", filepath.Join(root, name, "master"), "-o", "ProxyCommand=/bin/false", "-T", "target", command)
+	if fixture == "invocation" && ctx.InputString("proof_local", "no") == "yes" {
+		cmd = exec.Command(os.Getenv("BURROW_SCRIPT_PYTHON"), "-c", scriptFixture, fixture, marker, keep)
+	}
+	s := &retainedScript{request: request, deferred: ctx.InputString("proof_action", "") == "script-prepare", process: cmd, done: make(chan struct{}), report: map[string]any{"state": "running", "cleanup": "unconfirmed"}}
 	if s.deferred {
 		s.report["state"] = "prepared"
 	}
@@ -103,6 +125,14 @@ func (s *retainedScript) startProcess() error {
 		out.Close()
 		s.input.Close()
 		return err
+	}
+	if len(s.request) != 0 {
+		if _, err := s.input.Write(append(s.request, '\n')); err != nil {
+			s.process.Process.Kill()
+			s.process.Wait()
+			s.input.Close()
+			return err
+		}
 	}
 	go func() {
 		defer close(s.done)

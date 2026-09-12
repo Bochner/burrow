@@ -104,7 +104,7 @@ func (p *ownership) Run(ctx *hovel.Context) (hovel.Result, error) {
 		return hovel.Ok(nil, hovel.WithArtifacts(hovel.JSONArtifact("retained-script-result", result))), nil
 	}
 	// Atomic reservation: even a stale directory refuses; never adopt or erase it.
-	dir, err := reserveConnection(os.Getenv("BURROW_OWNER_ROOT"), "gateway")
+	dir, err := reserveConnection(os.Getenv("BURROW_OWNER_ROOT"), ctx.InputString("proof_connection", "gateway"))
 	if err != nil {
 		return hovel.Result{}, err
 	}
