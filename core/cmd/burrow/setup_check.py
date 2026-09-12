@@ -238,6 +238,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             fcntl.ioctl(0, termios.TIOCSCTTY, 0)
         terminal = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"], env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
         output = bytearray()
+        screen_dimensions = ["80", "24"]
         def read_until(needle):
             deadline = time.monotonic() + 8
             fresh = bytearray()
@@ -246,10 +247,10 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                     data = os.read(master, 65536)
                     fresh.extend(data)
                     output.extend(data)
-                    screen = subprocess.run([screen_check], input=bytes(output), capture_output=True, timeout=3, check=True).stdout
+                    screen = subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3, check=True).stdout
                     if needle in screen:
                         return screen
-            raise AssertionError((needle, subprocess.run([screen_check], input=bytes(output), capture_output=True, timeout=3).stdout, bytes(fresh)))
+            raise AssertionError((needle, subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3).stdout, bytes(fresh)))
         try:
             read_until(b"SAVED CONNECTION")
             os.write(master, b"sta\x1bOP")  # draft, F1
@@ -277,6 +278,32 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             assert termios.tcgetattr(slave) == before
             assert b"LOCAL FIXTURE" not in output and b"gateway" not in output
             assert b"38;2;" not in output and b"48;2;" not in output
+        finally:
+            if terminal.poll() is None:
+                terminal.kill()
+                terminal.wait()
+            os.close(master)
+            os.close(slave)
+        # A short color terminal must visibly show both quit choices.
+        master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 8, 30, 0, 0))
+        before = termios.tcgetattr(slave)
+        color_env = env | {"COLORTERM": "truecolor"}
+        color_env.pop("NO_COLOR")
+        terminal = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"], env=color_env, stdin=slave, stdout=subprocess.PIPE, stderr=slave, preexec_fn=controlling)
+        output = bytearray()
+        screen_dimensions = ["30", "8"]
+        try:
+            read_until(b"SAVED CONNECTIONS")
+            os.write(master, b"\x03")
+            read_until("› Keep".encode())
+            os.write(master, b"\t")
+            read_until("› Quit".encode())
+            assert b"38;2;189;147;249" in output, "Dracula purple missing"
+            os.write(master, b"\r")
+            assert terminal.wait(timeout=5) == 0
+            assert terminal.stdout.read() == b"", "TUI leaked into captured stdout"
+            assert termios.tcgetattr(slave) == before
         finally:
             if terminal.poll() is None:
                 terminal.kill()

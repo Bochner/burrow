@@ -74,8 +74,8 @@ func run(args []string) error {
 	if fs.NArg() > 1 || (command != "status" && command != "tui") {
 		return fmt.Errorf("expected status or tui; use --help")
 	}
-	if command == "tui" && (!term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd())) {
-		return fmt.Errorf("tui requires terminal input/output; use status for JSON")
+	if command == "tui" && !term.IsTerminal(os.Stdin.Fd()) {
+		return fmt.Errorf("tui requires terminal input; use status for JSON")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -110,7 +110,7 @@ func (workspaceModule) Run(ctx *hovel.Context) (hovel.Result, error) {
 		return hovel.Result{}, e
 	}
 	ctx.Log.Info("verified Burrow workspace identity")
-	return hovel.Ok(map[string]any{"workspacePath": info.Workspace, "pid": info.PID}, hovel.WithSummary("Verified Burrow workspace")), nil
+	return hovel.Ok(map[string]any{"workspacePath": info.Workspace, "pid": info.PID}, hovel.WithSummary(fmt.Sprintf("Verified Burrow workspace %s · daemon PID %d", safe(info.Workspace), info.PID))), nil
 }
 func main() {
 	if e := run(os.Args[1:]); e != nil {

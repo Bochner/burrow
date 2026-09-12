@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/Bochner/burrow/core/launch"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/term"
 )
 
 // Adapted from the accepted core/prototype_terminal app/design at 6493f54.
@@ -63,6 +65,15 @@ func terminal(info launch.Info, noColor bool) error {
 	input.Focus()
 	m := ui{info: info, input: input, noColor: noColor, output: "Verified daemon · quit retains workspace resources."}
 	opts := []tea.ProgramOption{}
+	// Aspect captures stdout; keep rendering on the actual controlling terminal.
+	if !term.IsTerminal(os.Stdout.Fd()) {
+		output, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0)
+		if err != nil {
+			return err
+		}
+		defer output.Close()
+		opts = append(opts, tea.WithOutput(output))
+	}
 	if noColor {
 		opts = append(opts, tea.WithColorProfile(colorprofile.ASCII))
 	}
@@ -277,8 +288,11 @@ func (m ui) View() tea.View {
 		text := "BURROW COMMAND MENU\n\nstatus   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Leave the daemon running\n\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE\n\nEsc returns to your unchanged draft."
 		if m.quitting {
 			text = "Quit Burrow?\n\nDaemon and workspace resources remain.\n\n  Quit   › Keep working\nTab choose · Enter confirm · Esc cancel"
+			if h < 12 || w < 50 {
+				text = "Quit Burrow?\n  Quit   › Keep\nTab choose · Enter\nEsc cancels"
+			}
 			if m.leave {
-				text = strings.Replace(text, "  Quit   › Keep working", "› Quit     Keep working", 1)
+				text = strings.Replace(text, "  Quit   › Keep", "› Quit     Keep", 1)
 			}
 		}
 		pw := max(1, min(64, w-2))
