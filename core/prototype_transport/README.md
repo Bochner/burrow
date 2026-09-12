@@ -1,5 +1,12 @@
 # Throwaway SSH transport proof
 
+The investigation below records historical pins and observations. The accepted
+transport is ordinary OpenSSH multiplexed subprocesses with Go SFTP over subsystem
+pipes. Current dependencies and new live-server validation are recorded in the
+[terminal design reference](../../docs/research/terminal-design.md). Run
+`aspect burrow-prototype live -- HOST USER` for that optional authenticated check;
+its password is read by OpenSSH and its dedicated remote scratch files are removed.
+
 Question: [Can OpenSSH master sockets and Go channels satisfy the transport contract?](https://github.com/Bochner/burrow/issues/19)
 
 **Observed answer: not safely with these pins. Owner decision pending.** Go's
@@ -134,3 +141,12 @@ both local and VM clean refusals reproduce the master teardown defect.
 The source is based on `archive/prototype-hovel-setup` and now lives on `main`
 with the later ownership and script-boundary proofs. Historical observations
 above retain their original scope; consult the linked decisions for acceptance.
+# Existing-file collection check
+
+`aspect burrow-prototype live -- HOST USER /absolute/file [/absolute/another-file]`
+also collects the selected existing files into temporary local storage, displays
+measured byte/rate/time/ETA progress and verifies remote/local SHA-256. It follows
+symlinks for size metadata to match SFTP copying. Source files are left untouched;
+temporary downloads and test resources are removed on exit. Existing trusted host
+keys and terminal authentication are required. The owner-authorized large-file
+result is recorded in [MVP coverage](../../docs/research/terminal-mvp-coverage.md).

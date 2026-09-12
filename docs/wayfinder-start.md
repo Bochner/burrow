@@ -20,6 +20,25 @@ shipping the full rewrite is the subsequent implementation effort.
 
 ## Standing preferences from the owner
 
+- On 2026-09-12 the owner accepted the base terminal UI in #42, including the
+  Charm-native layout and dimmed help overlay. Preserve the reviewed source, then
+  resolve the first-slice acceptance and complete implementation sequence in #16.
+  The visual acceptance does not imply integrated production SSH parity.
+
+- Latest visual direction (2026-09-12): use official Dracula Classic, replacing
+  Hovel colors and the interim muted pink. Keep Hovel backend/SDK conventions.
+
+- MVP means a full daily-use TUI with useful LazySSH parity and polish: ordered
+  resource tables, prompt-toolkit-style selectable completion, required connection
+  arguments before optional ones, contextual help, and SCP collection including
+  `mget` review, per-file/overall progress, speed, elapsed time and final outcomes.
+  See the [full terminal MVP coverage](research/terminal-mvp-coverage.md).
+
+- Use the newest stable Burrow runtime dependencies unless they conflict with
+  Hovel's public backend/SDK contracts; verify library APIs through Context7.
+  The [terminal design decision](https://github.com/Bochner/burrow/issues/42)
+  supersedes the earlier Charm v1 alignment and now uses owner-selected Dracula Classic throughout,
+  a balanced management overview, and the LazySSH workflow reference.
 - AI support and a Burrow-owned skill set following Hovel's conventions are critical
   requirements, added on 2026-09-11. The
   [AI and skills decision](https://github.com/Bochner/burrow/issues/33) investigates

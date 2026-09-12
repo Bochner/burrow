@@ -18,6 +18,7 @@ __pycache__/
 # Runtime state and credentials never belong in source control.
 /.burrow/
 /.hovel/
+/context7.local.json
 .env
 .env.*
 !.env.example
