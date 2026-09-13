@@ -26,6 +26,17 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         assert result.returncode != 0 and "name must" in result.stderr, result
         assert not workspace.exists()
     for args, message in [
+        (["tunnel", "create", "gateway", "forward", "8080"], "CONNECTION forward LISTEN HOST PORT"),
+        (["tunnel", "create", "gateway", "forward", "0", "localhost", "80", "--yes"], "port"),
+        (["tunc", "gateway", "l", "8080", "localhost", "0"], "port"),
+        (["tunc", "gateway", "l", "*:8080", "localhost", "80"], "literal IP"),
+        (["tunc", "gateway", "l", "8080", "bad;command", "80"], "destination"),
+        (["tunc", "gateway", "l", "8080", "localhost", "80", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "forward options"),
+        (["tund", "1", "--yes"], "qualified tunnel ID"),
+        (["tunnel", "list", "extra"], "takes no arguments"),
+        (["tunnel"], "create|list|check|remove"),
+        (["tunnel", "create", "gateway", "reverse", "8080", "localhost", "80"], "not implemented"),
+        (["tunc", "gateway", "r", "8080", "localhost", "80"], "not implemented"),
         (["restart", "--yes"], "restart requires terminal input"),
         (["restart", "--invalid"], "expected restart [--yes]"),
         (["restart"], "restart requires terminal input"),

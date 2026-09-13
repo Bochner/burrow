@@ -104,7 +104,7 @@ func (m *manager) Close(string) error {
 }
 
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
+	return []hovel.PayloadCommand{{Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
 }
 
 func (m *manager) inventory() ([]State, error) {
@@ -134,6 +134,14 @@ func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 		state, e := m.connect(req.Args[0], req.Args[1], req.Args[2])
 		b, _ := json.Marshal(state)
 		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
+	}
+	if req.Command == "forward" && len(req.Args) == 3 {
+		t, e := m.forward(req.Args[0], req.Args[1], req.Args[2])
+		b, _ := json.Marshal(t)
+		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
+	}
+	if req.Command == "tunnels" || req.Command == "unforward" || req.Command == "tunnel-check" {
+		return m.tunnelCommand(req)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -272,6 +280,21 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 		return hovel.Result{}, fmt.Errorf("manager action excludes legacy connection and profile commands")
 	}
 	switch ctx.InputString("action", "") {
+	case "forward":
+		raw := ctx.InputString("request", "")
+		r, err := decodeForward(raw)
+		if err != nil || r.Owner.Workspace != w || r.Owner.Session != ctx.InputString("session", "") || r.Owner.Generation != ctx.InputString("generation", "") || digest(raw) != ctx.InputString("review", "") {
+			return hovel.Result{}, fmt.Errorf("changed forward request refused")
+		}
+		result, err := ownerCommand(c, w, r.Owner.Session, "forward", []string{raw, digest(raw), ctx.RunID})
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		var t Tunnel
+		if json.Unmarshal([]byte(result.Stdout), &t) != nil || t.ID != r.Tunnel.ID || t.RunID != ctx.RunID || t.Generation != r.Owner.Generation || t.Session != r.Owner.Session {
+			return hovel.Result{}, fmt.Errorf("forward correlation refused")
+		}
+		return hovel.Ok(nil, hovel.WithSummary(result.Stdout)), nil
 	case "activate":
 		generation := ctx.InputString("generation", "")
 		if generation == "" {

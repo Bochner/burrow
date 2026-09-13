@@ -393,7 +393,7 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		}
 		args := append(append([]string{}, m.commandArgs...), "--yes")
 		m.commandArgs = nil
-		if args[0] == "profile" {
+		if args[0] == "profile" || args[0] == "tunnel" || args[0] == "tunc" || args[0] == "tund" {
 			path := m.active
 			m.modal = ""
 			return m.dispatch(path, func() tea.Msg {
@@ -471,7 +471,7 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 		m.details = &connectDetails{}
 		return m.setForm("connect", "Connect · click a field or use ↑↓ / Tab", detailsForm(m.active, m.details))
 	}
-	if args[0] != "close" && args[0] != "profile" {
+	if args[0] != "close" && args[0] != "profile" && args[0] != "tunnel" && args[0] != "tunc" && args[0] != "tund" {
 		_, yes, e := connection.Parse(m.active, args[1:])
 		if e != nil {
 			m.dismissForm()

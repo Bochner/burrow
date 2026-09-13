@@ -41,6 +41,11 @@ func refreshProfiles(workspace string) tea.Cmd {
 func (m ui) suggestions() []string {
 	line := m.input.Value()
 	values := connection.CommandSuggestions(line, m.connections)
+	if m.tunnelError == "" {
+		for _, t := range m.tunnels {
+			values = append(values, "tunnel remove "+t.ID, "tunnel check "+t.ID, "tund "+t.ID)
+		}
+	}
 	for _, id := range m.shellIDs {
 		values = append(values, "resume "+id, "shell-close "+id)
 	}
@@ -62,6 +67,7 @@ func (m ui) suggestions() []string {
 }
 
 var completionDescriptions = map[string]string{
+	"tunnel create": "CONNECTION forward LISTEN HOST PORT", "tunc": "CONNECTION l LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected local listener", "tund": "Remove selected local listener", "tunnel check": "Observe destination greeting without retaining content",
 	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",
 	"inspect": "Inspect connection state", "reconnect": "Replace a lost SSH connection", "close": "Review and close connection",
 	"shell": "Open interactive SSH shell", "shells": "List this frontend's local shells", "resume": "Resume a local shell ID", "shell-close": "Close selected local shell or ID", "help": "Show command reference", "quit": "Review connections and quit",

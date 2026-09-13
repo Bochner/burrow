@@ -32,6 +32,8 @@ var pageUp = key.NewBinding(key.WithKeys("pgup"))
 var pageDown = key.NewBinding(key.WithKeys("pgdown"))
 var inventoryUp = key.NewBinding(key.WithKeys("alt+up"))
 var inventoryDown = key.NewBinding(key.WithKeys("alt+down"))
+var tunnelsUp = key.NewBinding(key.WithKeys("alt+shift+up"))
+var tunnelsDown = key.NewBinding(key.WithKeys("alt+shift+down"))
 var completionNext = key.NewBinding(key.WithKeys("tab"))
 var completionPrevious = key.NewBinding(key.WithKeys("shift+tab"))
 
@@ -40,6 +42,20 @@ type connectionList struct {
 	states []connection.State
 	err    error
 }
+type tunnelList struct {
+	tunnels []connection.Tunnel
+	err     error
+}
+
+func refreshTunnels(workspace string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		ts, err := connection.Tunnels(ctx, workspace)
+		return tunnelList{ts, err}
+	}
+}
+
 type connectionResult struct {
 	result any
 	err    error
@@ -58,6 +74,9 @@ func connectionTimer() tea.Cmd {
 }
 
 type ui struct {
+	tunnels                       []connection.Tunnel
+	tunnelError                   string
+	tunnelOffset                  int
 	shellIDs                      []string
 	shellControl                  []string
 	profiles                      connection.Collection
@@ -96,7 +115,7 @@ func newUI(info launch.Info, noColor bool) ui {
 	input.KeyMap.PrevSuggestion = previous
 	input.CharLimit = 2048
 	input.Focus()
-	return ui{info: info, input: input, noColor: noColor, output: "Verified daemon · quit reviews connections: keep or close."}
+	return ui{info: info, input: input, noColor: noColor, tunnelError: "UNVERIFIED · loading forwarding inventory", output: "Verified daemon · quit reviews connections: keep or close."}
 }
 
 func (m ui) completionOptions() ([]string, int) {
@@ -155,6 +174,14 @@ func (m ui) Init() tea.Cmd {
 }
 func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case tunnelList:
+		if v.err != nil {
+			m.tunnelError = "UNVERIFIED · forwarding inventory unavailable"
+		} else {
+			m.tunnels, m.tunnelError = v.tunnels, ""
+		}
+		m.input.SetSuggestions(m.suggestions())
+		return m, nil
 	case connectionTick:
 		return m, tea.Batch(refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace))
 	case profilesReady:
@@ -190,7 +217,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connections = v.states
 			m.input.SetSuggestions(m.suggestions())
 		}
-		return m, connectionTimer()
+		return m, tea.Batch(connectionTimer(), refreshTunnels(m.info.Workspace))
 	case connectionResult:
 		m.busy = false
 		m.outputOffset = 0
@@ -204,7 +231,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.output = strings.Join(lines, "\n")
 		}
-		return m, refreshProfiles(m.info.Workspace)
+		return m, tea.Batch(refreshProfiles(m.info.Workspace), refreshTunnels(m.info.Workspace))
 	case tea.WindowSizeMsg:
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
@@ -246,6 +273,12 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.completionValues = nil
 		switch {
+		case key.Matches(v, tunnelsUp):
+			m.tunnelOffset = max(0, m.tunnelOffset-1)
+			return m, nil
+		case key.Matches(v, tunnelsDown):
+			m.tunnelOffset = min(max(0, len(m.tunnels)-m.tunnelRows()), m.tunnelOffset+1)
+			return m, nil
 		case key.Matches(v, inventoryUp):
 			m.connectionOffset = max(0, m.connectionOffset-1)
 			return m, nil
@@ -332,7 +365,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return shellRequested{args[1]} }
 				}
 				m.output = "Running reviewed command through Hovel…"
-				if args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
+				if args[0] == "tunc" || (args[0] == "tund" && len(args) == 2) || (args[0] == "tunnel" && (args[1] == "create" || (args[1] == "remove" && len(args) == 3))) || args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
 				return m, func() tea.Msg {
@@ -394,7 +427,9 @@ func (m ui) activeConnections(w int) string {
 		proxy, terminal, tunnels := "—", "—", "—"
 		if row.Generation != "" {
 			terminal = "Local PTY"
-			tunnels = "0"
+			if row.State == "connected" {
+				tunnels = fmt.Sprint(row.TunnelCount)
+			}
 			if row.ProxyPort != 0 && row.State == "connected" {
 				proxy = fmt.Sprint(row.ProxyPort)
 			}
@@ -415,6 +450,31 @@ func (m ui) activeConnections(w int) string {
 }
 
 // Preserve field identity through color, padding and headers.
+func (m ui) tunnelRows() int { return max(1, min(3, m.height-29)) }
+func (m ui) localForwards(w int) string {
+	title := m.paint(heading, "TUNNELS")
+	if m.tunnelError != "" {
+		return title + "\n" + m.paint(errorStyle, m.tunnelError)
+	}
+	if m.connectionError != "" {
+		return title + "\n" + m.paint(errorStyle, "UNVERIFIED · connection owner status unavailable")
+	}
+	if len(m.tunnels) == 0 {
+		return title + "\n" + m.paint(secondary, "No local forwards")
+	}
+	start := min(m.tunnelOffset, max(0, len(m.tunnels)-m.tunnelRows()))
+	end := min(len(m.tunnels), start+m.tunnelRows())
+	var rows [][]string
+	for _, t := range m.tunnels[start:end] {
+		rows = append(rows, []string{safe(t.ID), safe(t.Connection), "Local", m.endpoint(safe(t.Listen)), m.endpoint(safe(t.Destination)), safe(t.State)})
+	}
+	result := m.dataTable("TUNNELS", []string{"ID", "CONNECTION", "TYPE", "LISTEN", "REMOTE", "STATUS"}, rows, w)
+	if end-start < len(m.tunnels) {
+		result += "\n" + m.paint(numberStyle, fmt.Sprintf("%d–%d", start+1, end)) + m.paint(secondary, " of ") + m.paint(numberStyle, fmt.Sprint(len(m.tunnels))) + m.paint(secondary, " · ") + m.paint(keywordStyle, "Alt+Shift+↑↓") + m.paint(secondary, " scroll")
+	}
+	return result
+}
+
 func (m ui) dataTable(title string, headers []string, rows [][]string, w int) string {
 	prefix := ""
 	if title != "" {
@@ -441,7 +501,7 @@ func (m ui) View() tea.View {
 
 	bodyW := w
 	content := m.savedConnections(bodyW) + "\n\n" +
-		m.activeConnections(bodyW) + "\n\n" + m.paint(heading, "TUNNELS") + "\n" + m.paint(secondary, "Not implemented")
+		m.activeConnections(bodyW) + "\n\n" + m.localForwards(bodyW)
 	if m.demo {
 		content = m.demoResources(bodyW)
 	}

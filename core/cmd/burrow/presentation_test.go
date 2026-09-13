@@ -382,8 +382,9 @@ func TestSOCKSTables(t *testing.T) {
 		t.Fatal("proxy counted as a tunnel", lines)
 	}
 	m.width = 160
+	m.tunnelError = ""
 	view := ansi.Strip(m.View().Content)
-	if strings.Contains(view, "SOCKS") || strings.Contains(view, "/socks") || !strings.Contains(view, "Not implemented") {
+	if strings.Contains(view, "SOCKS") || strings.Contains(view, "/socks") || !strings.Contains(view, "No local forwards") {
 		t.Fatal("proxy listed under tunnels", view)
 	}
 	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
@@ -404,6 +405,93 @@ func TestSOCKSTables(t *testing.T) {
 	m.connectionError = "unverified"
 	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "unverified") {
 		t.Fatal("unknown inventory reported as empty")
+	}
+}
+
+func TestLocalForwardPresentation(t *testing.T) {
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/forward-ui"}, plain, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			u := &m.current().management
+			if !strings.Contains(ansi.Strip(u.localForwards(size.X)), "UNVERIFIED") {
+				t.Fatal("unobserved inventory reported as empty")
+			}
+			frameEvent(m, tunnelList{})
+			capturePresentation(t, m, fmt.Sprintf("forward-empty-%dx%d-%t", size.X, size.Y, plain))
+			for i := 0; i < 12; i++ {
+				u.tunnels = append(u.tunnels, connection.Tunnel{ID: fmt.Sprintf("gateway/%032x", i+1), Connection: "gateway", Direction: "L", Listen: fmt.Sprintf("127.0.0.1:%d", 8000+i), Destination: "nas.example:80", State: "listening"})
+			}
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("forward-populated-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(screen.String(), "TUNNELS") {
+				t.Fatal("tunnel section missing")
+			}
+			if plain && strings.Contains(m.View().Content, "\x1b") {
+				t.Fatal("NO_COLOR forwarding leaked ANSI")
+			}
+			if !plain && size.X == 200 {
+				for _, role := range []struct{ text, color string }{{"gateway", lavenderColor}, {"Local", "#cba6f7"}, {"127.0.0.1", "#f5c2e7"}, {"8000", "#f9e2af"}, {"listening", "#a6e3a1"}, {"1–3", "#fab387"}, {"Alt+Shift+↑↓", "#cba6f7"}} {
+					assertTextRole(t, screen, m.selectionBounds(), role.text, role.color)
+				}
+			}
+			u.input.SetValue("tunnel remove ")
+			u.input.SetSuggestions(u.suggestions())
+			for i := 0; i < 12; i++ {
+				u.cycleCompletion(false)
+			}
+			if u.input.Value() != "tunnel remove gateway/0000000000000000000000000000000c" {
+				t.Fatal("overflow ID completion", u.input.Value())
+			}
+			capturePresentation(t, m, fmt.Sprintf("forward-completion-%dx%d-%t", size.X, size.Y, plain))
+			u.input.Reset()
+			for i := 0; i < 12; i++ {
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModAlt | tea.ModShift})
+			}
+			if !strings.Contains(ansi.Strip(u.localForwards(160)), "8011") {
+				t.Fatal("tunnel overflow cannot scroll")
+			}
+			u.tunnels[11].Destination = "host\x1b]52;c;UNTRUSTED\x07"
+			if strings.Contains(u.localForwards(160), "\x1b]52;") {
+				t.Fatal("remote control sequence escaped renderer")
+			}
+			m.reviewText = "Create local forward\nConnection: gateway\nListen: 127.0.0.1:8080\nDestination: nas.example:80"
+			m.setForm("review", "Review local forward", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+			capturePresentation(t, m, fmt.Sprintf("forward-review-%dx%d-%t", size.X, size.Y, plain))
+			bounds := m.dialogBounds()
+			m.modalOffset = 100
+			if m.dialogBounds() != bounds {
+				t.Fatal("forward recap geometry changed with scroll")
+			}
+		}
+	}
+}
+
+func TestTunnelConnectionCompletion(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/tunnel-completion"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	frameEvent(m, connectionList{states: []connection.State{
+		{Name: "gateway", State: "connected", Generation: "g"},
+		{Name: "closed-host", State: "closed", Generation: "g"},
+		{Name: "lost-host", State: "lost", Generation: "g"},
+	}})
+	u := &m.current().management
+	for _, c := range []struct{ prefix, want string }{{"tunnel create ", "tunnel create gateway forward "}, {"tunc ", "tunc gateway l "}} {
+		u.input.SetValue(c.prefix)
+		u.input.SetSuggestions(u.suggestions())
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if u.input.Value() != c.want {
+			t.Fatalf("completion: %q, want %q", u.input.Value(), c.want)
+		}
+	}
+	frameEvent(m, connectionList{err: fmt.Errorf("owner unavailable")})
+	u.input.SetValue("tunc ")
+	for _, suggestion := range u.suggestions() {
+		if strings.HasPrefix(suggestion, "tunc gateway") {
+			t.Fatal("failed observation offered stale connection")
+		}
 	}
 }
 

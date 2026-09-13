@@ -35,6 +35,21 @@ Edit replaces all settings; include options to retain them. Review replies inclu
 revision/collection; repeat --revision HASH --collection PATH --yes to pin review.
 
 connections                         Inspect retained owners
+tunnel create CONNECTION forward LISTEN HOST PORT [--yes] Create local tunnel
+tunc CONNECTION l LISTEN HOST PORT [--yes] Alias for tunnel create ... forward
+tunnel list                         List retained local tunnels and exact IDs
+tunnel remove CONNECTION/ID [--yes] Review/remove exactly one local listener
+tund CONNECTION/ID [--yes]          Alias for tunnel remove
+tunnel check CONNECTION/ID          Passive greeting check; no remote bytes retained
+LISTEN is PORT (127.0.0.1 default) or IP:PORT; broader binds require explicit IP.
+HOST PORT is the destination reached from the SSH server; HOST may be bare IPv6.
+Creation uses a confirmed Hovel throw. --review HASH binds --yes to the recap.
+Keep-running quit retains forwards; connection close/loss ends their listeners.
+Removal stops new connections; already accepted streams may finish.
+Silent protocols need their normal client to verify traffic; a bound port alone
+does not prove destination reachability or server forwarding permission.
+Tunnel IDs include an opaque creation identity: complete with Tab or use tunnel list.
+
 connect                             Guided connection entry (terminal)
 connect NAME HOST USER [options]     Create shell-free SSH master
 reconnect NAME HOST USER [options]   Explicitly replace a lost owned connection
@@ -205,6 +220,12 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "tunnel", "tunc", "tund":
+		expanded, err := tunnelArgs(args)
+		if err != nil || expanded[0] == "tunnels" {
+			return err
+		}
+		return validateTunnelCommand(workspace, expanded)
 	case "profile", "profiles", "history":
 		return validateProfile(workspace, args)
 	case "connect", "reconnect":
@@ -362,7 +383,7 @@ func CloseReviewed(ctx context.Context, w string, expected State) (any, error) {
 	if e != nil {
 		return nil, e
 	}
-	if current.Session != expected.Session || current.Generation != expected.Generation || current.Creation != expected.Creation || current.MasterPID != expected.MasterPID || current.Socket != expected.Socket || current.SocketInode != expected.SocketInode || current.State != expected.State {
+	if current.Session != expected.Session || current.Generation != expected.Generation || current.Creation != expected.Creation || current.MasterPID != expected.MasterPID || current.Socket != expected.Socket || current.SocketInode != expected.SocketInode || current.State != expected.State || current.TunnelRevision != expected.TunnelRevision {
 		return nil, fmt.Errorf("connection changed after review; inspect and review close again")
 	}
 	if e := closeOwned(ctx, w, expected); e != nil {
@@ -390,6 +411,9 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	switch args[0] {
 	case "profile", "profiles", "history":
 		return executeProfile(ctx, w, args)
+	case "tunnel", "tunc", "tund":
+		expanded, _ := tunnelArgs(args) // validated before dispatch
+		return executeForward(ctx, w, expanded)
 	case "connections":
 		return List(ctx, w)
 	case "shell-close", "shells", "resume":
@@ -477,10 +501,11 @@ func displaySetting(value, fallback string) string {
 }
 
 func Suggestions(states []State) []string {
-	values := []string{"status", "connect", "connections", "shells", "shell-close", "help", "quit"}
+	values := []string{"status", "connect", "connections", "tunnel create", "tunnel list", "tunnel check", "tunnel remove", "tunc", "tund", "shells", "shell-close", "help", "quit"}
 	for _, s := range states {
 		if s.State == "connected" && s.Generation != "" {
 			values = append(values, "shell "+s.Name)
+			values = append(values, "tunnel create "+s.Name+" forward ", "tunc "+s.Name+" l ")
 		}
 		for _, verb := range []string{"inspect", "close", "reconnect"} {
 			values = append(values, verb+" "+s.Name)

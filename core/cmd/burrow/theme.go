@@ -127,7 +127,15 @@ func (m ui) syntax(line string, reference bool) string {
 	// ponytail: token hints cover Burrow's command reference and recaps; use a
 	// shell lexer if arbitrary shell source becomes a supported viewer input.
 	previous := ""
+	index, connectionIndex := -1, -1
+	fields := strings.Fields(line)
+	if len(fields) > 1 && fields[0] == "tunnel" && fields[1] == "create" {
+		connectionIndex = 2
+	} else if len(fields) > 0 && fields[0] == "tunc" {
+		connectionIndex = 1
+	}
 	return commandToken.ReplaceAllStringFunc(line, func(token string) string {
+		index++
 		word := strings.Trim(token, "'\"[](),.")
 		prior := previous
 		previous = strings.ToLower(word)
@@ -147,13 +155,26 @@ func (m ui) syntax(line string, reference bool) string {
 			return strings.Replace(token, word, m.endpoint(word), 1)
 		case reference && strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word && word != "F1" && word != "F6":
 			style = warningStyle
+		case connectionIndex >= 0 && index == connectionIndex:
+			style = accent
+		case connectionIndex >= 0 && index == connectionIndex+1:
+			style = keywordStyle
+		case connectionIndex >= 0 && index == connectionIndex+2:
+			if !strings.Contains(word, ":") {
+				return m.paint(warningStyle, token)
+			}
+			return strings.Replace(token, word, m.endpoint(word), 1)
+		case connectionIndex >= 0 && index == connectionIndex+3:
+			style = hostStyle
+		case connectionIndex >= 0 && index == connectionIndex+4:
+			style = warningStyle
 		case word == "burrow-hop-0":
 			style = hostStyle
 		case strings.Contains(word, "@"):
 			return strings.Replace(token, word, m.endpoint(word), 1)
 		case strings.HasPrefix(word, "-"):
 			style = heading
-		case prior == "connect" || prior == "reconnect" || prior == "close" || prior == "inspect" || prior == "shell" || prior == "resume" || prior == "shell-close":
+		case prior == "tund" || prior == "remove" || prior == "check" || prior == "connect" || prior == "reconnect" || prior == "close" || prior == "inspect" || prior == "shell" || prior == "resume" || prior == "shell-close":
 			style = accent
 		case strings.HasPrefix(word, "#") && strings.TrimPrefix(word, "#") != "" && strings.Trim(strings.TrimPrefix(word, "#"), "0123456789") == "":
 			style = accent
@@ -179,7 +200,9 @@ func (m ui) syntax(line string, reference bool) string {
 			style = keywordStyle
 		case strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word:
 			style = warningStyle
-		case previous == "shell" || previous == "shells" || previous == "resume" || previous == "shell-close" || previous == "ssh" || previous == "connect" || previous == "reconnect" || previous == "inspect" || previous == "connections" || previous == "close" || previous == "status" || previous == "help" || previous == "quit" || previous == "profile" || previous == "profiles" || previous == "history":
+		case previous == "tunnel" || previous == "tunc" || previous == "tund" || previous == "shell" || previous == "shells" || previous == "resume" || previous == "shell-close" || previous == "ssh" || previous == "connect" || previous == "reconnect" || previous == "inspect" || previous == "connections" || previous == "close" || previous == "status" || previous == "help" || previous == "quit" || previous == "profile" || previous == "profiles" || previous == "history":
+			style = heading
+		case prior == "tunnel" && (word == "create" || word == "list" || word == "check" || word == "remove"):
 			style = heading
 		case prior == "profile" && (word == "create" || word == "select" || word == "save" || word == "edit" || word == "delete" || word == "collection" || word == "load" || word == "backup"):
 			style = heading
@@ -257,7 +280,7 @@ func (m ui) semanticText(text string) string {
 		if field && !strings.ContainsAny(label, "/@") {
 			style := fieldStyle(strings.ToUpper(label))
 			styled := m.paint(style, value)
-			if label == "Endpoint" || label == "Jump" {
+			if label == "Endpoint" || label == "Jump" || label == "Listen" || label == "Destination" {
 				styled = m.endpoint(value)
 			}
 			if label == "SOCKS proxy" {
@@ -330,9 +353,9 @@ func scrollBody(text string, width, height, offset int) viewport.Model {
 
 func connectionStyle(state string) lipgloss.Style {
 	switch state {
-	case "connected", "active", "running":
+	case "connected", "active", "running", "listening", "traffic-observed":
 		return successStyle
-	case "failed", "lost", "closed", "disconnected", "unverified":
+	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable":
 		return errorStyle
 	case "connecting", "reconnecting", "opening", "closing":
 		return warningStyle
@@ -401,7 +424,7 @@ func fieldStyle(header string) lipgloss.Style {
 	switch header {
 	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUNID", "SESSION":
 		return accent
-	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP":
+	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "DESTINATION":
 		return hostStyle
 	case "USER", "USERNAME":
 		return successStyle

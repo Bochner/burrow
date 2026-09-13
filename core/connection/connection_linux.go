@@ -41,23 +41,25 @@ type Config struct {
 	Review         string `json:"review,omitempty"`
 }
 type State struct {
-	Generation  string `json:"generation,omitempty"`
-	Creation    string `json:"creation,omitempty"`
-	RunID       string `json:"runID,omitempty"`
-	Dispatch    int64  `json:"dispatch,omitempty"`
-	Connected   int64  `json:"connected,omitempty"`
-	Name        string `json:"name"`
-	Host        string `json:"host"`
-	User        string `json:"user"`
-	Port        int    `json:"port"`
-	ProxyPort   int    `json:"proxyPort,omitempty"`
-	State       string `json:"state"`
-	Socket      string `json:"socket"`
-	Session     string `json:"session"`
-	OwnerPID    int    `json:"ownerPID"`
-	MasterPID   int    `json:"masterPID"`
-	SocketInode uint64 `json:"socketInode"`
-	Detail      string `json:"detail"`
+	TunnelCount    int    `json:"tunnelCount"`
+	TunnelRevision uint64 `json:"tunnelRevision"`
+	Generation     string `json:"generation,omitempty"`
+	Creation       string `json:"creation,omitempty"`
+	RunID          string `json:"runID,omitempty"`
+	Dispatch       int64  `json:"dispatch,omitempty"`
+	Connected      int64  `json:"connected,omitempty"`
+	Name           string `json:"name"`
+	Host           string `json:"host"`
+	User           string `json:"user"`
+	Port           int    `json:"port"`
+	ProxyPort      int    `json:"proxyPort,omitempty"`
+	State          string `json:"state"`
+	Socket         string `json:"socket"`
+	Session        string `json:"session"`
+	OwnerPID       int    `json:"ownerPID"`
+	MasterPID      int    `json:"masterPID"`
+	SocketInode    uint64 `json:"socketInode"`
+	Detail         string `json:"detail"`
 }
 
 // ShellCommand uses the same public command/owner checks as the management UI.
@@ -171,6 +173,7 @@ func (f *sshFailure) detail() string {
 }
 
 type owner struct {
+	tunnels    map[string]Tunnel
 	manager    *manager
 	prepared   []byte
 	profile    Profile
