@@ -1,5 +1,6 @@
 """Saved collection behavior through the production command/Hovel seam."""
 import json
+import http.client
 import os
 from pathlib import Path
 import signal
@@ -123,6 +124,20 @@ with tempfile.TemporaryDirectory(prefix="bp-") as scratch:
         assert run("profile","select","sdk-profile")["host"]=="host"
         assert not marker.exists()
         assert run("connections")==[]
+
+        # Unrelated retained output must not make a tiny saved collection unreadable.
+        with socket.socket(socket.AF_UNIX) as sock:
+            sock.connect(str(w / "hoveld.sock"))
+            client = http.client.HTTPConnection("localhost")
+            client.sock = sock
+            body = {"Operation":"profile-check", "Chain":"profile-check", "Entries":[
+                {"Kind":"event","Level":"info","Source":"profile-regression","Message":"x"*65536}
+                for _ in range(17)]}
+            client.request("POST", "/hovel.daemon.v1.DaemonService/AppendLog", json.dumps(body), {"Content-Type":"application/json"})
+            response = client.getresponse()
+            assert response.status == 200, response.status
+            response.read()
+        assert run("profiles")["path"] == str(backup)
 
     finally:
         os.kill(info["pid"], signal.SIGTERM)

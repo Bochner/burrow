@@ -21,6 +21,15 @@ arguments with unambiguous quoting; do not substitute an illustrative LazySSH
 command. Highlighting must preserve the underlying text and respect NO_COLOR.
 Passwords and key passphrases never belong in the command or recap.
 
+Owner update (2026-09-13): the recap now shows the actual SSH command first,
+left-aligned with semantic highlighting and concise resolved details below.
+Remove the generated-config dump; expand the dialog to fit the command up to
+the terminal's available width, then wrap. This supersedes the earlier display
+requirement above, not the binding of approval to the exact resolved settings.
+The owner also requested LazySSH's `-proxy [PORT]` SOCKS behavior (9050 when
+bare, off when omitted), distinct from jump-host configuration. The listener
+belongs to its SSH connection and ends on connection close/loss.
+
 The owner explicitly chose LazySSH's host-trust behavior:
 `-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`, superseding the
 earlier requirement for host-key confirmation on ordinary connections. These

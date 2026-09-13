@@ -76,7 +76,7 @@ func (m *frame) selectionMouse(msg tea.MouseMsg, hit string) (bool, tea.Cmd) {
 		if hit == "saved" {
 			return true, nil
 		}
-		if m.current().tab == "hovel" {
+		if m.current().tab != "" {
 			m.current().focus = "terminal"
 			return true, nil
 		}

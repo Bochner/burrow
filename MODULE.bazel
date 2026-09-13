@@ -38,6 +38,16 @@ http_file(
     urls = ["https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl"],
 )
 
+# Real full-screen SSH acceptance only: Alpine 3.24 x86_64 Vim executable.
+# Alpine aports b7c31805c49a6e75b725aee8601e2e99e1d693e9; Vim license.
+# The lab uses -u NONE -i NONE --noplugin, without runtime scripts or xxd.
+http_file(
+    name = "shell_lab_vim",
+    downloaded_file_path = "vim.apk",
+    sha256 = "6677af51cdce462afaf06af353acfe059b4a3c68c4257a539121c3ce46d25c68",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/vim-9.2.1091-r0.apk"],
+)
+
 # Disposable external SDK proof, pinned to the research baseline.
 bazel_dep(name = "rules_go", version = "0.61.1")
 bazel_dep(name = "gazelle", version = "0.51.3")

@@ -30,6 +30,7 @@ type Config struct {
 	Host           string `json:"host"`
 	User           string `json:"user"`
 	Port           int    `json:"port"`
+	ProxyPort      int    `json:"proxyPort,omitempty"`
 	Key            string `json:"key,omitempty"`
 	Agent          string `json:"agent,omitempty"`
 	AgentExplicit  bool   `json:"agentExplicit,omitempty"`
@@ -40,22 +41,53 @@ type Config struct {
 	Review         string `json:"review,omitempty"`
 }
 type State struct {
-	Generation  string `json:"generation,omitempty"`
-	Creation    string `json:"creation,omitempty"`
-	RunID       string `json:"runID,omitempty"`
-	Dispatch    int64  `json:"dispatch,omitempty"`
-	Connected   int64  `json:"connected,omitempty"`
-	Name        string `json:"name"`
-	Host        string `json:"host"`
-	User        string `json:"user"`
-	Port        int    `json:"port"`
-	State       string `json:"state"`
-	Socket      string `json:"socket"`
-	Session     string `json:"session"`
-	OwnerPID    int    `json:"ownerPID"`
-	MasterPID   int    `json:"masterPID"`
-	SocketInode uint64 `json:"socketInode"`
-	Detail      string `json:"detail"`
+	Proxy          Tunnel `json:"proxy,omitzero"`
+	TunnelCount    int    `json:"tunnelCount"`
+	TunnelRevision uint64 `json:"tunnelRevision"`
+	Generation     string `json:"generation,omitempty"`
+	Creation       string `json:"creation,omitempty"`
+	RunID          string `json:"runID,omitempty"`
+	Dispatch       int64  `json:"dispatch,omitempty"`
+	Connected      int64  `json:"connected,omitempty"`
+	Name           string `json:"name"`
+	Host           string `json:"host"`
+	User           string `json:"user"`
+	Port           int    `json:"port"`
+	ProxyPort      int    `json:"proxyPort,omitempty"`
+	State          string `json:"state"`
+	Socket         string `json:"socket"`
+	Session        string `json:"session"`
+	OwnerPID       int    `json:"ownerPID"`
+	MasterPID      int    `json:"masterPID"`
+	SocketInode    uint64 `json:"socketInode"`
+	Detail         string `json:"detail"`
+}
+
+// ShellCommand uses the same public command/owner checks as the management UI.
+// The client owns only a multiplexed channel. ProxyCommand closes the OpenSSH
+// fallback path if the master disappears between verification and exec.
+func ShellCommand(ctx context.Context, workspace, name string) (*exec.Cmd, error) {
+	value, err := Execute(ctx, workspace, []string{"shell", name})
+	if err != nil {
+		return nil, err
+	}
+	s := value.(State)
+	path, err := launch.ConnectionPath(workspace, name)
+	if err != nil || s.Socket != path || s.Name != name || s.MasterPID <= 0 || s.SocketInode == 0 {
+		return nil, fmt.Errorf("shell owner identity changed")
+	}
+	st, err := os.Lstat(path)
+	if err != nil || st.Mode()&os.ModeSocket == 0 || st.Sys().(*syscall.Stat_t).Ino != s.SocketInode || st.Sys().(*syscall.Stat_t).Uid != uint32(os.Getuid()) {
+		return nil, fmt.Errorf("shell master socket missing or replaced")
+	}
+	if err := (&owner{state: s, socket: st}).checkMaster(); err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("/usr/bin/ssh", "-F", "/dev/null", "-S", path,
+		"-o", "ControlMaster=no", "-o", "ProxyCommand=/usr/bin/false",
+		"-o", "BatchMode=yes", "-o", "EscapeChar=none", "-tt", "unused")
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8"}
+	return cmd, nil
 }
 
 func (c Config) Validate() error {
@@ -70,6 +102,9 @@ func (c Config) Validate() error {
 	}
 	if c.Port < 0 || c.Port > 65535 {
 		return fmt.Errorf("port must be 1–65535")
+	}
+	if c.ProxyPort < 0 || c.ProxyPort > 65535 {
+		return fmt.Errorf("proxy port must be 1–65535")
 	}
 	if c.Review != "" && !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(c.Review) {
 		return fmt.Errorf("review must be the exact recap digest")
@@ -102,6 +137,7 @@ type sshFailure struct {
 	trust       bool
 	credentials bool
 	transport   bool
+	forwarding  bool
 }
 
 func (f *sshFailure) Write(p []byte) (int, error) {
@@ -112,6 +148,7 @@ func (f *sshFailure) Write(p []byte) (int, error) {
 	f.trust = f.trust || strings.Contains(s, "Host key verification failed")
 	f.credentials = f.credentials || strings.Contains(s, "interactive authentication unavailable") || strings.Contains(s, "authentication frontend unavailable")
 	f.transport = f.transport || strings.Contains(s, "Connection refused") || strings.Contains(s, "Connection timed out") || strings.Contains(s, "Could not resolve hostname") || strings.Contains(s, "administratively prohibited")
+	f.forwarding = f.forwarding || strings.Contains(s, "Could not request local forwarding") || strings.Contains(s, "cannot listen to port")
 	f.tail = s[max(0, len(s)-40):]
 	return len(p), nil
 }
@@ -127,6 +164,9 @@ func (f *sshFailure) detail() string {
 	if f.credentials {
 		return "SSH authentication failed: terminal entry unavailable; use --prompt for passwords/encrypted keys or select an accessible key/agent"
 	}
+	if f.forwarding {
+		return "SSH SOCKS proxy could not bind its loopback port; choose another -proxy port and reconnect explicitly"
+	}
 	if f.transport {
 		return "SSH connection or jump failed; check host/port, reachability and jump forwarding permission, then retry explicitly"
 	}
@@ -134,6 +174,7 @@ func (f *sshFailure) detail() string {
 }
 
 type owner struct {
+	tunnels    map[string]Tunnel
 	manager    *manager
 	prepared   []byte
 	profile    Profile
@@ -301,7 +342,7 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 		e := s.Close("operator confirmed connection-wide close")
 		return hovel.PayloadCommandResult{Command: req.Command}, e
 	}
-	if (req.Command != "connection-status" && req.Command != "connection-profile") || len(req.Args) != 0 {
+	if (req.Command != "connection-status" && req.Command != "connection-profile" && req.Command != "connection-shell") || len(req.Args) != 0 {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported connection command")
 	}
 	s.mu.Lock()
@@ -326,7 +367,11 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 		b, e := json.Marshal(s.profile)
 		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
 	}
+	if req.Command == "connection-shell" && (s.closed || s.state.State != "connected") {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("shell requires a verified live master; no fresh login attempted")
+	}
 	s.milestone("connection inspected")
+	s.observeProxy()
 	b, e := json.Marshal(s.state)
 	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
 }

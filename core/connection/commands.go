@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,17 +35,65 @@ Edit replaces all settings; include options to retain them. Review replies inclu
 revision/collection; repeat --revision HASH --collection PATH --yes to pin review.
 
 connections                         Inspect retained owners
+proxy create CONNECTION LISTEN [--yes] Create SOCKS on the existing master
+proxy inspect CONNECTION            Verified endpoint and retained owner identity
+proxy remove CONNECTION [--yes]     Remove SOCKS only; retain connection/L/R
+Proxy LISTEN is PORT (127.0.0.1 default) or IP:PORT, including [IPv6]:PORT.
+One SOCKS4/5 TCP proxy per connection; no L/R tunnel IDs or counts consumed.
+Names resolve on the SSH server. Explicit broader binds expose an unauthenticated
+proxy. Creation and removal recaps support --review HASH to bind approval.
+Inspection verifies the master-owned Linux listener, not destination reachability.
+Live proxy edits do not change saved reconnect settings. Keep-running quit retains
+SOCKS; close/loss ends it. Unverified/unavailable endpoints must not be consumed.
+Compatible consumers use proxy inspect's session/generation/connectionCreation
+and proxy creation identity, recheck before use and refuse stale owners/endpoints.
+tunnel create CONNECTION forward LISTEN HOST PORT [--yes] Create local tunnel
+tunnel create CONNECTION reverse LISTEN HOST PORT [--yes] Create reverse tunnel
+tunc CONNECTION l LISTEN HOST PORT [--yes] Alias for tunnel create ... forward
+tunc CONNECTION r LISTEN HOST PORT [--yes] Alias for tunnel create ... reverse
+tunnel list                         List retained tunnels and exact IDs
+tunnel remove CONNECTION/ID [--yes] Review/remove exactly one listener
+tund CONNECTION/ID [--yes]          Alias for tunnel remove
+tunnel check CONNECTION/ID          Passive greeting check; no remote bytes retained
+LISTEN is PORT (127.0.0.1 default) or IP:PORT; broader binds require explicit IP.
+Forward: local listener, remote destination reached from the SSH server.
+Reverse: remote listener, local destination reached from the SSH client.
+HOST may be bare IPv6. Reverse LISTEN 0 requests a random high port (49152–65535);
+up to eight real bind attempts; inventory reports the successfully assigned endpoint.
+Reverse exposure requires Linux /proc/net/tcp tables and remote shell awk/od.
+GatewayPorts overrides are checked after allocation; mismatches are removed.
+The listener may briefly have the server-forced exposure before cleanup.
+Reverse checks originate on the server and require AllowTcpForwarding/PermitOpen.
+Creation uses a confirmed Hovel throw. --review HASH binds --yes to the recap.
+Keep-running quit retains forwards; connection close/loss ends their listeners.
+Removal stops new connections; already accepted streams may finish.
+Silent protocols need their normal client to verify traffic; a bound port alone
+does not prove destination reachability or server forwarding permission.
+Tunnel IDs include an opaque creation identity: complete with Tab or use tunnel list.
+
 connect                             Guided connection entry (terminal)
 connect NAME HOST USER [options]     Create shell-free SSH master
 reconnect NAME HOST USER [options]   Explicitly replace a lost owned connection
 inspect NAME                        State, endpoint and socket identity
+shell NAME                          Open a local interactive SSH terminal
+shells                              List this frontend's shells in the workspace
+resume ID                           Resume a local shell by ID
+shell-close [ID]                     Close ID, or the last selected local shell
 close NAME [--yes]                   Review/close all owned connection resources
+Shells reuse a verified master; no fresh login or authentication fallback.
+Ctrl+] returns to management, keeping the shell; Ctrl+C reaches SSH.
+Select a Shells entry or use resume ID to return; shell-close ends only that client.
+Multiple shells share the connection's existing master socket and authentication.
+Shell exit/close preserves the connection. Frontend quit ends local shells.
+Connection close ends its shells, transfers and tunnels. Shell bytes stay local,
+in memory; they are not Hovel-recorded session I/O or collected evidence.
 
 Required: NAME HOST USER (- uses SSH config user), or:
 connect -ip HOST -port NUMBER -user USER -socket NAME [-ssh-key PATH]
 Named flags may appear in any order; duplicate fields/aliases are refused.
-Legacy -proxy, -shell and -no-term are unsupported, never silently accepted.
+Legacy -shell and -no-term are unsupported, never silently accepted.
 Options (required fields are shown before optional settings):
+-proxy [PORT] (local SOCKS4/5 on 127.0.0.1, default 9050; omitted = off),
 --key PATH, --agent PATH (SSH_AUTH_SOCK default), --port NUMBER (config/22),
 --ssh-config PATH (~/.ssh/config), --jump [USER@]HOST[:PORT][,...],
 --prompt (CLI hidden password/passphrase entry), --yes (confirm review),
@@ -56,6 +105,8 @@ CLI without --yes reviews; --prompt waits for authentication and cleans failure.
 Passwords/passphrases are terminal-only: never put secrets in commands.
 Aliases use OpenSSH HostName/User/Port/IdentityFile/IdentityAgent/ProxyJump.
 ProxyCommand and config forwarding/commands/trust overrides are not imported.
+SOCKS is separate from --jump: configure tools with socks5 127.0.0.1 PORT.
+The connection owns its proxy; close/loss ends it, leaving other listeners alone.
 Agent sockets must be accessible to the daemon; select the current socket with
 frontend SSH_AUTH_SOCK or --agent. No vault or daemon environment refresh.
 Hovel catalog/chain identity: burrow@0.1.0 for every capability.
@@ -101,6 +152,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	fs.StringVar(&c.Review, "review", "", "exact SSH preview digest")
 	fs.BoolVar(&c.Prompt, "prompt", false, "private terminal authentication")
 	fs.IntVar(&c.Port, "port", 0, "SSH port (configuration or 22)")
+	fs.IntVar(&c.ProxyPort, "proxy", 0, "local SOCKS port (9050 when flag is bare)")
 	yes := fs.Bool("yes", false, "confirm reviewed operation")
 	// Normalize the pinned LazySSH spellings, then let flag validate values.
 	// Required positionals and named options can be interspersed; duplicates
@@ -125,6 +177,13 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 			return c, false, fmt.Errorf("duplicate connection option %s", name)
 		}
 		seen[name] = true
+		if !assigned && name == "proxy" {
+			value, assigned = "9050", true
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+				value = args[i]
+			}
+		}
 		if !assigned && name != "yes" && name != "prompt" {
 			i++
 			if i == len(args) {
@@ -163,12 +222,12 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 		if f.Name == "agent" {
 			c.AgentExplicit = true
 		}
-		if f.Name == "port" && c.Port == 0 {
+		if (f.Name == "port" && c.Port == 0) || (f.Name == "proxy" && c.ProxyPort == 0) {
 			invalidPort = true
 		}
 	})
 	if invalidPort {
-		return c, false, fmt.Errorf("port must be 1–65535")
+		return c, false, fmt.Errorf("SSH and proxy ports must be 1–65535")
 	}
 	if strings.HasPrefix(c.Key, "~/") {
 		c.Key = filepath.Join(home, c.Key[2:])
@@ -182,16 +241,36 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "proxy":
+		_, err := proxyArgs(workspace, args)
+		return err
+	case "tunnel", "tunc", "tund":
+		expanded, err := tunnelArgs(args)
+		if err != nil || expanded[0] == "tunnels" {
+			return err
+		}
+		return validateTunnelCommand(workspace, expanded)
 	case "profile", "profiles", "history":
 		return validateProfile(workspace, args)
 	case "connect", "reconnect":
 		_, _, e := Parse(workspace, args[1:])
 		return e
-	case "connections":
+	case "connections", "shells":
 		if len(args) != 1 {
-			return fmt.Errorf("connections takes no arguments")
+			return fmt.Errorf("%s takes no arguments", args[0])
 		}
-	case "inspect", "close":
+	case "resume", "shell-close":
+		if args[0] == "shell-close" && len(args) == 1 {
+			return nil
+		}
+		if len(args) != 2 {
+			return fmt.Errorf("expected %s ID", args[0])
+		}
+		id, err := strconv.ParseUint(args[1], 10, 64)
+		if err != nil || id == 0 || strconv.FormatUint(id, 10) != args[1] {
+			return fmt.Errorf("shell ID must be a positive decimal integer; use shells")
+		}
+	case "inspect", "close", "shell":
 		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && (args[0] != "close" || args[2] != "--yes")) {
 			return fmt.Errorf("expected %s NAME%s", args[0], map[string]string{"close": " [--yes]"}[args[0]])
 		}
@@ -310,7 +389,7 @@ func closeOwned(ctx context.Context, w string, s State) error {
 }
 
 func closeReview(s State) string {
-	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.Name)
+	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access, including shells, transfers and tunnels; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.Name)
 }
 
 // ReviewClose binds the displayed consequence to the exact observed owner.
@@ -328,7 +407,7 @@ func CloseReviewed(ctx context.Context, w string, expected State) (any, error) {
 	if e != nil {
 		return nil, e
 	}
-	if current.Session != expected.Session || current.Generation != expected.Generation || current.Creation != expected.Creation || current.MasterPID != expected.MasterPID || current.Socket != expected.Socket || current.SocketInode != expected.SocketInode || current.State != expected.State {
+	if current.Session != expected.Session || current.Generation != expected.Generation || current.Creation != expected.Creation || current.MasterPID != expected.MasterPID || current.Socket != expected.Socket || current.SocketInode != expected.SocketInode || current.State != expected.State || current.TunnelRevision != expected.TunnelRevision {
 		return nil, fmt.Errorf("connection changed after review; inspect and review close again")
 	}
 	if e := closeOwned(ctx, w, expected); e != nil {
@@ -354,12 +433,30 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 		return execute(ctx, w, expanded, promptSocket)
 	}
 	switch args[0] {
+	case "proxy":
+		return executeProxy(ctx, w, args)
 	case "profile", "profiles", "history":
 		return executeProfile(ctx, w, args)
+	case "tunnel", "tunc", "tund":
+		expanded, _ := tunnelArgs(args) // validated before dispatch
+		return executeForward(ctx, w, expanded)
 	case "connections":
 		return List(ctx, w)
+	case "shell-close", "shells", "resume":
+		return nil, fmt.Errorf("%s is frontend-local; use management in the frontend that opened the shell", args[0])
 	case "inspect":
 		return selected(ctx, w, args[1])
+	case "shell":
+		s, e := selected(ctx, w, args[1])
+		if e != nil {
+			return nil, e
+		}
+		if s.State != "connected" || s.Generation == "" || s.Creation == "" {
+			return nil, fmt.Errorf("shell requires a verified live manager connection; reconnect explicitly")
+		}
+		var live State
+		e = managerControl(ctx, w, managerIdentity{Session: s.Session, Generation: s.Generation}, "shell", []string{s.Creation}, &live)
+		return live, e
 	case "close":
 		s, e := selected(ctx, w, args[1])
 		if e != nil {
@@ -430,8 +527,19 @@ func displaySetting(value, fallback string) string {
 }
 
 func Suggestions(states []State) []string {
-	values := []string{"status", "connections", "connect", "connect ", "help", "quit"}
+	values := []string{"status", "connect", "connections", "proxy create", "proxy inspect", "proxy remove", "tunnel create", "tunnel list", "tunnel check", "tunnel remove", "tunc", "tund", "shells", "shell-close", "help", "quit"}
 	for _, s := range states {
+		values = append(values, "proxy inspect "+s.Name)
+		if s.State == "connected" && s.Generation != "" {
+			if s.Proxy.ID != "" {
+				values = append(values, "proxy remove "+s.Name)
+			} else if s.ProxyPort == 0 {
+				values = append(values, "proxy create "+s.Name+" ")
+			}
+			values = append(values, "shell "+s.Name)
+			values = append(values, "tunnel create "+s.Name+" forward ", "tunc "+s.Name+" l ")
+			values = append(values, "tunnel create "+s.Name+" reverse ", "tunc "+s.Name+" r ")
+		}
 		for _, verb := range []string{"inspect", "close", "reconnect"} {
 			values = append(values, verb+" "+s.Name)
 		}
@@ -441,6 +549,9 @@ func Suggestions(states []State) []string {
 
 func CommandSuggestions(line string, states []State) []string {
 	args, e := Split(line)
+	if len(args) == 1 && !strings.ContainsAny(line, " \t") {
+		return Suggestions(states)
+	}
 	if e != nil || len(args) < 1 || (args[0] != "connect" && args[0] != "reconnect") {
 		return Suggestions(states)
 	}
@@ -462,6 +573,12 @@ func CommandSuggestions(line string, states []State) []string {
 		name := optionName(args[i])
 		if strings.HasPrefix(args[i], "-") {
 			seen[name] = true
+			if name == "proxy" {
+				if !strings.Contains(args[i], "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					i++
+				}
+				continue
+			}
 			if !strings.Contains(args[i], "=") && name != "yes" && name != "prompt" {
 				i++
 			}
@@ -469,7 +586,7 @@ func CommandSuggestions(line string, states []State) []string {
 			positionals++
 		}
 	}
-	options := []string{"-ssh-key ", "--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--prompt", "--yes"}
+	options := []string{"-proxy ", "-ssh-key ", "--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--prompt", "--yes"}
 	if positionals == 0 {
 		for _, required := range [][2]string{{"host", "-ip "}, {"port", "-port "}, {"user", "-user "}, {"name", "-socket "}} {
 			if !seen[required[0]] {

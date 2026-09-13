@@ -38,6 +38,12 @@ func TestPTYFixture(t *testing.T) {
 			os.Exit(0)
 		}
 		switch buf[0] {
+		case 'U':
+			// Force UTF-8, CSI and mode changes across separate PTY reads.
+			for _, b := range []byte("\x1b[?1049h\x1b[2J\x1b[H\x1b[32m界é\x1b[0m\x1b[3;4H\x1b[?25l") {
+				os.Stdout.Write([]byte{b})
+				time.Sleep(2 * time.Millisecond)
+			}
 		case 'H':
 			fmt.Print("\x1b[?1000l")
 			for i := 0; i < 10045; i++ {
@@ -188,6 +194,9 @@ func TestOwnedPTY(t *testing.T) {
 		}
 	}
 	wait("READY")
+	if err := h.Send(image.Pt(0, 20)); err == nil {
+		t.Fatal("invalid resize reported success")
+	}
 	send(uv.KeyPressEvent{Code: 'G'})
 	wait("SIZE=60x16")
 	send(image.Pt(72, 20))
@@ -210,6 +219,17 @@ func TestOwnedPTY(t *testing.T) {
 	wait("1b 5b 34 3b 36 52") // terminal reply has pane-local cursor coordinates
 	send(uv.KeyPressEvent{Code: 'b', Mod: uv.ModCtrl})
 	wait("SIZE=72x20")
+	send(uv.KeyPressEvent{Code: 'U'})
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+		s = h.Snapshot()
+		if !s.Visible {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.Contains(s.Screen, "界é") || !strings.Contains(s.Screen, "\x1b[32m") || s.Visible || s.Cursor != image.Pt(3, 2) {
+		t.Fatal("fragmented VT output lost text/style/cursor", s)
+	}
 	send(uv.KeyPressEvent{Code: 'x', Mod: uv.ModCtrl})
 	wait("FINAL")
 	select {
@@ -233,5 +253,23 @@ func TestOwnedPTY(t *testing.T) {
 	case <-h2.Done():
 	case <-time.After(4 * time.Second):
 		t.Fatal("frontend cancellation did not reap child")
+	}
+}
+
+func TestBoundedPTYHistory(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", "i=0; while [ $i -lt 2000 ]; do echo history-$i; i=$((i+1)); done; echo BOUNDED-DONE")
+	h, err := terminal.StartWithScrollback(context.Background(), cmd, 60, 10, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	select {
+	case <-h.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("output did not drain")
+	}
+	s := h.Snapshot()
+	if s.HistoryLines != 128 || !strings.Contains(s.Screen, "BOUNDED-DONE") {
+		t.Fatal("history bound or output lost", s)
 	}
 }

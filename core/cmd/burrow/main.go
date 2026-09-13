@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"charm.land/lipgloss/v2"
 	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
 	"github.com/charmbracelet/x/term"
@@ -34,7 +36,10 @@ Options:
 
 status opens/reuses the workspace and prints verified daemon identity as JSON.
 tui opens the management interface (default); quit retains the daemon.
-Inside the interface: status, connections, connect, inspect, reconnect, close, help, quit.
+restart [--yes] retires the workspace's Burrow manager, then opens the current TUI.
+--yes skips restart confirmation and ends the workspace's connections and shells.
+It ends that manager's connections and shells; saved settings, evidence and Hovel remain.
+Inside the interface: status, connections, connect, inspect, shell, reconnect, close, help, quit.
 Linux amd64 only. Cache: $XDG_CACHE_HOME/burrow/hovel/0.4.2 (or ~/.cache).
 Unknown/stale resources require manual investigation; no automatic cleanup.
 `
@@ -49,6 +54,20 @@ func safe(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// Human terminals share the TUI's semantic renderer; pipes remain JSON-only.
+func printResult(result any, noColor bool) error {
+	if !term.IsTerminal(os.Stdout.Fd()) {
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	body, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return err
+	}
+	m := ui{output: string(body), noColor: noColor || os.Getenv("NO_COLOR") != ""}
+	_, err = lipgloss.Fprintln(os.Stdout, m.styledOutput())
+	return err
 }
 
 func run(args []string) error {
@@ -103,7 +122,16 @@ func run(args []string) error {
 	if fs.NArg() > 0 {
 		command = fs.Arg(0)
 	}
-	if command != "status" && command != "tui" {
+	restartApproved := command == "restart" && fs.NArg() == 2 && fs.Arg(1) == "--yes"
+	if command == "restart" {
+		if fs.NArg() != 1 && !restartApproved {
+			return fmt.Errorf("expected restart [--yes]")
+		}
+		if !term.IsTerminal(os.Stdin.Fd()) {
+			return fmt.Errorf("restart requires terminal input")
+		}
+	}
+	if command != "status" && command != "tui" && command != "restart" {
 		args := fs.Args()
 		wizard := len(args) == 1 && command == "connect"
 		if !wizard {
@@ -111,12 +139,16 @@ func run(args []string) error {
 				return e
 			}
 		}
+		if command == "shell" && !term.IsTerminal(os.Stdin.Fd()) {
+			return fmt.Errorf("shell requires terminal input; use inspect NAME for JSON")
+		}
 		defer launch.Phase("cli:" + command)()
 		interrupt, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		ctx, cancel := context.WithTimeout(interrupt, 60*time.Second)
 		defer cancel()
-		if _, e := launch.Status(ctx, o.Workspace); e != nil {
+		info, e := launch.Status(ctx, o.Workspace)
+		if e != nil {
 			return e
 		}
 		if loadPath != "" {
@@ -124,7 +156,11 @@ func run(args []string) error {
 				return e
 			}
 		}
-		var e error
+		if command == "shell" {
+			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
+			m.initialShell = args[1]
+			return terminal(m, m.noColor)
+		}
 		args, e = connection.ProfileConnect(ctx, o.Workspace, args)
 		if e != nil {
 			return e
@@ -143,16 +179,16 @@ func run(args []string) error {
 				if e := a.Run(); e != nil {
 					return e
 				}
-				return json.NewEncoder(os.Stdout).Encode(a.result)
+				return printResult(a.result, noColor)
 			}
 		}
 		result, e := connection.Execute(ctx, o.Workspace, args)
 		if e != nil {
 			return e
 		}
-		return json.NewEncoder(os.Stdout).Encode(result)
+		return printResult(result, noColor)
 	}
-	if fs.NArg() > 1 {
+	if fs.NArg() > 1 && !restartApproved {
 		return fmt.Errorf("status and tui take no arguments")
 	}
 	if command == "tui" && !term.IsTerminal(os.Stdin.Fd()) {
@@ -174,6 +210,26 @@ func run(args []string) error {
 	}
 	if command == "status" {
 		return json.NewEncoder(os.Stdout).Encode(info)
+	}
+	if command == "restart" {
+		err := connection.RestartManager(ctx, o.Workspace, func(states []connection.State) bool {
+			if restartApproved {
+				return true
+			}
+			style := ui{noColor: noColor || os.Getenv("NO_COLOR") != "" || !term.IsTerminal(os.Stderr.Fd())}
+			fmt.Fprintln(os.Stderr, style.paint(accent, "Workspace:"), style.paint(secondary, safe(o.Workspace)))
+			for _, s := range states {
+				fmt.Fprintf(os.Stderr, "  %s: %s\n", style.paint(accent, safe(s.Name)), style.paint(connectionStyle(s.State), safe(s.State)))
+			}
+			fmt.Fprintln(os.Stderr, "Close other Burrow frontends first. Restart ends ALL connections and shells owned by this workspace's Burrow manager, including concurrent additions.")
+			fmt.Fprintln(os.Stderr, "Saved settings, evidence and Hovel are preserved. Reconnect explicitly afterward.")
+			fmt.Fprint(os.Stderr, "Type restart to confirm (anything else cancels): ")
+			line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+			return err == nil && strings.TrimSpace(line) == "restart"
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return terminal(newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o), noColor || os.Getenv("NO_COLOR") != "")
 }

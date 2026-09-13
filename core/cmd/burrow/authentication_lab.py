@@ -108,6 +108,8 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                 result=p.stdout.read()
                 no_leaks(result)
                 assert json.loads(result)["state"]=="connected", "forms contaminated JSON stdout"
+            elif success and "--no-color" not in args and not (terminal_env or env).get("NO_COLOR"):
+                assert re.search(rb'\x1b\[[0-9;:]*m"state"', output), "completed CLI result lost semantic colors"
             return bytes(output)
         finally:
             if p.poll() is None:
@@ -124,7 +126,8 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
     burrow(workspace, "close", "password", "--yes")
     burrow(workspace,"connect","prompt-sibling","127.0.0.1","tester","--key",key,"--port",port,"--yes")
     wait(lambda:burrow(workspace,"inspect","prompt-sibling")["state"]=="connected")
-    terminal(["connect", "passphrase", *base, "--key", encrypted], [("SSH key passphrase", secret.encode()+b"\r")],observe=True)
+    color_env = {k:v for k,v in env.items() if k != "NO_COLOR"} | {"COLORTERM":"truecolor"}
+    terminal(["connect", "passphrase", *base, "--key", encrypted], [("SSH key passphrase", secret.encode()+b"\r")],observe=True,terminal_env=color_env)
     assert burrow(workspace, "inspect", "passphrase")["state"] == "connected"
     burrow(workspace, "close", "passphrase", "--yes")
     if prompt_only:
@@ -217,7 +220,7 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
     # connection work on a narrow no-color terminal without command secrets.
     answers = [("Host / IP", b"127.0.0.1\r"), ("SSH port", str(port).encode()+b"\r"),
                ("Username", b"tester\r"), ("Connection name", b"guided\r"),
-               ("SSH key path", b"\r"), ("Jump host", b"\r"), ("Agent socket", b"\r"),
+               ("SSH key path", b"\r"), ("SOCKS proxy port", b"\r"), ("Jump host", b"\r"), ("Agent socket", b"\r"),
                ("SSH config path", b"\r"), ("Proceed?", b"\t\r"),
                ("SSH password", secret.encode()+b"\r")]
     terminal(["--no-color", "connect"], answers, size=(24, 80), terminal_env={k:v for k,v in env.items() if k != "NO_COLOR"})

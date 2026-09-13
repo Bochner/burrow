@@ -22,7 +22,7 @@ binary, wheel, package, screen_check = [str(Path(p).resolve()) for p in sys.argv
 with tempfile.TemporaryDirectory(prefix="br-") as scratch:
     root = Path(scratch)
     env = {k: v for k, v in os.environ.items() if not k.startswith("HOVEL_")}
-    env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
+    env.update(HOME=scratch, XDG_DATA_HOME=str(root / "data"), XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
     processes = set()
 
     def run(w, *options, ok=True, use_env=None):
@@ -278,7 +278,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         terminal = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"], env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
         output = bytearray()
         screen_dimensions = ["160", "40"]
-        def read_until(needle):
+        def read_until(needle, absent=b""):
             deadline = time.monotonic() + 8
             fresh = bytearray()
             while time.monotonic() < deadline:
@@ -287,7 +287,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                     fresh.extend(data)
                     output.extend(data)
                     screen = subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3, check=True).stdout
-                    if needle in screen:
+                    if needle in screen and (not absent or absent not in screen):
                         return screen
             raise AssertionError((needle, subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3).stdout, bytes(fresh)))
         try:
@@ -302,21 +302,24 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\x1b")
             time.sleep(.2)
             # Real New form launches through the shared verified Open operation.
-            created = root / "nav-created"
+            created = root / "data" / "burrow" / "workspaces" / "nav-created"
             os.write(master, b"\x1bn")  # Alt+N
-            read_until(b"Exact destination")
+            read_until(b"Workspace name")
             assert not created.exists(), "opening New mutated the destination"
-            os.write(master, str(created).encode() + b"\r")
-            read_until(("● " + created.name).encode())
+            os.write(master, b"nav-created\r")
+            # The submitted path is also visible in the pending New form.
+            # Wait for activation before typing into the workspace's prompt.
+            read_until(b"nav-created", absent=b"NEW WORKSPACE")
+            assert (created / "burrow-launch.json").is_file(), "New did not launch the exact default destination"
             created_info = run(created, "--offline")
             assert created_info["pid"] != info["pid"]
             os.write(master, b"draft-created\x1bw")  # preserve draft, open drawer
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[A\r")
-            read_until(("● " + w.name).encode())
-            # Mouse opens midpoint New at the 160x40 geometry.
+            read_until(str(w).encode())
+            # Mouse opens midpoint-anchored New at the 160x40 geometry.
             os.write(master, b"\x1b[<0;3;21M\x1b[<0;3;21m")
-            read_until(b"Exact destination")
+            read_until(b"Workspace name")
             os.write(master, b"\x1b")
             time.sleep(.2)
             os.write(master, b"\x1bw")
@@ -326,9 +329,9 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\x1bw")
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[A\r")
-            read_until(("● " + w.name).encode())
+            read_until(str(w).encode())
             os.write(master, b"sta\x1bOP")  # draft, F1
-            read_until(b"BURROW COMMAND MENU")
+            read_until(b"Burrow Help")
             os.write(master, b"\x1b")
             time.sleep(.3)
             os.write(master, b"\t")

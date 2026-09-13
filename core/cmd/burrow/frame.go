@@ -27,10 +27,11 @@ var openNavigation = key.NewBinding(key.WithKeys("alt+w"))
 const freshFor = 8 * time.Second
 
 type workspaceView struct {
+	shells                []*cliTab
+	shell                 *cliTab
 	cli                   *cliTab
 	management            ui
 	focus, tab, selected  string
-	shellOffset           int
 	checking, showCheck   bool
 	lastSuccess, observed time.Time
 	duration              time.Duration
@@ -41,42 +42,46 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
-	terminals           *terminalLifetime
-	quitReview          quitSnapshot
-	quitClosing         bool
-	selection           *textSelection
-	mouseDisabled       bool
-	workspaces          map[string]*workspaceView
-	paths               []string
-	active              string
-	options             launch.Options
-	width, height       int
-	noColor             bool
-	demo                bool
-	navIndex, navOffset int
-	modal               string
-	modalOffset         int
-	reviewText          string
-	destination         string
-	form                *huh.Form
-	formTitle           string
-	menu                *huh.Select[int]
-	details             *connectDetails
-	commandArgs         []string
-	closeTarget         connection.State
-	saveName            string
-	saveCollection      connection.Collection
-	attempt             *authAttempt
-	question            *authQuestion
-	savedForm           *huh.Form
-	savedTitle          string
-	savedModal          string
-	launchPending       bool
-	launchError         string
-	sequence            uint64
-	inputEpoch          uint64
-	pending             map[uint64]string
-	now                 time.Time
+	invalidGeometry                  bool
+	initialShell                     string
+	terminals                        *terminalLifetime
+	quitReview                       quitSnapshot
+	quitClosing                      bool
+	selection                        *textSelection
+	mouseDisabled                    bool
+	workspaces                       map[string]*workspaceView
+	paths                            []string
+	active                           string
+	options                          launch.Options
+	width, height                    int
+	noColor                          bool
+	demo                             bool
+	navIndex, navOffset              int
+	shellIndex, shellOffset          int
+	modal                            string
+	modalOffset                      int
+	reviewText                       string
+	destination                      string
+	workspaceName, workspaceLocation string
+	form                             *huh.Form
+	formTitle                        string
+	menu                             *huh.Select[int]
+	details                          *connectDetails
+	commandArgs                      []string
+	closeTarget                      connection.State
+	saveName                         string
+	saveCollection                   connection.Collection
+	attempt                          *authAttempt
+	question                         *authQuestion
+	savedForm                        *huh.Form
+	savedTitle                       string
+	savedModal                       string
+	launchPending                    bool
+	launchError                      string
+	sequence                         uint64
+	inputEpoch                       uint64
+	pending                          map[uint64]string
+	now                              time.Time
 }
 type workspaceMessage struct {
 	workspace string
@@ -159,16 +164,22 @@ func (w *workspaceView) health(now time.Time) (string, lipgloss.Style) {
 	return "connected", successStyle
 }
 func (m *frame) resize() {
+	m.revealSidebar(m.navIndex)
+	m.revealShell(m.shellIndex)
 	m.selection = nil
 	left, right := m.columns()
 	for _, w := range m.workspaces {
 		w.management.width = max(1, m.width-left-right-4)
 		w.management.height = max(1, m.height-4)
 		w.management.input.SetWidth(max(1, w.management.width-4))
-		if w.cli != nil && w.cli.host != nil {
-			r := m.terminalBounds()
-			if err := w.cli.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil && !w.cli.screen.Exited {
-				w.cli.error = safe(err.Error())
+		for _, tab := range w.terminals() {
+			if tab != nil && tab.host != nil {
+				r := m.terminalBounds()
+				if err := tab.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil && !tab.screen.Exited {
+					tab.error = safe(err.Error())
+				} else if err == nil && tab.error == invalidTerminalGeometry {
+					tab.error = ""
+				}
 			}
 		}
 	}
@@ -183,9 +194,29 @@ func (m *frame) selectWorkspace(i int) tea.Cmd {
 		return nil
 	}
 	m.active = m.paths[i]
-	m.navIndex = i
+	m.revealSidebar(i)
+	m.current().tab, m.current().focus = "", "prompt"
 	m.modal = ""
 	return m.check(m.active)
+}
+
+func (m *frame) sidebarRows() int { return max(1, m.height/2-4) }
+func (m *frame) shellRows() int   { return max(1, m.height-m.height/2-5) }
+
+func (m *frame) revealShell(i int) {
+	m.shellIndex = max(0, min(len(m.shellEntries())-1, i))
+	m.shellOffset = max(0, min(m.shellOffset, m.shellIndex))
+	if m.shellIndex >= m.shellOffset+m.shellRows() {
+		m.shellOffset = m.shellIndex - m.shellRows() + 1
+	}
+}
+
+func (m *frame) revealSidebar(i int) {
+	m.navIndex = max(0, min(len(m.paths)-1, i))
+	m.navOffset = max(0, min(m.navOffset, m.navIndex))
+	if m.navIndex >= m.navOffset+m.sidebarRows() {
+		m.navOffset = m.navIndex - m.sidebarRows() + 1
+	}
 }
 func (m *frame) openNew() tea.Cmd {
 	m.modal = "new"
@@ -195,10 +226,15 @@ func (m *frame) openNew() tea.Cmd {
 	m.launchError = ""
 	m.inputEpoch++
 	m.destination = ""
+	m.workspaceName, m.workspaceLocation = "", ""
 	return m.workspaceForm()
 }
 func (m *frame) workspaceForm() tea.Cmd {
-	return m.setForm("new", "NEW / OPEN WORKSPACE", newForm(huh.NewGroup(huh.NewInput().Key("workspace").Title("Exact destination").Description("Enter launches · Ctrl+O browse").Placeholder("/absolute/workspace").Value(&m.destination).CharLimit(2048).Validate(canonicalWorkspace))))
+	root, _ := workspaceParent("")
+	return m.setForm("new", "NEW WORKSPACE", newForm(huh.NewGroup(
+		huh.NewInput().Key("workspace-name").Title("Workspace name: ").Inline(true).Placeholder("lab").Value(&m.workspaceName).CharLimit(80),
+		huh.NewInput().Key("workspace-location").Title("Location (optional): ").Inline(true).Placeholder(root).Value(&m.workspaceLocation).CharLimit(2048),
+	).Description("Enter creates & opens · Tab edits location · Ctrl+O browses")).WithShowHelp(false))
 }
 
 func (m *frame) submitWorkspace() tea.Cmd {
@@ -209,11 +245,14 @@ func (m *frame) submitWorkspace() tea.Cmd {
 	if m.launchPending {
 		return nil
 	}
-	path := m.destination
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-		m.launchError = "Use an absolute canonical path (no trailing / or ..)."
+	path, err := workspaceDestination(m.workspaceName, m.workspaceLocation)
+	if err != nil {
+		m.launchError = err.Error()
 		return nil
 	}
+	m.destination = path
+	m.form = nil
+	m.inputEpoch++
 	m.launchPending = true
 	m.launchError = ""
 	options := m.options
@@ -227,8 +266,18 @@ func (m *frame) submitWorkspace() tea.Cmd {
 }
 func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	w := m.workspaces[path]
+	w.management.shellIDs = nil
+	for _, tab := range w.shells {
+		w.management.shellIDs = append(w.management.shellIDs, tab.id)
+	}
 	model, cmd := w.management.Update(msg)
 	w.management = model.(ui)
+	if args := w.management.shellControl; len(args) > 0 {
+		w.management.shellControl = nil
+		// Resolve positional shell numbers in the submitting event, before an
+		// asynchronous background exit can renumber a different shell into place.
+		return m.shellControl(args)
+	}
 	if w.management.quitting {
 		w.management.quitting = false
 		return m.openQuit()
@@ -288,6 +337,11 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 		switch result := v.message.(type) {
+		case shellRequested:
+			if path != m.active {
+				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("shell cancelled after workspace switch")})
+			}
+			return m, m.openShell(result.name)
 		case authenticationRequested:
 			if path != m.active {
 				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("connection request cancelled after workspace switch")})
@@ -394,10 +448,27 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.updateManagement(path, v.message)
 		}
 	case tea.WindowSizeMsg:
+		m.invalidGeometry = v.Width <= 0 || v.Height <= 0 || v.Width > 1000 || v.Height > 1000
+		if m.invalidGeometry {
+			for _, w := range m.workspaces {
+				w.management.output = invalidTerminalGeometry
+				for _, tab := range w.terminals() {
+					if tab != nil {
+						tab.error = w.management.output
+					}
+				}
+			}
+			return m, nil
+		}
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
 		m.resize()
 		m.sizeForm()
+		if m.initialShell != "" {
+			name := m.initialShell
+			m.initialShell = ""
+			return m, m.openShell(name)
+		}
 		return m, nil
 	case tea.ResumeMsg:
 		return m, tea.RequestWindowSize
@@ -417,6 +488,12 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		hit := m.compositor().Hit(mouse.X, mouse.Y)
 		if m.mouseDisabled {
 			return m, nil
+		}
+		if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft && m.modal == "" && !m.current().management.help {
+			copying := m.hasSelection() && image.Pt(mouse.X, mouse.Y).In(m.copyBounds())
+			if !copying && hit.ID() != "saved" && !strings.HasPrefix(hit.ID(), "profile:") && !strings.HasPrefix(hit.ID(), "resource:") {
+				m.clearRows()
+			}
 		}
 		if handled, cmd := m.selectionMouse(v, hit.ID()); handled {
 			return m, cmd
@@ -460,10 +537,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if strings.HasPrefix(hit.ID(), "workspace:") || hit.ID() == "workspaces" {
-				m.navOffset = max(0, min(len(m.paths)-1, m.navOffset+delta))
+				m.navOffset = max(0, min(max(0, len(m.paths)-m.sidebarRows()), m.navOffset+delta))
 			}
-			if hit.ID() == "shells" {
-				m.current().shellOffset = max(0, min(len(m.paths)-1, m.current().shellOffset+delta))
+			if strings.HasPrefix(hit.ID(), "shell:") || hit.ID() == "shell-list" {
+				m.shellOffset = max(0, min(max(0, len(m.shellEntries())-m.shellRows()), m.shellOffset+delta))
 			}
 			if strings.HasPrefix(hit.ID(), "profile:") || hit.ID() == "saved" {
 				u := &m.current().management
@@ -543,7 +620,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.current().management.help {
-			return m, m.updateManagement(m.active, msg)
+			m.current().management.updateHelp(v, m.width, m.height)
+			return m, nil
 		}
 		if m.modal != "" {
 			return m, m.modalKey(v)
@@ -554,8 +632,27 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.Matches(v, showHovel) {
 			return m, m.activate("hovel")
 		}
+		if key.Matches(v, numberedShell) {
+			i := int(v.Code - '1')
+			if i >= 0 && i < len(m.current().shells) {
+				m.resumeShell(m.current().shells[i])
+			}
+			return m, nil
+		}
+		if key.Matches(v, previousShell, nextShell) {
+			delta := 1
+			if key.Matches(v, previousShell) {
+				delta = -1
+			}
+			m.cycleShell(delta)
+			return m, nil
+		}
 		if m.terminalFocused() {
-			if key.Matches(v, restartTerminal) && m.current().canRestartCLI() {
+			if m.current().tab == "shell" && key.Matches(v, terminalEscape) {
+				m.current().tab, m.current().focus = "", "prompt"
+				return m, nil
+			}
+			if m.current().tab == "hovel" && key.Matches(v, restartTerminal) && m.current().canRestartCLI() {
 				return m, m.restartCLI()
 			} else if key.Matches(v, terminalEscape) {
 				m.current().focus = "tabs"
@@ -599,26 +696,27 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			switch w.focus {
 			case "workspaces":
-				m.navIndex = max(0, min(len(m.paths)-1, m.navIndex+delta))
-				m.navOffset = max(0, min(m.navOffset, m.navIndex))
-				if m.navIndex >= m.navOffset+max(1, m.height/2-5) {
-					m.navOffset = m.navIndex - max(1, m.height/2-5) + 1
-				}
+				m.revealSidebar(m.navIndex + delta)
 				if key.Matches(v, enter) {
 					return m, m.selectWorkspace(m.navIndex)
 				}
 			case "shells":
-				w.shellOffset = max(0, min(len(m.paths)-1, w.shellOffset+delta))
+				m.revealShell(m.shellIndex + delta)
+				if key.Matches(v, enter) {
+					return m, m.activate(fmt.Sprintf("shell:%d", m.shellIndex))
+				}
 			case "tabs":
 				if key.Matches(v, enter) && w.tab == "hovel" {
 					return m, m.openCLI()
 				}
+				if key.Matches(v, enter) && w.tab == "shell" {
+					return m, m.activate("shells")
+				}
 				if key.Matches(v, choose, previous, next) {
-					if w.tab == "" {
-						w.tab = "hovel"
-					} else {
-						w.tab = ""
+					if delta == 0 {
+						delta = 1
 					}
+					m.cycleTab(delta)
 				}
 			case "saved":
 				rows := w.management.profiles.Profiles
@@ -651,6 +749,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.activate(w.focus)
 			}
 			if key.Matches(v, escape) {
+				m.clearRows()
 				w.focus = "prompt"
 				w.tab = ""
 			}
@@ -668,12 +767,26 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 var menuActions = []string{"Check daemon", "Metadata", "New workspace", "Keyboard help", "Quit", "Open Hovel CLI", "Close Hovel CLI", "Toggle mouse / text selection"}
 
+func (m *frame) clearRows() {
+	for _, w := range m.workspaces {
+		w.selected, w.management.selectedProfile = "", ""
+		switch w.focus {
+		case "saved", "resources", "workspaces", "shells":
+			w.focus = "prompt"
+		}
+	}
+}
+
 func (m *frame) activate(id string) tea.Cmd {
 	if m.modal != "" && m.modal != "navigation" {
-		if m.modal == "connect" && strings.HasPrefix(id, "field:") && m.form != nil {
+		if (m.modal == "connect" || m.modal == "new") && strings.HasPrefix(id, "field:") && m.form != nil {
 			target := strings.TrimPrefix(id, "field:")
 			current, next := -1, -1
-			for i, field := range connectFields {
+			fields := connectFields
+			if m.modal == "new" {
+				fields = workspaceFields
+			}
+			for i, field := range fields {
 				if field.key == m.form.GetFocusedField().GetKey() {
 					current = i
 				}
@@ -701,7 +814,7 @@ func (m *frame) activate(id string) tea.Cmd {
 			return nil
 		}
 		if m.modal == "new" && id == "submit" {
-			return m.updateForm(tea.KeyPressMsg{Code: tea.KeyEnter})
+			return m.submitWorkspace()
 		}
 		if m.modal == "menu" && strings.HasPrefix(id, "action:") {
 			i, _ := strconv.Atoi(strings.TrimPrefix(id, "action:"))
@@ -718,6 +831,7 @@ func (m *frame) activate(id string) tea.Cmd {
 		return nil
 	}
 	if strings.HasPrefix(id, "profile:") {
+		m.clearRows()
 		i, err := strconv.Atoi(strings.TrimPrefix(id, "profile:"))
 		u := &m.current().management
 		if err == nil && i >= 0 && i < len(u.profiles.Profiles) {
@@ -727,6 +841,7 @@ func (m *frame) activate(id string) tea.Cmd {
 		return nil
 	}
 	if strings.HasPrefix(id, "resource:") {
+		m.clearRows()
 		i, err := strconv.Atoi(strings.TrimPrefix(id, "resource:"))
 		rows := m.current().management.connections
 		if err == nil && i >= 0 && i < len(rows) {
@@ -739,7 +854,32 @@ func (m *frame) activate(id string) tea.Cmd {
 		i, _ := strconv.Atoi(strings.TrimPrefix(id, "workspace:"))
 		return m.selectWorkspace(i)
 	}
+	if strings.HasPrefix(id, "shell:") {
+		i, err := strconv.Atoi(strings.TrimPrefix(id, "shell:"))
+		entries := m.shellEntries()
+		if err == nil && i >= 0 && i < len(entries) {
+			entry := entries[i]
+			cmd := m.selectWorkspace(entry.workspace)
+			m.revealShell(i)
+			if entry.tab != nil {
+				m.resumeShell(entry.tab)
+			}
+			return cmd
+		}
+		return nil
+	}
+	if strings.HasPrefix(id, "shell-tab:") {
+		i, err := strconv.Atoi(strings.TrimPrefix(id, "shell-tab:"))
+		if err == nil && i >= 0 && i < len(m.current().shells) {
+			m.resumeShell(m.current().shells[i])
+		}
+		return nil
+	}
 	switch id {
+	case "previous-shell":
+		m.cycleShell(-1)
+	case "next-shell":
+		m.cycleShell(1)
 	case "saved":
 		return m.profileMenu()
 	case "new":
@@ -762,6 +902,13 @@ func (m *frame) activate(id string) tea.Cmd {
 		m.current().focus = "prompt"
 	case "shells":
 		m.current().focus = "shells"
+		if m.current().shell != nil {
+			m.resumeShell(m.current().shell)
+		}
+	case "shell-list":
+		m.current().focus = "shells"
+	case "workspaces":
+		m.current().focus = "workspaces"
 	case "dismiss":
 		m.dismissForm()
 	}
@@ -825,6 +972,20 @@ func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
 	}
 	switch m.modal {
 	case "new", "menu", "connect", "review", "auth", "quit", "browse", "profile-menu", "profile-save":
+		if m.modal == "new" {
+			if m.launchPending {
+				return nil
+			}
+			if key.Matches(v, enter) {
+				return m.submitWorkspace()
+			}
+			if m.form != nil && (v.String() == "tab" || v.String() == "shift+tab") {
+				if m.form.GetFocusedField().GetKey() == "workspace-name" {
+					return m.activate("field:workspace-location")
+				}
+				return m.activate("field:workspace-name")
+			}
+		}
 		if v.String() == "ctrl+o" {
 			return m.browse()
 		}
@@ -839,12 +1000,11 @@ func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
 			return m.openPalette()
 		}
 		if key.Matches(v, previous) {
-			m.navIndex = max(0, m.navIndex-1)
+			m.revealSidebar(m.navIndex - 1)
 		}
 		if key.Matches(v, next) {
-			m.navIndex = min(len(m.paths)-1, m.navIndex+1)
+			m.revealSidebar(m.navIndex + 1)
 		}
-		m.navOffset = m.navIndex
 		if key.Matches(v, enter) {
 			return m.selectWorkspace(m.navIndex)
 		}
@@ -947,6 +1107,52 @@ func (m *frame) metadata() string {
 	return text
 }
 
+// Connection observations, not daemon availability, determine SSH health.
+func (w *workspaceView) connectionState(name string) string {
+	if w == nil {
+		return "unknown"
+	}
+	if w.management.connectionError != "" {
+		return "unverified"
+	}
+	if !w.management.connectionObserved && len(w.management.connections) == 0 {
+		return "unknown"
+	}
+	state := "disconnected"
+	for _, c := range w.management.connections {
+		if name != "" {
+			if c.Name == name {
+				return c.State
+			}
+			continue
+		}
+		switch c.State {
+		case "failed", "lost", "unverified":
+			return c.State
+		case "connecting", "reconnecting", "opening", "closing":
+			state = "connecting"
+		case "connected", "active":
+			if state != "connecting" {
+				state = "connected"
+			}
+		}
+	}
+	return state
+}
+
+func (w *workspaceView) statusDot(state string) string {
+	dot := "○"
+	switch state {
+	case "connected", "active", "running":
+		dot = "●"
+	case "connecting", "reconnecting", "opening", "closing":
+		dot = "◐"
+	case "unknown", "unverified":
+		dot = "◌"
+	}
+	return w.management.paint(connectionStyle(state), dot)
+}
+
 // All visible control cells and pointer targets come from these same layers.
 func (m *frame) compositor() *lipgloss.Compositor {
 	w, h := max(1, m.width), max(1, m.height)
@@ -981,14 +1187,48 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	}
 	add("brand", current.management.paint(accent, brand), w-right+2, 1, right-4, brandHeight, 2)
 	add("daemon", status, w-right+2, brandHeight+2, max(1, min(26, right-2)), 1, 2)
-	tabStyle, hovelStyle := activeStyle, secondary
-	tabLabel, hovelLabel := "› Burrow", "  Hovel"
-	if current.tab != "" {
-		tabStyle, hovelStyle = secondary, activeStyle
-		tabLabel, hovelLabel = "  Burrow", "› Hovel"
+	tabStyle, hovelStyle := secondary, secondary
+	tabLabel, hovelLabel := "  Burrow", "  Hovel"
+	if current.tab == "" {
+		tabStyle, tabLabel = activeStyle, "› Burrow"
 	}
-	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, 10, 1, 1)
-	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(16, w-cx-10), 1, 1)
+	if current.tab == "hovel" {
+		hovelStyle, hovelLabel = activeStyle, "› Hovel"
+	}
+	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, min(10, cw), 1, 1)
+	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(9, cw-10), 1, 1)
+	if len(current.shells) > 0 && cw > 19 {
+		available := cw - 19
+		tabWidth := max(5, min(12, available/len(current.shells)))
+		count := max(1, available/tabWidth)
+		x := cx + 19
+		if count < len(current.shells) && available >= 9 {
+			add("previous-shell", current.management.paint(accent, "‹"), x, 1, 2, 1, 2)
+			add("next-shell", current.management.paint(accent, "›"), cx+cw-2, 1, 2, 1, 2)
+			x += 2
+			available -= 4
+			count = max(1, available/tabWidth)
+		}
+		selected := 0
+		for i, tab := range current.shells {
+			if tab == current.shell {
+				selected = i
+			}
+		}
+		start := min((selected/count)*count, max(0, len(current.shells)-count))
+		for i := start; i < min(len(current.shells), start+count); i++ {
+			tab := current.shells[i]
+			text := "#" + tab.id
+			if tabWidth >= 11 {
+				text = "Shell " + text
+			}
+			style, marker := secondary, "  "
+			if current.tab == "shell" && current.shell == tab {
+				style, marker = activeStyle, "› "
+			}
+			add(fmt.Sprintf("shell-tab:%d", i), current.management.paint(style, marker+text), x+(i-start)*tabWidth, 1, min(tabWidth, available), 1, 2)
+		}
+	}
 	management := current.management
 	management.help = false
 	management.quitting = false
@@ -1017,7 +1257,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			continue
 		}
 		if management.selectedProfile == management.profiles.Profiles[i].Name {
-			line = management.paint(selectedStyle.Width(cw), "›"+strings.TrimPrefix(plain, " "))
+			line = selectedRow(line, cw, m.noColor)
 		}
 		add(fmt.Sprintf("profile:%d", i), line, cx, y+3, cw, 1, 2)
 	}
@@ -1040,7 +1280,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		}
 		if current.selected == management.connections[i].Name {
 			// Use the first padding cell for the marker; keep all column positions.
-			line = management.paint(selectedStyle.Width(cw), "›"+strings.TrimPrefix(plain, " "))
+			line = selectedRow(line, cw, m.noColor)
 		}
 		add(fmt.Sprintf("resource:%d", i), line, cx, y+3, cw, 1, 2)
 	}
@@ -1049,11 +1289,18 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		text := "Select Hovel or press Enter to start the CLI."
 		status := "CLI: not started"
 		statusStyle := secondary
-		if tab := current.cli; tab != nil {
+		if tab := current.activeTerminal(); tab != nil {
 			text = tab.screen.Screen
 			status = "CLI: running · " + safe(m.active)
+			if tab.connection != "" {
+				status = "SSH: " + safe(tab.label()) + " · local / not recorded"
+				statusStyle = accent
+			}
 			if tab.pending {
 				status = "Hovel · opening / closing…"
+				if tab.connection != "" {
+					status = "SSH · opening / closing…"
+				}
 				statusStyle = warningStyle
 			}
 			if tab.screen.Exited {
@@ -1074,7 +1321,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		r := m.terminalBounds()
 		add("terminal", text, r.Min.X, r.Min.Y, r.Dx(), r.Dy(), 3)
 		add("terminal-status", current.management.paint(statusStyle, status), cx, h-2, cw, 1, 3)
-		if current.canRestartCLI() {
+		if current.tab == "hovel" && current.canRestartCLI() {
 			add("restart-cli", current.management.paint(activeStyle, "[Restart CLI]"), cx, h-3, min(13, cw), 1, 4)
 		}
 	}
@@ -1089,41 +1336,43 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		add("workspaces", "", 0, 0, width, h, z-1)
 		add("separator", current.management.paint(separatorStyle, strings.Repeat("│\n", h)), width-1, 0, 1, h, z+1)
 		width -= 3
-		midpoint := max(4, h/2)
-		add("workspaces", current.management.paint(heading, label("workspaces", "WORKSPACES")), 1, 1, width, max(1, midpoint-1), z)
-		rows := max(1, midpoint-5)
-		start := min(m.navOffset, max(0, len(m.paths)-1))
-		end := min(len(m.paths), start+rows)
+		mid := h / 2
+		add("workspaces", current.management.paint(heading, label("workspaces", "WORKSPACES")), 1, 1, width, max(1, mid-2), z)
+		start := min(m.navOffset, max(0, len(m.paths)-m.sidebarRows()))
+		for i := start; i < min(len(m.paths), start+m.sidebarRows()); i++ {
+			path := m.paths[i]
+			line := " " + current.statusDot(m.workspaces[path].connectionState("")) + " " + current.management.paint(accent, safe(filepath.Base(path)))
+			line = ansi.Truncate(line, width, "…")
+			if (current.focus == "workspaces" && i == m.navIndex) || (current.focus != "workspaces" && path == m.active && current.tab == "") {
+				line = selectedRow(line, width, m.noColor)
+			}
+			add(fmt.Sprintf("workspace:%d", i), line, 1, 3+i-start, width, 1, z+1)
+		}
+		add("shell-list", current.management.paint(heading, label("shells", "SHELLS - SSH")), 1, mid+2, width, max(1, h-mid-3), z)
+		entries := m.shellEntries()
+		start = min(m.shellOffset, max(0, len(entries)-m.shellRows()))
+		end := min(len(entries), start+m.shellRows())
 		for i := start; i < end; i++ {
-			prefix := "  "
-			if m.paths[i] == m.active {
-				prefix = "● "
-			}
-			if current.focus == "workspaces" && i == m.navIndex {
-				prefix = "> "
-			}
-			add(fmt.Sprintf("workspace:%d", i), current.management.paint(func() lipgloss.Style {
-				if m.paths[i] == m.active || (current.focus == "workspaces" && i == m.navIndex) {
-					return activeStyle.Width(width)
+			entry := entries[i]
+			path := m.paths[entry.workspace]
+			workspace := m.workspaces[path]
+			line := " " + current.statusDot(workspace.connectionState("")) + " " + current.management.paint(accent, safe(filepath.Base(path)))
+			id := fmt.Sprintf("shell:%d", i)
+			if tab := entry.tab; tab != nil {
+				state := tab.state()
+				if state == "running" {
+					state = workspace.connectionState(tab.connection)
 				}
-				return pageStyle
-			}(), ansi.Truncate(prefix+safe(filepath.Base(m.paths[i])), width, "…")), 1, 3+i-start, width, 1, z+1)
+				line = "   " + workspace.statusDot(state) + " " + current.management.paint(accent, "#"+tab.id) + " " + current.management.paint(secondary, safe(tab.connection))
+			}
+			line = ansi.Truncate(line, width, "…")
+			if (current.focus == "shells" && i == m.shellIndex) || (entry.tab != nil && m.active == path && current.tab == "shell" && current.shell == entry.tab) {
+				line = selectedRow(line, width, m.noColor)
+			}
+			add(id, line, 1, mid+4+i-start, width, 1, z+1)
 		}
-
-		add("new", current.management.paint(heading, label("new", "[New]")), 1, midpoint, width/2, 1, z+1)
-		add("menu", lipgloss.PlaceHorizontal(width-width/2, lipgloss.Right, current.management.paint(heading, label("menu", "[Menu]"))), 1+width/2, midpoint, width-width/2, 1, z+1)
-		gap, groupHeight := "\n\n", 3
-		rows = max(1, (h-midpoint-6)/groupHeight)
-		start = min(current.shellOffset, max(0, len(m.paths)-1))
-		end = min(len(m.paths), start+rows)
-		text := current.management.paint(heading, label("shells", "SHELLS")) + "\n" + current.management.paint(secondary, "Not implemented")
-		for _, path := range m.paths[start:end] {
-			text += gap + safe(filepath.Base(path)) + "\n  No shells"
-		}
-		if end-start < len(m.paths) {
-			text += fmt.Sprintf("\n%d–%d/%d", start+1, end, len(m.paths))
-		}
-		add("shells", text, 1, midpoint+2, width, max(1, h-midpoint-3), z)
+		add("new", current.management.paint(heading, label("new", "[New]")), 1, mid, width/2, 1, z+1)
+		add("menu", lipgloss.PlaceHorizontal(width-width/2, lipgloss.Right, current.management.paint(heading, label("menu", "[Menu]"))), 1+width/2, mid, width-width/2, 1, z+1)
 	}
 	if left > 0 {
 		sidebar(left, 2)
@@ -1181,7 +1430,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				}
 			}
 			if m.modal == "new" && !m.launchPending {
-				control("submit", current.management.paint(heading, "[Launch exact destination]"), y+ph-4)
+				control("submit", current.management.paint(heading, "[Create & open]"), y+ph-4)
 			}
 			if m.form != nil && (m.modal == "new" || m.modal == "connect") {
 				if input, ok := m.form.GetFocusedField().(*huh.Input); ok && (m.modal == "new" || input.GetKey() == "key" || input.GetKey() == "config") {
@@ -1200,9 +1449,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				hint = "↑↓ select · Enter run · Esc close"
 			}
 			hint = current.management.paint(secondary, hint)
-			if m.modal != "menu" {
-				hint = centered(hint, bw)
-			}
+			hint = centered(hint, bw)
 			control("dismiss", hint, y+ph-3)
 		}
 	}
@@ -1213,11 +1460,17 @@ func (m *frame) compositor() *lipgloss.Compositor {
 }
 func (m *frame) dialogBounds() image.Rectangle {
 	pw, ph := min(76, m.width-4), min(18, m.height-4)
+	if m.modal == "new" {
+		ph = min(22, m.height-4)
+	}
 	if m.modal == "quit" {
-		pw, ph = min(76, m.width-4), min(26, m.height-4)
+		pw, ph = min(76, m.width-4), min(max(20, m.quitReview.count()+17), min(26, m.height-4))
 	}
 	if m.modal == "review" {
-		ph = min(28, m.height-4)
+		// Size from the complete recap, never the scroll position. The command
+		// gets the available terminal width before wrapping is necessary.
+		pw = min(max(76, lipgloss.Width(m.reviewText)+6), m.width-4)
+		ph = min(max(18, lipgloss.Height(ansi.Wrap(m.reviewText, max(1, pw-6), ""))+14), m.height-4)
 	}
 	if m.modal == "connect" {
 		pw, ph = min(96, m.width-4), min(34, m.height-4)
@@ -1259,7 +1512,7 @@ func (m *frame) View() tea.View {
 	if m.mouseDisabled {
 		v.MouseMode = tea.MouseModeNone
 	}
-	if m.terminalFocused() && m.current().cli != nil && m.current().cli.screen.MouseMotion && !m.mouseDisabled {
+	if m.terminalFocused() && m.current().activeTerminal() != nil && m.current().activeTerminal().screen.MouseMotion && !m.mouseDisabled {
 		v.MouseMode = tea.MouseModeAllMotion
 	}
 	if !m.current().management.help && !m.hasSelection() {
@@ -1267,8 +1520,8 @@ func (m *frame) View() tea.View {
 		switch m.modal {
 
 		case "":
-			if m.terminalFocused() && m.current().cli != nil {
-				s := m.current().cli.screen
+			if m.terminalFocused() && m.current().activeTerminal() != nil {
+				s := m.current().activeTerminal().screen
 				r := m.terminalBounds()
 				if s.Visible && !s.Exited && s.Cursor.In(image.Rect(0, 0, r.Dx(), r.Dy())) {
 					v.Cursor = tea.NewCursor(s.Cursor.X, s.Cursor.Y)

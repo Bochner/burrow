@@ -1,6 +1,7 @@
 """Disposable pinned OpenSSH container; actual Burrow -> Hovel -> module path."""
 import base64
 import argparse
+from contextlib import closing
 import hashlib
 import http.client
 import fcntl
@@ -15,6 +16,7 @@ import sqlite3
 import socket
 import struct
 import subprocess
+import tarfile
 import tempfile
 import termios
 import time
@@ -22,15 +24,21 @@ import time
 from core.cmd.burrow.authentication_lab import authentication_matrix
 from core.cmd.burrow.manager_lab import manager_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
+from core.cmd.burrow.shell_lab import shell_checks
+from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("paths", nargs=5, metavar="PATH")
+parser.add_argument("paths", nargs=6, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
+parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
+parser.add_argument("--forward-check", action="store_true", help="check real local forwarding only")
+parser.add_argument("--reverse-check", action="store_true", help="check real reverse forwarding only")
+parser.add_argument("--proxy-check", action="store_true", help="check real connection-owned SOCKS traffic and cleanup")
 parser.add_argument("--measure", action="store_true", help="record production phase samples and separate process traces")
 parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
 args = parser.parse_args()
 smoke = args.smoke
-binary, wheel, image_file, screen_check, legacy_binary = [str(Path(p).resolve()) for p in args.paths]
+binary, wheel, image_file, screen_check, legacy_binary, vim_apk = [str(Path(p).resolve()) for p in args.paths]
 image = Path(image_file).read_text().strip()
 started = stage_started = time.monotonic()
 
@@ -66,6 +74,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
     env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
     daemons = []
     children = []
+    forward_evidence = []
+    full_evidence = False
     container = None
     key = root / "client key"
     command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key)
@@ -135,7 +145,9 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         burrow(w, "close", "unknown", "--yes")
         review = burrow(w, "connect", "gateway", "127.0.0.1", "tester", *options[:-1])
         assert "SSH command:" in review["review"] and "StrictHostKeyChecking=no" in review["review"]
-        assert "Generated config:" in review["review"] and not (w / "burrow/gateway").exists()
+        assert "Generated config:" not in review["review"] and not (w / "burrow/gateway").exists()
+        assert review["review"].startswith("SSH command:\n/usr/bin/ssh -F ")
+        assert "SOCKS proxy: Off" in review["review"]
         phase_offset = phases.stat().st_size if phases.exists() else 0
         submitted = time.monotonic_ns()
         first = burrow(w, "connect", "gateway", "127.0.0.1", "tester", *options)
@@ -155,12 +167,152 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert totals["hash"]["count"] <= 4, totals
         assert not {"hovel-cli:module", "register-module", "call:GetModuleCatalog"} & set(totals), totals
         actual = Path(f'/proc/{first["masterPID"]}/cmdline').read_bytes().split(b"\0")[:-1]
-        shown = review["review"].split("SSH command:\n",1)[1].split("\nGenerated config:",1)[0]
+        shown = review["review"].split("SSH command:\n",1)[1].split("\n\n",1)[0]
         assert shlex.split(shown) == [a.decode() for a in actual]
-        generated = review["review"].split("Generated config:\n",1)[1].split("\nLazySSH host policy:",1)[0]
-        assert generated == Path(first["socket"]).with_name("ssh_config").read_text()
+        assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if not smoke and not args.proxy_check and not args.shell_check and not args.forward_check:
+            forward_evidence.append(reverse_checks(binary, env, screen_check, burrow, w, first, options, container, command))
+        if args.reverse_check:
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        if not smoke and not args.proxy_check:
+            forward_evidence.append(forward_checks(binary, env, screen_check, burrow, w, first, options, container, command))
+        if args.forward_check:
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        if not smoke and not args.proxy_check:
+            # Extract only the declared executable, never APK paths or scripts.
+            with tarfile.open(vim_apk, "r:gz", ignore_zeros=True) as archive:
+                vim = root / "vim"
+                vim.write_bytes(archive.extractfile("usr/bin/vim").read())
+            vim.chmod(0o755)
+            command("docker", "cp", vim, container + ":/usr/local/bin/vim")
+            first = shell_checks(binary, w, env, screen_check, burrow, first, options)
+        if args.shell_check:
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        # Real SOCKS5 negotiation reaches the container's loopback SSH service,
+        # including remote DNS. No proxy implementation or extra tool dependency.
+        with socket.socket() as held:
+            held.bind(("127.0.0.1", 0))
+            held.listen()
+            occupied = held.getsockname()[1]
+            proxy_config = root / "proxy-config"
+            proxy_config.write_text(f"Host *\n DynamicForward 127.0.0.1:{occupied}\n GatewayPorts yes\n")
+            with socket.socket() as free:
+                free.bind(("127.0.0.1", 0))
+                proxy_port = free.getsockname()[1]
+            proxy_options = [*options, "--ssh-config", str(proxy_config), "-proxy", str(proxy_port)]
+            burrow(w, "connect", "socks", "127.0.0.1", "tester", *proxy_options)
+            proxied = wait(lambda: state_is(w, "socks", "connected"))
+            assert proxied["proxyPort"] == proxy_port
+            proxy = burrow(w, "proxy", "inspect", "socks")
+            assert proxy["listen"] == f"127.0.0.1:{proxy_port}" and proxy["state"] == "listening"
+            assert proxy["connectionCreation"] == proxied["creation"]
+            assert burrow(w, "tunnel", "list") == [] and proxied["tunnelCount"] == 0
+            def socks_banner(bind="127.0.0.1", port=None):
+                with socket.create_connection((bind, port or proxy_port), timeout=3) as client:
+                    stream = client.makefile("rb")
+                    client.sendall(b"\x05\x01\x00")
+                    assert stream.read(2) == b"\x05\x00"
+                    host = b"localhost"
+                    client.sendall(b"\x05\x01\x00\x03" + bytes([len(host)]) + host + struct.pack("!H", 2222))
+                    reply = stream.read(4)
+                    assert reply[:3] == b"\x05\x00\x00", reply
+                    address_size = {1: 4, 4: 16}.get(reply[3])
+                    assert address_size is not None, reply
+                    assert len(stream.read(address_size + 2)) == address_size + 2
+                    assert stream.readline().startswith(b"SSH-"), "SOCKS did not reach remote SSH"
+                    stream.close()
+            socks_banner()
+            actual_proxy = Path(f'/proc/{proxied["masterPID"]}/cmdline').read_bytes().split(b"\0")
+            assert actual_proxy[actual_proxy.index(b"-D")+1] == f"127.0.0.1:{proxy_port}".encode()
+            burrow(w, "profile", "save", "socks", "--as", "saved-socks")
+            assert burrow(w, "profile", "select", "saved-socks")["proxyPort"] == proxy_port
+            burrow(w, "connect", "socks-busy", "127.0.0.1", "tester", *options, "-proxy", str(occupied))
+            failed = wait(lambda: state_is(w, "socks-busy", "lost"))
+            assert "proxy could not bind" in failed["detail"], failed
+            burrow(w, "close", "socks-busy", "--yes")
+            # Failed connection cleanup must not close another process's listener.
+            with socket.create_connection(("127.0.0.1", occupied), timeout=1):
+                pass
+            def proxy_closed():
+                with socket.socket() as probe:
+                    probe.settimeout(.5)
+                    return probe.connect_ex(("127.0.0.1", proxy_port)) != 0
+            # Remove connect-time -D without touching the authenticated master.
+            removal = burrow(w, "proxy", "remove", "socks")
+            socks_banner()
+            burrow(w, "proxy", "remove", "socks", "--review", "0" * 64, "--yes", ok=False)
+            socks_banner()
+            burrow(w, "proxy", "remove", "socks", "--review", removal["digest"], "--yes")
+            wait(proxy_closed)
+            assert burrow(w, "proxy", "inspect", "socks")["state"] == "off"
+            assert not burrow(w, "inspect", "socks").get("proxyPort")
+            create = ("proxy", "create", "socks", str(proxy_port))
+            review = burrow(w, *create)
+            assert proxy_closed(), "review allocated a SOCKS listener"
+            burrow(w, *create, "--review", "0" * 64, "--yes", ok=False)
+            assert proxy_closed()
+            burrow(w, "proxy", "create", "socks", str(occupied), "--yes", ok=False)
+            assert burrow(w, "proxy", "inspect", "socks")["state"] == "off"
+            created_proxy = burrow(w, *create, "--review", review["digest"], "--yes")
+            forward_evidence.append(created_proxy)
+            assert created_proxy["id"] != proxy["id"] and created_proxy["direction"] == "D"
+            assert burrow(w, "inspect", "socks")["masterPID"] == proxied["masterPID"]
+            socks_banner()
+            burrow(w, "proxy", "remove", "socks", "--review", removal["digest"], "--yes", ok=False)
+            socks_banner()
+            # One connection-owned proxy, with no L/R identity or count consumption.
+            burrow(w, *create, "--yes", ok=False)
+            assert burrow(w, "tunnel", "list") == []
+            with socket.socket() as free:
+                free.bind(("127.0.0.1", 0))
+                local_port = free.getsockname()[1]
+            local = burrow(w, "tunc", "socks", "l", str(local_port), "localhost", "2222", "--yes")
+            reverse = burrow(w, "tunc", "socks", "r", "0", "127.0.0.1", str(local_port), "--yes")
+            assert burrow(w, "inspect", "socks")["tunnelCount"] == 2
+            assert len(burrow(w, "tunnel", "list")) == 2
+            burrow(w, "proxy", "remove", "socks", "--yes")
+            wait(proxy_closed)
+            assert burrow(w, "tunnel", "check", local["id"])["state"] == "traffic-observed"
+            assert burrow(w, "tunnel", "check", reverse["id"])["state"] == "traffic-observed"
+            assert burrow(w, "inspect", "socks")["masterPID"] == proxied["masterPID"]
+            # Explicit non-default loopback, wildcard and IPv6 binds are observed.
+            for bind in ("127.0.0.2", "0.0.0.0", "[::1]"):
+                endpoint = f"{bind}:{proxy_port}"
+                broad = burrow(w, "proxy", "create", "socks", endpoint, "--yes")
+                assert burrow(w, "proxy", "inspect", "socks")["listen"] == endpoint
+                assert broad["state"] == "listening"
+                socks_banner({"0.0.0.0": "127.0.0.1", "[::1]": "::1"}.get(bind, bind))
+                burrow(w, "proxy", "remove", "socks", "--yes")
+            burrow(w, *create, "--yes")
+            socks_banner()
+            burrow(w, "close", "socks", "--yes")
+            wait(proxy_closed)
+            burrow(w, "profile", "connect", "saved-socks", "--as", "socks-restored", "--yes")
+            restored = wait(lambda: state_is(w, "socks-restored", "connected"))
+            assert restored["proxyPort"] == proxy_port
+            socks_banner()
+            os.kill(restored["masterPID"], signal.SIGKILL)
+            wait(lambda: state_is(w, "socks-restored", "lost"))
+            assert burrow(w, "proxy", "inspect", "socks-restored")["state"] == "unavailable"
+            burrow(w, "proxy", "create", "socks-restored", str(proxy_port), "--yes", ok=False)
+            burrow(w, "proxy", "remove", "socks-restored", "--yes", ok=False)
+            wait(proxy_closed)
+            burrow(w, "close", "socks-restored", "--yes")
+            assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
+            retained = forward_ui(binary, env, screen_check, burrow, w, lambda: proxy_port, [], proxy=True)
+            socks_banner()
+            forward_evidence.append(retained)
+            burrow(w, "proxy", "remove", "gateway", "--yes")
+            wait(proxy_closed)
+        print("PASS SOCKS traffic/remote DNS, explicit loopback, config forwarding isolation, occupied-port refusal, profile round-trip, close/loss and sibling preservation", flush=True)
+        if args.proxy_check:
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
         manager_checks(binary,w,root,env,port,key,first,burrow,wait)
         # Both production capabilities use the one public identity.
         assert catalog() == ["burrow@0.1.0"]
@@ -183,7 +335,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert burrow(w,"inspect","gateway")["masterPID"] == first["masterPID"]
         burrow(w,"profile","load",str(profile_backup))
         saved_review=burrow(w,"profile","connect","saved-gateway","--as","saved-live")
-        assert "Generated config:" in saved_review["review"] and saved_review["digest"]
+        assert "Generated config:" not in saved_review["review"] and saved_review["digest"]
         burrow(w,"profile","connect","saved-gateway","--as","saved-live","--yes")
         wait(lambda: state_is(w,"saved-live","connected"))
         burrow(w,"close","saved-live","--yes")
@@ -376,8 +528,8 @@ launch:
             # The same named connection in another workspace stays independent
             # when selected through production navigation, with drafts retained.
             os.write(outer, b"ins\x1bn")
-            wait(lambda: screen_contains(b"Exact destination"))
-            os.write(outer, str(other).encode() + b"\r")
+            wait(lambda: screen_contains(b"Workspace name"))
+            os.write(outer, other.name.encode() + b"\t" + str(other.parent).encode() + b"\r")
             wait(lambda: screen_contains(("● " + other.name).encode()))
             wait(lambda: screen_contains(b"gateway"))
             assert burrow(other, "inspect", "gateway")["socket"] != first["socket"]
@@ -448,7 +600,7 @@ launch:
             os.write(outer,b"connect\r")
             for label,value in [(b"Host / IP",b"127.0.0.1"),(b"SSH port",str(port).encode()),
                                 (b"Username",b"tester"),(b"Connection name",b"guided-tui"),
-                                (b"SSH key path",str(key).encode()),(b"Jump host",b""),(b"Agent socket",b""),
+                                (b"SSH key path",str(key).encode()),(b"SOCKS proxy port",b""),(b"Jump host",b""),(b"Agent socket",b""),
                                 (b"SSH config path",b"")]:
                 # Every label is visible now; wait for the actual caret before
                 # sending the next field's value through the real PTY.
@@ -527,13 +679,14 @@ launch:
         try:
             wait(lambda: screen_contains(b"gateway"))
             os.write(outer, b"\x1bn")
-            wait(lambda: screen_contains(b"Exact destination"))
-            os.write(outer, str(other).encode() + b"\r")
+            wait(lambda: screen_contains(b"Workspace name"))
+            os.write(outer, other.name.encode() + b"\t" + str(other.parent).encode() + b"\r")
             wait(lambda: screen_contains(("● " + other.name).encode()))
             wait(lambda: screen_contains(b"gateway"))
             os.write(outer, b"\x03")
             wait(lambda: screen_contains(b"Close connections"))
-            assert screen_contains(str(w).encode()) and screen_contains(str(other).encode())
+            assert screen_contains(b"WORKSPACE") and screen_contains(b"STATUS")
+            assert screen_contains(w.name.encode()) and screen_contains(other.name.encode())
             os.write(outer, b"\t\r")  # explicit cleanup, default is Keep running
             wait(lambda: screen_contains(b"Connections remain or changed"))
             assert tui.poll() is None and leftover.exists()
@@ -595,11 +748,7 @@ launch:
         burrow(w, "--offline", "status", ok=False)
         burrow(w, "connect", "afterloss", "127.0.0.1", "tester", *plain, ok=False)
         assert not (w / "burrow/afterloss").exists() and evidence.read_text() == "retain evidence"
-        # The Hovel throw evidence includes real plans and confirmations.
-        with sqlite3.connect(w / "workspace.db") as db:
-            plans = [json.loads(r[0]) for r in db.execute("select plan_json from throw_plans")]
-            assert plans and all(p["confirmationId"] for p in plans)
-            assert db.execute("select count(*) from throw_confirmations").fetchone()[0] >= len(plans)
+        full_evidence = True
         timing("failure ownership and evidence")
         print("PASS production key/agent auth, trust, cancellation, ownership, cross-workspace isolation, loss/reconnect, bounded logs and truthful close", flush=True)
     finally:
@@ -613,4 +762,27 @@ launch:
                 pass
         if container:
             command("docker", "rm", "-f", container)
+        # Live Python SQLite readers previously reproduced database corruption;
+        # see docs/research/retained-consumer-proof.md. Inspect only after exit.
+        def exited(pid):
+            try:
+                return Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1].startswith("Z")
+            except FileNotFoundError:
+                return True
+        wait(lambda: all(exited(pid) for pid in daemons))
+        if forward_evidence or full_evidence:
+            with closing(sqlite3.connect(w / "workspace.db")) as db:
+                assert db.execute("pragma integrity_check").fetchone() == ("ok",)
+                for tunnel in forward_evidence:
+                    plans = [json.loads(row[0]) for row in db.execute("select p.plan_json from throw_plans p join throw_records r on r.plan_id=p.id, json_each(r.throw_json, '$.runs') j where json_extract(j.value, '$.runId')=?", (tunnel["runID"],))]
+                    assert len(plans) == 1 and plans[0]["confirmationId"]
+                    assert db.execute("select count(*) from throw_confirmations where id=?", (plans[0]["confirmationId"],)).fetchone()[0] == 1
+                    request = json.loads(plans[0]["chainConfig"]["request"])["tunnel"]
+                    for field in ("id", "direction", "listen", "destination"):
+                        assert request[field] == tunnel[field], (field, request, tunnel)
+                if full_evidence:
+                    plans = [json.loads(r[0]) for r in db.execute("select plan_json from throw_plans")]
+                    assert plans and all(p["confirmationId"] for p in plans)
+                    assert db.execute("select count(*) from throw_confirmations").fetchone()[0] >= len(plans)
+            print("PASS post-shutdown database integrity and confirmed Hovel forwarding evidence", flush=True)
         timing("fixture cleanup")

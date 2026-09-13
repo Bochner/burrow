@@ -2,21 +2,32 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"image"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
 	ptyhost "github.com/Bochner/burrow/core/terminal"
 	uv "github.com/charmbracelet/ultraviolet"
 )
 
 var terminalEscape = key.NewBinding(key.WithKeys("ctrl+]"))
+
+const invalidTerminalGeometry = "REFUSED: terminal geometry outside 1..1000 cells; previous size retained."
+
 var toggleMouse = key.NewBinding(key.WithKeys("alt+s"))
 var showBurrow = key.NewBinding(key.WithKeys("alt+b"), key.WithHelp("Alt+B", "Burrow"))
 var showHovel = key.NewBinding(key.WithKeys("alt+h"), key.WithHelp("Alt+H", "Hovel"))
+var previousShell = key.NewBinding(key.WithKeys("alt+left"), key.WithHelp("Alt+←/→", "shells"))
+var nextShell = key.NewBinding(key.WithKeys("alt+right"))
+var numberedShell = key.NewBinding(key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9"), key.WithHelp("Alt+1–9", "shell"))
 var restartTerminal = key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+R", "restart CLI"))
 
 // Serializes launch registration against shutdown, including commands Bubble
@@ -45,10 +56,12 @@ func (l *terminalLifetime) close() {
 }
 
 type cliTab struct {
-	host    *ptyhost.Host
-	screen  ptyhost.Snapshot
-	pending bool
-	error   string
+	id         string
+	connection string
+	host       *ptyhost.Host
+	screen     ptyhost.Snapshot
+	pending    bool
+	error      string
 }
 type cliOpened struct {
 	tab  *cliTab
@@ -60,6 +73,222 @@ type cliScreen struct {
 	screen ptyhost.Snapshot
 }
 type cliClosed struct{ tab *cliTab }
+type shellRequested struct{ name string }
+
+type shellEntry struct {
+	workspace int
+	tab       *cliTab
+}
+
+func (m *frame) shellEntries() []shellEntry {
+	var entries []shellEntry
+	for i, path := range m.paths {
+		w := m.workspaces[path]
+		entries = append(entries, shellEntry{workspace: i})
+		if w == nil {
+			continue
+		}
+		for _, tab := range w.shells {
+			entries = append(entries, shellEntry{i, tab})
+		}
+	}
+	return entries
+}
+
+func (w *workspaceView) terminals() []*cliTab { return append([]*cliTab{w.cli}, w.shells...) }
+func (w *workspaceView) ownsTerminal(tab *cliTab) bool {
+	return w.cli == tab || slices.Contains(w.shells, tab)
+}
+func (w *workspaceView) removeShell(tab *cliTab) {
+	w.shells = slices.DeleteFunc(w.shells, func(s *cliTab) bool { return s == tab })
+	// Numbers are workspace-local positions; asynchronous results use pointers,
+	// never these reusable labels, to identify their terminal.
+	for i, shell := range w.shells {
+		shell.id = strconv.Itoa(i + 1)
+	}
+	if w.shell == tab {
+		w.shell = nil
+		if w.tab == "shell" {
+			w.tab, w.focus = "", "prompt"
+		}
+		if len(w.shells) > 0 {
+			w.shell = w.shells[len(w.shells)-1]
+		}
+	}
+}
+func (tab *cliTab) label() string {
+	return tab.connection + " #" + tab.id
+}
+func (tab *cliTab) state() string {
+	if tab.pending {
+		if tab.host == nil {
+			return "opening"
+		}
+		return "closing"
+	}
+	if tab.screen.Exited {
+		return "exited"
+	}
+	if tab.error != "" {
+		return "failed"
+	}
+	return "running"
+}
+
+func (m *frame) resumeShell(tab *cliTab) {
+	w := m.current()
+	m.selection = nil
+	w.shell, w.tab, w.focus = tab, "shell", "terminal"
+	for i, entry := range m.shellEntries() {
+		if entry.tab == tab {
+			m.revealShell(i)
+			break
+		}
+	}
+	if tab.host != nil && !tab.pending && !m.invalidGeometry {
+		r := m.terminalBounds()
+		if err := tab.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil {
+			tab.error = safe(err.Error())
+		}
+	}
+}
+
+func (m *frame) shellControl(args []string) tea.Cmd {
+	w := m.current()
+	w.management.busy = false
+	w.management.outputOffset = 0
+	if args[0] == "shells" {
+		var lines []string
+		for _, tab := range w.shells {
+			state := tab.state()
+			if state == "running" {
+				state = "background"
+				if w.tab == "shell" && w.shell == tab {
+					state = "active"
+				}
+			}
+			lines = append(lines, "Shell "+tab.label()+" · "+state+" · frontend-local / not recorded")
+		}
+		w.management.output = "No local shells in this workspace."
+		if len(lines) > 0 {
+			w.management.output = strings.Join(lines, "\n")
+		}
+		return nil
+	}
+	tab := w.shell
+	if len(args) == 2 {
+		tab = nil
+		for _, candidate := range w.shells {
+			if candidate.id == args[1] {
+				tab = candidate
+				break
+			}
+		}
+	}
+	if tab == nil {
+		w.management.output = "REFUSED: no matching local shell in this workspace; use shells."
+		return nil
+	}
+	if args[0] == "resume" {
+		m.resumeShell(tab)
+		w.management.output = "Local SSH shell selected (" + tab.label() + ") · " + tab.state() + "."
+		return nil
+	}
+	return m.closeShellTab(tab)
+}
+
+func (w *workspaceView) activeTerminal() *cliTab {
+	if w.tab == "shell" {
+		return w.shell
+	}
+	return w.cli
+}
+
+func (m *frame) openShell(name string) tea.Cmd {
+	w := m.current()
+	w.management.busy = false
+	if m.invalidGeometry {
+		w.management.output = invalidTerminalGeometry
+		return nil
+	}
+	tab := &cliTab{id: strconv.Itoa(len(w.shells) + 1), pending: true, connection: name}
+	w.management.output = "Opening local SSH shell (" + tab.label() + ")…"
+	w.management.outputOffset = 0
+	w.shells = append(w.shells, tab)
+	m.resumeShell(tab)
+	path, bounds, lifetime := m.active, m.terminalBounds(), m.terminals
+	return m.dispatch(path, func() tea.Msg {
+		if !lifetime.begin() {
+			return cliOpened{tab: tab, err: context.Canceled}
+		}
+		ctx, cancel := context.WithTimeout(lifetime.context, 10*time.Second)
+		defer cancel()
+		cmd, err := connection.ShellCommand(ctx, path, name)
+		var host *ptyhost.Host
+		if err == nil {
+			host, err = ptyhost.StartWithScrollback(lifetime.context, cmd, bounds.Dx(), bounds.Dy(), 1000)
+		}
+		if err != nil {
+			lifetime.jobs.Done()
+		} else {
+			go func() { defer lifetime.jobs.Done(); <-host.Done() }()
+		}
+		return cliOpened{tab, host, err}
+	})
+}
+
+func (m *frame) cycleShell(delta int) {
+	w := m.current()
+	if len(w.shells) == 0 {
+		return
+	}
+	i := slices.Index(w.shells, w.shell)
+	if w.tab != "shell" {
+		i = -1
+		if delta < 0 {
+			i = 0
+		}
+	}
+	m.resumeShell(w.shells[(i+delta+len(w.shells))%len(w.shells)])
+}
+
+func (m *frame) cycleTab(delta int) {
+	w := m.current()
+	i := 0
+	if w.tab == "hovel" {
+		i = 1
+	} else if w.tab == "shell" {
+		i = slices.Index(w.shells, w.shell) + 2
+	}
+	i = (i + delta + len(w.shells) + 2) % (len(w.shells) + 2)
+	w.tab = ""
+	if i == 1 {
+		w.tab = "hovel"
+	} else if i >= 2 {
+		m.resumeShell(w.shells[i-2])
+	}
+	w.focus = "tabs"
+}
+
+func (m *frame) closeShellTab(tab *cliTab) tea.Cmd {
+	w, path := m.current(), m.active
+	if tab == nil || tab.pending {
+		w.management.busy = false
+		w.management.output = "No ready local shell to close."
+		return nil
+	}
+	w.management.busy = false
+	if w.shell == tab && w.tab == "shell" {
+		w.tab, w.focus = "", "prompt"
+	}
+	w.management.output = "Closing local SSH shell…"
+	if tab.host == nil {
+		w.removeShell(tab)
+		return nil
+	}
+	tab.pending = true
+	return m.dispatch(path, func() tea.Msg { tab.host.Close(); return cliClosed{tab} })
+}
 
 func (m *frame) terminalBounds() image.Rectangle {
 	left, right := m.columns()
@@ -67,7 +296,7 @@ func (m *frame) terminalBounds() image.Rectangle {
 }
 func (m *frame) terminalFocused() bool {
 	w := m.current()
-	return m.modal == "" && !w.management.help && !w.management.quitting && w.tab == "hovel" && w.focus == "terminal"
+	return m.modal == "" && !w.management.help && !w.management.quitting && (w.tab == "hovel" || w.tab == "shell") && w.focus == "terminal"
 }
 func (m *frame) openCLI() tea.Cmd {
 	w := m.current()
@@ -136,7 +365,7 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 	w := m.workspaces[path]
 	switch v := msg.(type) {
 	case cliOpened:
-		if w.cli != v.tab {
+		if !w.ownsTerminal(v.tab) {
 			if v.host != nil {
 				return func() tea.Msg { v.host.Close(); return nil }
 			}
@@ -145,24 +374,55 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 		v.tab.pending = false
 		if v.err != nil {
 			v.tab.error = "REFUSED: " + safe(v.err.Error())
+			if v.tab.connection != "" {
+				w.removeShell(v.tab)
+				w.management.output = v.tab.error
+			}
 			return nil
 		}
 		v.tab.host = v.host
+		if v.tab.connection != "" && w.management.output == "Opening local SSH shell ("+v.tab.label()+")…" {
+			w.management.output = "Local SSH shell started (" + v.tab.label() + "); output is in its shell tab."
+		}
 		r := m.terminalBounds()
-		v.host.Send(image.Pt(r.Dx(), r.Dy()))
+		if m.invalidGeometry {
+			v.tab.error = invalidTerminalGeometry
+		} else if err := v.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil {
+			v.tab.error = safe(err.Error())
+		} else if v.tab.error == invalidTerminalGeometry {
+			v.tab.error = ""
+		}
 		return m.readCLI(path, v.tab)
 	case cliScreen:
-		if w.cli != v.tab {
+		if !w.ownsTerminal(v.tab) {
 			return nil
 		}
+		if v.tab.connection != "" && v.tab.pending {
+			return nil
+		} // Explicit close reports after reaping.
 		v.tab.screen = v.screen
+		if v.tab.connection != "" && v.screen.Exited {
+			w.removeShell(v.tab)
+			w.management.output = "Local SSH shell exited (" + v.tab.label() + "); connection retained if still live."
+			if v.screen.Err != nil {
+				w.management.output = fmt.Sprintf("SSH shell ended (%s): %s. Inspect the connection before reopening.", v.tab.label(), safe(v.screen.Err.Error()))
+			}
+			return nil
+		}
 		if v.screen.Err != nil {
 			v.tab.error = "CLI ended or input failed; inspect Hovel history before repeating work"
+			if v.tab.connection != "" {
+				v.tab.error = "SSH terminal input/resize failed: " + safe(v.screen.Err.Error())
+			}
 		}
 		if !v.screen.Exited {
 			return m.readCLI(path, v.tab)
 		}
 	case cliClosed:
+		if slices.Contains(w.shells, v.tab) {
+			w.removeShell(v.tab)
+			w.management.output = "Local SSH shell closed (" + v.tab.label() + "); connection retained."
+		}
 		if w.cli == v.tab {
 			w.cli = nil
 		}
@@ -185,7 +445,7 @@ func (m *frame) closeCLI() tea.Cmd {
 	return m.dispatch(m.active, func() tea.Msg { tab.host.Close(); return cliClosed{tab} })
 }
 func (m *frame) sendTerminal(event any) {
-	tab := m.current().cli
+	tab := m.current().activeTerminal()
 	if tab == nil || tab.pending || tab.host == nil {
 		return
 	}

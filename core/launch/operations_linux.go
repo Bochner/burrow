@@ -150,6 +150,30 @@ func Call(ctx context.Context, workspace, method string, input, output any) erro
 	return rpcInput(conn, method, input, output)
 }
 
+// HovelDispatch serializes short manager submissions, not long-running consumers.
+// Cancellation while queued leaves the request undispatched; once launched,
+// finish the bounded receipt so the caller can reconcile its exact creation.
+func HovelDispatch(ctx context.Context, workspace string, args ...string) ([]byte, error) {
+	// Pinned Hovel CLI writes throw evidence locally even when attached to a
+	// daemon. Concurrent CLI writers can fail during SQLite WAL recovery.
+	// ponytail: serialize manager dispatches per workspace; remove when upstream
+	// owns concurrent evidence writes. RPC reads/close and SSH auth stay parallel.
+	dir, e := directory(filepath.Join(workspace, "burrow"), false, true)
+	if e != nil {
+		return nil, e
+	}
+	defer dir.Close()
+	if e = lock(ctx, dir); e != nil {
+		return nil, e
+	}
+	if e = ctx.Err(); e != nil {
+		return nil, e
+	}
+	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	defer cancel()
+	return HovelCLI(finish, workspace, args...)
+}
+
 // HovelCLI preserves the public CLI's persisted throw plans, confirmation and
 // launch-key policy. These contracts are not replicated in a Burrow plan store.
 func HovelCLI(ctx context.Context, workspace string, args ...string) ([]byte, error) {

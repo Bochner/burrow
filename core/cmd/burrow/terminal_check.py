@@ -137,13 +137,15 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         command("throw --allow-dangerous", "yes", False)
         # Leave A's actual confirmation pending while operating B's independent CLI.
         click(2, 20)
-        wait("Exact destination")
-        send(str(b) + "\r")
-        wait("● b")
+        wait("Workspace name")
+        send(b.name + "\t" + str(b.parent) + "\r")
+        wait(str(b))  # active workspace metadata; its SSH status is disconnected
         click(39, 1)
         wait("h0v3l>")
         command("op create embedded-b", "Operation selected: embedded-b")
         click(2, 3)
+        wait("management-draft")
+        send(b"\x1bh")
         wait("THROW REVIEW")
         command("no", "cancelled")
         plans = json.loads(cli(a, "throw", "list", "--json"))
@@ -169,10 +171,12 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         completed = cli(a, "throw", "inspect", plan_id, "--events", "--json")
         assert "hovel.throw.started" in completed and "hovel.throw.completed" in completed, completed
         click(2, 4)
+        send(b"\x1bh")
         wait("op:embedded-b")
         assert "embedded-b" in cli(b, "op", "list")
         assert "embedded-b" not in cli(a, "op", "list")
         click(2, 3)
+        send(b"\x1bh")
         wait("embedded-a/check")
         send(b"\x1bb")  # Alt+B leaves the live CLI without forwarding the key.
         wait("management-draft")

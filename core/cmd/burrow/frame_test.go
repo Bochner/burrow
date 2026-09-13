@@ -23,16 +23,235 @@ func TestWorkspaceFrame(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{Offline: true})
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 	view := m.View().Content
-	for _, label := range []string{"WORKSPACES", "New", "Menu", "Hovel", "SAVED CONNECTION", "No shells"} {
+	for _, label := range []string{"WORKSPACES", "New", "Menu", "Hovel", "SAVED CONNECTION"} {
 		if !strings.Contains(view, label) {
 			t.Fatalf("missing %s: %s", label, view)
 		}
 	}
 	frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
-	if !strings.Contains(m.View().Content, "Exact destination") {
+	if !strings.Contains(m.View().Content, "Workspace name") {
 		t.Fatal("New must show destination before launch")
 	}
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+}
+
+func TestNewWorkspace(t *testing.T) {
+	t.Setenv("HOME", "/tmp/home")
+	t.Setenv("XDG_DATA_HOME", "/tmp/data")
+	for _, test := range []struct{ name, location, want string }{
+		{"lab", "", "/tmp/data/burrow/workspaces/lab"},
+		{"lab", "/tmp/engagements", "/tmp/engagements/lab"},
+		{"lab", "~/work", "/tmp/home/work/lab"},
+		{"", "", ""}, {".", "", ""}, {"../lab", "", ""}, {"/burrow2", "", ""},
+		{"lab", "relative", ""}, {"lab", "/tmp/../root", ""}, {"lab", "/tmp/\x1b", ""},
+		{"lab", "/" + strings.Repeat("a", 80), ""},
+	} {
+		got, err := workspaceDestination(test.name, test.location)
+		if (err != nil) != (test.want == "") || got != test.want {
+			t.Fatalf("%+v: %q %v", test, got, err)
+		}
+	}
+	for _, xdg := range []string{"", "relative"} {
+		t.Setenv("XDG_DATA_HOME", xdg)
+		got, err := workspaceDestination("lab", "")
+		if err != nil || got != "/tmp/home/.local/share/burrow/workspaces/lab" {
+			t.Fatal(got, err)
+		}
+	}
+	t.Setenv("XDG_DATA_HOME", "/tmp/data")
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/existing"}, plain, launch.Options{Offline: true})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
+			frameEvent(m, tea.PasteMsg{Content: "burrow2"})
+			screen := capturePresentation(t, m, fmt.Sprintf("new-workspace-%dx%d-%t", size.X, size.Y, plain))
+			for _, want := range []string{"Workspace name", "Location (optional)", "/tmp/data/burrow/workspaces/burrow2", "Create & open"} {
+				if !strings.Contains(screen.String(), want) {
+					t.Fatal("missing", want, screen.String())
+				}
+			}
+			if !plain {
+				assertTextRole(t, screen, m.dialogBounds(), "Destination:", subtextColor)
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			if !m.launchPending || m.destination != "/tmp/data/burrow/workspaces/burrow2" || m.form != nil {
+				t.Fatal("name-only launch failed")
+			}
+			if m.submitWorkspace() != nil {
+				t.Fatal("duplicate launch")
+			}
+		}
+	}
+	m := newFrame(launch.Info{Workspace: "/tmp/existing"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
+	frameEvent(m, tea.PasteMsg{Content: "lab"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	frameEvent(m, tea.PasteMsg{Content: "/tmp/custom"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if m.launchPending || m.form.GetFocusedField().GetKey() != "workspace-name" {
+		t.Fatal("Tab must only navigate")
+	}
+	frameEvent(m, m.activate("submit"))
+	if !m.launchPending || m.destination != "/tmp/custom/lab" {
+		t.Fatal("location override failed", m.destination)
+	}
+}
+
+func TestCompletionCyclesOriginalMatches(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/completion"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	frameEvent(m, tea.PasteMsg{Content: "tunnel "})
+	for _, event := range []struct {
+		mod  tea.KeyMod
+		want string
+	}{{0, "tunnel create"}, {0, "tunnel check"}, {tea.ModShift, "tunnel create"}, {tea.ModShift, "tunnel remove"}, {0, "tunnel create"}} {
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab, Mod: event.mod})
+		if got := m.current().management.input.Value(); got != event.want {
+			t.Fatalf("completion got %q want %q", got, event.want)
+		}
+	}
+}
+
+func TestShellCommandKeepsSubmittedTarget(t *testing.T) {
+	for _, command := range []string{"shell-close 2", "resume 2", "shell-close"} {
+		t.Run(command, func(t *testing.T) {
+			m := newFrame(launch.Info{Workspace: "/tmp/shell-target"}, true, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+			a, b, c := &cliTab{id: "1", connection: "first"}, &cliTab{id: "2", connection: "intended"}, &cliTab{id: "3", connection: "sibling"}
+			w := m.current()
+			w.shells, w.shell = []*cliTab{a, b, c}, b
+			w.management.input.SetValue(command)
+			_, request := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			// A background exit arrives before any queued command is delivered.
+			exited := a
+			if command == "shell-close" {
+				exited = b
+			}
+			m.terminalResult(m.active, cliScreen{tab: exited, screen: ptyhost.Snapshot{Exited: true}})
+			if request != nil {
+				m.Update(request())
+			}
+			if !w.ownsTerminal(c) {
+				t.Fatal("command closed an unintended sibling after renumbering")
+			}
+			if command == "resume 2" {
+				if w.shell != b {
+					t.Fatal("resume selected a different shell after renumbering")
+				}
+			} else if w.ownsTerminal(b) {
+				t.Fatal("close did not close the submitted shell")
+			}
+		})
+	}
+}
+
+func TestLocalShellPresentation(t *testing.T) {
+	for _, noColor := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/shell-presentation"}, noColor, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		r := m.terminalBounds()
+		m.current().management.input.SetValue("shell gateway")
+		_, request := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		if request == nil {
+			t.Fatal("shell request missing")
+		}
+		m.Update(request()) // Create the tab; substitute only the SSH transport below.
+		cmd := exec.Command("/bin/sh", "-c", "printf '\\033[32mLOCAL-SCREEN\\033[0m\\033[3;4H'; sleep 60")
+		host, err := ptyhost.StartWithScrollback(m.terminals.context, cmd, r.Dx(), r.Dy(), 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer host.Close()
+		tab := m.current().shell
+		m.terminalResult(m.active, cliOpened{tab: tab, host: host})
+		m.current().management.connections = []connection.State{{Name: "gateway", State: "connected"}}
+		m.current().shell, m.current().tab, m.current().focus = tab, "shell", "terminal"
+		until := time.Now().Add(3 * time.Second)
+		for !strings.Contains(tab.screen.Screen, "LOCAL-SCREEN") && time.Now().Before(until) {
+			frameEvent(m, m.readCLI(m.active, tab)())
+		}
+		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			frameEvent(m, m.readCLI(m.active, tab)())
+			screen := capturePresentation(t, m, fmt.Sprintf("shell-%dx%d-color-%v", size[0], size[1], !noColor))
+			for _, label := range []string{"LOCAL-SCREEN", "SSH:", "gateway", "Ctrl+]"} {
+				if !strings.Contains(screen.String(), label) {
+					t.Fatalf("missing %s at %v", label, size)
+				}
+			}
+			if m.View().Cursor == nil {
+				t.Fatal("shell cursor missing")
+			}
+			if noColor && strings.Contains(m.View().Content, "\x1b[") {
+				t.Fatal("color escaped NO_COLOR")
+			}
+			if !noColor && size[0] == 160 {
+				bounds := image.Rect(0, 0, 26, m.height)
+				assertTextRole(t, screen, bounds, "gateway", subtextColor)
+				assertTextRole(t, screen, bounds, "●", "#a6e3a1")
+				assertTextRole(t, screen, image.Rect(26, 0, 128, 3), "Shell #1", lavenderColor)
+				assertTextRole(t, screen, image.Rect(26, m.height-2, 128, m.height), "gateway", lavenderColor)
+				tab.pending = true
+				closing := capturePresentation(t, m, "shell-closing")
+				assertTextRole(t, closing, bounds, "◐", "#f9e2af")
+				tab.pending = false
+			}
+			if !noColor && size[0] == 80 {
+				assertTextRole(t, screen, image.Rect(0, 0, 16, m.height), "●", "#a6e3a1")
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
+		if m.current().shell != tab || m.current().tab != "" || m.current().focus != "prompt" {
+			t.Fatal("reserved background key must preserve the shell")
+		}
+		if !strings.Contains(m.current().management.output, "Local SSH shell started") || strings.Contains(m.current().management.output, "Running reviewed command") {
+			t.Fatal("shell launch did not acknowledge completion: " + m.current().management.output)
+		}
+		m.current().management.input.SetValue("resume 1")
+		_, request = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		if request != nil {
+			m.Update(request())
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
+		if !strings.Contains(m.current().management.output, "Local SSH shell selected") {
+			t.Fatal("shell resume did not acknowledge selection")
+		}
+		m.current().management.output = "Newer command result"
+		m.terminalResult(m.active, cliOpened{tab: tab, host: host})
+		if m.current().management.output != "Newer command result" {
+			t.Fatal("late shell launch overwrote newer command output")
+		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 0, Height: 24})
+		if !strings.Contains(tab.error, "geometry") || m.width != 80 {
+			t.Fatal("invalid resize must be refused, not clamped")
+		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+		if tab.error != "" {
+			t.Fatal("geometry warning survived successful resize")
+		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 1200, Height: 24})
+		tab.error = ""
+		m.terminalResult(m.active, cliOpened{tab: tab, host: host})
+		if !strings.Contains(tab.error, "geometry") {
+			t.Fatal("opening-time resize refusal discarded")
+		}
+		if close := m.shellControl([]string{"shell-close"}); close != nil {
+			frameEvent(m, close())
+		}
+		if m.current().shell != nil || m.current().tab != "" || m.current().focus != "prompt" {
+			t.Fatal("shell close did not restore management")
+		}
+		if m.openShell("gateway") != nil || m.current().shell != nil || !strings.Contains(m.current().management.output, "geometry") {
+			t.Fatal("invalid geometry must refuse shell launch")
+		}
+	}
 }
 
 func TestEmbeddedTerminalKeepsFrameAndBackgroundOutput(t *testing.T) {
@@ -93,6 +312,213 @@ func TestEmbeddedTerminalKeepsFrameAndBackgroundOutput(t *testing.T) {
 	frameEvent(m, tea.KeyPressMsg{Code: 's', Mod: tea.ModAlt})
 	if m.View().MouseMode != tea.MouseModeNone {
 		t.Fatal("mouse text selection unavailable while Hovel is focused")
+	}
+}
+
+func TestIndependentShellViews(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/shells"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		w := m.current()
+		w.management.connections = []connection.State{{Name: "gateway", State: "connected"}}
+		for i := 1; i <= 2; i++ {
+			cmd := exec.Command("/bin/sh", "-c", fmt.Sprintf("stty -echo; printf '\\033[?1049h\\033[32mSCREEN-%d\\033[0m\\033[3;4H'; read line; printf '\\033[2J\\033[HINPUT-%d=%%s' \"$line\"; read line", i, i))
+			h, err := ptyhost.StartWithScrollback(m.terminals.context, cmd, 98, 35, 1000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer h.Close()
+			w.shells = append(w.shells, &cliTab{id: fmt.Sprint(i), connection: "gateway", host: h})
+		}
+		refresh := func(tab *cliTab, text string) {
+			t.Helper()
+			for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+				frameEvent(m, m.readCLI(m.active, tab)())
+				if strings.Contains(tab.screen.Screen, text) {
+					return
+				}
+			}
+			t.Fatal("shell output missing", text, tab.screen)
+		}
+		first, second := w.shells[0], w.shells[1]
+		refresh(first, "SCREEN-1")
+		refresh(second, "SCREEN-2")
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			for _, tab := range w.shells {
+				m.shellControl([]string{"resume", tab.id})
+				refresh(tab, "SCREEN-"+tab.id)
+				screen := capturePresentation(t, m, fmt.Sprintf("multi-shell-%s-%dx%d-%t", tab.id, size.X, size.Y, plain))
+				if !strings.Contains(screen.String(), "SCREEN-"+tab.id) || m.View().Cursor == nil {
+					t.Fatal("resume lost screen/cursor")
+				}
+				if !plain {
+					assertTextRole(t, screen, m.terminalBounds(), "SCREEN-"+tab.id, "#008000")
+				}
+				frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
+			}
+		}
+		m.shellControl([]string{"resume", "2"})
+		frameEvent(m, tea.KeyPressMsg{Code: 'x', Text: "x"})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		refresh(second, "INPUT-2=x")
+		if strings.Contains(first.host.Snapshot().Screen, "INPUT-1") {
+			t.Fatal("input reached background shell")
+		}
+		// A real background exit must not steal the controlling view. Its queued
+		// snapshots must not resurrect it after removal.
+		first.host.Close()
+		late := m.readCLI(m.active, first)()
+		frameEvent(m, late)
+		if w.shell != second || w.tab != "shell" || len(w.shells) != 1 {
+			t.Fatal("background exit stole selection")
+		}
+		frameEvent(m, late)
+		if len(w.shells) != 1 {
+			t.Fatal("stale result resurrected shell")
+		}
+		m.activate("burrow")
+		frameEvent(m, tea.PasteMsg{Content: "resume "})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if w.management.input.Value() != "resume 1" {
+			t.Fatal("shell ID completion missing", w.management.input.Value())
+		}
+		m.shellControl([]string{"resume", "2"})
+		if w.tab != "" || !strings.Contains(w.management.output, "REFUSED") {
+			t.Fatal("unknown ID changed view")
+		}
+		// Synthetic inventory is explicitly for overflow, not SSH success evidence.
+		for i := 2; i <= 25; i++ {
+			w.shells = append(w.shells, &cliTab{id: fmt.Sprint(i), connection: "gateway"})
+		}
+		w.focus = "shells"
+		for i := 0; i < 30; i++ {
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+		}
+		screen := capturePresentation(t, m, fmt.Sprintf("shell-overflow-%t", plain))
+		if !strings.Contains(screen.String(), "#25") || strings.Contains(screen.String(), "/25") {
+			t.Fatal("last shell hidden", screen.String())
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if w.shell.id != "25" {
+			t.Fatal("overflow selection opened wrong shell")
+		}
+	}
+}
+
+func TestShellTreeTabsAndNumbering(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/tree"}, plain, launch.Options{})
+		defer m.terminals.close()
+		w := m.current()
+		w.management.connections = []connection.State{{Name: "gateway", State: "connected"}}
+		w.shells = []*cliTab{{id: "1", connection: "gateway"}, {id: "2", connection: "gateway"}}
+		first, second := w.shells[0], w.shells[1]
+		click := func(id string) {
+			t.Helper()
+			compositor := m.compositor()
+			for y := 0; y < m.height; y++ {
+				for x := 0; x < m.width; x++ {
+					if compositor.Hit(x, y).ID() == id {
+						frameEvent(m, tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+						return
+					}
+				}
+			}
+			t.Fatal("missing clickable control", id)
+		}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			for _, tab := range []*cliTab{first, second} {
+				click("shell:" + tab.id)
+				if w.shell != tab || !m.terminalFocused() {
+					t.Fatal("tree did not focus exact shell")
+				}
+			}
+			click("shell-tab:0")
+			if w.shell != first {
+				t.Fatal("first tab selected wrong shell")
+			}
+			click("shell-tab:1")
+			if w.shell != second {
+				t.Fatal("second tab selected wrong shell")
+			}
+			screen := capturePresentation(t, m, fmt.Sprintf("shell-tree-tabs-%dx%d-%t", size.X, size.Y, plain))
+			left, _ := m.columns()
+			for row, text := range []string{"tree", "#1", "#2"} {
+				line := ansi.Strip(ansi.Cut(strings.Split(screen.String(), "\n")[row+size.Y/2+4], 0, left))
+				if !strings.Contains(line, text) {
+					t.Fatal("tree hierarchy missing", line, text)
+				}
+			}
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, size.Y/2+5, left, size.Y/2+7), "#1", lavenderColor)
+				if size.X >= 120 {
+					assertTextRole(t, screen, image.Rect(0, size.Y/2+5, left, size.Y/2+7), "gateway", subtextColor)
+				}
+			}
+			click("workspace:0")
+			if w.tab != "" || w.focus != "prompt" || w.shell != second || len(w.shells) != 2 {
+				t.Fatal("workspace click must show management and retain shells")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: '1', Mod: tea.ModAlt})
+			if w.shell != first {
+				t.Fatal("Alt+1 did not select first shell")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModAlt})
+			if w.shell != second {
+				t.Fatal("Alt+Right did not select second shell")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModAlt})
+			if w.shell != first {
+				t.Fatal("Alt+Left did not select first shell")
+			}
+			w.focus = "tabs"
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyRight})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			if w.shell != second || !m.terminalFocused() {
+				t.Fatal("tab keyboard navigation skipped sibling")
+			}
+		}
+		m.modal = "navigation"
+		frameEvent(m, tea.KeyPressMsg{Code: '1', Mod: tea.ModAlt})
+		if w.shell != second || m.modal != "navigation" {
+			t.Fatal("shell shortcut escaped modal")
+		}
+		m.modal = ""
+		// Close #2, open #2 again, and deliver the old terminal's late events.
+		m.terminalResult(m.active, cliClosed{second})
+		m.openShell("gateway") // Leave launch queued; no external SSH fixture needed here.
+		replacement := w.shell
+		if replacement.id != "2" || len(w.shells) != 2 {
+			t.Fatal("closed number not reused")
+		}
+		m.terminalResult(m.active, cliClosed{second})
+		m.terminalResult(m.active, cliScreen{tab: second, screen: ptyhost.Snapshot{Exited: true}})
+		if w.shell != replacement || len(w.shells) != 2 {
+			t.Fatal("stale event removed replacement")
+		}
+		m.terminalResult(m.active, cliClosed{first})
+		if replacement.id != "1" || w.shell != replacement {
+			t.Fatal("number gap or changed terminal identity")
+		}
+		m.openShell("gateway")
+		if w.shell.id != "2" {
+			t.Fatal("number did not reflect current shell count")
+		}
+		for i := 3; i <= 20; i++ {
+			w.shells = append(w.shells, &cliTab{id: fmt.Sprint(i), connection: "gateway"})
+		}
+		m.resumeShell(w.shells[19])
+		click("shell-tab:19")
+		if w.shell.id != "20" {
+			t.Fatal("last overflowing tab unreachable")
+		}
+		click("next-shell")
+		if w.shell.id != "1" {
+			t.Fatal("tab overflow control failed to wrap")
+		}
 	}
 }
 
@@ -211,8 +637,12 @@ func TestWorkspaceTabShortcuts(t *testing.T) {
 	}
 	press('b')
 	m.selectWorkspace(0)
-	if m.current().tab != "hovel" || m.current().cli != tab {
-		t.Fatal("workspace tab selection was not retained")
+	if m.current().tab != "" || m.current().cli != tab {
+		t.Fatal("workspace selection must show management and retain CLI")
+	}
+	press('h')
+	if m.current().cli != tab || m.current().tab != "hovel" {
+		t.Fatal("retained CLI cannot resume")
 	}
 }
 
@@ -308,9 +738,9 @@ func TestResizeClickAndModalCapture(t *testing.T) {
 		if size[0] < minimumWidth {
 			continue
 		}
-		// Independent expected midpoint coordinates, followed by real native hit routing.
+		// Anchored midpoint controls, followed by real native hit routing.
 		click(2, size[1]/2)
-		if !strings.Contains(m.View().Content, "Exact destination") {
+		if !strings.Contains(m.View().Content, "Workspace name") {
 			t.Fatal(m.View().Content)
 		}
 		click(25, 1) // underlying tab cannot capture input
@@ -353,7 +783,7 @@ func TestResizeClickAndModalCapture(t *testing.T) {
 func TestOverflowAndResourceSelection(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{})
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 40; i++ {
 		path := fmt.Sprintf("/tmp/workspace-%02d", i)
 		frameEvent(m, m.dispatch(m.active, func() tea.Msg { return workspaceOpened{info: launch.Info{Workspace: path}} })())
 	}
@@ -362,7 +792,15 @@ func TestOverflowAndResourceSelection(t *testing.T) {
 	if m.navOffset != 1 || !strings.Contains(m.View().Content, "workspace-00") || strings.Contains(m.View().Content, "● one") {
 		t.Fatal(m.View().Content)
 	}
-	frameEvent(m, tea.MouseClickMsg{X: 2, Y: 20, Button: tea.MouseLeft})
+	frameEvent(m, tea.MouseWheelMsg{X: 2, Y: m.height/2 + 4, Button: tea.MouseWheelDown})
+	if m.navOffset != 1 || m.shellOffset != 1 {
+		t.Fatal("shell scroll changed workspace scroll")
+	}
+	frameEvent(m, tea.MouseWheelMsg{X: 2, Y: 4, Button: tea.MouseWheelDown})
+	if m.navOffset != 2 || m.shellOffset != 1 {
+		t.Fatal("workspace scroll changed shell scroll")
+	}
+	frameEvent(m, tea.MouseClickMsg{X: 2, Y: m.height / 2, Button: tea.MouseLeft})
 	if m.modal != "new" {
 		t.Fatal("New scrolled away")
 	}
@@ -477,10 +915,13 @@ func frameEvent(m *frame, msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func TestFormsBrowseValidationAndIsolation(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/tmp/data")
 	m := newFrame(launch.Info{Workspace: "/tmp/forms"}, true, launch.Options{Offline: true})
 	defer m.terminals.close()
 	frameEvent(m, tea.WindowSizeMsg{Width: 120, Height: 30})
 	frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
+	frameEvent(m, tea.PasteMsg{Content: "lab"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	frameEvent(m, tea.PasteMsg{Content: "relative"})
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.launchPending || !strings.Contains(m.View().Content, "absolute canonical") {
@@ -493,6 +934,9 @@ func TestFormsBrowseValidationAndIsolation(t *testing.T) {
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.modal != "new" || !strings.Contains(m.View().Content, "relative") {
 		t.Fatal("browse cancellation lost typed draft")
+	}
+	if m.workspaceName != "lab" || m.form.GetFocusedField().GetKey() != "workspace-location" {
+		t.Fatal("directory browser changed workspace name")
 	}
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
@@ -558,11 +1002,12 @@ func TestFormDraftsAndCaretAcrossSizes(t *testing.T) {
 }
 
 func TestPendingWorkspaceDoesNotBlockOtherForms(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/tmp/w")
 	m := newFrame(launch.Info{Workspace: "/tmp/forms"}, true, launch.Options{Offline: true})
 	defer m.terminals.close()
 	frameEvent(m, tea.WindowSizeMsg{Width: 120, Height: 30})
 	frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
-	frameEvent(m, tea.PasteMsg{Content: "/tmp/retry-destination"})
+	frameEvent(m, tea.PasteMsg{Content: "retry-destination"})
 	// Advance the actual form; hold the returned launch command to deliver a
 	// deterministic failure at the public operation-completion seam.
 	f := m.form
@@ -682,8 +1127,15 @@ func TestConnectSuggestionsFollowLazySSHOrder(t *testing.T) {
 		}
 	}
 	got := connection.CommandSuggestions("connect -ip host -port 22 -user operator -socket gateway ", nil)
-	if len(got) == 0 || !strings.HasSuffix(got[0], "-ssh-key ") {
+	if len(got) < 2 || !strings.HasSuffix(got[0], "-proxy ") || !strings.HasSuffix(got[1], "-ssh-key ") {
 		t.Fatal("optional settings missing", got)
+	}
+	for _, proxy := range []string{"-proxy ", "-proxy 9050 ", "--proxy=1080 "} {
+		line := "connect -ip host -port 22 -user operator -socket gateway " + proxy
+		got := connection.CommandSuggestions(line, nil)
+		if len(got) == 0 || got[0] != line+"-ssh-key " {
+			t.Fatal("key should follow supplied proxy", got)
+		}
 	}
 }
 
@@ -706,6 +1158,55 @@ func TestReviewedApprovalOverridesExplicitNo(t *testing.T) {
 	_, approved, err := connection.Parse("/tmp/forms", []string{"gateway", "example.com", "operator", "--yes=false", "--yes"})
 	if err != nil || !approved {
 		t.Fatal("explicit no prevented later interactive approval", err)
+	}
+}
+
+func TestProxyOption(t *testing.T) {
+	for _, option := range [][]string{{"-proxy"}, {"-proxy", "1080"}, {"--proxy=1080"}, {"-proxy", "--yes"}} {
+		c, _, err := connection.Parse("/tmp/forms", append([]string{"gateway", "example.com", "operator"}, option...))
+		if err != nil {
+			t.Fatal("LazySSH SOCKS proxy option rejected", option, err)
+		}
+		want := 9050
+		if strings.Contains(strings.Join(option, " "), "1080") {
+			want = 1080
+		}
+		if c.ProxyPort != want {
+			t.Fatal("incorrect SOCKS port", c.ProxyPort, want)
+		}
+		p := connection.Profile{Name: c.Name, Host: c.Host, User: c.User, ProxyPort: c.ProxyPort}
+		restored, _, err := connection.Parse("/tmp/forms", p.Args()[1:])
+		if err != nil || restored.ProxyPort != want {
+			t.Fatal("profile lost SOCKS port", restored, err)
+		}
+	}
+	d := connectDetails{name: "gateway", host: "example.com", user: "operator", proxy: "1080"}
+	c, _, err := connection.Parse("/tmp/forms", d.args()[1:])
+	if err != nil || c.ProxyPort != 1080 {
+		t.Fatal("form lost SOCKS port", err)
+	}
+	for _, line := range []string{"connect gateway host user -proxy ", "connect gateway host user -proxy 1080 ", "connect gateway host user --proxy=1080 "} {
+		for _, candidate := range connection.CommandSuggestions(line, nil) {
+			if strings.HasSuffix(candidate, "-proxy ") {
+				t.Fatal("completion repeats supplied proxy", candidate)
+			}
+		}
+	}
+	args := []string{"connect", "gateway", "example.com", "operator", "--ssh-config", "/dev/null", "-proxy"}
+	result, err := connection.Execute(context.Background(), "/tmp/forms", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := result.(map[string]string)
+	if strings.Contains(strings.ToLower(review["review"]+connection.Help), "lazyssh") {
+		t.Fatal("upstream project name leaked into program-facing text")
+	}
+	if !strings.HasPrefix(review["review"], "SSH command:\n/usr/bin/ssh -F ") || strings.Contains(review["review"], "Generated config:") || !strings.Contains(review["review"], "-D 127.0.0.1:9050") {
+		t.Fatal("recap is not the concise actual command", review)
+	}
+	_, err = connection.Execute(context.Background(), "/tmp/forms", append(args, "1080", "--yes", "--review", review["digest"]))
+	if err == nil || !strings.Contains(err.Error(), "changed after review") {
+		t.Fatal("proxy change was not bound to recap approval", err)
 	}
 }
 
@@ -742,11 +1243,25 @@ func TestQuitReviewsAllOpenedConnections(t *testing.T) {
 	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
 		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
 		capturePresentation(t, m, fmt.Sprintf("%dx%d-quit-connections", size.X, size.Y))
-		for _, label := range []string{"gateway", "jump", "/tmp/one", "/tmp/two", "Keep running", "Close connections"} {
+		for _, label := range []string{"WORKSPACE", "CONNECTION", "STATUS", "gateway", "jump", "one", "two", "connected", "lost", "Keep running", "Close connections"} {
 			if !strings.Contains(m.View().Content, label) {
 				t.Fatal("quit omitted", size, label, m.View().Content)
 			}
 		}
+		if strings.Contains(m.quitSummary(), "/tmp/") || strings.Contains(m.quitSummary(), "example") {
+			t.Fatal("quit inventory must show names and status, not paths or endpoints")
+		}
+		if strings.Contains(m.quitSummary(), "CONNECTIONS") {
+			t.Fatal("quit inventory has redundant section heading")
+		}
+		m.current().management.noColor = false
+		m.noColor = false
+		screen := capturePresentation(t, m, fmt.Sprintf("%dx%d-quit-connections-color", size.X, size.Y))
+		for value, color := range map[string]string{"WORKSPACE": lavenderColor, "gateway": lavenderColor, "connected": "#a6e3a1", "lost": "#f38ba8"} {
+			assertTextRole(t, screen, m.dialogBounds(), value, color)
+		}
+		m.noColor = true
+		m.current().management.noColor = true
 	}
 	if !m.form.GetFocusedField().GetValue().(bool) {
 		t.Fatal("quit defaults to destructive cleanup")
@@ -808,8 +1323,9 @@ func TestPanelSelectionAndExplicitCopy(t *testing.T) {
 				m.current().cli = &cliTab{screen: ptyhost.Snapshot{Screen: "alpha界é\nsecond line\nthird line"}}
 			}
 			r := m.selectionBounds()
-			before := m.View().Content
 			_, cmd := m.Update(tea.MouseClickMsg{X: r.Min.X, Y: r.Min.Y, Button: tea.MouseLeft})
+			// The press clears resource selection; dragging must stay inside the panel.
+			before := m.View().Content
 			if cmd != nil {
 				t.Fatal("selection press ran a command")
 			}

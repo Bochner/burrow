@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -81,11 +82,11 @@ func promptAnswer(f *huh.Form, secret bool) []byte {
 
 // Required and optional details stay editable in the same form. Only non-secret
 // paths/settings become command arguments; all validation still reaches Parse.
-type connectDetails struct{ name, host, user, port, key, config, jump, agent string }
+type connectDetails struct{ name, host, user, port, key, config, jump, agent, proxy string }
 
 func (d *connectDetails) args() []string {
 	args := []string{"connect", d.name, d.host, d.user}
-	for _, option := range [][2]string{{"--port", d.port}, {"--key", d.key}, {"--ssh-config", d.config}, {"--jump", d.jump}, {"--agent", d.agent}} {
+	for _, option := range [][2]string{{"--port", d.port}, {"--key", d.key}, {"--ssh-config", d.config}, {"--jump", d.jump}, {"--agent", d.agent}, {"-proxy", d.proxy}} {
 		if option[1] != "" {
 			args = append(args, option[0], option[1])
 		}
@@ -95,7 +96,56 @@ func (d *connectDetails) args() []string {
 
 var connectFields = []struct{ key, title string }{
 	{"host", "Host / IP *"}, {"port", "SSH port"}, {"user", "Username *"}, {"name", "Connection name *"},
-	{"key", "SSH key path"}, {"jump", "Jump host"}, {"agent", "Agent socket"}, {"config", "SSH config path"},
+	{"key", "SSH key path"}, {"proxy", "SOCKS proxy port"}, {"jump", "Jump host"}, {"agent", "Agent socket"}, {"config", "SSH config path"},
+}
+
+var workspaceFields = []struct{ key, title string }{
+	{"workspace-name", "Workspace name"}, {"workspace-location", "Location (optional)"},
+}
+
+func workspaceParent(location string) (string, error) {
+	if location == "" {
+		root := os.Getenv("XDG_DATA_HOME")
+		if !filepath.IsAbs(root) {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", fmt.Errorf("Set a location: home directory is unavailable")
+			}
+			root = filepath.Join(home, ".local", "share")
+		}
+		location = filepath.Join(root, "burrow", "workspaces")
+	} else if location == "~" || strings.HasPrefix(location, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("Use an absolute location: home directory is unavailable")
+		}
+		location = home + strings.TrimPrefix(location, "~")
+	}
+	if err := canonicalWorkspace(location); err != nil {
+		return "", err
+	}
+	return location, nil
+}
+
+func workspaceDestination(name, location string) (string, error) {
+	if name == "" || name == "." || strings.Contains(name, "..") {
+		return "", fmt.Errorf("Enter a workspace name, not a path (for example lab)")
+	}
+	for _, r := range name {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '_' && r != '.' {
+			return "", fmt.Errorf("Workspace name: use letters, digits, hyphens, underscores or dots; no slashes")
+		}
+	}
+	parent, err := workspaceParent(location)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(parent, name)
+	// Even the shortest connection name must fit the existing socket contract.
+	if _, err := launch.ConnectionPath(path, "a"); err != nil {
+		return "", fmt.Errorf("Workspace path is too long for SSH sockets; shorten the name or location")
+	}
+	return path, nil
 }
 
 func detailsForm(workspace string, d *connectDetails) *huh.Form {
@@ -127,6 +177,16 @@ func detailsForm(workspace string, d *connectDetails) *huh.Form {
 		input("user", "Username *", "ubuntu (- uses SSH config)", &d.user).Validate(required),
 		input("name", "Connection name *", "gateway", &d.name).Validate(func(s string) error { _, e := launch.ConnectionPath(workspace, s); return e }),
 		input("key", "SSH key path", "/home/you/.ssh/id_ed25519", &d.key),
+		input("proxy", "SOCKS proxy port", "Off · enter 9050 or another port", &d.proxy).Validate(func(s string) error {
+			if s == "" {
+				return nil
+			}
+			n, e := strconv.Atoi(s)
+			if e != nil || n < 1 || n > 65535 {
+				return fmt.Errorf("Proxy port must be 1–65535")
+			}
+			return nil
+		}),
 		input("jump", "Jump host", "admin@bastion:22 (optional)", &d.jump),
 		input("agent", "Agent socket", "/run/user/1000/ssh-agent.socket (optional)", &d.agent),
 		input("config", "SSH config path", "/home/you/.ssh/config (optional)", &d.config).Validate(func(s string) error {
@@ -135,7 +195,7 @@ func detailsForm(workspace string, d *connectDetails) *huh.Form {
 			_, _, e := connection.Parse(workspace, copy.args()[1:])
 			return e
 		}),
-	).Title("Connection details").Description("* Required · blank optional settings use SSH defaults\n↑↓ / Tab / Shift+Tab to edit · Enter advances to review")).WithKeyMap(keys)
+	).Title("Connection details").Description("* Required · blank SOCKS port = off; other blanks use SSH defaults\n↑↓ / Tab / Shift+Tab to edit · Enter advances to review")).WithKeyMap(keys)
 
 }
 
@@ -333,7 +393,7 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		}
 		args := append(append([]string{}, m.commandArgs...), "--yes")
 		m.commandArgs = nil
-		if args[0] == "profile" {
+		if args[0] == "proxy" || args[0] == "profile" || args[0] == "tunnel" || args[0] == "tunc" || args[0] == "tund" {
 			path := m.active
 			m.modal = ""
 			return m.dispatch(path, func() tea.Msg {
@@ -372,8 +432,8 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		if input, ok := m.savedForm.GetFocusedField().(*huh.Input); ok {
 			switch m.savedModal {
 			case "new":
-				m.destination = value
-				input.Value(&m.destination)
+				m.workspaceLocation = value
+				input.Value(&m.workspaceLocation)
 			case "connect":
 				switch input.GetKey() {
 				case "key":
@@ -411,7 +471,7 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 		m.details = &connectDetails{}
 		return m.setForm("connect", "Connect · click a field or use ↑↓ / Tab", detailsForm(m.active, m.details))
 	}
-	if args[0] != "close" && args[0] != "profile" {
+	if args[0] != "proxy" && args[0] != "close" && args[0] != "profile" && args[0] != "tunnel" && args[0] != "tunc" && args[0] != "tund" {
 		_, yes, e := connection.Parse(m.active, args[1:])
 		if e != nil {
 			m.dismissForm()
@@ -480,6 +540,9 @@ func (m *frame) browse() tea.Cmd {
 	if m.form == nil {
 		return nil
 	}
+	if m.modal == "new" && m.form.GetFocusedField().GetKey() == "workspace-name" {
+		m.form.NextField()
+	}
 	input, ok := m.form.GetFocusedField().(*huh.Input)
 	if !ok {
 		return nil
@@ -501,18 +564,13 @@ func (m *frame) browse() tea.Cmd {
 	})
 }
 func canonicalWorkspace(s string) error {
-	if !filepath.IsAbs(s) || filepath.Clean(s) != s || strings.ContainsAny(s, "\x00\r\n\t") || len(s) > 2048 {
+	if !filepath.IsAbs(s) || filepath.Clean(s) != s || strings.IndexFunc(s, unicode.IsControl) >= 0 || len(s) > 2048 {
 		return fmt.Errorf("Use an absolute canonical path (no trailing / or ..).")
 	}
 	return nil
 }
 func (m *frame) formText() string {
-	text := m.formTitle
-	if m.modal == "menu" {
-		text = m.current().management.paletteTitle(m.dialogBounds().Dx() - 6)
-	} else {
-		text = centered(m.current().management.paint(accent, text), m.dialogBounds().Dx()-6)
-	}
+	text := centered(m.current().management.paint(accent, m.formTitle), m.dialogBounds().Dx()-6)
 	if m.modal == "quit" {
 		bounds := m.dialogBounds()
 		v := scrollBody(m.quitSummary(), bounds.Dx()-6, max(1, bounds.Dy()-14), m.modalOffset)
@@ -525,6 +583,13 @@ func (m *frame) formText() string {
 	}
 	if m.form != nil {
 		body := m.form.View()
+		if m.modal == "new" {
+			lines := strings.Split(body, "\n")
+			for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
+				lines = lines[:len(lines)-1]
+			}
+			body = strings.Join(lines, "\n")
+		}
 		if m.modal == "menu" {
 			if _, ok := m.menu.Hovered(); !ok {
 				body += "\nNo matching commands"
@@ -540,10 +605,18 @@ func (m *frame) formText() string {
 		text += "\n\n" + body
 	}
 	if m.modal == "new" {
+		parent, err := workspaceParent(m.workspaceLocation)
+		if err == nil {
+			name := m.workspaceName
+			if name == "" {
+				name = "<name>"
+			}
+			text += "\n\n" + ansi.Wrap(m.current().management.paint(secondary, "Destination: "+safe(strings.TrimSuffix(parent, "/"))+"/"+safe(name)), m.dialogBounds().Dx()-6, "")
+		}
 		if m.launchPending {
 			text += "\nLaunching and verifying…"
 		}
-		text += "\n" + m.current().management.paint(errorStyle, m.launchError)
+		text += "\n" + ansi.Wrap(m.current().management.paint(errorStyle, m.launchError), m.dialogBounds().Dx()-6, "")
 	}
 	return text
 }
@@ -554,8 +627,12 @@ func (m *frame) formControls(text string) map[string]int {
 	targets := map[string]int{}
 	for y, line := range strings.Split(text, "\n") {
 		plain := ansi.Strip(line)
-		if m.modal == "connect" {
-			for _, field := range connectFields {
+		if m.modal == "connect" || m.modal == "new" {
+			fields := connectFields
+			if m.modal == "new" {
+				fields = workspaceFields
+			}
+			for _, field := range fields {
 				if strings.HasPrefix(strings.TrimSpace(plain), field.title+":") {
 					targets["field:"+field.key] = y
 				}

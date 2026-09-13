@@ -9,7 +9,7 @@ go_library(
 
 go_test(
     name = "digest_test",
-    srcs = ["digest_test.go"],
+    srcs = ["digest_test.go", "rpc_test.go"],
     embed = [":launch"],
 )
 

@@ -18,14 +18,15 @@ import (
 // Herdr's regular "catppuccin" is Catppuccin Mocha. Semantic roles follow
 // its pinned palette and Catppuccin's style guide; see ui-reference-repair.md.
 const (
-	baseColor     = "#1e1e2e"
-	sidebarColor  = "#181825"
-	popupColor    = "#181825"
-	textColor     = "#cdd6f4"
-	subtextColor  = "#a6adc8"
-	borderColor   = "#6c7086"
-	blueColor     = "#89b4fa"
-	lavenderColor = "#b4befe"
+	baseColor         = "#1e1e2e"
+	sidebarColor      = "#181825"
+	popupColor        = "#181825"
+	textColor         = "#cdd6f4"
+	subtextColor      = "#a6adc8"
+	borderColor       = "#6c7086"
+	blueColor         = "#89b4fa"
+	lavenderColor     = "#b4befe"
+	rowSelectionColor = "#313244"
 )
 
 var accent = lipgloss.NewStyle().Foreground(lipgloss.Color(lavenderColor)).Bold(true)
@@ -81,6 +82,26 @@ func solid(text string, w, h int, bg string, noColor bool) string {
 	}
 	return result
 }
+
+// Tint rendered cells without replacing semantic foregrounds or column positions.
+func selectedRow(text string, width int, noColor bool) string {
+	canvas := lipgloss.NewCanvas(width, 1).Compose(lipgloss.NewLayer(solid(text, width, 1, rowSelectionColor, noColor)))
+	for x := 0; x < width; x++ {
+		if cell := canvas.CellAt(x, 0); cell != nil && cell.Width > 0 {
+			filled := *cell
+			filled.Style.Bg = lipgloss.Color(rowSelectionColor)
+			if x == 0 {
+				filled.Content = "›"
+			}
+			canvas.SetCell(x, 0, &filled)
+		}
+	}
+	if noColor {
+		return ansi.Strip(canvas.Render())
+	}
+	return canvas.Render()
+}
+
 func styleInput(input *textinput.Model) {
 	input.SetVirtualCursor(false)
 	styles := input.Styles()
@@ -106,21 +127,58 @@ func (m ui) syntax(line string, reference bool) string {
 	// ponytail: token hints cover Burrow's command reference and recaps; use a
 	// shell lexer if arbitrary shell source becomes a supported viewer input.
 	previous := ""
+	index, connectionIndex := -1, -1
+	fields := strings.Fields(line)
+	if len(fields) > 1 && fields[0] == "tunnel" && fields[1] == "create" {
+		connectionIndex = 2
+	} else if len(fields) > 0 && fields[0] == "tunc" {
+		connectionIndex = 1
+	}
 	return commandToken.ReplaceAllStringFunc(line, func(token string) string {
+		index++
 		word := strings.Trim(token, "'\"[](),.")
 		prior := previous
 		previous = strings.ToLower(word)
 		style := pageStyle
 		switch {
+		case index == 0 && word == "burrow":
+			style = heading
 		case word == "/usr/bin/ssh":
 			style = heading
+		case prior == "-o":
+			if option, value, ok := strings.Cut(word, "="); ok {
+				valueStyle := keywordStyle
+				if strings.HasPrefix(value, "/") {
+					valueStyle = secondary
+				}
+				return strings.Replace(token, word, m.paint(keywordStyle, option)+m.paint(secondary, "=")+m.paint(valueStyle, value), 1)
+			}
+		case prior == "-d":
+			return strings.Replace(token, word, m.endpoint(word), 1)
 		case reference && strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word && word != "F1" && word != "F6":
 			style = warningStyle
+		case connectionIndex >= 0 && index == connectionIndex:
+			style = accent
+		case connectionIndex >= 0 && index == connectionIndex+1:
+			style = keywordStyle
+		case connectionIndex >= 0 && index == connectionIndex+2:
+			if !strings.Contains(word, ":") {
+				return m.paint(warningStyle, token)
+			}
+			return strings.Replace(token, word, m.endpoint(word), 1)
+		case connectionIndex >= 0 && index == connectionIndex+3:
+			style = hostStyle
+		case connectionIndex >= 0 && index == connectionIndex+4:
+			style = warningStyle
+		case word == "burrow-hop-0":
+			style = hostStyle
 		case strings.Contains(word, "@"):
 			return strings.Replace(token, word, m.endpoint(word), 1)
 		case strings.HasPrefix(word, "-"):
 			style = heading
-		case prior == "connect" || prior == "reconnect" || prior == "close" || prior == "inspect":
+		case prior == "tund" || prior == "remove" || prior == "check" || prior == "connect" || prior == "reconnect" || prior == "close" || prior == "inspect" || prior == "shell" || prior == "resume" || prior == "shell-close":
+			style = accent
+		case strings.HasPrefix(word, "#") && strings.TrimPrefix(word, "#") != "" && strings.Trim(strings.TrimPrefix(word, "#"), "0123456789") == "":
 			style = accent
 		case prior == "-p" || prior == "--port":
 			style = warningStyle
@@ -134,13 +192,19 @@ func (m ui) syntax(line string, reference bool) string {
 			style = accent
 		case word == "connected" || word == "active" || word == "failed" || word == "lost" || word == "closed" || word == "disconnected" || word == "connecting":
 			style = connectionStyle(word)
+		case word == "background":
+			style = infoStyle
+		case word == "opening" || word == "closing":
+			style = warningStyle
 		case strings.Trim(word, "0123456789") == "" && word != "":
 			style = numberStyle
 		case strings.HasPrefix(word, "Ctrl") || strings.HasPrefix(word, "Alt") || strings.HasPrefix(word, "Shift+") || word == "Tab" || word == "Enter" || word == "Esc" || word == "F1" || word == "F6" || word == "PgUp/PgDn":
 			style = keywordStyle
 		case strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word:
 			style = warningStyle
-		case previous == "ssh" || previous == "connect" || previous == "reconnect" || previous == "inspect" || previous == "connections" || previous == "close" || previous == "status" || previous == "help" || previous == "quit" || previous == "profile" || previous == "profiles" || previous == "history":
+		case previous == "tunnel" || previous == "tunc" || previous == "tund" || previous == "shell" || previous == "shells" || previous == "resume" || previous == "shell-close" || previous == "ssh" || previous == "connect" || previous == "reconnect" || previous == "inspect" || previous == "connections" || previous == "close" || previous == "status" || previous == "help" || previous == "quit" || previous == "profile" || previous == "profiles" || previous == "history":
+			style = heading
+		case prior == "tunnel" && (word == "create" || word == "list" || word == "check" || word == "remove"):
 			style = heading
 		case prior == "profile" && (word == "create" || word == "select" || word == "save" || word == "edit" || word == "delete" || word == "collection" || word == "load" || word == "backup"):
 			style = heading
@@ -175,6 +239,10 @@ func (m ui) semanticText(text string) string {
 	config := false
 	for i, line := range lines {
 		line = safe(line)
+		if line == "SSH command:" {
+			lines[i] = m.paint(heading, line)
+			continue
+		}
 		if line == "Generated config:" {
 			config = true
 			lines[i] = m.paint(accent, line)
@@ -214,10 +282,15 @@ func (m ui) semanticText(text string) string {
 		if field && !strings.ContainsAny(label, "/@") {
 			style := fieldStyle(strings.ToUpper(label))
 			styled := m.paint(style, value)
-			if label == "Endpoint" || label == "Jump" {
+			if label == "Endpoint" || label == "Jump" || label == "Listen" || label == "Destination" || label == "Remote listener" || label == "Local destination" || label == "Local listener" || label == "Remote destination" {
 				styled = m.endpoint(value)
 			}
-			if value == "none" || value == "Unavailable" || value == "Unknown" {
+			if label == "SOCKS proxy" {
+				if protocol, endpoint, ok := strings.Cut(value, " · "); ok {
+					styled = m.paint(infoStyle, protocol) + m.paint(secondary, " · ") + m.endpoint(endpoint)
+				}
+			}
+			if value == "none" || value == "Off" || value == "Unavailable" || value == "Unknown" {
 				styled = m.paint(secondary, value)
 			}
 			lines[i] = m.paint(accent, label+":") + " " + styled
@@ -228,7 +301,7 @@ func (m ui) semanticText(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-var jsonToken = regexp.MustCompile(`"(?:\\.|[^"\\])*"|\b(?:true|false|null|-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)\b`)
+var jsonToken = regexp.MustCompile(`"(?:\\.|[^"\\])*"|true|false|null|-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?`)
 
 func (m ui) styledOutput() string {
 	if m.noColor {
@@ -244,7 +317,7 @@ func (m ui) styledOutput() string {
 	end := 0
 	field := ""
 	for _, at := range jsonToken.FindAllStringIndex(m.output, -1) {
-		b.WriteString(m.output[end:at[0]])
+		b.WriteString(m.paint(secondary, m.output[end:at[0]]))
 		token := m.output[at[0]:at[1]]
 		style := numberStyle
 		if strings.HasPrefix(token, "\"") {
@@ -254,9 +327,15 @@ func (m ui) styledOutput() string {
 				_ = json.Unmarshal([]byte(token), &field)
 			} else {
 				switch field {
-				case "name", "id", "host", "user", "key", "agent", "shell", "socket", "jump":
+				case "listen", "destination", "requestedListen":
+					b.WriteString(m.paint(secondary, `"`) + m.endpoint(token[1:len(token)-1]) + m.paint(secondary, `"`))
+					end = at[1]
+					continue
+				case "direction":
+					style = keywordStyle
+				case "name", "id", "generation", "creation", "runID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "error":
 					style = fieldStyle(strings.ToUpper(field))
-				case "state":
+				case "state", "status":
 					var state string
 					_ = json.Unmarshal([]byte(token), &state)
 					style = connectionStyle(state)
@@ -264,11 +343,13 @@ func (m ui) styledOutput() string {
 			}
 		} else if token == "true" || token == "false" || token == "null" {
 			style = keywordStyle
+		} else if field == "port" || field == "proxyPort" {
+			style = warningStyle
 		}
 		b.WriteString(m.paint(style, token))
 		end = at[1]
 	}
-	b.WriteString(m.output[end:])
+	b.WriteString(m.paint(secondary, m.output[end:]))
 	return b.String()
 }
 func scrollBody(text string, width, height, offset int) viewport.Model {
@@ -280,11 +361,11 @@ func scrollBody(text string, width, height, offset int) viewport.Model {
 
 func connectionStyle(state string) lipgloss.Style {
 	switch state {
-	case "connected", "active":
+	case "connected", "active", "running", "listening", "traffic-observed":
 		return successStyle
-	case "failed", "lost", "closed", "disconnected", "unverified":
+	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable":
 		return errorStyle
-	case "connecting", "reconnecting":
+	case "connecting", "reconnecting", "opening", "closing":
 		return warningStyle
 	default:
 		return secondary
@@ -311,6 +392,10 @@ func (m *frame) commandHelp() string {
 		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 	}
 	if m.terminalFocused() {
+		if m.current().tab == "shell" {
+			keys = []key.Binding{binding("Ctrl+]", "management"), numberedShell, previousShell, binding("Ctrl+C", "interrupt"), binding("drag", "select text")}
+			return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
+		}
 		keys = []key.Binding{showBurrow, binding("drag", "select text"), selection, binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
 		if m.current().canRestartCLI() {
 			keys = []key.Binding{restartTerminal, showBurrow, binding("drag", "select text"), binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls")}
@@ -319,20 +404,12 @@ func (m *frame) commandHelp() string {
 	}
 	keys = append(keys, binding("drag", "select text"), selection)
 	if m.current().focus == "prompt" && m.current().tab == "" {
-		keys = append(keys, binding("Tab", "complete"), binding("↑↓", "history"))
+		keys = append(keys, binding("Tab/Shift+Tab", "cycle"), binding("↑↓", "history"))
 	} else {
 		keys = append(keys, binding("↑↓", "select"), binding("Enter", "open"), binding("Esc", "prompt"))
 	}
 	keys = append(keys, binding("F6", "focus"))
 	return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
-}
-
-func (m ui) paletteTitle(width int) string {
-	title := m.paint(accent, "Menu ")
-	for _, c := range lipgloss.Blend1D(max(0, width-5), lipgloss.Color(lavenderColor), lipgloss.Color("#cba6f7")) {
-		title += m.paint(lipgloss.NewStyle().Foreground(c), "╱")
-	}
-	return title
 }
 
 func centered(text string, width int) string {
@@ -345,22 +422,24 @@ var infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
 
 func fieldStyle(header string) lipgloss.Style {
 	switch header {
-	case "NAME", "ID", "CONNECTION":
+	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUNID", "SESSION":
 		return accent
-	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP":
+	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION":
 		return hostStyle
 	case "USER", "USERNAME":
 		return successStyle
 	case "PORT", "LOCAL PORT":
 		return warningStyle
-	case "KEY", "AGENT", "SHELL", "PROXY":
+	case "KEY", "AGENT", "SHELL", "PROXY", "SOCKS PROXY":
 		return infoStyle
 	case "TERM", "TYPE":
 		return keywordStyle
 	case "TUNNELS", "MASTER PID", "OWNER PID":
 		return numberStyle
-	case "SOCKET", "NO-TERM", "SSH CONFIG", "COLLECTION":
+	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL":
 		return secondary
+	case "ERROR":
+		return errorStyle
 	default:
 		return pageStyle
 	}

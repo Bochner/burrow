@@ -1,4 +1,5 @@
 # Research metadata only. Application targets follow the SDK-consumption decision.
+exports_files(["Makefile"])
 filegroup(
     name = "research",
     srcs = glob(["docs/**/*.md"]) + [

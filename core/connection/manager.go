@@ -104,7 +104,7 @@ func (m *manager) Close(string) error {
 }
 
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "profile", ReadOnly: true}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
+	return []hovel.PayloadCommand{{Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
 }
 
 func (m *manager) inventory() ([]State, error) {
@@ -135,6 +135,14 @@ func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 		b, _ := json.Marshal(state)
 		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
 	}
+	if req.Command == "forward" && len(req.Args) == 3 {
+		t, e := m.forward(req.Args[0], req.Args[1], req.Args[2])
+		b, _ := json.Marshal(t)
+		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
+	}
+	if req.Command == "tunnels" || req.Command == "unforward" || req.Command == "tunnel-check" {
+		return m.tunnelCommand(req)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -162,7 +170,7 @@ func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 				return hovel.PayloadCommandResult{}, e
 			}
 			value = states
-		case "profile", "close":
+		case "profile", "close", "shell":
 			if len(req.Args) != 2 {
 				return hovel.PayloadCommandResult{}, fmt.Errorf("exact creation required")
 			}
@@ -172,6 +180,9 @@ func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 			}
 			if req.Command == "profile" {
 				return s.RunPayloadCommand(hovel.PayloadCommandRequest{Command: "connection-profile"})
+			}
+			if req.Command == "shell" {
+				return s.RunPayloadCommand(hovel.PayloadCommandRequest{Command: "connection-shell"})
 			}
 			if e := s.Close("operator confirmed selected close"); e != nil {
 				return hovel.PayloadCommandResult{}, e
@@ -238,6 +249,11 @@ func (m *manager) connect(raw, review, runID string) (State, error) {
 	}
 	s := &owner{profile: saved(r.Settings), config: resolved, prepared: config, dir: dir, done: make(chan struct{}), manager: m}
 	s.state = State{Name: resolved.Name, Host: resolved.Host, User: resolved.User, Port: resolved.Port, State: "connecting", Socket: filepath.Join(dir.Name(), "master"), Session: m.Session, Generation: m.Generation, Creation: r.ID, RunID: runID, OwnerPID: m.OwnerPID, Dispatch: dispatch}
+	s.state.ProxyPort = resolved.ProxyPort
+	if resolved.ProxyPort != 0 {
+		t := Tunnel{ID: resolved.Name + "/" + r.ID, Creation: r.ID, Connection: resolved.Name, ConnectionCreation: r.ID, Session: m.Session, Generation: m.Generation, Direction: "D", Listen: fmt.Sprintf("127.0.0.1:%d", resolved.ProxyPort), State: "listening", RunID: runID}
+		s.tunnels = map[string]Tunnel{t.ID: t}
+	}
 	m.connections[r.ID] = s
 	initial := s.state
 	s.Open()
@@ -268,6 +284,21 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 		return hovel.Result{}, fmt.Errorf("manager action excludes legacy connection and profile commands")
 	}
 	switch ctx.InputString("action", "") {
+	case "forward":
+		raw := ctx.InputString("request", "")
+		r, err := decodeForward(raw)
+		if err != nil || r.Owner.Workspace != w || r.Owner.Session != ctx.InputString("session", "") || r.Owner.Generation != ctx.InputString("generation", "") || digest(raw) != ctx.InputString("review", "") {
+			return hovel.Result{}, fmt.Errorf("changed forward request refused")
+		}
+		result, err := ownerCommand(c, w, r.Owner.Session, "forward", []string{raw, digest(raw), ctx.RunID})
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		var t Tunnel
+		if json.Unmarshal([]byte(result.Stdout), &t) != nil || t.ID != r.Tunnel.ID || t.RunID != ctx.RunID || t.Generation != r.Owner.Generation || t.Session != r.Owner.Session {
+			return hovel.Result{}, fmt.Errorf("forward correlation refused")
+		}
+		return hovel.Ok(nil, hovel.WithSummary(result.Stdout)), nil
 	case "activate":
 		generation := ctx.InputString("generation", "")
 		if generation == "" {
@@ -345,6 +376,44 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 	return found, nil
 }
 
+// RestartManager retires one verified retained owner, not the Hovel daemon.
+// Approval covers that entire owner, including concurrently added connections.
+// Unknown reservations and legacy owners require manual investigation.
+func RestartManager(ctx context.Context, w string, confirm func([]State) bool) error {
+	id, err := findManager(ctx, w)
+	if err != nil {
+		return err
+	}
+	states, err := List(ctx, w)
+	if err != nil {
+		return err
+	}
+	for _, state := range states {
+		if id.Session == "" || state.Session != id.Session || state.Generation != id.Generation {
+			return fmt.Errorf("unverified or legacy resources remain; close them explicitly before restart")
+		}
+	}
+	if !confirm(states) {
+		return fmt.Errorf("restart cancelled; resources retained")
+	}
+	current, err := findManager(ctx, w)
+	if err != nil || current != id {
+		return fmt.Errorf("manager changed or became unverified; review restart again")
+	}
+	if id.Session == "" {
+		return nil
+	}
+	var result any
+	if err := launch.Call(ctx, w, "CloseSession", map[string]string{"SessionID": id.Session}, &result); err != nil {
+		return fmt.Errorf("manager close unconfirmed; inspect resources before retrying: %w", err)
+	}
+	current, err = findManager(ctx, w)
+	if err != nil || current.Session != "" {
+		return fmt.Errorf("a retained manager remains or cleanup is unverified; close other frontends and inspect before retrying")
+	}
+	return nil
+}
+
 // Isolated request chains preserve the reviewed binding across independent frontends.
 func managerThrow(ctx context.Context, w string, config map[string]string, out any) error {
 	defer launch.Phase("manager-throw:" + config["action"])()
@@ -381,11 +450,7 @@ func managerThrow(ctx context.Context, w string, config map[string]string, out a
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	// Once dispatched, finish the receipt so cancellation can close the exact
-	// creation; cancellation before dispatch leaves SSH untouched.
-	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
-	defer cancel()
-	b, e := launch.HovelCLI(finish, w, "--op", op, "--chain", "request", "--", "throw", "--now", "--allow-dangerous", "--json")
+	b, e := launch.HovelDispatch(ctx, w, "--op", op, "--chain", "request", "--", "throw", "--now", "--allow-dangerous", "--json")
 	if e != nil {
 		return e
 	}

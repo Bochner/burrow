@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,6 +42,14 @@ func refreshProfiles(workspace string) tea.Cmd {
 func (m ui) suggestions() []string {
 	line := m.input.Value()
 	values := connection.CommandSuggestions(line, m.connections)
+	if m.tunnelError == "" {
+		for _, t := range m.tunnels {
+			values = append(values, "tunnel remove "+t.ID, "tunnel check "+t.ID, "tund "+t.ID)
+		}
+	}
+	for _, id := range m.shellIDs {
+		values = append(values, "resume "+id, "shell-close "+id)
+	}
 	if strings.HasPrefix(line, "profile create ") || strings.HasPrefix(line, "profile edit ") {
 		sub := strings.TrimPrefix(strings.TrimPrefix(line, "profile create "), "profile edit ")
 		for _, value := range connection.CommandSuggestions("connect "+sub, nil) {
@@ -55,7 +64,71 @@ func (m ui) suggestions() []string {
 			values = append(values, "profile save "+s.Name)
 		}
 	}
-	return values
+	// The dashboard already presents these inventories. Keep the commands
+	// callable (and in shared CLI help), without promoting duplicate TUI actions.
+	return slices.DeleteFunc(values, func(value string) bool {
+		switch value {
+		case "connections", "profiles", "shells", "tunnel list":
+			return true
+		}
+		return false
+	})
+}
+
+var completionDescriptions = map[string]string{
+	"proxy create": "CONNECTION LISTEN · port or IP:port", "proxy inspect": "Verify SOCKS endpoint and owner identity", "proxy remove": "Remove SOCKS only; preserve connection/L/R",
+	"tunnel create": "CONNECTION forward|reverse LISTEN HOST PORT", "tunc": "CONNECTION l|r LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected listener", "tund": "Remove selected listener", "tunnel check": "Test tunnel connectivity (destination greeting)",
+	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",
+	"inspect": "Inspect connection state", "reconnect": "Replace a lost SSH connection", "close": "Review and close connection",
+	"shell": "Open interactive SSH shell", "shells": "List this frontend's local shells", "resume": "Resume a local shell ID", "shell-close": "Close selected local shell or ID", "help": "Show command reference", "quit": "Review connections and quit",
+	"profiles": "List saved connections", "history": "Show retained command history",
+	"profile create": "Save connection settings", "profile edit": "Replace saved settings", "profile save": "Save authenticated settings",
+	"profile select": "Inspect saved settings", "profile delete": "Delete saved settings only", "profile connect": "Connect saved SSH profile",
+	"profile load": "Open existing collection", "profile collection": "Create/open collection", "profile backup": "Back up saved collection",
+	"-ip": "SSH host or config alias", "-port": "SSH port", "-user": "SSH username", "-socket": "Connection name", "-ssh-key": "Private-key file path",
+	"--key": "Private-key file path", "--agent": "SSH agent socket", "--port": "SSH port", "--ssh-config": "SSH config file",
+	"--jump": "SSH jump host", "--prompt": "Hidden authentication prompt", "--yes": "Confirm reviewed connection",
+	"-proxy": "Local SOCKS proxy (default 9050)",
+}
+
+func completionDescription(value string) string {
+	words := strings.Fields(value)
+	if len(words) == 0 {
+		return ""
+	}
+	if description := completionDescriptions[words[len(words)-1]]; strings.HasPrefix(words[len(words)-1], "-") && description != "" {
+		return description
+	}
+	command := words[0]
+	if (command == "profile" || command == "tunnel" || command == "proxy") && len(words) > 1 {
+		command += " " + words[1]
+	}
+	return completionDescriptions[command]
+}
+
+func (m ui) forwardingGuidance() string {
+	words := strings.Fields(safe(m.input.Value()))
+	direction := 2
+	if len(words) >= 2 && words[0] == "tunnel" && words[1] == "create" {
+		direction = 3
+	} else if len(words) == 0 || words[0] != "tunc" {
+		return ""
+	}
+	if len(words) <= direction {
+		return ""
+	}
+	side := "Local listener · remote destination"
+	switch words[direction] {
+	case "forward", "l":
+	case "reverse", "r":
+		side = "Remote listener · local destination · LISTEN 0: random port"
+	default:
+		return ""
+	}
+	example := strings.Join(words[:direction+1], " ") + " 8080 localhost 80"
+	return m.paint(warningStyle, "LISTEN HOST PORT") + "\n" +
+		m.paint(secondary, side+"\nLISTEN: port or IP:port (default 127.0.0.1)") + "\n" +
+		m.paint(accent, "Example:") + "\n" + m.syntax(example, false)
 }
 func (m ui) profileRows() int { return max(1, min(3, (m.height-20)/2)) }
 func (m ui) savedConnections(w int) string {
@@ -87,12 +160,11 @@ func (m ui) savedConnections(w int) string {
 				auth = p.Key + " + " + auth
 			}
 		}
-		jump := p.Jump
-		if jump == "" {
-			jump = "Config"
+		proxy := "—"
+		if p.ProxyPort != 0 {
+			proxy = fmt.Sprint(p.ProxyPort)
 		}
-		// Shells/tunnels are later slices; every current master is shell-free.
-		rows = append(rows, []string{safe(p.Name), safe(p.Host), safe(p.User), port, safe(auth), "—", safe(jump), "Yes"})
+		rows = append(rows, []string{safe(p.Name), safe(p.Host), safe(p.User), port, safe(auth), "—", proxy, "Yes"})
 	}
 	text := m.dataTable(title, []string{"NAME", "HOST", "USER", "PORT", "KEY", "SHELL", "PROXY", "NO-TERM"}, rows, w)
 	if end-start < len(m.profiles.Profiles) {

@@ -11,7 +11,7 @@ def _impl(ctx: TaskContext) -> int:
     # Production SSH uses a declared digest-pinned disposable Docker server.
     if mode == "full":
         commands.append(["test", "//core/cmd/burrow:connection_lab", "//core/prototype_manager:check", "//core/prototype_manager:consumer_check"])
-    commands[1] += ["//core/terminal:host_test", "//core/cmd/burrow:terminal_test"]
+    commands[1] += ["//core/terminal:host_test", "//core/cmd/burrow:terminal_test", "//core/connection:forward_control_test"]
     for command in commands:
         status = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait()
         if status.code:

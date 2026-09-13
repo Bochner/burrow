@@ -1,7 +1,7 @@
 <!-- burrow-doc: {"title":"Launch a workspace","group":"Engineering","order":310} -->
 <article>
 <h1>Launch a workspace</h1>
-<p>The initial production capability is verified setup on Linux amd64 (<a href="https://github.com/Bochner/burrow/issues/44">issue #44</a>). It opens the Catppuccin management interface in an explicitly selected Hovel workspace. The <a href="/burrow/spec/connections.html">named SSH connection flow</a> adds real retained OpenSSH masters, and <a href="profiles.html">saved connection collections</a> preserve settings for future sessions with an automatic JSON template. Tunnels, shells, transfers and runs remain subsequent tickets; unavailable capabilities are labelled and contain no fixture resources.</p>
+<p>The initial production capability is verified setup on Linux amd64 (<a href="https://github.com/Bochner/burrow/issues/44">issue #44</a>). It opens the Catppuccin management interface in an explicitly selected Hovel workspace. The <a href="/burrow/spec/connections.html">named SSH connection flow</a> adds real retained OpenSSH masters, and <a href="profiles.html">saved connection collections</a> preserve settings for future sessions with an automatic JSON template. <a href="shells.html">Interactive shells</a> and <a href="forwarding.html">local forwards</a> reuse a live master. Remote forwarding, transfers and runs remain subsequent tickets; unavailable capabilities are labelled and contain no fixture resources.</p>
 <h2>Build and run</h2>
 <pre><code>aspect burrow package
 aspect burrow run -- --workspace /absolute/private/workspace

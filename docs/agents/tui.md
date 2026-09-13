@@ -40,8 +40,12 @@ help and output. Use the shared role functions rather than local RGB literals.
 
 Color syntax by token: distinguish commands/flags, argument placeholders,
 strings, numbers, booleans and errors. Preserve the exact underlying text and
-respect NO_COLOR. Selected rows may replace field colors with the high-contrast
-selection foreground/background; retain a textual selection marker.
+respect NO_COLOR. Selected resource rows use a subdued Surface0 background,
+preserving semantic foregrounds and a textual selection marker. Clicking output
+or another background clears row selection without closing sessions.
+Sidebar shell names use Subtext beneath their workspace name. Status circles
+remain independent of focus: filled green for connected, half-filled yellow for
+transitions, open red for disconnected, dotted for unknown/unverified observations.
 
 ## Table detail and formatting
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"image"
@@ -164,6 +165,13 @@ func TestSSHRecap(t *testing.T) {
 	if ansi.Strip(styled) != text {
 		t.Fatal("SSH preview text changed while coloring")
 	}
+	command := "/usr/bin/ssh -M -S /tmp/master -o StrictHostKeyChecking=no -D 127.0.0.1:9050 -p 2222 alice@nas.example"
+	colored := (ui{}).syntax(command, false)
+	for _, token := range []string{keywordStyle.Render("StrictHostKeyChecking"), warningStyle.Render("9050")} {
+		if !strings.Contains(colored, token) {
+			t.Fatal("SSH command option lost semantic color", token)
+		}
+	}
 	for _, part := range []string{heading.Render("HostName"), hostStyle.Render("192.0.2.10"), successStyle.Render("tester"), warningStyle.Render("2222")} {
 		if !strings.Contains(styled, part) {
 			t.Fatalf("missing semantic role %q", part)
@@ -228,7 +236,11 @@ func assertSelected(t *testing.T, m *frame, screen *vt.Emulator, id string, want
 			}
 			found = true
 			cell := screen.CellAt(x, y)
-			got := cell != nil && colorMatches(cell.Style.Bg, lipgloss.Color(blueColor))
+			background := blueColor
+			if strings.HasPrefix(id, "profile:") || strings.HasPrefix(id, "resource:") {
+				background = rowSelectionColor
+			}
+			got := cell != nil && colorMatches(cell.Style.Bg, lipgloss.Color(background))
 			if got != want {
 				t.Fatalf("%s selection background at %d,%d: got %v want %v", id, x, y, got, want)
 			}
@@ -246,16 +258,384 @@ func colorMatches(a, b color.Color) bool {
 	br, bg, bb, ba := b.RGBA()
 	return ar == br && ag == bg && ab == bb && aa == ba
 }
+func TestCompletionPresentation(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/completion"}, plain, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			frameEvent(m, tea.PasteMsg{Content: "tunnel "})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+			matches, index := m.current().management.completionOptions()
+			if len(matches) != 3 || index != 0 || matches[0] != "tunnel create" || matches[1] != "tunnel check" || matches[2] != "tunnel remove" {
+				t.Fatal("duplicate or missing candidates", matches, index)
+			}
+			screen := capturePresentation(t, m, fmt.Sprintf("completion-%dx%d-plain-%t", size[0], size[1], plain))
+			bounds := m.selectionBounds()
+			bounds.Min.Y = m.height - 7 // completion popup, excluding inventory prose
+			if !plain {
+				assertTextRole(t, screen, bounds, "tunnel create", blueColor)
+				assertTextRole(t, screen, bounds, "CONNECTION", subtextColor)
+			} else if strings.Contains(m.View().Content, "\x1b") {
+				t.Fatal("NO_COLOR completion leaked ANSI")
+			}
+			// Polling may update inventory, but cannot collapse the active cycle.
+			m.updateManagement(m.active, connectionList{})
+			m.updateManagement(m.active, profilesReady{})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+			if m.current().management.input.Value() != "tunnel check" {
+				t.Fatal("refresh reset cycle")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+			m.current().management.input.Reset()
+			frameEvent(m, tea.PasteMsg{Content: "connect "})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+			if m.current().management.input.Value() != "connect -ip " {
+				t.Fatal("editing did not reset command cycle", m.current().management.input.Value())
+			}
+		}
+	}
+}
+
+func TestCommandRecommendationScope(t *testing.T) {
+	m := newUI(launch.Info{}, true)
+	for _, command := range []string{"connections", "profiles", "shells", "tunnel list"} {
+		m.input.SetValue(command)
+		for _, suggestion := range m.input.MatchedSuggestions() {
+			if suggestion == command {
+				t.Fatalf("initial recommendations bypass filter: %s", command)
+			}
+		}
+		for _, suggestion := range m.suggestions() {
+			if suggestion == command {
+				t.Fatalf("dashboard inventory promoted in TUI: %s", command)
+			}
+		}
+		if err := connection.ValidateCommand("/tmp/recommendations", strings.Fields(command)); err != nil {
+			t.Fatalf("command removed instead of recommendation: %s: %v", command, err)
+		}
+	}
+	if !strings.Contains(completionDescription("tunnel check gateway/id"), "connectivity") {
+		t.Fatal("active check has no diagnostic description")
+	}
+}
+
+func TestForwardArgumentGuidance(t *testing.T) {
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			for _, prefix := range []string{"tunnel create gateway forward", "tunnel create gateway reverse", "tunc gateway l", "tunc gateway r"} {
+				m := newFrame(launch.Info{Workspace: "/tmp/guidance"}, plain, launch.Options{})
+				defer m.terminals.close()
+				frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+				for _, suffix := range []string{"", " ", " 8080 ", " 8080 localhost "} {
+					m.current().management.input.Reset()
+					frameEvent(m, tea.PasteMsg{Content: prefix + suffix})
+					screen := capturePresentation(t, m, fmt.Sprintf("forward-guidance-%dx%d-%t-%s-%d", size.X, size.Y, plain, strings.ReplaceAll(prefix, " ", "-"), len(suffix)))
+					for _, text := range []string{"LISTEN HOST PORT", "Example:", "8080", "localhost"} {
+						if !strings.Contains(screen.String(), text) {
+							t.Fatalf("guidance missing %q for %q at %v", text, prefix+suffix, size)
+						}
+					}
+					if plain && strings.Contains(m.View().Content, "\x1b") {
+						t.Fatal("NO_COLOR guidance leaked ANSI")
+					}
+					if !plain {
+						assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y-3), "8080", "#f9e2af")
+					}
+					before := m.current().management.input.Value()
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+					if m.current().management.input.Value() != before {
+						t.Fatal("non-selectable example changed command")
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestSemanticOutput(t *testing.T) {
 	m := newUI(launch.Info{}, false)
-	m.output = `{"name":"gateway","port":22,"active":true}`
+	m.output = `{"name":"gateway","port":22,"count":-2.5e-3,"active":true,"missing":null,"items":[false],"session":"session-one","detail":"Master verified","error":"refused"}`
 	styled := m.styledOutput()
-	if ansi.Strip(styled) != m.output || !strings.Contains(styled, "38;2;180;190;254") || !strings.Contains(styled, "38;2;250;179;135") {
+	if ansi.Strip(styled) != m.output || !strings.Contains(styled, "38;2;180;190;254") || !strings.Contains(styled, "38;2;250;179;135") || !strings.Contains(styled, "38;2;249;226;175") {
 		t.Fatal("JSON text or semantic token roles lost", styled)
+	}
+	screen := vt.NewEmulator(200, 2)
+	defer screen.Close()
+	if _, err := screen.Write([]byte(styled)); err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []struct{ text, color string }{{"{", subtextColor}, {"}", subtextColor}, {"[", subtextColor}, {"]", subtextColor}, {":", subtextColor}, {",", subtextColor}, {"-2.5e-3", "#fab387"}, {"true", "#cba6f7"}, {"false", "#cba6f7"}, {"null", "#cba6f7"}, {`"session-one"`, lavenderColor}, {`"Master verified"`, subtextColor}, {`"refused"`, "#f38ba8"}} {
+		assertTextRole(t, screen, image.Rect(0, 0, 200, 2), role.text, role.color)
 	}
 	m.noColor = true
 	if m.styledOutput() != m.output {
 		t.Fatal("NO_COLOR changed output")
+	}
+}
+
+func TestForwardJSONRoles(t *testing.T) {
+	m := newUI(launch.Info{}, false)
+	m.output = `{"direction":"R","listen":"127.0.0.1:32451","destination":"[::1]:3000","requestedListen":"127.0.0.1:0"}`
+	styled := m.styledOutput()
+	if ansi.Strip(styled) != m.output {
+		t.Fatal("endpoint styling changed JSON")
+	}
+	screen := vt.NewEmulator(160, 2)
+	defer screen.Close()
+	if _, err := screen.Write([]byte(styled)); err != nil {
+		t.Fatal(err)
+	}
+	for _, port := range []string{"32451", "3000", "0\"}"} {
+		assertTextRole(t, screen, image.Rect(0, 0, 160, 2), port, "#f9e2af")
+	}
+	m.noColor = true
+	if m.styledOutput() != m.output {
+		t.Fatal("NO_COLOR changed endpoint JSON")
+	}
+}
+
+func TestConciseSSHRecap(t *testing.T) {
+	result, err := connection.Execute(context.Background(), "/tmp/recap", []string{"connect", "gateway", "nas.example", "alice", "--ssh-config", "/dev/null", "-proxy", "1080"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := result.(map[string]string)["review"]
+	for _, plain := range []bool{false, true} {
+		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/recap"}, plain, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			m.reviewText = review
+			m.setForm("review", "Review SSH connection", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+			bounds := m.dialogBounds()
+			wantWidth := min(max(76, lipgloss.Width(review)+6), size[0]-4)
+			if bounds.Dx() != wantWidth {
+				t.Fatal("recap did not expand to its command", bounds, wantWidth)
+			}
+			screen := capturePresentation(t, m, fmt.Sprintf("ssh-command-%dx%d-plain-%t", size[0], size[1], plain))
+			if !strings.Contains(screen.String(), "Proceed?") || strings.Contains(screen.String(), "Generated config:") {
+				t.Fatal("recap lost controls or retained config dump")
+			}
+			if plain {
+				if strings.Contains(m.View().Content, "\x1b") {
+					t.Fatal("NO_COLOR recap leaked ANSI")
+				}
+			} else {
+				for _, role := range []struct{ text, color string }{{"/usr/bin/ssh", blueColor}, {"-M", blueColor}, {"StrictHostKeyChecking", "#cba6f7"}, {"1080", "#f9e2af"}} {
+					assertTextRole(t, screen, bounds, role.text, role.color)
+				}
+			}
+			aligned := false
+			for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+				if screen.CellAt(bounds.Min.X+3, y).Content == "/" {
+					aligned = true
+					break
+				}
+			}
+			if !aligned {
+				t.Fatal("SSH command is not left aligned")
+			}
+			m.modalOffset = 1000
+			if m.dialogBounds() != bounds {
+				t.Fatal("scroll changed recap geometry")
+			}
+		}
+	}
+}
+
+func TestSOCKSTables(t *testing.T) {
+	m := newUI(launch.Info{}, false)
+	m.height = 40
+	m.profiles.Profiles = []connection.Profile{{Name: "gateway", Host: "nas.example", User: "alice", Port: 22, Jump: "bastion", ProxyPort: 1080}}
+	m.connections = []connection.State{{Name: "gateway", Host: "nas.example", User: "alice", Port: 22, Generation: "owner", State: "connected", ProxyPort: 1080, Proxy: connection.Tunnel{ID: "gateway/proxy", State: "listening"}}}
+	for _, table := range []string{m.savedConnections(160), m.activeConnections(160)} {
+		if !strings.Contains(ansi.Strip(table), "1080") || strings.Contains(ansi.Strip(table), "bastion") {
+			t.Fatal("SOCKS port missing or confused with jump host", ansi.Strip(table))
+		}
+	}
+	lines := strings.Split(ansi.Strip(m.activeConnections(160)), "\n")
+	fields := strings.Fields(lines[len(lines)-1])
+	if len(fields) < 8 || fields[4] != "Yes" || fields[5] != ":1080" || fields[len(fields)-2] != "0" {
+		t.Fatal("proxy counted as a tunnel", lines)
+	}
+	m.width = 160
+	m.tunnelError = ""
+	view := ansi.Strip(m.View().Content)
+	if strings.Contains(view, "SOCKS") || strings.Contains(view, "/socks") || !strings.Contains(view, "No forwards") {
+		t.Fatal("proxy listed under tunnels", view)
+	}
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			f := newFrame(launch.Info{Workspace: "/tmp/proxy-tables"}, plain, launch.Options{})
+			defer f.terminals.close()
+			frameEvent(f, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			capturePresentation(t, f, fmt.Sprintf("proxy-empty-%dx%d-%t", size.X, size.Y, plain))
+			f.current().management.connections = m.connections
+			f.current().management.profiles = m.profiles
+			screen := capturePresentation(t, f, fmt.Sprintf("proxy-active-%dx%d-%t", size.X, size.Y, plain))
+			if !plain && size.X >= 160 {
+				assertTextRole(t, screen, f.selectionBounds(), "Yes :1080", "#94e2d5")
+			}
+			for _, state := range []struct{ state, text, color string }{{"lost", "Unavailable", "#a6adc8"}, {"connected", "Unverified", "#f9e2af"}} {
+				row := m.connections[0]
+				row.State, row.Proxy.State = state.state, "unverified"
+				f.current().management.connections = []connection.State{row}
+				screen = capturePresentation(t, f, fmt.Sprintf("proxy-%s-%dx%d-%t", state.text, size.X, size.Y, plain))
+				if !plain && size.X >= 160 {
+					assertTextRole(t, screen, f.selectionBounds(), state.text, state.color)
+				}
+			}
+			for _, verb := range []string{"Create", "Remove"} {
+				f.reviewText = verb + " SOCKS proxy\nConnection: gateway\nListen: 127.0.0.1:1080\nConnection and L/R siblings remain."
+				f.setForm("review", "Review SOCKS proxy", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+				capturePresentation(t, f, fmt.Sprintf("proxy-%s-review-%dx%d-%t", verb, size.X, size.Y, plain))
+				if plain && strings.Contains(f.View().Content, "\x1b") {
+					t.Fatal("proxy review leaked ANSI in NO_COLOR")
+				}
+			}
+		}
+	}
+	m.connections[0].State = "lost"
+	if strings.Contains(ansi.Strip(m.activeConnections(160)), "1080") {
+		t.Fatal("lost proxy shown as live")
+	}
+	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "Unavailable") {
+		t.Fatal("lost proxy hidden instead of unavailable")
+	}
+	m.connections[0].State = "connected"
+	m.connections[0].Proxy.State = "unverified"
+	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "Unverified") {
+		t.Fatal("uncertain listener shown as usable")
+	}
+	m.connections[0].Proxy = connection.Tunnel{}
+	m.connections[0].ProxyPort = 0
+	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "No") {
+		t.Fatal("absent proxy not shown as No")
+	}
+	m.connectionError = "unverified"
+	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "unverified") {
+		t.Fatal("unknown inventory reported as empty")
+	}
+}
+
+func TestLocalForwardPresentation(t *testing.T) {
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/forward-ui"}, plain, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			u := &m.current().management
+			if !strings.Contains(ansi.Strip(u.localForwards(size.X)), "UNVERIFIED") {
+				t.Fatal("unobserved inventory reported as empty")
+			}
+			frameEvent(m, tunnelList{})
+			capturePresentation(t, m, fmt.Sprintf("forward-empty-%dx%d-%t", size.X, size.Y, plain))
+			for i := 0; i < 12; i++ {
+				direction := "L"
+				if i%2 != 0 {
+					direction = "R"
+				}
+				u.tunnels = append(u.tunnels, connection.Tunnel{ID: fmt.Sprintf("gateway/%032x", i+1), Connection: "gateway", Direction: direction, Listen: fmt.Sprintf("127.0.0.1:%d", 8000+i), Destination: "nas.example:80", State: "listening"})
+			}
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("forward-populated-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(screen.String(), "TUNNELS") {
+				t.Fatal("tunnel section missing")
+			}
+			if plain && strings.Contains(m.View().Content, "\x1b") {
+				t.Fatal("NO_COLOR forwarding leaked ANSI")
+			}
+			if !plain && size.X == 200 {
+				if !strings.Contains(screen.String(), "Reverse") || !strings.Contains(screen.String(), "Remote") || !strings.Contains(screen.String(), "DESTINATION") {
+					t.Fatal("reverse endpoint semantics missing", screen.String())
+				}
+				for _, role := range []struct{ text, color string }{{"gateway", lavenderColor}, {"Local", "#cba6f7"}, {"127.0.0.1", "#f5c2e7"}, {"8000", "#f9e2af"}, {"listening", "#a6e3a1"}, {"1–3", "#fab387"}, {"Alt+Shift+↑↓", "#cba6f7"}} {
+					assertTextRole(t, screen, m.selectionBounds(), role.text, role.color)
+				}
+			}
+			u.input.SetValue("tunnel remove ")
+			u.input.SetSuggestions(u.suggestions())
+			for i := 0; i < 12; i++ {
+				u.cycleCompletion(false)
+			}
+			if u.input.Value() != "tunnel remove gateway/0000000000000000000000000000000c" {
+				t.Fatal("overflow ID completion", u.input.Value())
+			}
+			capturePresentation(t, m, fmt.Sprintf("forward-completion-%dx%d-%t", size.X, size.Y, plain))
+			u.input.Reset()
+			for i := 0; i < 12; i++ {
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModAlt | tea.ModShift})
+			}
+			if !strings.Contains(ansi.Strip(u.localForwards(160)), "8011") {
+				t.Fatal("tunnel overflow cannot scroll")
+			}
+			u.tunnels[11].Destination = "host\x1b]52;c;UNTRUSTED\x07"
+			if strings.Contains(u.localForwards(160), "\x1b]52;") {
+				t.Fatal("remote control sequence escaped renderer")
+			}
+			m.reviewText = "Create reverse forward\nConnection: gateway\nRemote listener: 127.0.0.1:8080\nLocal destination: nas.example:80"
+			m.setForm("review", "Review reverse forward", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+			capturePresentation(t, m, fmt.Sprintf("forward-review-%dx%d-%t", size.X, size.Y, plain))
+			bounds := m.dialogBounds()
+			m.modalOffset = 100
+			if m.dialogBounds() != bounds {
+				t.Fatal("forward recap geometry changed with scroll")
+			}
+		}
+	}
+}
+
+func TestTunnelConnectionCompletion(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/tunnel-completion"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	frameEvent(m, connectionList{states: []connection.State{
+		{Name: "gateway", State: "connected", Generation: "g"},
+		{Name: "closed-host", State: "closed", Generation: "g"},
+		{Name: "lost-host", State: "lost", Generation: "g"},
+	}})
+	u := &m.current().management
+	for _, c := range []struct{ prefix, want string }{{"tunnel create ", "tunnel create gateway forward "}, {"tunc ", "tunc gateway l "}, {"tunnel create gateway r", "tunnel create gateway reverse "}, {"tunc gateway r", "tunc gateway r "}} {
+		u.input.SetValue(c.prefix)
+		u.input.CursorEnd()
+		u.input.SetSuggestions(u.suggestions())
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if u.input.Value() != c.want {
+			t.Fatalf("completion: %q, want %q", u.input.Value(), c.want)
+		}
+	}
+	frameEvent(m, connectionList{err: fmt.Errorf("owner unavailable")})
+	u.input.SetValue("tunc ")
+	for _, suggestion := range u.suggestions() {
+		if strings.HasPrefix(suggestion, "tunc gateway") {
+			t.Fatal("failed observation offered stale connection")
+		}
+	}
+}
+
+func TestFinishedConnectionColors(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/result-colors"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		m.attempt = &authAttempt{path: m.active}
+		frameEvent(m, authFinished{attempt: m.attempt, result: connection.State{Generation: "generation-one", Name: "gateway", Host: "192.0.2.50", User: "alice", Port: 2222, State: "connected", Socket: "/tmp/ssh.sock", Session: "session-one", OwnerPID: 4321, MasterPID: 5432, SocketInode: 6543, Detail: "Master verified"}})
+		screen := capturePresentation(t, m, fmt.Sprintf("connect-result-plain-%t", plain))
+		if !plain {
+			for _, role := range []struct{ text, color string }{{"{", subtextColor}, {`"generation-one"`, lavenderColor}, {`"gateway"`, lavenderColor}, {`"192.0.2.50"`, "#f5c2e7"}, {`"alice"`, "#a6e3a1"}, {"2222", "#f9e2af"}, {`"connected"`, "#a6e3a1"}} {
+				assertTextRole(t, screen, m.selectionBounds(), role.text, role.color)
+			}
+		} else if strings.Contains(m.View().Content, "\x1b") {
+			t.Fatal("NO_COLOR result leaked ANSI")
+		}
+		for _, size := range [][2]int{{200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			screen = capturePresentation(t, m, fmt.Sprintf("connect-result-%dx%d-plain-%t", size[0], size[1], plain))
+			if !plain {
+				assertTextRole(t, screen, m.selectionBounds(), "{", subtextColor)
+			}
+		}
 	}
 }
 
@@ -271,13 +651,13 @@ func TestNavigationPresentation(t *testing.T) {
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF6})
 	for i := 0; i < 9; i++ {
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
-		want := "> " + filepath.Base(m.paths[m.navIndex])
+		want := "›◌ " + filepath.Base(m.paths[m.navIndex])
 		if !strings.Contains(m.View().Content, want) {
 			t.Fatalf("selected workspace offscreen: %s", want)
 		}
 	}
-	if !strings.Contains(m.View().Content, "1–4/10") {
-		t.Fatal("shell footer clipped", m.View().Content)
+	if strings.Contains(m.View().Content, "/10") || !strings.Contains(m.View().Content, "SHELLS - SSH") {
+		t.Fatal("workspace tree hid entries behind a summary", m.View().Content)
 	}
 	m.activate("hovel")
 	if !strings.Contains(m.View().Content, "› Hovel") {
@@ -338,6 +718,43 @@ func TestCommandPalette(t *testing.T) {
 	}
 	if !strings.Contains(ansi.Strip(m.commandHelp()), "Ctrl+P menu") {
 		t.Fatal("footer missing command shortcut")
+	}
+}
+
+func TestMenuThemeConsistency(t *testing.T) {
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/menu"}, plain, launch.Options{})
+			if plain {
+				m = newDemoFrame(plain)
+			}
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+			bounds := m.dialogBounds()
+			for _, filter := range []string{"", "meta", "no match"} {
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+				frameEvent(m, tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+				frameEvent(m, tea.PasteMsg{Content: filter})
+				screen := capturePresentation(t, m, fmt.Sprintf("menu-%dx%d-plain-%t-%s", size.X, size.Y, plain, strings.ReplaceAll(filter, " ", "-")))
+				title := strings.Split(ansi.Strip(m.formText()), "\n")[0]
+				if title != centered("Menu", bounds.Dx()-6) || strings.Contains(m.formText(), "╱") || bounds != m.dialogBounds() {
+					t.Fatal("menu diverged from shared dialog title or stable bounds")
+				}
+				footer := ansi.Cut(strings.Split(m.View().Content, "\n")[bounds.Max.Y-3], bounds.Min.X+3, bounds.Max.X-3)
+				if ansi.Strip(footer) != centered("↑↓ select · Enter run · Esc close", bounds.Dx()-6) {
+					t.Fatal("menu footer is not centered like other dialogs")
+				}
+				if plain {
+					if strings.Contains(m.View().Content, "\x1b") {
+						t.Fatal("NO_COLOR menu leaked ANSI")
+					}
+				} else {
+					assertTextRole(t, screen, bounds.Inset(1), "Menu", lavenderColor)
+					assertTextRole(t, screen, bounds.Inset(1), "Esc close", subtextColor)
+				}
+			}
+		}
 	}
 }
 
@@ -546,29 +963,68 @@ func TestSharedFormAndHelpRoles(t *testing.T) {
 	m.dismissForm()
 	m.current().management.help = true
 	screen = capturePresentation(t, m, "help-command-colors")
-	bounds := image.Rect(35, 7, 125, 33)
-	for value, hex := range map[string]string{"profile": blueColor, "create": blueColor, "NAME": "#f9e2af", "--as": blueColor} {
+	bounds := image.Rect(23, 4, 137, 36)
+	for value, hex := range map[string]string{"NAVIGATION": blueColor, "connect NAME HOST USER": blueColor, "NAME": "#f9e2af", "F6 / Shift+F6": "#cba6f7"} {
 		assertTextRole(t, screen, bounds, value, hex)
 	}
-	u := &m.current().management
-	v := u.helpViewport(m.width, m.height)
-	for i, line := range strings.Split(ansi.Wrap(u.helpText(), v.Width(), ""), "\n") {
-		if strings.Contains(line, "--key PATH") {
-			u.helpOffset = i
-			break
-		}
+	if screen.CellAt(65, 7).Content != "M" || screen.CellAt(65, 8).Content != "O" {
+		t.Fatal("help descriptions are not aligned in their own column")
 	}
-	screen = capturePresentation(t, m, "help-placeholder-colors")
-	assertTextRole(t, screen, bounds, "PATH", "#f9e2af")
-	assertTextRole(t, screen, bounds, "[USER@]HOST[:PORT][,...]", "#f9e2af")
+	assertTextRole(t, screen, bounds, "Move focus", subtextColor)
 	m.current().management.helpOffset = 1000
 	screen = capturePresentation(t, m, "help-keybinding-colors")
-	assertTextRole(t, screen, bounds, "Shift+F6", "#cba6f7")
+	assertTextRole(t, screen, bounds, "PATH", "#f9e2af")
 	assertTextRole(t, screen, bounds, "PgUp/PgDn", "#cba6f7")
 	m.noColor, m.current().management.noColor = true, true
 	plain := m.View().Content
 	if plain != ansi.Strip(plain) || !strings.Contains(plain, "PgUp/PgDn") {
 		t.Fatal("NO_COLOR help lost text or leaked colors")
+	}
+}
+
+func TestHelpQuickReference(t *testing.T) {
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/help"}, plain, launch.Options{})
+			if plain {
+				m = newDemoFrame(plain)
+			}
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, tea.PasteMsg{Content: "connect draft"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+			u := &m.current().management
+			top := capturePresentation(t, m, fmt.Sprintf("help-%dx%d-%t-top", size.X, size.Y, plain))
+			if !strings.Contains(top.String(), "Burrow Help") || !strings.Contains(top.String(), "NAVIGATION") {
+				t.Fatal("quick reference heading missing")
+			}
+			geometry := helpBorders(m.View().Content)
+			v := u.helpViewport(size.X, size.Y)
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+			if u.helpOffset != min(v.Height(), v.TotalLineCount()-v.Height()) || u.helpOffset <= 1 {
+				t.Fatal("PgDown did not move a page", u.helpOffset, v.Height())
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+			if u.helpOffset != 0 {
+				t.Fatal("PgUp did not return to top")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+			bottom := capturePresentation(t, m, fmt.Sprintf("help-%dx%d-%t-bottom", size.X, size.Y, plain))
+			if !strings.Contains(bottom.String(), "bochner.github.io/burrow") || !strings.Contains(bottom.String(), "100%") || geometry != helpBorders(m.View().Content) {
+				t.Fatal("end navigation, documentation or stable geometry missing")
+			}
+			if plain && strings.Contains(m.View().Content, "\x1b") {
+				t.Fatal("NO_COLOR help leaked ANSI")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyHome})
+			if u.helpOffset != 0 {
+				t.Fatal("Home did not return to top")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			if u.help || u.input.Value() != "connect draft" {
+				t.Fatal("help dismissal lost draft")
+			}
+		}
 	}
 }
 
@@ -707,7 +1163,7 @@ func TestSavedProfilesPresentation(t *testing.T) {
 			capturePresentation(t, m, prefix+"-empty")
 			list := connection.Collection{Path: "/tmp/homelab.json", Revision: strings.Repeat("a", 64), Profiles: []connection.Profile{{Name: "nas", Host: "192.168.1.20", User: "alice", Port: 2222, Key: "/home/alice/.ssh/key", Jump: "bastion"}, {Name: "router", Host: "192.168.1.1", User: "admin", Port: 22}}}
 			m.updateManagement(m.active, profilesReady{collection: list})
-			capturePresentation(t, m, prefix+"-populated")
+			before := capturePresentation(t, m, prefix+"-populated")
 			if !strings.Contains(ansi.Strip(m.View().Content), "SAVED CONNECTIONS") {
 				t.Fatal("missing saved table")
 			}
@@ -718,6 +1174,17 @@ func TestSavedProfilesPresentation(t *testing.T) {
 			}
 			screen := capturePresentation(t, m, prefix+"-selected")
 			assertSelected(t, m, screen, "profile:0", !plain)
+			compositor := m.compositor()
+			for y := 0; y < m.height; y++ {
+				for x := m.selectionBounds().Min.X + 1; x < m.selectionBounds().Max.X; x++ {
+					if compositor.Hit(x, y).ID() == "profile:0" {
+						a, b := before.CellAt(x, y), screen.CellAt(x, y)
+						if a.Content != b.Content || !colorMatches(a.Style.Fg, b.Style.Fg) {
+							t.Fatalf("selection changed token at %d,%d", x, y)
+						}
+					}
+				}
+			}
 			if !strings.Contains(ansi.Strip(m.View().Content), "›") {
 				t.Fatal("selection marker missing")
 			}
@@ -745,6 +1212,73 @@ func TestSavedProfilesPresentation(t *testing.T) {
 			if plain && strings.Contains(m.View().Content, "\x1b") {
 				t.Fatal("NO_COLOR leaked escapes")
 			}
+		}
+	}
+}
+
+func TestSidebarStatusAndClickAway(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/polish"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		w := m.current()
+		w.shell = &cliTab{id: "1", connection: "gateway"}
+		w.shells = []*cliTab{w.shell}
+		w.management.connectionObserved = true
+		w.management.profiles.Profiles = []connection.Profile{{Name: "saved", Host: "example.com", User: "alice", Port: 22}}
+		for _, test := range []struct{ state, dot, color string }{{"connected", "●", "#a6e3a1"}, {"connecting", "◐", "#f9e2af"}, {"lost", "○", "#f38ba8"}, {"unverified", "◌", "#f38ba8"}} {
+			w.management.connections = []connection.State{{Name: "gateway", State: test.state}}
+			screen := capturePresentation(t, m, fmt.Sprintf("sidebar-%s-%t", test.state, plain))
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, 3, 26, 4), test.dot, test.color)
+				assertTextRole(t, screen, image.Rect(0, 25, 26, 26), test.dot, test.color)
+			}
+			if w.connectionState("") != test.state || w.connectionState("gateway") != test.state {
+				t.Fatal("incorrect observed status", test.state)
+			}
+		}
+		w.management.connectionError = "offline"
+		if w.connectionState("") != "unverified" {
+			t.Fatal("stale connection remained green")
+		}
+		w.management.connectionError = ""
+		for _, id := range []string{"profile:0", "resource:0"} {
+			m.activate(id)
+			before := capturePresentation(t, m, "clear-"+strings.ReplaceAll(id, ":", "-")+fmt.Sprint(plain))
+			assertSelected(t, m, before, id, !plain)
+			r := m.selectionBounds()
+			frameEvent(m, tea.MouseClickMsg{X: r.Min.X + 1, Y: r.Max.Y - 2, Button: tea.MouseLeft})
+			if w.selected != "" || w.management.selectedProfile != "" || w.shell == nil {
+				t.Fatal("click-away did not clear rows or destroyed shell")
+			}
+			m.activate(id)
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			if w.selected != "" || w.management.selectedProfile != "" {
+				t.Fatal("escape left row selected")
+			}
+		}
+		m.activate("shell:1")
+		selectedTab := capturePresentation(t, m, fmt.Sprintf("ssh-tab-%t", plain))
+		left, _ := m.columns()
+		if !plain && !colorMatches(selectedTab.CellAt(left+21, 1).Style.Bg, lipgloss.Color(rowSelectionColor)) {
+			t.Fatal("SSH tab has no selected background")
+		}
+		if w.tab != "shell" || !strings.Contains(ansi.Strip(m.View().Content), "› Shell #1") || strings.Contains(ansi.Strip(m.View().Content), "› Burrow") {
+			t.Fatal("SSH tab not exclusively selected")
+		}
+		w.focus = "tabs"
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		if w.tab != "" {
+			t.Fatal("SSH missing from tab navigation")
+		}
+		other := "/tmp/other-shell"
+		m.paths = append(m.paths, other)
+		m.workspaces[other] = &workspaceView{management: newUI(launch.Info{Workspace: other}, plain), shell: &cliTab{connection: "other"}}
+		m.workspaces[other].shells = []*cliTab{m.workspaces[other].shell}
+		w.focus, m.shellIndex = "shells", 3
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if m.active != other || m.current().tab != "shell" {
+			t.Fatal("shell navigation opened wrong workspace")
 		}
 	}
 }
