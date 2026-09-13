@@ -47,6 +47,9 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None):
         wait("LISTING /config")
         if slow:
             slow()
+            # Entry listing starts the owner's one-second discovery throttle.
+            # This case tests a delayed handshake, not the separately tested throttle.
+            time.sleep(1.1)
             os.write(outer, b"cd /tmp/uncached-directory/x")
             wait("Discovering paths")
             started=time.monotonic()
