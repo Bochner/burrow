@@ -331,7 +331,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\x1b[A\r")
             read_until(str(w).encode())
             os.write(master, b"sta\x1bOP")  # draft, F1
-            read_until(b"BURROW COMMAND MENU")
+            read_until(b"Burrow Help")
             os.write(master, b"\x1b")
             time.sleep(.3)
             os.write(master, b"\t")

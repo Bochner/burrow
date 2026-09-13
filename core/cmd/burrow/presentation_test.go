@@ -893,29 +893,68 @@ func TestSharedFormAndHelpRoles(t *testing.T) {
 	m.dismissForm()
 	m.current().management.help = true
 	screen = capturePresentation(t, m, "help-command-colors")
-	bounds := image.Rect(35, 7, 125, 33)
-	for value, hex := range map[string]string{"profile": blueColor, "create": blueColor, "NAME": "#f9e2af", "--as": blueColor} {
+	bounds := image.Rect(23, 4, 137, 36)
+	for value, hex := range map[string]string{"NAVIGATION": blueColor, "connect NAME HOST USER": blueColor, "NAME": "#f9e2af", "F6 / Shift+F6": "#cba6f7"} {
 		assertTextRole(t, screen, bounds, value, hex)
 	}
-	u := &m.current().management
-	v := u.helpViewport(m.width, m.height)
-	for i, line := range strings.Split(ansi.Wrap(u.helpText(), v.Width(), ""), "\n") {
-		if strings.Contains(line, "--key PATH") {
-			u.helpOffset = i
-			break
-		}
+	if screen.CellAt(65, 7).Content != "M" || screen.CellAt(65, 8).Content != "O" {
+		t.Fatal("help descriptions are not aligned in their own column")
 	}
-	screen = capturePresentation(t, m, "help-placeholder-colors")
-	assertTextRole(t, screen, bounds, "PATH", "#f9e2af")
-	assertTextRole(t, screen, bounds, "[USER@]HOST[:PORT][,...]", "#f9e2af")
+	assertTextRole(t, screen, bounds, "Move focus", subtextColor)
 	m.current().management.helpOffset = 1000
 	screen = capturePresentation(t, m, "help-keybinding-colors")
-	assertTextRole(t, screen, bounds, "Shift+F6", "#cba6f7")
+	assertTextRole(t, screen, bounds, "PATH", "#f9e2af")
 	assertTextRole(t, screen, bounds, "PgUp/PgDn", "#cba6f7")
 	m.noColor, m.current().management.noColor = true, true
 	plain := m.View().Content
 	if plain != ansi.Strip(plain) || !strings.Contains(plain, "PgUp/PgDn") {
 		t.Fatal("NO_COLOR help lost text or leaked colors")
+	}
+}
+
+func TestHelpQuickReference(t *testing.T) {
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/help"}, plain, launch.Options{})
+			if plain {
+				m = newDemoFrame(plain)
+			}
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, tea.PasteMsg{Content: "connect draft"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+			u := &m.current().management
+			top := capturePresentation(t, m, fmt.Sprintf("help-%dx%d-%t-top", size.X, size.Y, plain))
+			if !strings.Contains(top.String(), "Burrow Help") || !strings.Contains(top.String(), "NAVIGATION") {
+				t.Fatal("quick reference heading missing")
+			}
+			geometry := helpBorders(m.View().Content)
+			v := u.helpViewport(size.X, size.Y)
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+			if u.helpOffset != min(v.Height(), v.TotalLineCount()-v.Height()) || u.helpOffset <= 1 {
+				t.Fatal("PgDown did not move a page", u.helpOffset, v.Height())
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+			if u.helpOffset != 0 {
+				t.Fatal("PgUp did not return to top")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+			bottom := capturePresentation(t, m, fmt.Sprintf("help-%dx%d-%t-bottom", size.X, size.Y, plain))
+			if !strings.Contains(bottom.String(), "bochner.github.io/burrow") || !strings.Contains(bottom.String(), "100%") || geometry != helpBorders(m.View().Content) {
+				t.Fatal("end navigation, documentation or stable geometry missing")
+			}
+			if plain && strings.Contains(m.View().Content, "\x1b") {
+				t.Fatal("NO_COLOR help leaked ANSI")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyHome})
+			if u.helpOffset != 0 {
+				t.Fatal("Home did not return to top")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			if u.help || u.input.Value() != "connect draft" {
+				t.Fatal("help dismissal lost draft")
+			}
+		}
 	}
 }
 

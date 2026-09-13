@@ -141,6 +141,8 @@ func (m ui) syntax(line string, reference bool) string {
 		previous = strings.ToLower(word)
 		style := pageStyle
 		switch {
+		case index == 0 && word == "burrow":
+			style = heading
 		case word == "/usr/bin/ssh":
 			style = heading
 		case prior == "-o":

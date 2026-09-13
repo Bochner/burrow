@@ -30,6 +30,8 @@ var previous = key.NewBinding(key.WithKeys("up"))
 var next = key.NewBinding(key.WithKeys("down"))
 var pageUp = key.NewBinding(key.WithKeys("pgup"))
 var pageDown = key.NewBinding(key.WithKeys("pgdown"))
+var helpHome = key.NewBinding(key.WithKeys("home"))
+var helpEnd = key.NewBinding(key.WithKeys("end"))
 var inventoryUp = key.NewBinding(key.WithKeys("alt+up"))
 var inventoryDown = key.NewBinding(key.WithKeys("alt+down"))
 var tunnelsUp = key.NewBinding(key.WithKeys("alt+shift+up"))
@@ -253,15 +255,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		if m.help {
-			if key.Matches(v, escape, help) {
-				m.help = false
-			}
-			if key.Matches(v, previous, pageUp) {
-				m.helpOffset = max(0, m.helpOffset-1)
-			}
-			if key.Matches(v, next, pageDown) {
-				m.helpOffset++
-			}
+			m.updateHelp(v, m.width, m.height)
 			return m, nil
 		}
 		if key.Matches(v, completionNext, completionPrevious) {
@@ -569,18 +563,114 @@ func (m ui) View() tea.View {
 }
 
 func (m ui) helpText() string {
-	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Review connections; keep running or close and quit\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources, saved. Saved: Enter actions; arrows select.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P menu (Alt+M), Alt+N New, Alt+W workspace drawer.\nNew: enter a name; Tab edits optional parent location; Ctrl+O browses. Enter creates & opens.\nWorkspace above New/Menu returns to management; SHELLS - SSH below resumes shells.\nShells: click a workspace child or its top tab; Alt+1–9 selects, Alt+Left/Right cycles.\nShell numbers are current workspace positions (1…N); closing a shell closes the gap.\nCtrl+] or Alt+B returns to management; Alt+H selects Hovel.\nDrag selects only the middle panel; Ctrl+C or Copy copies (no auto-copy).\nEsc clears selection; Ctrl+Shift+V pastes. Ctrl+Shift+C copies if forwarded.\nAlt+S toggles native selection (includes sidebars). Alt+mouse sends to Hovel.\nTab completes the prompt. With mouse controls enabled, click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
+	return `# NAVIGATION
+F6 / Shift+F6	Move focus between panels; arrows select, Enter opens
+Ctrl+P	Open the searchable action menu
+Tab / Shift+Tab	Cycle command suggestions; forwarding shows argument examples
+Alt+H / Alt+B	Switch to Hovel / return to Burrow management
+Alt+↑↓ / Alt+Shift+↑↓	Scroll connections / tunnels; PgUp/PgDn scroll command output
+Drag / Ctrl+C / Alt+S	Select middle-panel text / copy selection / toggle native selection
+Ctrl+Shift+V	Paste using your terminal's paste shortcut
+
+# CONNECTIONS & SHELLS
+connect	Open the guided connection form
+connect NAME HOST USER	Connect directly; review first, then authenticate privately
+shell NAME / resume ID	Open a shell / return to an existing frontend-local shell
+Ctrl+] / Alt+1–9	Return from SSH to management / select a shell
+Alt+←/→	Cycle shells without closing them
+shell-close ID	Close one shell, keeping its connection
+inspect NAME / status	Inspect connection details / verify the daemon
+reconnect NAME HOST USER	Explicitly replace a lost connection
+The connection form includes SSH keys, agents, jump hosts and a SOCKS proxy.
+
+# FORWARDING
+tunnel create NAME forward|reverse	Create a local or reverse listener; the prompt guides arguments
+tunc myserver l 8080 localhost 80	Example: local port 8080 reaches port 80 from the SSH server
+tunc myserver r 8080 localhost 80	Example: remote port 8080 reaches port 80 from this machine
+tunnel check NAME/ID	Test destination traffic; listening alone does not prove reachability
+tunnel remove NAME/ID	Review and remove one listener (alias: tund NAME/ID)
+Reverse LISTEN 0 requests a random port. Tab completes live names and tunnel IDs.
+The dashboard refreshes automatically, including changes made by external CLI clients.
+
+# SAVED CONNECTIONS & WORKSPACES
+Saved row → Enter	Connect, inspect, edit or delete saved settings
+profile save NAME	Save an active connection's settings, never its passwords
+profile create NAME HOST USER	Save settings without connecting
+profile load PATH / profile backup PATH	Open a collection / back up the selected collection
+Alt+N / Alt+W	Create a workspace / open the workspace drawer
+
+# QUIT & MORE HELP
+close NAME	Review closing the connection and all its shells and listeners
+quit / Ctrl+C	Choose keep running, close connections, or cancel
+Keeping connections does not keep frontend-local shells alive. Saved settings remain.
+SSH host keys are not verified. Never put passwords or passphrases in commands.
+Inventory commands remain callable for full details; they are omitted from TUI suggestions.
+burrow --workspace PATH help	Full CLI reference (run outside the TUI)
+Full command options, server requirements and walkthroughs:
+https://bochner.github.io/burrow/index.html`
 }
+
+func helpSize(w, h int) (int, int) {
+	return max(8, min(120, w-4)), max(8, min(40, h-4))
+}
+
+func (m *ui) updateHelp(k tea.KeyPressMsg, w, h int) {
+	v := m.helpViewport(w, h)
+	switch {
+	case key.Matches(k, escape, help):
+		m.help = false
+	case key.Matches(k, previous):
+		v.SetYOffset(v.YOffset() - 1)
+	case key.Matches(k, next):
+		v.SetYOffset(v.YOffset() + 1)
+	case key.Matches(k, pageUp):
+		v.SetYOffset(v.YOffset() - v.Height())
+	case key.Matches(k, pageDown):
+		v.SetYOffset(v.YOffset() + v.Height())
+	case key.Matches(k, helpHome):
+		v.GotoTop()
+	case key.Matches(k, helpEnd):
+		v.GotoBottom()
+	}
+	m.helpOffset = v.YOffset()
+}
+
 func (m ui) helpViewport(w, h int) viewport.Model {
-	return scrollBody(m.syntax(m.helpText(), true), max(1, min(96, w-4)-6), max(1, min(30, h-4)-8), m.helpOffset)
+	pw, ph := helpSize(w, h)
+	bodyW := max(1, pw-6)
+	var lines []string
+	for _, line := range strings.Split(m.helpText(), "\n") {
+		label, description, row := strings.Cut(line, "\t")
+		switch {
+		case strings.HasPrefix(line, "# "):
+			lines = append(lines, m.paint(heading, strings.TrimPrefix(line, "# ")))
+		case row:
+			styled := m.syntax(label, true)
+			if label[0] >= 'A' && label[0] <= 'Z' {
+				styled = m.paint(keywordStyle, label)
+			}
+			if bodyW < 90 {
+				lines = append(lines, styled, "  "+m.paint(secondary, description))
+			} else {
+				column := 42
+				lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top,
+					pageStyle.Width(column).Render(styled),
+					m.paint(secondary, ansi.Wrap(description, bodyW-column, ""))))
+			}
+		default:
+			lines = append(lines, m.paint(secondary, line))
+		}
+	}
+	return scrollBody(strings.Join(lines, "\n"), bodyW, max(1, ph-8), m.helpOffset)
 }
 func (m ui) overlay(base string, w, h int) *lipgloss.Compositor {
-	pw, ph := max(8, min(96, w-4)), max(8, min(30, h-4))
+	pw, ph := helpSize(w, h)
 	x, y := (w-pw)/2, (h-ph)/2
 	bodyW := pw - 6
-	text := m.paint(accent, "BURROW COMMAND MENU") + "\n\n" + m.helpViewport(w, h).View()
+	v := m.helpViewport(w, h)
+	text := centered(m.paint(accent, "Burrow Help"), bodyW) + "\n\n" + v.View()
 	popup := dialogStyle.Width(pw).Height(ph).Render(fit(text, bodyW, ph-4))
-	footer := m.paint(secondary, "↑↓ scroll · Esc returns")
+	footer := m.paint(keywordStyle, "Esc close · ↑↓ scroll · PgUp/PgDn · Home/End") + m.paint(numberStyle, fmt.Sprintf(" · %.0f%%", v.ScrollPercent()*100))
 	return lipgloss.NewCompositor(
 		lipgloss.NewLayer(solid(m.paint(secondary, ansi.Strip(base)), w, h, baseColor, m.noColor)).ID("modal-backdrop"),
 		lipgloss.NewLayer(solid(popup, pw, ph, popupColor, m.noColor)).X(x).Y(y).Z(1).ID("child-modal"),

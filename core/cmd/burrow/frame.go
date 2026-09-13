@@ -620,7 +620,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.current().management.help {
-			return m, m.updateManagement(m.active, msg)
+			m.current().management.updateHelp(v, m.width, m.height)
+			return m, nil
 		}
 		if m.modal != "" {
 			return m, m.modalKey(v)
