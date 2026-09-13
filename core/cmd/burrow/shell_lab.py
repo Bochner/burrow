@@ -66,6 +66,14 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
     try:
         wait("local / not recorded")
         command("printf 'INITIAL='; stty size", "INITIAL=35 98")
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 0, 0, 0))
+        os.kill(frontend.pid, signal.SIGWINCH)
+        # A zero-width outer terminal cannot render a warning; the portable
+        # frame check asserts refusal text. Restore it before reading output.
+        time.sleep(.1)
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+        os.kill(frontend.pid, signal.SIGWINCH)
+        command("printf 'RETAINED='; stty size", "RETAINED=35 98")
         command("printf '%s\\n' " + canary, canary)
         client = child()
         # The local SSH client is a session leader with its own controlling PTY.

@@ -55,6 +55,7 @@ func TestLocalShellPresentation(t *testing.T) {
 		}
 		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
 			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			frameEvent(m, m.readCLI(m.active, tab)())
 			screen := capturePresentation(t, m, fmt.Sprintf("shell-%dx%d-color-%v", size[0], size[1], !noColor))
 			for _, label := range []string{"LOCAL-SCREEN", "SSH:", "gateway", "Ctrl+]"} {
 				if !strings.Contains(screen.String(), label) {
@@ -67,16 +68,47 @@ func TestLocalShellPresentation(t *testing.T) {
 			if noColor && strings.Contains(m.View().Content, "\x1b[") {
 				t.Fatal("color escaped NO_COLOR")
 			}
+			if !noColor && size[0] == 160 {
+				bounds := image.Rect(0, 0, 26, m.height)
+				assertTextRole(t, screen, bounds, "gateway", lavenderColor)
+				assertTextRole(t, screen, bounds, "running", "#a6e3a1")
+				assertTextRole(t, screen, image.Rect(26, 0, 128, 3), "gateway", lavenderColor)
+				assertTextRole(t, screen, image.Rect(26, m.height-2, 128, m.height), "gateway", lavenderColor)
+				tab.pending = true
+				closing := capturePresentation(t, m, "shell-closing")
+				assertTextRole(t, closing, bounds, "closing", "#f9e2af")
+				tab.pending = false
+			}
+			if !noColor && size[0] == 80 {
+				assertTextRole(t, screen, image.Rect(0, 0, 16, m.height), "running", "#a6e3a1")
+			}
 		}
 		frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
 		if m.current().shell != tab || m.current().tab != "" || m.current().focus != "prompt" {
 			t.Fatal("reserved background key must preserve the shell")
+		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 0, Height: 24})
+		if !strings.Contains(tab.error, "geometry") || m.width != 80 {
+			t.Fatal("invalid resize must be refused, not clamped")
+		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+		if tab.error != "" {
+			t.Fatal("geometry warning survived successful resize")
+		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 1200, Height: 24})
+		tab.error = ""
+		m.terminalResult(m.active, cliOpened{tab: tab, host: host})
+		if !strings.Contains(tab.error, "geometry") {
+			t.Fatal("opening-time resize refusal discarded")
 		}
 		if close := m.closeShell(); close != nil {
 			frameEvent(m, close())
 		}
 		if m.current().shell != nil || m.current().tab != "" || m.current().focus != "prompt" {
 			t.Fatal("shell close did not restore management")
+		}
+		if m.openShell("gateway") != nil || m.current().shell != nil || !strings.Contains(m.current().management.output, "geometry") {
+			t.Fatal("invalid geometry must refuse shell launch")
 		}
 	}
 }

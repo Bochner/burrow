@@ -280,11 +280,11 @@ func scrollBody(text string, width, height, offset int) viewport.Model {
 
 func connectionStyle(state string) lipgloss.Style {
 	switch state {
-	case "connected", "active":
+	case "connected", "active", "running":
 		return successStyle
 	case "failed", "lost", "closed", "disconnected", "unverified":
 		return errorStyle
-	case "connecting", "reconnecting":
+	case "connecting", "reconnecting", "opening", "closing":
 		return warningStyle
 	default:
 		return secondary

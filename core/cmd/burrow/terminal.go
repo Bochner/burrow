@@ -16,6 +16,9 @@ import (
 )
 
 var terminalEscape = key.NewBinding(key.WithKeys("ctrl+]"))
+
+const invalidTerminalGeometry = "REFUSED: terminal geometry outside 1..1000 cells; previous size retained."
+
 var toggleMouse = key.NewBinding(key.WithKeys("alt+s"))
 var showBurrow = key.NewBinding(key.WithKeys("alt+b"), key.WithHelp("Alt+B", "Burrow"))
 var showHovel = key.NewBinding(key.WithKeys("alt+h"), key.WithHelp("Alt+H", "Hovel"))
@@ -76,6 +79,10 @@ func (w *workspaceView) activeTerminal() *cliTab {
 func (m *frame) openShell(name string) tea.Cmd {
 	w := m.current()
 	w.management.busy = false
+	if m.invalidGeometry {
+		w.management.output = invalidTerminalGeometry
+		return nil
+	}
 	if w.shell != nil {
 		w.management.output = "A local shell is already open; return to management with Ctrl+] and use shell-close before opening another."
 		w.tab, w.focus = "shell", "terminal"
@@ -219,7 +226,13 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 		}
 		v.tab.host = v.host
 		r := m.terminalBounds()
-		v.host.Send(image.Pt(r.Dx(), r.Dy()))
+		if m.invalidGeometry {
+			v.tab.error = invalidTerminalGeometry
+		} else if err := v.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil {
+			v.tab.error = safe(err.Error())
+		} else if v.tab.error == invalidTerminalGeometry {
+			v.tab.error = ""
+		}
 		return m.readCLI(path, v.tab)
 	case cliScreen:
 		if w.cli != v.tab && w.shell != v.tab {

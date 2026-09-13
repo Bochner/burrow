@@ -42,6 +42,7 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
+	invalidGeometry     bool
 	initialShell        string
 	terminals           *terminalLifetime
 	quitReview          quitSnapshot
@@ -172,6 +173,8 @@ func (m *frame) resize() {
 				r := m.terminalBounds()
 				if err := tab.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil && !tab.screen.Exited {
 					tab.error = safe(err.Error())
+				} else if err == nil && tab.error == invalidTerminalGeometry {
+					tab.error = ""
 				}
 			}
 		}
@@ -408,6 +411,18 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.updateManagement(path, v.message)
 		}
 	case tea.WindowSizeMsg:
+		m.invalidGeometry = v.Width <= 0 || v.Height <= 0 || v.Width > 1000 || v.Height > 1000
+		if m.invalidGeometry {
+			for _, w := range m.workspaces {
+				w.management.output = invalidTerminalGeometry
+				for _, tab := range []*cliTab{w.cli, w.shell} {
+					if tab != nil {
+						tab.error = w.management.output
+					}
+				}
+			}
+			return m, nil
+		}
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
 		m.resize()
@@ -1016,7 +1031,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, 10, 1, 1)
 	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(16, w-cx-10), 1, 1)
 	if current.shell != nil {
-		add("shells", current.management.paint(infoStyle, "SSH · "+safe(current.shell.connection)), cx+26, 1, max(0, cw-26), 1, 2)
+		add("shells", current.management.paint(accent, "SSH · "+safe(current.shell.connection)), cx+26, 1, max(0, cw-26), 1, 2)
 	}
 	management := current.management
 	management.help = false
@@ -1083,7 +1098,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			status = "CLI: running · " + safe(m.active)
 			if tab.connection != "" {
 				status = "SSH: " + safe(tab.connection) + " · local / not recorded"
-				statusStyle = infoStyle
+				statusStyle = accent
 			}
 			if tab.pending {
 				status = "Hovel · opening / closing…"
@@ -1149,6 +1164,12 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		add("new", current.management.paint(heading, label("new", "[New]")), 1, midpoint, width/2, 1, z+1)
 		add("menu", lipgloss.PlaceHorizontal(width-width/2, lipgloss.Right, current.management.paint(heading, label("menu", "[Menu]"))), 1+width/2, midpoint, width-width/2, 1, z+1)
 		gap, groupHeight := "\n\n", 3
+		for _, workspace := range m.workspaces {
+			if workspace.shell != nil {
+				groupHeight = 4
+				break
+			}
+		}
 		rows = max(1, (h-midpoint-6)/groupHeight)
 		start = min(current.shellOffset, max(0, len(m.paths)-1))
 		end = min(len(m.paths), start+rows)
@@ -1160,8 +1181,11 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				state := "running"
 				if tab.pending {
 					state = "opening"
+					if tab.host != nil {
+						state = "closing"
+					}
 				}
-				text += "\n  " + current.management.paint(infoStyle, safe(tab.connection)) + " · " + current.management.paint(connectionStyle(state), state)
+				text += "\n  " + current.management.paint(accent, safe(tab.connection)) + "\n  " + current.management.paint(connectionStyle(state), state)
 			} else {
 				text += "\n  " + current.management.paint(secondary, "No shells")
 			}
