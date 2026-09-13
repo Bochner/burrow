@@ -109,6 +109,6 @@ session ID from a fresh `OpenMeshStream` provider. Hovel rejects adoption with
 close-routing success. No bridge endpoint or bearer capability is created; no
 execution-capable Mesh task is implemented. No public module identity is added.
 
-See [the #72 evidence and proposed decision](../../docs/research/retained-consumer-proof.md).
-Owner acceptance remains pending; production L/R/SOCKS consumers stay in #62 and
+See [the #72 evidence and accepted decision](../../docs/research/retained-consumer-proof.md).
+The owner accepted this proof; production L/R/SOCKS consumers stay in #62 and
 manager integration stays in #73. This proof does not migrate production.

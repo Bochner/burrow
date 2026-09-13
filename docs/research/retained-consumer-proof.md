@@ -1,10 +1,11 @@
 # Fresh consumers of the retained SSH manager — issue #72
 
 Bounded Linux proof on the local `mvp1` branch, starting at `6c709bf`.
-Owner feedback is pending. This evidence proposes retaining the #71 candidate;
-it does not itself approve production integration or close #72.
+The owner accepted the proof and requested #72 closeout after reviewing the
+results. Retain the #71 candidate with the bounded consumer; generic Mesh streams
+remain deferred. Production integration is separate work in #73.
 
-## Question and proposed decision
+## Question and accepted decision
 
 Can a newly launched confirmed Hovel consumer use the existing workspace manager
 and SSH connection without another owner or SSH login?
@@ -146,6 +147,7 @@ uses public RPC during operation and inspects durable SQL evidence only after
 shutdown; it does not introduce live database reads into Burrow or claim that
 arbitrary external SQLite inspection is safe.
 
-Owner decision requested after the runnable proof and review: accept the bounded
-consumer and retain the manager candidate, with this generic-stream boundary
-explicitly deferred before #73 production migration.
+Owner decision after the runnable proof and review: accept the bounded consumer
+and retain the manager candidate, with this generic-stream boundary explicitly
+deferred before #73 production migration. Proof commits are `676a2ef` and
+`a8b9f72`; the owner authorized tracker closeout while keeping all commits local.
