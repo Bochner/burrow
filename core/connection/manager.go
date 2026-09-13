@@ -348,6 +348,44 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 	return found, nil
 }
 
+// RestartManager retires one verified retained owner, not the Hovel daemon.
+// Approval covers that entire owner, including concurrently added connections.
+// Unknown reservations and legacy owners require manual investigation.
+func RestartManager(ctx context.Context, w string, confirm func([]State) bool) error {
+	id, err := findManager(ctx, w)
+	if err != nil {
+		return err
+	}
+	states, err := List(ctx, w)
+	if err != nil {
+		return err
+	}
+	for _, state := range states {
+		if id.Session == "" || state.Session != id.Session || state.Generation != id.Generation {
+			return fmt.Errorf("unverified or legacy resources remain; close them explicitly before restart")
+		}
+	}
+	if !confirm(states) {
+		return fmt.Errorf("restart cancelled; resources retained")
+	}
+	current, err := findManager(ctx, w)
+	if err != nil || current != id {
+		return fmt.Errorf("manager changed or became unverified; review restart again")
+	}
+	if id.Session == "" {
+		return nil
+	}
+	var result any
+	if err := launch.Call(ctx, w, "CloseSession", map[string]string{"SessionID": id.Session}, &result); err != nil {
+		return fmt.Errorf("manager close unconfirmed; inspect resources before retrying: %w", err)
+	}
+	current, err = findManager(ctx, w)
+	if err != nil || current.Session != "" {
+		return fmt.Errorf("a retained manager remains or cleanup is unverified; close other frontends and inspect before retrying")
+	}
+	return nil
+}
+
 // Isolated request chains preserve the reviewed binding across independent frontends.
 func managerThrow(ctx context.Context, w string, config map[string]string, out any) error {
 	defer launch.Phase("manager-throw:" + config["action"])()

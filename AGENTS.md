@@ -14,6 +14,8 @@ specification. `core/prototype_*` contains bounded proofs, not a production SSH 
   All build, test, format, lint, and package workflows must enter through Aspect
   CLI. Do not invoke Bazel, gofmt, or a second task runner directly. Put new
   workflows in `.aspect/*.axl` and cacheable work in declared Bazel targets.
+  The Makefile is an owner-approved human convenience wrapper; agents continue
+  using Aspect directly (including for checks of the Makefile itself).
 - Pin upstream versions and record provenance. Prefer the public Hovel SDK and
   protocol; do not import `core/internal` or duplicate daemon-owned state.
 - Expose all Burrow capabilities through the single base `burrow` Hovel module.

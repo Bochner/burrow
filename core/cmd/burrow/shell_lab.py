@@ -186,3 +186,50 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         if path.is_file():
             assert canary.encode() not in path.read_bytes(), path
     print("PASS real SSH shell input/NUL/Ctrl-C, resize, close/exit/reopen, loss, VT isolation, secret exclusion and quit/reaping/restoration", flush=True)
+    # Human restart uses a real terminal, explicit confirmation and Hovel close.
+    evidence = workspace / "restart-evidence.txt"
+    evidence.write_text("preserve this workspace evidence\n")
+    daemon = burrow(workspace, "status")["pid"]
+    for reply in ("cancel", "restart"):
+        outer, slave = pty.openpty()
+        dimensions[:] = [160, 40]
+        output.clear()
+        before = termios.tcgetattr(slave)
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "restart"],
+                                    env=env, stdin=slave, stdout=slave, stderr=slave,
+                                    preexec_fn=controlling)
+        try:
+            wait("Type restart to confirm")
+            same_master()
+            send(reply + "\n")
+            if reply == "cancel":
+                assert frontend.wait(timeout=10) != 0
+                same_master()
+            else:
+                wait("ACTIVE SSH CONNECTIONS")
+                assert burrow(workspace, "connections") == []
+                assert not Path(f'/proc/{first["masterPID"]}').exists()
+                frontend.terminate()
+                frontend.wait(timeout=10)
+            assert termios.tcgetattr(slave) == before
+            assert (workspace / "burrow-profiles.json").read_bytes() == saved
+            assert evidence.read_text() == "preserve this workspace evidence\n"
+            assert burrow(workspace, "status")["pid"] == daemon
+        finally:
+            if frontend.poll() is None:
+                frontend.terminate()
+                frontend.wait(timeout=10)
+            os.close(outer)
+            os.close(slave)
+    burrow(workspace, "connect", "gateway", "127.0.0.1", "tester", *options)
+    until = time.monotonic() + 15
+    while True:
+        current = burrow(workspace, "inspect", "gateway")
+        if current["state"] == "connected":
+            break
+        assert time.monotonic() < until, current
+        time.sleep(.1)
+    assert current["generation"] != first["generation"]
+    print("PASS restart cancellation, manager replacement, daemon/evidence preservation and explicit reconnect", flush=True)
+    return current

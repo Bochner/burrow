@@ -64,6 +64,28 @@ preserved proofs, pins, results and commands that preceded the production code.
 
 ## Develop
 
+For human use, the Makefile offers shortcuts (GNU Make must be installed):
+
+```sh
+make run                         # defaults to ~/burrow-test
+make run WORKSPACE=/absolute/path # choose another workspace
+make restart                     # confirm retiring the old manager, then reopen
+make clean                       # build outputs only; not runtime cleanup
+make check                       # portable checks; no Docker required
+```
+
+Quit existing Burrow frontends before `make restart`. Type `restart` at its
+prompt to end the selected workspace's retained Burrow manager and all its
+connections/shells. Saved settings, evidence and the Hovel daemon remain;
+reconnect explicitly afterward to create an owner from the current build.
+Restart refuses ambiguous owners and unknown stale reservations rather than
+deleting them. `make clean` clears this checkout's Bazel build outputs, which
+are regenerated on the next build; it neither fixes stale running owners nor
+removes module caches, saved workspaces or source files.
+
+These are human-only conveniences: **agents use Aspect directly**. The Makefile
+delegates every workflow to Aspect rather than defining a second build system.
+
 Aspect CLI is the single entry point for building, testing, linting, formatting,
 packaging, and local runs. Tool versions are pinned in `.aspect/version.axl`,
 `.bazelversion`, `MODULE.bazel`, and the documentation dependency lockfile.

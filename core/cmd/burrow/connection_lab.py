@@ -164,7 +164,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
         if not smoke:
-            shell_checks(binary, w, env, screen_check, burrow, first, options)
+            first = shell_checks(binary, w, env, screen_check, burrow, first, options)
         if args.shell_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)

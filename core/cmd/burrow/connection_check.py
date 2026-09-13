@@ -6,6 +6,18 @@ import sys
 import tempfile
 
 binary = str(Path(sys.argv[1]).resolve())
+makefile = str(Path(sys.argv[2]).resolve())
+for target, expected in {
+    "run": 'aspect burrow run -- --workspace "$BURROW_MAKE_WORKSPACE" tui',
+    "restart": 'aspect burrow run -- --workspace "$BURROW_MAKE_WORKSPACE" restart',
+    "clean": "aspect burrow clean",
+    "check": "aspect burrow-check ci",
+}.items():
+    result = subprocess.run(["/usr/bin/make", "--no-print-directory", "-n", "-f", makefile,
+                             target, "WORKSPACE=/tmp/path with spaces"],
+                            check=True, capture_output=True, text=True)
+    assert result.stdout.strip() == expected, result.stdout
+print("PASS human Make shortcuts delegate to Aspect without executing cleanup")
 with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
     workspace = Path(scratch) / "untouched"
     for name in ("../escape", "a b", "é", "x" * 25):
@@ -14,6 +26,8 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         assert result.returncode != 0 and "name must" in result.stderr, result
         assert not workspace.exists()
     for args, message in [
+        (["restart", "--yes"], "restart takes no arguments"),
+        (["restart"], "restart requires terminal input"),
         (["shell"], "expected shell NAME"),
         (["shell", "../escape"], "name must"),
         (["shell", "valid", "--key", "/tmp/key"], "expected shell NAME"),

@@ -17,8 +17,8 @@ py_test(
     name = "connection_test",
     srcs = ["connection_check.py"],
     main = "connection_check.py",
-    args = ["$(location :burrow)"],
-    data = [":burrow"],
+    args = ["$(location :burrow)", "$(location //:Makefile)"],
+    data = [":burrow", "//:Makefile"],
     legacy_create_init = 0,
 )
 py_test(

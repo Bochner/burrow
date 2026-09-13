@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -34,6 +35,8 @@ Options:
 
 status opens/reuses the workspace and prints verified daemon identity as JSON.
 tui opens the management interface (default); quit retains the daemon.
+restart confirms retiring the workspace's Burrow manager, then opens the current TUI.
+It ends that manager's connections and shells; saved settings, evidence and Hovel remain.
 Inside the interface: status, connections, connect, inspect, shell, reconnect, close, help, quit.
 Linux amd64 only. Cache: $XDG_CACHE_HOME/burrow/hovel/0.4.2 (or ~/.cache).
 Unknown/stale resources require manual investigation; no automatic cleanup.
@@ -103,7 +106,15 @@ func run(args []string) error {
 	if fs.NArg() > 0 {
 		command = fs.Arg(0)
 	}
-	if command != "status" && command != "tui" {
+	if command == "restart" {
+		if fs.NArg() != 1 {
+			return fmt.Errorf("restart takes no arguments; confirmation is interactive")
+		}
+		if !term.IsTerminal(os.Stdin.Fd()) {
+			return fmt.Errorf("restart requires terminal input")
+		}
+	}
+	if command != "status" && command != "tui" && command != "restart" {
 		args := fs.Args()
 		wizard := len(args) == 1 && command == "connect"
 		if !wizard {
@@ -182,6 +193,22 @@ func run(args []string) error {
 	}
 	if command == "status" {
 		return json.NewEncoder(os.Stdout).Encode(info)
+	}
+	if command == "restart" {
+		err := connection.RestartManager(ctx, o.Workspace, func(states []connection.State) bool {
+			fmt.Fprintln(os.Stderr, "Workspace:", safe(o.Workspace))
+			for _, s := range states {
+				fmt.Fprintf(os.Stderr, "  %s: %s\n", safe(s.Name), safe(s.State))
+			}
+			fmt.Fprintln(os.Stderr, "Close other Burrow frontends first. Restart ends ALL connections and shells owned by this workspace's Burrow manager, including concurrent additions.")
+			fmt.Fprintln(os.Stderr, "Saved settings, evidence and Hovel are preserved. Reconnect explicitly afterward.")
+			fmt.Fprint(os.Stderr, "Type restart to confirm (anything else cancels): ")
+			line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+			return err == nil && strings.TrimSpace(line) == "restart"
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return terminal(newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o), noColor || os.Getenv("NO_COLOR") != "")
 }
