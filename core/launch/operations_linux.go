@@ -33,6 +33,7 @@ func ConnectionPath(workspace, name string) (string, error) {
 }
 
 func ReserveConnection(ctx context.Context, workspace, name string) (*os.File, error) {
+	defer Phase("reserve-connection")()
 	path, e := ConnectionPath(workspace, name)
 	if e != nil {
 		return nil, e
@@ -49,6 +50,7 @@ func ReserveConnection(ctx context.Context, workspace, name string) (*os.File, e
 
 // ReserveManager uses a non-connection name so existing operator names remain valid.
 func ReserveManager(ctx context.Context, workspace string) (*os.File, error) {
+	defer Phase("reserve-manager")()
 	if _, e := Status(ctx, workspace); e != nil {
 		return nil, e
 	}
@@ -61,6 +63,7 @@ func ReserveManager(ctx context.Context, workspace string) (*os.File, error) {
 
 // VerifyReservation rechecks the enclosing launch receipt and the held directory.
 func VerifyReservation(ctx context.Context, workspace string, dir *os.File) error {
+	defer Phase("verify-reservation")()
 	if _, e := Status(ctx, workspace); e != nil {
 		return e
 	}
@@ -109,6 +112,7 @@ func TrustStore(ctx context.Context, workspace string) (*os.File, error) {
 
 // Call uses one verified Unix peer, with no reconnect/retry after validation.
 func Call(ctx context.Context, workspace, method string, input, output any) error {
+	defer Phase("call:" + method)()
 	info, e := Status(ctx, workspace)
 	if e != nil {
 		return e
@@ -149,6 +153,7 @@ func Call(ctx context.Context, workspace, method string, input, output any) erro
 // HovelCLI preserves the public CLI's persisted throw plans, confirmation and
 // launch-key policy. These contracts are not replicated in a Burrow plan store.
 func HovelCLI(ctx context.Context, workspace string, args ...string) ([]byte, error) {
+	defer Phase("hovel-cli:" + cliVerb(args))()
 	cmd, e := hovelCommand(ctx, workspace, "run", args...)
 	if e != nil {
 		return nil, e
@@ -168,6 +173,16 @@ func HovelCLI(ctx context.Context, workspace string, args ...string) ([]byte, er
 // ctx; the terminal host owns the resulting process lifetime, not that deadline.
 func HovelShell(ctx context.Context, workspace string) (*exec.Cmd, error) {
 	return hovelCommand(ctx, workspace, "shell")
+}
+
+// cliVerb names the traced public CLI verb after the option separator.
+func cliVerb(args []string) string {
+	for i, arg := range args {
+		if arg == "--" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return "cli"
 }
 
 func hovelCommand(ctx context.Context, workspace, role string, args ...string) (*exec.Cmd, error) {
@@ -195,6 +210,7 @@ func hovelCommand(ctx context.Context, workspace, role string, args ...string) (
 // CacheModule publishes an immutable, private copy of this executable and its
 // manifest for Hovel's public linked-package installer.
 func CacheModule(ctx context.Context, manifest []byte) (string, error) {
+	defer Phase("cache-module")()
 	exe, e := os.Executable()
 	if e != nil {
 		return "", e
@@ -237,6 +253,7 @@ func CacheModule(ctx context.Context, manifest []byte) (string, error) {
 // RegisterModule installs this build through Hovel and verifies its live catalog.
 // The workspace lock also serializes module registration with setup.
 func RegisterModule(ctx context.Context, workspace, id string, manifest []byte) error {
+	defer Phase("register-module")()
 	if _, err := Status(ctx, workspace); err != nil {
 		return err
 	}

@@ -243,7 +243,7 @@ func (s *owner) connect(ctx context.Context) {
 					s.socket = st
 					if s.checkMaster() == nil {
 						s.state.State = "connected"
-						s.state.Connected = phaseNow()
+						s.state.Connected = launch.Monotonic()
 						s.state.SocketInode = st.Sys().(*syscall.Stat_t).Ino
 						s.state.Detail = "shell-free master"
 						s.milestone("connected")

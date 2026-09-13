@@ -16,7 +16,6 @@ import (
 
 	"github.com/Bochner/burrow/core/launch"
 	"github.com/vibepwners/hovel/sdk/go/hovel"
-	"golang.org/x/sys/unix"
 )
 
 // Version the control contract separately from the public module identity.
@@ -38,13 +37,6 @@ type managerRequest struct {
 }
 
 func digest(raw string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(raw))) }
-func phaseNow() int64 {
-	var t unix.Timespec
-	if unix.ClockGettime(unix.CLOCK_MONOTONIC, &t) != nil {
-		panic("monotonic clock unavailable")
-	}
-	return t.Nano()
-}
 
 func decodeManagerRequest(raw string) (managerRequest, error) {
 	var r managerRequest
@@ -210,7 +202,8 @@ func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 }
 
 func (m *manager) connect(raw, review, runID string) (State, error) {
-	dispatch := phaseNow()
+	defer launch.Phase("manager-connect")()
+	dispatch := launch.Monotonic()
 	r, e := decodeManagerRequest(raw)
 	if e != nil || digest(raw) != review || runID == "" {
 		return State{}, fmt.Errorf("request changed or missing run correlation")
@@ -250,6 +243,7 @@ func (m *manager) connect(raw, review, runID string) (State, error) {
 }
 
 func runManager(ctx *hovel.Context) (hovel.Result, error) {
+	defer launch.Phase("module:" + ctx.InputString("action", ""))()
 	c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	w := ctx.InputString("workspace", "")
@@ -316,6 +310,7 @@ func managerControl(ctx context.Context, w string, id managerIdentity, command s
 }
 
 func findManager(ctx context.Context, w string) (managerIdentity, error) {
+	defer launch.Phase("find-manager")()
 	var refs struct{ Sessions []hovel.SessionRef }
 	if e := launch.Call(ctx, w, "ListSessions", map[string]any{}, &refs); e != nil {
 		return managerIdentity{}, e
@@ -342,6 +337,7 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 
 // Isolated request chains preserve the reviewed binding across independent frontends.
 func managerThrow(ctx context.Context, w string, config map[string]string, out any) error {
+	defer launch.Phase("manager-throw:" + config["action"])()
 	op := "burrow-" + rand.Text()
 	for _, call := range []struct {
 		method string
@@ -391,6 +387,7 @@ func managerThrow(ctx context.Context, w string, config map[string]string, out a
 }
 
 func connectManaged(ctx context.Context, c Config, preview string) (State, error) {
+	defer launch.Phase("connect-managed")()
 	if e := launch.RegisterModule(ctx, c.Workspace, "burrow@0.1.0", Manifest); e != nil {
 		return State{}, e
 	}

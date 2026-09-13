@@ -18,6 +18,7 @@ import (
 // Only endpoint, identity and jump settings enter the retained master config;
 // forwarding, commands and trust overrides cannot change Burrow's contracts.
 func (c Config) resolve(ctx context.Context) (Config, error) {
+	defer launch.Phase("ssh-resolve")()
 	config := c.SSHConfig
 	if config == "" {
 		config = "/dev/null"
