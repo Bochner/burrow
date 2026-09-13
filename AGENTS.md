@@ -30,8 +30,11 @@ specification. `core/prototype_*` contains bounded proofs, not a production SSH 
 - Trace LazySSH source and tests before calling a workflow feature-complete.
   Preserve useful functionality, document intentional differences, and do not
   preserve accidental bugs as compatibility requirements.
-- Validate remote inputs, verify SSH host keys, keep credentials out of logs
-  and source control, and preserve Hovel's confirmation and audit contracts.
+- Validate remote inputs, keep credentials out of logs and source control,
+  and preserve Hovel's confirmation and audit contracts. Before changing
+  connection approval, authentication or owner routing, read
+  [the connection-control decision](docs/adr/0001-manual-connection-approval.md),
+  including the owner's explicit LazySSH host-trust override.
 - For nontrivial implementation changes, leave a focused runnable behavior
   check and run the relevant Aspect gate. The current `//:research` target
   only verifies the metadata build graph, not application behavior or docs prose.

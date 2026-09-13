@@ -20,6 +20,14 @@ shipping the full rewrite is the subsequent implementation effort.
 
 ## Standing preferences from the owner
 
+- Follow-up owner instruction (2026-09-12, #70): the connection recap is the
+  single manual approval, including for saved settings; show the actual SSH
+  command and generated config with semantic colors. The owner selected
+  LazySSH's host-trust options and normal current-user key/agent/password
+  behavior, superseding the earlier host-key-confirmation requirement below.
+  See [the connection-control decision](adr/0001-manual-connection-approval.md)
+  for the accepted operator behavior and the remaining proof contract.
+
 - Follow-up owner instruction (2026-09-12): every normal Burrow quit reviews
   connections across opened workspaces and offers keep running or clean teardown,
   with cancellation. Cleanup must preserve saved settings/evidence and refuse

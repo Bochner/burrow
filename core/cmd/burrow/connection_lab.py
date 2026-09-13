@@ -85,7 +85,13 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         hostkey = command("docker", "exec", container, "cat", "/config/ssh_host_keys/ssh_host_ed25519_key.pub").split()
         fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(base64.b64decode(hostkey[1])).digest()).decode().rstrip("=")
         def burrow(w, *args, ok=True):
+            submitted = time.monotonic()
             out = command(binary, "--workspace", w, *args, env=env, ok=ok)
+            if ok and args[0] in ("connect", "reconnect") and "--yes" in args:
+                # Response can precede authentication: never label this dispatch
+                # or full connection latency. Phase instrumentation belongs to #71.
+                print(f"TIMING {args[0]} {args[1]} submission-to-CLI-return: "
+                      f"{time.monotonic() - submitted:.3f}s", flush=True)
             return json.loads(out) if ok else out
         w = root / "w"
         info = burrow(w, "--hovel-package", wheel, "status")
