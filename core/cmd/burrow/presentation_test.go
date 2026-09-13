@@ -317,6 +317,27 @@ func TestSemanticOutput(t *testing.T) {
 	}
 }
 
+func TestForwardJSONRoles(t *testing.T) {
+	m := newUI(launch.Info{}, false)
+	m.output = `{"direction":"R","listen":"127.0.0.1:32451","destination":"[::1]:3000","requestedListen":"127.0.0.1:0"}`
+	styled := m.styledOutput()
+	if ansi.Strip(styled) != m.output {
+		t.Fatal("endpoint styling changed JSON")
+	}
+	screen := vt.NewEmulator(160, 2)
+	defer screen.Close()
+	if _, err := screen.Write([]byte(styled)); err != nil {
+		t.Fatal(err)
+	}
+	for _, port := range []string{"32451", "3000", "0\"}"} {
+		assertTextRole(t, screen, image.Rect(0, 0, 160, 2), port, "#f9e2af")
+	}
+	m.noColor = true
+	if m.styledOutput() != m.output {
+		t.Fatal("NO_COLOR changed endpoint JSON")
+	}
+}
+
 func TestConciseSSHRecap(t *testing.T) {
 	result, err := connection.Execute(context.Background(), "/tmp/recap", []string{"connect", "gateway", "nas.example", "alice", "--ssh-config", "/dev/null", "-proxy", "1080"})
 	if err != nil {

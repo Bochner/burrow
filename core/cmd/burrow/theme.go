@@ -326,7 +326,7 @@ func (m ui) styledOutput() string {
 			} else {
 				switch field {
 				case "listen", "destination", "requestedListen":
-					b.WriteString(m.endpoint(token))
+					b.WriteString(m.paint(secondary, `"`) + m.endpoint(token[1:len(token)-1]) + m.paint(secondary, `"`))
 					end = at[1]
 					continue
 				case "direction":

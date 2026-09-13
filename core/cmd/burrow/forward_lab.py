@@ -13,7 +13,6 @@ import struct
 import subprocess
 import termios
 import time
-import sqlite3
 import json
 
 
@@ -155,15 +154,9 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
     traffic(fresh)
     burrow(w, "close", "forward-owner", "--yes")
     assert absent(port) and burrow(w, "tunnel", "list") == []
-    with sqlite3.connect(w / "workspace.db") as db:
-        plans = [json.loads(row[0]) for row in db.execute("select p.plan_json from throw_plans p join throw_records r on r.plan_id=p.id, json_each(r.throw_json, '$.runs') j where json_extract(j.value, '$.runId')=?", (created["runID"],))]
-        assert len(plans) == 1 and plans[0]["confirmationId"]
-        assert db.execute("select count(*) from throw_confirmations where id=?", (plans[0]["confirmationId"],)).fetchone()[0] == 1
-        request = json.loads(plans[0]["chainConfig"]["request"])
-        assert request["tunnel"]["id"] == created["id"] and request["tunnel"]["listen"] == created["listen"]
-        assert request["tunnel"]["destination"] == created["destination"]
     assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
     print("PASS reviewed local forward, real traffic, retained inventory and selected removal", flush=True)
+    return created
 
 
 def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, reverse=False, destination_port="2222"):
@@ -401,16 +394,12 @@ printf '%s' "$n" > /tmp/reverse-probe-count
             burrow(w, "close", "reverse-owner", "--yes")
             assert not listeners(32451) and burrow(w, "tunnel", "list") == []
             assert evidence.read_text() == "preserve reverse evidence"
-            with sqlite3.connect(w / "workspace.db") as db:
-                plans = [json.loads(row[0]) for row in db.execute("select p.plan_json from throw_plans p join throw_records r on r.plan_id=p.id, json_each(r.throw_json, '$.runs') j where json_extract(j.value, '$.runId')=?", (first_tunnel["runID"],))]
-                assert len(plans) == 1 and plans[0]["confirmationId"]
-                request = json.loads(plans[0]["chainConfig"]["request"])["tunnel"]
-                assert request["direction"] == "R" and request["id"] == first_tunnel["id"]
             for path in w.rglob("*"):
                 if path.is_file():
                     assert canary.encode() not in path.read_bytes(), path
             assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
-            print("PASS reverse GatewayPorts policies, IPv6, server refusal, loss/close and non-secret Hovel evidence", flush=True)
+            print("PASS reverse GatewayPorts policies, IPv6, server refusal, loss/close and secret exclusion", flush=True)
+            return first_tunnel
         finally:
             policy()
             echo.shutdown()

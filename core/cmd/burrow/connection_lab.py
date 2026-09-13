@@ -1,6 +1,7 @@
 """Disposable pinned OpenSSH container; actual Burrow -> Hovel -> module path."""
 import base64
 import argparse
+from contextlib import closing
 import hashlib
 import http.client
 import fcntl
@@ -73,6 +74,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
     env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
     daemons = []
     children = []
+    forward_evidence = []
+    full_evidence = False
     container = None
     key = root / "client key"
     command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key)
@@ -170,12 +173,12 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
         if not smoke and not args.proxy_check and not args.shell_check and not args.forward_check:
-            reverse_checks(binary, env, screen_check, burrow, w, first, options, container, command)
+            forward_evidence.append(reverse_checks(binary, env, screen_check, burrow, w, first, options, container, command))
         if args.reverse_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
         if not smoke and not args.proxy_check:
-            forward_checks(binary, env, screen_check, burrow, w, first, options, container, command)
+            forward_evidence.append(forward_checks(binary, env, screen_check, burrow, w, first, options, container, command))
         if args.forward_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
@@ -685,11 +688,7 @@ launch:
         burrow(w, "--offline", "status", ok=False)
         burrow(w, "connect", "afterloss", "127.0.0.1", "tester", *plain, ok=False)
         assert not (w / "burrow/afterloss").exists() and evidence.read_text() == "retain evidence"
-        # The Hovel throw evidence includes real plans and confirmations.
-        with sqlite3.connect(w / "workspace.db") as db:
-            plans = [json.loads(r[0]) for r in db.execute("select plan_json from throw_plans")]
-            assert plans and all(p["confirmationId"] for p in plans)
-            assert db.execute("select count(*) from throw_confirmations").fetchone()[0] >= len(plans)
+        full_evidence = True
         timing("failure ownership and evidence")
         print("PASS production key/agent auth, trust, cancellation, ownership, cross-workspace isolation, loss/reconnect, bounded logs and truthful close", flush=True)
     finally:
@@ -703,4 +702,27 @@ launch:
                 pass
         if container:
             command("docker", "rm", "-f", container)
+        # Live Python SQLite readers previously reproduced database corruption;
+        # see docs/research/retained-consumer-proof.md. Inspect only after exit.
+        def exited(pid):
+            try:
+                return Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1].startswith("Z")
+            except FileNotFoundError:
+                return True
+        wait(lambda: all(exited(pid) for pid in daemons))
+        if forward_evidence or full_evidence:
+            with closing(sqlite3.connect(w / "workspace.db")) as db:
+                assert db.execute("pragma integrity_check").fetchone() == ("ok",)
+                for tunnel in forward_evidence:
+                    plans = [json.loads(row[0]) for row in db.execute("select p.plan_json from throw_plans p join throw_records r on r.plan_id=p.id, json_each(r.throw_json, '$.runs') j where json_extract(j.value, '$.runId')=?", (tunnel["runID"],))]
+                    assert len(plans) == 1 and plans[0]["confirmationId"]
+                    assert db.execute("select count(*) from throw_confirmations where id=?", (plans[0]["confirmationId"],)).fetchone()[0] == 1
+                    request = json.loads(plans[0]["chainConfig"]["request"])["tunnel"]
+                    for field in ("id", "direction", "listen", "destination"):
+                        assert request[field] == tunnel[field], (field, request, tunnel)
+                if full_evidence:
+                    plans = [json.loads(r[0]) for r in db.execute("select plan_json from throw_plans")]
+                    assert plans and all(p["confirmationId"] for p in plans)
+                    assert db.execute("select count(*) from throw_confirmations").fetchone()[0] >= len(plans)
+            print("PASS post-shutdown database integrity and confirmed Hovel forwarding evidence", flush=True)
         timing("fixture cleanup")
