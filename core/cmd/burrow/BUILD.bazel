@@ -41,6 +41,7 @@ go_binary(
 
 go_binary(
     name = "burrow",
+    visibility = ["//core/prototype_manager:__pkg__"],
     srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go"],
     deps = [
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",

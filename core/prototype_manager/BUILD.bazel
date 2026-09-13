@@ -1,0 +1,55 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_python//python:defs.bzl", "py_test", "py_binary")
+
+go_binary(
+    name = "burrow",
+    srcs = ["main.go", "ssh.go"],
+    deps = ["//core/launch", "//core/connection", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],
+)
+
+py_test(
+    name = "check",
+    srcs = ["check.py", "latency.py"],
+    args = ["$(location :burrow)", "$(location //core/cmd/burrow:burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :baseline)"],
+    data = [":burrow", "//core/cmd/burrow:burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":baseline"],
+    tags = ["local", "external"],
+    size = "large",
+    legacy_create_init = 0,
+)
+
+py_binary(
+    name = "instrument",
+    srcs = ["instrument.py"],
+    legacy_create_init = 0,
+)
+
+genrule(
+    name = "baseline_sources",
+    srcs = ["//core/connection:proof_sources"],
+    outs = ["baseline/module.go", "baseline/connection_linux.go", "baseline/commands.go", "baseline/profiles.go", "baseline/prompt_linux.go", "baseline/ssh_config.go", "baseline/hovel-module.yaml"],
+    tools = [":instrument"],
+    cmd = "$(location :instrument) $(@D)/baseline $(SRCS)",
+)
+
+go_library(
+    name = "baseline_connection",
+    srcs = ["baseline/module.go", "baseline/connection_linux.go", "baseline/commands.go", "baseline/profiles.go", "baseline/prompt_linux.go", "baseline/ssh_config.go"],
+    embedsrcs = ["baseline/hovel-module.yaml"],
+    importpath = "github.com/Bochner/burrow/core/connection",
+    deps = ["//core/launch", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],
+)
+
+go_binary(
+    name = "baseline",
+    srcs = ["baseline.go"],
+    deps = [":baseline_connection", "//core/launch", "@hovel_sdk//:hovel"],
+)
+
+py_binary(
+    name = "latency",
+    srcs = ["check.py", "latency.py"],
+    main = "check.py",
+    args = ["$(location :burrow)", "$(location //core/cmd/burrow:burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :baseline)", "--measure"],
+    data = [":burrow", "//core/cmd/burrow:burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":baseline"],
+    legacy_create_init = 0,
+)

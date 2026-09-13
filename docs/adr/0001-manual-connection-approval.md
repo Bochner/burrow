@@ -162,7 +162,7 @@ installation/download time and verified daemon startup separately. Collect at
 least 20 cold and 20 warm samples per variant; exercise both key success and a
 private challenge, plus cancellation.
 
-Accepted criterion: warm submission-to-dispatch p95 at most 1 second and median
+Historical criterion (superseded below): warm submission-to-dispatch p95 at most 1 second and median
 at least 50% below the freshly measured equivalent baseline. Cold p95 must not
 regress from that baseline by more than 10%; report startup separately so warm
 numbers cannot hide its cost. List and sibling close must remain responsive
@@ -170,6 +170,16 @@ during a deliberately stalled prompt. These are proof gates, not a network or
 password-entry SLA. If correctness passes but these thresholds do not, publish
 the negative performance result and use the fallback unless the owner revises
 the criterion with the measurements in view.
+
+Owner clarification during #71 on 2026-09-12 supersedes this performance gate:
+the measured warm dispatch median improved from 2.98 s to 1.84 s (about 38%),
+which is sufficient for now. The owner disputed the 50% hard requirement and
+prioritized getting other features working. Do not block this candidate on the
+50% reduction or one-second threshold, or benchmark the fallback merely to
+enforce them. Faster, near-immediate connections remain a desired follow-up;
+these measurements do not establish parity with ordinary SSH. The correctness
+contract and separate #72/#73 proof and integration boundaries still apply.
+See [the retained-manager evidence](../research/retained-manager-proof.md).
 
 Historical #73 evidence measured 6.041/6.198 seconds for key-auth connect and
 3.137/3.149 seconds for a reverted public-setup-RPC experiment. Those are totals
