@@ -21,7 +21,7 @@ func (Module) Info() hovel.Info {
 }
 func (Module) Schema() hovel.Schema {
 	req := []hovel.Requirement{hovel.Req("workspace", "string", "Explicit canonical Burrow workspace"), {Key: "command", Type: "string", Description: "Saved-profile command; empty inspects workspace"}, {Key: "connection", Type: "string", Description: "Retired per-connection input; use the manager connect adapter"}}
-	for _, key := range []string{"action", "generation", "session", "request", "review"} {
+	for _, key := range []string{"action", "generation", "session", "request", "review", "build"} {
 		req = append(req, hovel.Requirement{Key: key, Type: "string"})
 	}
 	return hovel.Schema{ChainConfig: req}

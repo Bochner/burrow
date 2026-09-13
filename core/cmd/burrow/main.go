@@ -104,7 +104,6 @@ func run(args []string) error {
 		command = fs.Arg(0)
 	}
 	if command != "status" && command != "tui" {
-		defer launch.Phase("cli:" + command)()
 		args := fs.Args()
 		wizard := len(args) == 1 && command == "connect"
 		if !wizard {
@@ -112,6 +111,7 @@ func run(args []string) error {
 				return e
 			}
 		}
+		defer launch.Phase("cli:" + command)()
 		interrupt, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		ctx, cancel := context.WithTimeout(interrupt, 60*time.Second)

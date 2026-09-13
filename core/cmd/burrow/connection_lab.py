@@ -21,7 +21,7 @@ import time
 
 from core.cmd.burrow.authentication_lab import authentication_matrix
 from core.cmd.burrow.manager_lab import manager_checks
-from core.cmd.burrow.latency_lab import measure
+from core.cmd.burrow.latency_lab import measure, phase_totals
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=5, metavar="PATH")
@@ -84,8 +84,13 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         wait(ready)
         # This sandbox image disables forwarding by default; the jump-host
         # fixture explicitly enables TCP forwarding and reloads only its sshd.
+        # OpenSSH 9.8+ also penalizes a source address after rapid authentication
+        # failures; the deliberate failure scenarios below would then block the
+        # following connects (#77 measured this once Burrow got faster). The
+        # disposable server's brute-force defense is not under test here.
         command("docker", "exec", container, "sh", "-c",
-                "sed -i 's/^AllowTcpForwarding no$/AllowTcpForwarding yes/' /config/sshd/sshd_config && kill -HUP $(cat /config/sshd.pid)")
+                "sed -i 's/^AllowTcpForwarding no$/AllowTcpForwarding yes/' /config/sshd/sshd_config && "
+                "echo 'PerSourcePenalties no' >> /config/sshd/sshd_config && kill -HUP $(cat /config/sshd.pid)")
         hostkey = command("docker", "exec", container, "cat", "/config/ssh_host_keys/ssh_host_ed25519_key.pub").split()
         fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(base64.b64decode(hostkey[1])).digest()).decode().rstrip("=")
         def burrow(w, *args, ok=True):
@@ -113,6 +118,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             measure(binary,root,env,container,port,key,command,wait)
             raise SystemExit(0)
         options = ["--key", str(key), "--port", str(port), "--yes"]
+        phases = root / "phases.jsonl"
+        env["BURROW_PHASE_TRACE"] = str(phases)
         def state_is(w, name, expected):
             s = burrow(w, "inspect", name)
             return s if s["state"] == expected else None
@@ -129,12 +136,24 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         review = burrow(w, "connect", "gateway", "127.0.0.1", "tester", *options[:-1])
         assert "SSH command:" in review["review"] and "StrictHostKeyChecking=no" in review["review"]
         assert "Generated config:" in review["review"] and not (w / "burrow/gateway").exists()
+        phase_offset = phases.stat().st_size if phases.exists() else 0
+        submitted = time.monotonic_ns()
         first = burrow(w, "connect", "gateway", "127.0.0.1", "tester", *options)
         def connected():
             state = burrow(w, "inspect", "gateway")
             assert state["state"] != "lost", state
             return state if state["state"] == "connected" else None
         first = wait(connected)
+        # Check placement (#77): a warm connect re-verifies the daemon before every
+        # RPC, CLI launch, adapter start and reservation, but hashes each unchanged
+        # executable once per process (frontend, throw adapter) and never re-reads
+        # the module inventory; that is startup work bound by the throw's build digest.
+        # The window also includes the inspect polling above, which only adds
+        # verifications; the hash bound is what proves reuse.
+        totals = phase_totals(phases, phase_offset, submitted, first["connected"])
+        assert totals["status"]["count"] >= 10 and totals["hovel-cli:throw"]["count"] == 1, totals
+        assert totals["hash"]["count"] <= 4, totals
+        assert not {"hovel-cli:module", "register-module", "call:GetModuleCatalog"} & set(totals), totals
         actual = Path(f'/proc/{first["masterPID"]}/cmdline').read_bytes().split(b"\0")[:-1]
         shown = review["review"].split("SSH command:\n",1)[1].split("\nGenerated config:",1)[0]
         assert shlex.split(shown) == [a.decode() for a in actual]
