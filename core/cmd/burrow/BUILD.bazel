@@ -1,0 +1,102 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+py_test(
+    name = "terminal_test",
+    srcs = ["terminal_check.py"],
+    main = "terminal_check.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :package)", "$(location :screen_check)"],
+    data = [":burrow", ":package", ":screen_check", "@hovel_linux_wheel//file"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "connection_test",
+    srcs = ["connection_check.py"],
+    main = "connection_check.py",
+    args = ["$(location :burrow)"],
+    data = [":burrow"],
+    legacy_create_init = 0,
+)
+py_test(
+    name = "connection_lab",
+    srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "latency_lab.py"],
+    main = "connection_lab.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)"],
+    data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check", ":legacy_module"],
+    tags = ["local", "external"],
+    size = "large",
+    legacy_create_init = 0,
+)
+
+go_binary(
+    name = "legacy_module",
+    srcs = ["legacy_module.go"],
+    deps = ["//core/prototype_manager:legacy_connection", "@hovel_sdk//:hovel"],
+    testonly = True,
+)
+
+go_binary(
+    name = "burrow",
+    visibility = ["//core/prototype_manager:__pkg__"],
+    srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go"],
+    deps = [
+        "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
+        "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
+        "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
+        "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",
+        "@land_charm_bubbles_v2//help", "@land_charm_bubbles_v2//key", "@land_charm_lipgloss_v2//:lipgloss",
+        "@land_charm_lipgloss_v2//table", "@com_github_charmbracelet_x_ansi//:ansi",
+        "@com_github_charmbracelet_x_term//:term", "@com_github_charmbracelet_colorprofile//:colorprofile",
+    ],
+)
+pkg_tar(
+    name = "package",
+    srcs = [":burrow", "//core/connection:hovel-module.yaml", "@hovel_sdk//:LICENSE"],
+    extension = "tgz",
+    mode = "0755",
+)
+go_binary(
+    name = "screen_check",
+    srcs = ["screen_check.go"],
+    deps = ["@com_github_charmbracelet_x_vt//:vt"],
+    testonly = True,
+)
+py_test(
+    name = "setup_test",
+    srcs = ["setup_check.py"],
+    main = "setup_check.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :package)", "$(location :screen_check)"],
+    data = [":burrow", ":package", ":screen_check", "@hovel_linux_wheel//file"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)
+
+go_test(
+    name = "interaction_test",
+    srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "frame_test.go", "presentation_test.go"],
+    deps = ["@com_github_charmbracelet_x_vt//:vt",
+        "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
+        "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
+        "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
+        "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",
+        "@land_charm_bubbles_v2//help", "@land_charm_bubbles_v2//key", "@land_charm_lipgloss_v2//:lipgloss",
+        "@land_charm_lipgloss_v2//table", "@com_github_charmbracelet_x_ansi//:ansi",
+        "@com_github_charmbracelet_x_term//:term", "@com_github_charmbracelet_colorprofile//:colorprofile",
+    ],
+)
+
+py_test(
+    name = "profile_test",
+    srcs = ["profile_check.py"],
+    main = "profile_check.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)"],
+    data = [":burrow", "@hovel_linux_wheel//file"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)

@@ -13,7 +13,7 @@ of the repository.
 
 Follow the [development guide](docs/site/src/content/spec/development-guide.html)
 for repository layout and [docs authoring conventions](docs/agents/docs.md)
-when changing the book. Application code will live under `core/`; add other
+when changing the book. Application code lives under `core/`; add other
 Hovel-style areas only when they have an actual responsibility.
 
 For nontrivial behavior, leave a focused runnable check. Report the relevant

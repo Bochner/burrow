@@ -2,16 +2,20 @@
 
 ![Burrow](docs/site/public/assets/burrow.png)
 
-Burrow is a planned Go SSH manager for homelab operations, authorized red-team
+Burrow is a Go SSH manager for homelab operations, authorized red-team
 emulation, controlled lab exercises, defensive validation, and operator workflow
-automation. Burrow will transparently manage a pinned Hovel dependency, initially
-supporting only Hovel instances it starts. Normal quit will detach and retain
-the daemon and live resources. General existing-daemon attachment is deferred.
+automation. Burrow transparently manages a pinned Hovel dependency, initially
+supporting only Hovel instances it starts. Normal quit reviews live connections
+and can keep them running in the retained daemon or close them explicitly.
+General existing-daemon attachment is deferred.
 
-The project is charting an implementation-ready specification for useful LazySSH
-SSH parity: shells, file transfers, forwarding, saved connections, and user
-scripting through supported Hovel contracts. Linux is the initial operator
-platform. **No production SSH executable or installable package exists yet.**
+The project is implementing useful LazySSH SSH parity in five approved
+milestones: shells, file transfers, forwarding, saved connections, and user
+scripting through supported Hovel contracts. Linux amd64 is the initial operator
+platform. **MVP 1 (setup, profiles and connections) is complete: the production
+Linux package launches a verified Hovel workspace, manages saved connection
+collections and authenticates real retained OpenSSH connections. Interactive
+shells, forwarding, file workflows, scripts and skills follow in MVP 2 to 5.**
 
 > **Authorized red-team emulation only.** Use Burrow only in environments you own
 > or are explicitly authorized to assess, with written scope and approvals. See
@@ -37,14 +41,26 @@ open and completed issues in the same views as Tirnaill.
 
 ## Install
 
-There is no production runtime package to install yet. Inert external SDK,
-terminal and setup proofs are preserved as evidence; the first real SSH slice
-remains a Wayfinder decision. See the
+Build the production Linux amd64 package and run it against a private
+workspace. First launch downloads the pinned Hovel wheel into the user cache;
+`--offline` reuses a verified cached executable.
+
+```sh
+aspect burrow package
+aspect burrow run -- --workspace /absolute/private/workspace
+```
+
+The declared `//core/cmd/burrow:package` target produces an archive containing
+the `burrow` executable and the public-SDK module manifest. Follow the
+[launch guide](docs/site/src/content/spec/launch.html), then the
+[named connection](docs/site/src/content/spec/connections.html) and
+[saved collection](docs/site/src/content/spec/profiles.html) guides. There is no
+distribution release yet. See the
 [proposed Hovel compatibility convention](docs/research/hovel-daemon-compatibility-handoff.md)
 for the deferred upstream handoff and current development boundary.
 
 The [prototype evidence guide](docs/research/prototype-evidence.md) indexes the
-preserved code, pins, results and commands for continuing development.
+preserved proofs, pins, results and commands that preceded the production code.
 
 ## Develop
 
@@ -62,17 +78,21 @@ Useful commands:
 
 | Command | Description |
 | --- | --- |
-| `aspect burrow-check` | Run metadata, documentation, SDK, daemon reuse and host-pinned SSH proof checks. |
-| `aspect burrow-check ci` | Build every prototype and run portable checks; omit the host-pinned SSH fixture. |
+| `aspect burrow-check` | Run metadata, documentation, SDK, daemon reuse and production SSH checks; requires Docker and OpenSSH client tools. |
+| `aspect burrow-check ci` | Build production packages and proofs and run portable checks without Docker. |
+| `aspect burrow package` | Build the production Linux amd64 package. |
+| `aspect burrow check` | Run the production frontend, launch, terminal and profile checks. |
+| `aspect burrow ssh-check` | Run production connection acceptance against a digest-pinned disposable OpenSSH Docker server. |
 | `aspect build //:research` | Check the research metadata build graph; not SSH behavior or prose. |
 | `aspect burrow-site build` | Build the hermetic Astro documentation book. |
 | `aspect burrow-site check` | Validate generated pages, internal links, assets, and search. |
 | `aspect burrow-site stage` | Materialize the documentation site under `_site/`. |
 
-The full local gate requires the exact OpenSSH binaries documented in the
-[transport proof](core/prototype_transport/README.md). CI uses the explicit `ci`
-gate and uploads the validated site. Pages promotes
-that exact artifact after successful main-branch CI.
+CI runs the portable `ci` gate, the Docker-backed SSH acceptance lab and site
+staging, then uploads the validated site. Pages promotes that exact artifact
+after successful main-branch CI. The historical transport proof keeps its own
+host-binary prerequisites documented in
+[its README](core/prototype_transport/README.md).
 
 ## Repository layout
 
@@ -82,7 +102,11 @@ and agent instructions. Only areas with actual content are created.
 | Path | Purpose |
 | --- | --- |
 | `.aspect/` | Repository workflows backed by declared Bazel targets. |
-| `core/prototype_sdk/`, `core/prototype_transport/` | Bounded runnable proofs, consolidated on main. |
+| `core/cmd/burrow/` | Production Linux frontend: CLI, Charm terminal interface and behavior checks. |
+| `core/launch/` | Verified pinned Hovel setup, workspace launch and daemon operations. |
+| `core/connection/` | The `burrow` Hovel module: retained OpenSSH connections, profiles and SSH config. |
+| `core/terminal/` | Embedded terminal host for the Hovel CLI tab. |
+| `core/prototype_*/` | Bounded historical proofs, preserved as evidence rather than production code. |
 | `docs/site/` | Astro Pages source, book content, shared components, and assets. |
 | `docs/tools/docs/` | Documentation validation and staging tools. |
 | `docs/research/` | Primary-source evidence and upstream provenance. |
@@ -90,10 +114,10 @@ and agent instructions. Only areas with actual content are created.
 | `.agents/skills/` | Installed project agent skills. |
 | `AGENTS.md`, `CLAUDE.md` | Canonical agent instructions and a symlink to the same file. |
 
-The Go application will belong under `core/` when implementation starts.
+The Go application lives under `core/` following Hovel's organization.
 `modules/` and `sdk/` are reserved for real module packages or a supported Burrow
-SDK if needed. Internal architecture and nested build workspaces remain map
-decisions. Local upstream checkouts live under ignored `.references/`.
+SDK if needed. All production capabilities belong to the single base `burrow`
+Hovel module. Local upstream checkouts live under ignored `.references/`.
 
 ## Contributing
 

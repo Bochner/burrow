@@ -1,0 +1,13 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+go_library(
+    name = "terminal",
+    srcs = ["host_linux.go"],
+    importpath = "github.com/Bochner/burrow/core/terminal",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_charmbracelet_ultraviolet//:ultraviolet", "@com_github_charmbracelet_x_ansi//:ansi", "@com_github_charmbracelet_x_vt//:vt", "@org_golang_x_sys//unix"],
+)
+go_test(
+    name = "host_test",
+    srcs = ["host_test.go"],
+    deps = [":terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet", "@org_golang_x_sys//unix"],
+)

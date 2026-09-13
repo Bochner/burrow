@@ -1,0 +1,123 @@
+<!-- burrow-doc: {"title":"Saved connection collections","group":"Engineering","order":325} -->
+<article>
+<h1>Saved connection collections</h1>
+<p>A profile is a saved recipe for connecting, such as “NAS”. A collection is a JSON file containing those recipes, such as “Homelab”. Opening a collection displays saved settings only: it never authenticates, resolves SSH aliases, opens a shell or creates tunnels. Choose a profile and explicitly connect when ready.</p>
+<h2>Automatic template</h2>
+<p>Opening a verified workspace with <code>status</code> or <code>tui</code> automatically creates <code>WORKSPACE/burrow-profiles.json</code> if it is missing. Existing bytes are never replaced during startup. The file is private (owner read/write, mode 0600), outside the disposable connection directories. This is also the default collection until another is selected.</p>
+<pre><code>burrow --workspace /home/alice/lab status
+# Template: /home/alice/lab/burrow-profiles.json
+burrow --workspace /home/alice/lab profiles</code></pre>
+<p>JSON has no comment syntax. The template uses <code>_comment</code> for instructions and <code>_example</code> for an inactive example. The sample is never listed as a saved connection. Copy it into <code>profiles</code> and edit the settings, or let Burrow save profiles for you.</p>
+<pre><code>{
+  "version": 1,
+  "_comment": "Copy _example into profiles and edit it. Never store passwords or private keys.",
+  "_example": {
+    "name": "example",
+    "host": "192.0.2.10",
+    "user": "alice",
+    "port": 22
+  },
+  "profiles": []
+}</code></pre>
+<p>The generated instructions also name the create/save commands. <code>_comment</code> and <code>_example</code> are optional documentation fields; Burrow preserves them when editing and backing up the collection. Put only connection settings and explanatory text in this file, including its documentation fields.</p>
+<h2>A filled-out collection</h2>
+<p>Here is a complete example with an explicit NAS endpoint and an SSH alias for a build server. Replace the example addresses, usernames and paths with your own. Profile names use 1–24 ASCII letters, digits, underscores or hyphens, starting with a letter or digit.</p>
+<pre><code>{
+  "version": 1,
+  "profiles": [
+    {
+      "name": "nas",
+      "host": "192.168.1.20",
+      "user": "alice",
+      "port": 22,
+      "key": "/home/alice/.ssh/id_ed25519"
+    },
+    {
+      "name": "build",
+      "host": "build-alias",
+      "user": "-",
+      "port": 0,
+      "sshConfig": "/home/alice/.ssh/config",
+      "jump": "alice@bastion.example:22"
+    }
+  ]
+}</code></pre>
+<table><thead><tr><th>Field</th><th>Meaning and example</th></tr></thead><tbody>
+<tr><td><code>name</code></td><td>Profile name, also the default live connection name: <code>nas</code>.</td></tr>
+<tr><td><code>host</code></td><td>Hostname, IP address or trusted SSH alias: <code>build-alias</code>. Aliases are kept as aliases when saved.</td></tr>
+<tr><td><code>user</code></td><td>Explicit username, or <code>-</code> to use SSH configuration.</td></tr>
+<tr><td><code>port</code></td><td>Explicit port 1–65535, or 0/omitted to use SSH configuration or 22.</td></tr>
+<tr><td><code>key</code></td><td>Optional absolute key-file reference. The key bytes are never copied.</td></tr>
+<tr><td><code>sshConfig</code></td><td>Optional absolute trusted SSH config path. Omitted uses the current user's default.</td></tr>
+<tr><td><code>jump</code></td><td>Optional explicit jump chain, such as <code>alice@bastion.example:22</code>; omitted inherits configuration.</td></tr>
+<tr><td><code>agentExplicit</code>, <code>agent</code></td><td>Normally omit both: resolve the current frontend agent/config at connect time. For a deliberately fixed agent, use <code>"agentExplicit": true, "agent": "/run/user/1000/agent.sock"</code>. To disable agent use, set <code>agentExplicit</code> true and <code>agent</code> to an empty string.</td></tr>
+</tbody></table>
+<p>Key, agent and SSH-config paths must be absolute and canonical when supplied. File copies between computers may need path edits. Burrow validates the schema and names on load, but does not open key files or evaluate SSH configuration. A saved row may show “Config” or “Config/agent” until explicit connect resolves it. <code>Match exec</code> can execute local commands during SSH configuration evaluation: choose trusted configuration and review the resulting endpoint.</p>
+<h2>Create, inspect and connect</h2>
+<pre><code>burrow --workspace /home/alice/lab profile create nas 192.168.1.20 alice --key /home/alice/.ssh/id_ed25519
+burrow --workspace /home/alice/lab profiles
+burrow --workspace /home/alice/lab profile select nas
+burrow --workspace /home/alice/lab profile connect nas --prompt
+# A second live instance can have a different name:
+burrow --workspace /home/alice/lab profile connect nas --as nas-maintenance --prompt</code></pre>
+<p>Create saves without authenticating. Select displays settings without connecting. Connect uses the shared reviewed SSH flow. For unattended key/agent use, <code>profile connect nas --yes</code> launches an asynchronous retained attempt; inspect its state with <code>inspect nas</code>. <code>--prompt</code> waits for authentication with private terminal entry. The TUI always uses its embedded authentication flow.</p>
+<h2>Save an active connection for later</h2>
+<pre><code>burrow --workspace /home/alice/lab connect nas 192.168.1.20 alice --prompt
+# After successful authentication, Burrow offers “Save profile as”.
+# Enter accepts the name; edit it to choose another; Escape skips saving.
+
+# Save manually, including a connection retained from an earlier frontend:
+burrow --workspace /home/alice/lab profile save nas
+burrow --workspace /home/alice/lab profile save nas --as home-nas
+
+# Later, after explicitly closing the old live connection:
+burrow --workspace /home/alice/lab close nas --yes
+burrow --workspace /home/alice/lab profile connect home-nas --prompt</code></pre>
+<p>Only an authenticated active owner can supply reusable settings. A failed, connecting or lost connection cannot be saved as a successful connection. Saving preserves original alias/override choices, not the resolved address or an inherited temporary agent socket. Unchanged profiles do not trigger another automatic save offer. The offer uses the active connection's name by default; an existing different profile requires replacement review. Skipping or failing a save leaves the successful connection alive. A noninteractive asynchronous connection offers no terminal dialog: use <code>profile save</code> after observing <code>connected</code>.</p>
+<p>Profiles contain no passwords, passphrases, private-key contents, process IDs, master sockets, authentication-helper sockets or one-time trust approvals. They are settings, not a credential backup. The <code>knownHosts</code> setting was removed in issue #73. Remove it from older collections before loading them; existing files and known-host records are not rewritten or deleted. Do not put secrets in command arguments, collection comments or example fields.</p>
+<h2>Edit and delete</h2>
+<pre><code># Edit replaces the full saved recipe; include options you want to keep.
+burrow --workspace /home/alice/lab profile edit nas 192.168.1.21 alice --port 2222 --key /home/alice/.ssh/id_ed25519
+# Read the review, then repeat with --yes to approve.
+burrow --workspace /home/alice/lab profile edit nas 192.168.1.21 alice --port 2222 --key /home/alice/.ssh/id_ed25519 --yes
+burrow --workspace /home/alice/lab profile delete nas
+burrow --workspace /home/alice/lab profile delete nas --yes</code></pre>
+<p>Changing or deleting the recipe affects future connections only. An already connected NAS remains connected, and its evidence remains. Use <code>close NAME</code> to end a live resource. The TUI's Edit action fills the complete command with current settings. Review responses include the collection path and revision; automated callers can repeat those as <code>--collection PATH --revision HASH --yes</code> to refuse changes since review. The TUI carries these values automatically. A stale edit must be reviewed again.</p>
+<h2>Open another collection and make backups</h2>
+<pre><code># Create/open a collection in an existing trusted directory:
+burrow --workspace /home/alice/lab profile collection /home/alice/homelab.json
+# Every later save/edit/delete uses that selected file, even in another invocation.
+burrow --workspace /home/alice/lab profile create router 192.168.1.1 admin
+
+# Open an existing file, never connect automatically:
+burrow --workspace /home/alice/lab profile load /home/alice/homelab.json
+burrow --workspace /home/alice/lab --load /home/alice/homelab.json tui
+
+# Backup destination must be new; existing backups are preserved.
+burrow --workspace /home/alice/lab profile backup /home/alice/homelab-before-changes.json
+# To use that backup, explicitly open it:
+burrow --workspace /home/alice/lab profile load /home/alice/homelab-before-changes.json
+# To return to the workspace default:
+burrow --workspace /home/alice/lab profile load /home/alice/lab/burrow-profiles.json</code></pre>
+<p>This is an open-and-edit model. Loading a backup makes the backup itself the selected editable collection. Two workspaces opening the same file share future profile edits; they still own separate live connections and evidence. Hovel remembers the selected file path per workspace. Backing up Hovel alone does not copy an external collection; use the profile backup command or include the file in your own backups.</p>
+<p>Invalid JSON, unknown fields, duplicate profile names, unsupported versions, unsafe paths/permissions and missing selected collections produce visible errors. Failed loads keep the previous selection. Saves use private temporary files and atomic replacement; failures preserve prior data, and conflicting edits are refused. Collections are bounded to 1 MiB. Symlink collection paths and untrusted writable parent directories are refused. An error after replacement but before filesystem synchronization reports uncertain durability rather than claiming the old bytes remain. There is no automatic overwrite of backups, legacy LazySSH import, cloud synchronization or automatic reconnect.</p>
+<h2>Terminal and Hovel usage</h2>
+<p>The saved table uses the shared Catppuccin field colors and remains separate from active SSH connections. Focus Saved with F6/Shift+F6, choose a row with arrows, and press Enter for actions; clicking the section title also opens actions. Clicking a row selects it without connecting. Actions populate the shared command prompt so you can finish or review the command before submitting. Tab completes profile names, editable settings, active connection names and connection options. F1 opens help. Narrow and no-color layouts retain keyboard access. Shell is unavailable in this slice, proxy shows the jump setting, and No-Term is Yes because current masters are shell-free; this does not implement future shell/tunnel settings.</p>
+<pre><code># Retained profile management history:
+burrow --workspace /home/alice/lab history
+
+# Through the existing burrow@0.1.0 Hovel module in a chosen chain:
+chain config set workspace /home/alice/lab
+chain config set command "profile create nas 192.168.1.20 alice"
+throw --now --allow-dangerous</code></pre>
+<p>The module's optional <code>command</code> input accepts the same saved-profile management commands and returns structured results. It must run under the verified workspace daemon. Connection authentication uses the same <code>burrow@0.1.0</code> module with its <code>connection</code> JSON input and private frontend prompts. Do not combine <code>command</code> and <code>connection</code>. Hovel’s danger allowance is module-wide, so workspace/profile throws also require <code>--allow-dangerous</code>; profile edit/delete review checks still apply. Keep explicit operation/chain selection when automating Hovel. Management history uses Hovel's retained logs and timestamps; authentication answers and invalid commands from the Burrow command seam are excluded. History follows Hovel's existing retention policy, not an unlimited transcript. Module stdout remains framed JSON-RPC.</p>
+<h2>Validation</h2>
+<pre><code>aspect test //core/cmd/burrow:profile_test
+aspect test //core/cmd/burrow:interaction_test
+aspect burrow ssh-check
+aspect burrow-site check
+aspect burrow-check ci
+aspect burrow-check</code></pre>
+<p>The portable profile check runs actual Burrow commands against an isolated Hovel workspace: template creation, load-only behavior, collection selection across invocations, backup/reopen, invalid/unwritable inputs, conflicts, persistent history and SDK commands. It watches a listener and an executable SSH-config marker to catch accidental network/config evaluation. The controlled SSH check covers saving an authenticated owner, profile-to-connect, edit/delete preserving live resources, and interactive save-after-success with secret canaries. Terminal checks cover the saved table, actions, completion, colors, narrow layouts and save dialog.</p>
+<p>Source evidence: <a href="https://github.com/Bochner/burrow/issues/47">issue #47</a>, the accepted <a href="https://github.com/Bochner/burrow/issues/11">ownership/load-only policy</a>, and pinned <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/config.py">LazySSH configuration source</a>. Unlike LazySSH's default-path save helpers and single overwritten backup, every operation uses the selected source and backups refuse existing destinations. Human approval of visual polish remains distinct from automated acceptance.</p>
+</article>

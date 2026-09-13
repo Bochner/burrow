@@ -1,0 +1,16 @@
+apiVersion: hovel.dev/v1alpha1
+kind: ModulePackage
+metadata:
+  name: burrow
+  version: 0.1.0
+  moduleType: survey
+  summary: Manage workspace, saved profiles and retained SSH connections.
+  tags: [dangerous]
+  license: Apache-2.0
+runtime:
+  protocol: jsonrpc-stdio
+launch:
+  - selector:
+      os: linux
+      arch: amd64
+    command: ["burrow", "module"]

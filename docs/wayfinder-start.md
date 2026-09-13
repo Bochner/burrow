@@ -20,13 +20,33 @@ shipping the full rewrite is the subsequent implementation effort.
 
 ## Standing preferences from the owner
 
+- Follow-up owner instruction (2026-09-12, #70): the connection recap is the
+  single manual approval, including for saved settings; show the actual SSH
+  command and generated config with semantic colors. The owner selected
+  LazySSH's host-trust options and normal current-user key/agent/password
+  behavior, superseding the earlier host-key-confirmation requirement below.
+  See [the connection-control decision](adr/0001-manual-connection-approval.md)
+  for the accepted operator behavior and the remaining proof contract.
+
+- Follow-up owner instruction (2026-09-12): every normal Burrow quit reviews
+  connections across opened workspaces and offers keep running or clean teardown,
+  with cancellation. Cleanup must preserve saved settings/evidence and refuse
+  uncertain ownership. This supersedes automatic connection retention on quit;
+  the daemon remains running in either case. The owner’s manual test found native selection included sidebars; drag must
+  select only the middle panel. The owner accepted Ctrl+C and a Copy button for
+  explicit copying without terminal key remapping. There is no auto-copy.
+  Ctrl+Shift+C is supported when forwarded; Ctrl+Shift+V remains terminal paste.
+
 - On 2026-09-12 the owner accepted the base terminal UI in #42, including the
   Charm-native layout and dimmed help overlay. Preserve the reviewed source, then
   resolve the first-slice acceptance and complete implementation sequence in #16.
   The visual acceptance does not imply integrated production SSH parity.
 
-- Latest visual direction (2026-09-12): use official Dracula Classic, replacing
-  Hovel colors and the interim muted pink. Keep Hovel backend/SDK conventions.
+- Latest accepted visual baseline (2026-09-12, #67, local `cd11ffb`): Catppuccin
+  Mocha replaces Dracula Classic. Preserve centered table cells, left-aligned
+  section titles, the searchable Ctrl+P menu, semantic metadata colors and a
+  center that shrinks without a blocking resize screen. Follow
+  [the TUI standard](agents/tui.md). Keep Hovel backend/SDK conventions.
 
 - MVP means a full daily-use TUI with useful LazySSH parity and polish: ordered
   resource tables, prompt-toolkit-style selectable completion, required connection
@@ -37,8 +57,9 @@ shipping the full rewrite is the subsequent implementation effort.
 - Use the newest stable Burrow runtime dependencies unless they conflict with
   Hovel's public backend/SDK contracts; verify library APIs through Context7.
   The [terminal design decision](https://github.com/Bochner/burrow/issues/42)
-  supersedes the earlier Charm v1 alignment and now uses owner-selected Dracula Classic throughout,
-  a balanced management overview, and the LazySSH workflow reference.
+  supersedes the earlier Charm v1 alignment. Its initial Dracula palette is
+  superseded by the accepted #67 baseline above; retain the management overview
+  and LazySSH workflow reference.
 - AI support and a Burrow-owned skill set following Hovel's conventions are critical
   requirements, added on 2026-09-11. The
   [AI and skills decision](https://github.com/Bochner/burrow/issues/33) investigates

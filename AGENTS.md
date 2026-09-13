@@ -16,6 +16,12 @@ specification. `core/prototype_*` contains bounded proofs, not a production SSH 
   workflows in `.aspect/*.axl` and cacheable work in declared Bazel targets.
 - Pin upstream versions and record provenance. Prefer the public Hovel SDK and
   protocol; do not import `core/internal` or duplicate daemon-owned state.
+- Expose all Burrow capabilities through the single base `burrow` Hovel module.
+  A second public module identity requires an explicit owner requirement recorded
+  in the originating issue, with the reason the base module cannot satisfy it.
+  Internal Go packages, subprocesses and retained sessions may remain separate;
+  they do not justify another public module. Review module registration changes
+  against this rule.
 - Keep Go application behavior independent of terminal rendering. Hovel module
   stdout belongs exclusively to framed JSON-RPC; progress uses SDK logging.
 - Reuse existing code, the Go standard library, and Hovel capabilities before
@@ -24,11 +30,21 @@ specification. `core/prototype_*` contains bounded proofs, not a production SSH 
 - Trace LazySSH source and tests before calling a workflow feature-complete.
   Preserve useful functionality, document intentional differences, and do not
   preserve accidental bugs as compatibility requirements.
-- Validate remote inputs, verify SSH host keys, keep credentials out of logs
-  and source control, and preserve Hovel's confirmation and audit contracts.
+- Validate remote inputs, keep credentials out of logs and source control,
+  and preserve Hovel's confirmation and audit contracts. Before changing
+  connection approval, authentication or owner routing, read
+  [the connection-control decision](docs/adr/0001-manual-connection-approval.md),
+  including the owner's explicit LazySSH host-trust override.
 - For nontrivial implementation changes, leave a focused runnable behavior
   check and run the relevant Aspect gate. The current `//:research` target
   only verifies the metadata build graph, not application behavior or docs prose.
+
+## Terminal presentation
+
+Before changing terminal views, tables, syntax highlighting, themes, dialogs,
+or operational metadata, read and follow [the TUI standard](docs/agents/tui.md).
+Its semantic colors, field preservation, formatting and presentation checks
+are project requirements, including for future capability implementations.
 
 ## Repository layout and documentation
 
@@ -43,8 +59,9 @@ When editing the Pages book, components, assets, or deployment workflow, read
 ## Common tasks and completion
 
 - `aspect help`: discover the checked-in workflows.
-- `aspect burrow-check`: full metadata, documentation, SDK, daemon reuse and SSH proof gate.
-- `aspect burrow-check ci`: builds all proofs and runs portable checks; excludes the host-pinned SSH fixture.
+- `aspect burrow-check`: metadata, documentation, SDK, daemon reuse and production SSH gate; requires Docker and OpenSSH client tools.
+- `aspect burrow-check ci`: builds production packages and proofs and runs portable checks without Docker.
+- `aspect burrow ssh-check`: production connection acceptance against a declared, digest-pinned disposable OpenSSH Docker server.
 - `aspect burrow-site check`: generated book, links/assets, and search checks.
 - `aspect burrow-site stage`: materialize declared site output under `_site/`.
 
@@ -54,10 +71,15 @@ pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
 
 Work in the user's current checkout. When creating a branch, switch that
 checkout to it and stay on it until the owner explicitly requests a PR and merge.
-Create PRs and merge only when the owner requests them; milestone completion
-alone is not authorization. Use one shared branch per milestone rather than
-branches for individual tickets. Research follows the same branch policy,
-overriding skill suggestions for throwaway research branches. Use additional
+The active implementation branch is `mvp2`, starting with issue #48. MVP 1
+merged into `main` through its milestone PR. Keep all MVP work and commits
+local on this shared branch until the entire milestone is done.
+Do not push, create a PR, or merge until the owner explicitly requests it;
+completion of a ticket or milestone does not authorize any of these actions.
+Use this shared branch across the milestone's tickets; each MVP milestone
+gets its own branch, merged through an owner-requested PR. Research follows
+the same branch policy, overriding skill suggestions for throwaway research
+branches. Use additional
 worktrees only when the owner requests them.
 After an authorized merge, return the checkout to clean, synchronized `main`
 and remove merged branches and temporary worktrees after preserving all work.

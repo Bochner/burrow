@@ -1,7 +1,11 @@
 def _impl(ctx: TaskContext) -> int:
     root = ctx.std.env.aspect_root_dir()
     commands = {
-        "deps": ["run", "@rules_go//go", "--", "-C", root + "/core/prototype_sdk", "get", "charm.land/bubbletea/v2@v2.0.9", "charm.land/bubbles/v2@v2.2.1", "charm.land/lipgloss/v2@v2.0.6", "github.com/pkg/sftp@v1.13.11", "golang.org/x/crypto@v0.57.0", "golang.org/x/sys@v0.48.0", "github.com/charmbracelet/x/vt@v0.0.0-20260906004030-3986e9119cf9", "github.com/charmbracelet/harmonica@v0.2.0"],
+        "consumer-check": ["test", "//core/prototype_manager:consumer_check"],
+        "manager-latency": ["run", "//core/prototype_manager:latency", "--"] + ctx.args.hovel,
+        "manager-check": ["test", "//core/prototype_manager:check"],
+        "manager-format": ["run", "@rules_go//go", "--", "fmt", root + "/core/prototype_manager/main.go", root + "/core/prototype_manager/ssh.go", root + "/core/prototype_manager/baseline.go", root + "/core/prototype_manager/consumer.go"],
+        "deps": ["run", "@rules_go//go", "--", "-C", root + "/core/prototype_sdk", "get", "charm.land/huh/v2@v2.0.3", "charm.land/bubbletea/v2@v2.0.9", "charm.land/bubbles/v2@v2.2.1", "charm.land/lipgloss/v2@v2.0.6", "github.com/pkg/sftp@v1.13.11", "golang.org/x/crypto@v0.57.0", "golang.org/x/sys@v0.48.0", "github.com/charmbracelet/x/vt@v0.0.0-20260906004030-3986e9119cf9", "github.com/charmbracelet/harmonica@v0.2.0"],
         "scripts-check": ["test", "//core/prototype_transport:direct_script_test"],
         "vt-check": ["test", "//core/prototype_terminal:vt_test", "//core/prototype_terminal:vt_cli_test"],
         "terminal": ["run", "//core/prototype_terminal:terminal", "--"] + ctx.args.hovel,
@@ -24,7 +28,7 @@ def _impl(ctx: TaskContext) -> int:
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected deps, scripts-check, terminal, terminal-check, terminal-format, vt-check, check, package, integration, frontend, interaction, setup, reuse, agent, agent-discovery, agent-install, transport, transport-format, lab, or live")
+        print("expected consumer-check, manager-check, manager-latency, manager-format, deps, scripts-check, terminal, terminal-check, terminal-format, vt-check, check, package, integration, frontend, interaction, setup, reuse, agent, agent-discovery, agent-install, transport, transport-format, lab, or live")
         return 2
     status = ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait()
     return status.code or 0

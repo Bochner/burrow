@@ -29,3 +29,18 @@ remote cache configuration, runtime history, or test reports are copied.
 The book publishes only explicit `docs/site` content and assets, not the full
 private research directory or local worktrees. This attribution applies to
 adapted upstream material; it does not select a license for all Burrow code.
+
+## Embedded terminal forms (#69)
+
+Huh `charm.land/huh/v2 v2.0.3` (MIT), verified as the latest stable release on
+2026-09-12: [release](https://github.com/charmbracelet/huh/releases/tag/v2.0.3),
+[pinned module graph](https://github.com/charmbracelet/huh/blob/v2.0.3/go.mod),
+[license](https://github.com/charmbracelet/huh/blob/v2.0.3/LICENSE).
+Its built-in `ThemeCatppuccin(true)` supplies Mocha field styles through
+`github.com/catppuccin/go v0.2.0`; Burrow preserves its shared semantic roles and
+popup compositor. Context7 integration docs were checked against the pinned
+source because Huh's v2 `Model.View` returns a string and Confirm's native Tab
+binding submits. Burrow explicitly maps Tab to selection and Enter to approval.
+The existing Bubble Tea v2.0.9, Bubbles v2.2.1 and Lip Gloss v2.0.6 pins remain.
+Dependency resolution enters through `aspect burrow-prototype deps`; Go module
+checksums and declared `MODULE.bazel`/BUILD dependencies record the graph.
