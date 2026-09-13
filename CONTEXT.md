@@ -1,8 +1,10 @@
 # Burrow context
 
-Burrow is the planned Go successor to Bochner's LazySSH, for homelab SSH
-management and authorized penetration-testing engagements. It should fit
-Hovel's extension and development conventions as Hovel evolves.
+Burrow is the Go successor to Bochner's LazySSH, for homelab SSH management
+and authorized penetration-testing engagements. It fits Hovel's extension and
+development conventions as Hovel evolves. MVP 1 (setup, profiles and
+connections) is complete on `main`; MVP 2 (shells and forwarding) is the
+active milestone.
 
 ## Established scope
 
