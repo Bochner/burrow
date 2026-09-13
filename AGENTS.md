@@ -73,8 +73,8 @@ pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
 
 Work in the user's current checkout. When creating a branch, switch that
 checkout to it and stay on it until the owner explicitly requests a PR and merge.
-The active implementation branch is `mvp2`, starting with issue #48. MVP 1
-merged into `main` through its milestone PR. Keep all MVP work and commits
+The next implementation branch is `mvp3`, starting with issue #53 after the
+MVP 2 milestone PR merges into `main`. Keep all MVP work and commits
 local on this shared branch until the entire milestone is done.
 Do not push, create a PR, or merge until the owner explicitly requests it;
 completion of a ticket or milestone does not authorize any of these actions.
