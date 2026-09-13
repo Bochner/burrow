@@ -159,7 +159,7 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
     return created
 
 
-def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, reverse=False, destination_port="2222"):
+def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, reverse=False, destination_port="2222", proxy=False):
     outer, slave = pty.openpty()
     before = termios.tcgetattr(slave)
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
@@ -180,6 +180,37 @@ def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, rev
             assert frontend.poll() is None, screen
         raise AssertionError((needle, screen))
     try:
+        if proxy:
+            wait("gateway")
+            port = free_port()
+            os.write(outer, b"proxy create \t")
+            wait("proxy create gateway")
+            os.write(outer, f"{port}\r".encode())
+            wait("Proceed?")
+            os.write(outer, b"\x1b")
+            wait("COMMAND OUTPUT")
+            assert burrow(workspace, "proxy", "inspect", "gateway")["state"] == "off"
+            os.write(outer, f"proxy create gateway {port}\r".encode())
+            wait("Proceed?")
+            os.write(outer, b"\t\r")
+            wait(f"Yes :{port}")
+            created = burrow(workspace, "proxy", "inspect", "gateway")
+            os.write(outer, b"proxy remove \t\r")
+            wait("Proceed?")
+            os.write(outer, b"\t\r")
+            wait('"removed"')
+            assert burrow(workspace, "proxy", "inspect", "gateway")["state"] == "off"
+            retained = burrow(workspace, "proxy", "create", "gateway", str(port), "--yes")
+            assert retained["id"] != created["id"]
+            wait(f"Yes :{port}")
+            os.write(outer, b"quit\r")
+            wait("Keep running")
+            os.write(outer, b"\r")
+            frontend.wait(timeout=10)
+            assert frontend.returncode == 0 and termios.tcgetattr(slave) == before
+            assert burrow(workspace, "proxy", "inspect", "gateway") == retained
+            assert burrow(workspace, "tunnel", "list") == siblings
+            return retained
         wait("gateway" if reverse else "Alt+Shift+")
         port = free_port()
         os.write(outer, b"tunnel create \t\t" if reverse else b"tunnel create \t")

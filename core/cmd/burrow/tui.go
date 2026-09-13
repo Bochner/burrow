@@ -360,7 +360,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return shellRequested{args[1]} }
 				}
 				m.output = "Running reviewed command through Hovel…"
-				if args[0] == "tunc" || (args[0] == "tund" && len(args) == 2) || (args[0] == "tunnel" && (args[1] == "create" || (args[1] == "remove" && len(args) == 3))) || args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
+				if (args[0] == "proxy" && args[1] != "inspect") || args[0] == "tunc" || (args[0] == "tund" && len(args) == 2) || (args[0] == "tunnel" && (args[1] == "create" || (args[1] == "remove" && len(args) == 3))) || args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
 				return m, func() tea.Msg {
@@ -421,18 +421,23 @@ func (m ui) activeConnections(w int) string {
 	for _, row := range visible {
 		proxy, terminal, tunnels := "—", "—", "—"
 		if row.Generation != "" {
+			proxy = "No"
 			terminal = "Local PTY"
 			if row.State == "connected" {
 				tunnels = fmt.Sprint(row.TunnelCount)
 			}
-			if row.ProxyPort != 0 && row.State == "connected" {
-				proxy = fmt.Sprint(row.ProxyPort)
+			if row.State != "connected" {
+				proxy = "Unavailable"
+			} else if row.Proxy.State == "listening" && row.ProxyPort != 0 {
+				proxy = fmt.Sprintf("Yes :%d", row.ProxyPort)
+			} else if row.Proxy.ID != "" || row.ProxyPort != 0 {
+				proxy = "Unverified"
 			}
 		}
 		if m.demo {
 			terminal, tunnels = "Native", "0"
 			if row.Name == "gateway" && row.State == "connected" {
-				proxy, tunnels = "1080", "2"
+				proxy, tunnels = "Yes :1080", "2"
 			}
 		}
 		socket := safe(row.Socket)
@@ -589,6 +594,9 @@ tunc myserver l 8080 localhost 80	Example: local port 8080 reaches port 80 from 
 tunc myserver r 8080 localhost 80	Example: remote port 8080 reaches port 80 from this machine
 tunnel check NAME/ID	Test destination traffic; listening alone does not prove reachability
 tunnel remove NAME/ID	Review and remove one listener (alias: tund NAME/ID)
+proxy create NAME LISTEN	Add SOCKS4/5 TCP to an existing master (default bind 127.0.0.1)
+proxy inspect NAME	Verify SOCKS endpoint and owner metadata; not destination reachability
+proxy remove NAME	Review removal of SOCKS only; preserve connection and L/R forwards
 Reverse LISTEN 0 requests a random port. Tab completes live names and tunnel IDs.
 The dashboard refreshes automatically, including changes made by external CLI clients.
 

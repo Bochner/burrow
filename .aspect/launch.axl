@@ -5,7 +5,7 @@ def _impl(ctx: TaskContext) -> int:
         # Never remove workspace state or retained runtime caches here.
         return ctx.std.process.command("bazel").args(["clean"]).current_dir(root).spawn().wait().code or 0
     if ctx.args.mode[0] == "format":
-        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/manager.go", root + "/core/connection/forward.go", root + "/core/connection/forward_control_test.go"]).current_dir(root).spawn().wait()
+        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/manager.go", root + "/core/connection/forward.go", root + "/core/connection/proxy.go", root + "/core/connection/forward_control_test.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/terminal/host_linux.go", root + "/core/terminal/host_test.go"]).current_dir(root).spawn().wait()
@@ -26,13 +26,14 @@ def _impl(ctx: TaskContext) -> int:
         "shell-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--shell-check"],
         "forward-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--forward-check"],
         "reverse-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--reverse-check"],
+        "proxy-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--proxy-check"],
         "ssh-smoke": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--smoke"],
         "ssh-latency": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--measure"],
         "package": ["build", "//core/cmd/burrow:package"],
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected run, check, clean, ssh-check, shell-check, forward-check, reverse-check, ssh-smoke, ssh-latency, package, or format")
+        print("expected run, check, clean, ssh-check, shell-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
         return 2
     return ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait().code or 0
 
@@ -41,6 +42,6 @@ burrow = task(
         "mode": args.positional(default = ["check"], minimum = 0, maximum = 1),
         "options": args.trailing_var_args(description = "Burrow options, starting with --workspace PATH."),
     },
-    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, forward-check, reverse-check, ssh-latency, format or package the production Linux frontend.",
+    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, forward-check, reverse-check, proxy-check, ssh-latency, format or package the production Linux frontend.",
     implementation = _impl,
 )

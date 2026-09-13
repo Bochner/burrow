@@ -12,9 +12,10 @@ import (
 
 // Exercise the actual OpenSSH mux client, including cancel's zero exit on refusal.
 func TestForwardControlAcknowledgement(t *testing.T) {
-	for _, command := range []string{"forward", "cancel"} {
+	for _, test := range []struct{ command, direction string }{{"forward", "L"}, {"cancel", "L"}, {"forward", "D"}, {"cancel", "D"}} {
+		command := test.command
 		for _, reply := range []string{"ok", "rejected", "lost"} {
-			t.Run(command+"/"+reply, func(t *testing.T) {
+			t.Run(test.direction+"/"+command+"/"+reply, func(t *testing.T) {
 				dir, err := os.MkdirTemp("", "burrow-mux-")
 				if err != nil {
 					t.Fatal(err)
@@ -77,7 +78,7 @@ func TestForwardControlAcknowledgement(t *testing.T) {
 					done <- err
 				}()
 				s := owner{state: State{Socket: path}}
-				err = s.forwardControl(command, Tunnel{Direction: "L", Listen: "127.0.0.1:8123", Destination: "localhost:2222"})
+				err = s.forwardControl(command, Tunnel{Direction: test.direction, Listen: "127.0.0.1:8123", Destination: "localhost:2222"})
 				if (err == nil) != (reply == "ok") {
 					t.Fatalf("%s acknowledgement: %v", reply, err)
 				}

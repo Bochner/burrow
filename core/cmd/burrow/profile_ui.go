@@ -76,6 +76,7 @@ func (m ui) suggestions() []string {
 }
 
 var completionDescriptions = map[string]string{
+	"proxy create": "CONNECTION LISTEN · port or IP:port", "proxy inspect": "Verify SOCKS endpoint and owner identity", "proxy remove": "Remove SOCKS only; preserve connection/L/R",
 	"tunnel create": "CONNECTION forward|reverse LISTEN HOST PORT", "tunc": "CONNECTION l|r LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected listener", "tund": "Remove selected listener", "tunnel check": "Test tunnel connectivity (destination greeting)",
 	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",
 	"inspect": "Inspect connection state", "reconnect": "Replace a lost SSH connection", "close": "Review and close connection",
@@ -99,7 +100,7 @@ func completionDescription(value string) string {
 		return description
 	}
 	command := words[0]
-	if (command == "profile" || command == "tunnel") && len(words) > 1 {
+	if (command == "profile" || command == "tunnel" || command == "proxy") && len(words) > 1 {
 		command += " " + words[1]
 	}
 	return completionDescriptions[command]

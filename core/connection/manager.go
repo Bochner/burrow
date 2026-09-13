@@ -250,6 +250,10 @@ func (m *manager) connect(raw, review, runID string) (State, error) {
 	s := &owner{profile: saved(r.Settings), config: resolved, prepared: config, dir: dir, done: make(chan struct{}), manager: m}
 	s.state = State{Name: resolved.Name, Host: resolved.Host, User: resolved.User, Port: resolved.Port, State: "connecting", Socket: filepath.Join(dir.Name(), "master"), Session: m.Session, Generation: m.Generation, Creation: r.ID, RunID: runID, OwnerPID: m.OwnerPID, Dispatch: dispatch}
 	s.state.ProxyPort = resolved.ProxyPort
+	if resolved.ProxyPort != 0 {
+		t := Tunnel{ID: resolved.Name + "/" + r.ID, Creation: r.ID, Connection: resolved.Name, ConnectionCreation: r.ID, Session: m.Session, Generation: m.Generation, Direction: "D", Listen: fmt.Sprintf("127.0.0.1:%d", resolved.ProxyPort), State: "listening", RunID: runID}
+		s.tunnels = map[string]Tunnel{t.ID: t}
+	}
 	m.connections[r.ID] = s
 	initial := s.state
 	s.Open()

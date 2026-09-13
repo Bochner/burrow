@@ -41,6 +41,7 @@ type Config struct {
 	Review         string `json:"review,omitempty"`
 }
 type State struct {
+	Proxy          Tunnel `json:"proxy,omitzero"`
 	TunnelCount    int    `json:"tunnelCount"`
 	TunnelRevision uint64 `json:"tunnelRevision"`
 	Generation     string `json:"generation,omitempty"`
@@ -370,6 +371,7 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 		return hovel.PayloadCommandResult{}, fmt.Errorf("shell requires a verified live master; no fresh login attempted")
 	}
 	s.milestone("connection inspected")
+	s.observeProxy()
 	b, e := json.Marshal(s.state)
 	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
 }

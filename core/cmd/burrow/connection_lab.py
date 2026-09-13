@@ -25,7 +25,7 @@ from core.cmd.burrow.authentication_lab import authentication_matrix
 from core.cmd.burrow.manager_lab import manager_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
-from core.cmd.burrow.forward_lab import forward_checks, reverse_checks
+from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=6, metavar="PATH")
@@ -208,8 +208,12 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             burrow(w, "connect", "socks", "127.0.0.1", "tester", *proxy_options)
             proxied = wait(lambda: state_is(w, "socks", "connected"))
             assert proxied["proxyPort"] == proxy_port
-            def socks_banner():
-                with socket.create_connection(("127.0.0.1", proxy_port), timeout=3) as client:
+            proxy = burrow(w, "proxy", "inspect", "socks")
+            assert proxy["listen"] == f"127.0.0.1:{proxy_port}" and proxy["state"] == "listening"
+            assert proxy["connectionCreation"] == proxied["creation"]
+            assert burrow(w, "tunnel", "list") == [] and proxied["tunnelCount"] == 0
+            def socks_banner(bind="127.0.0.1", port=None):
+                with socket.create_connection((bind, port or proxy_port), timeout=3) as client:
                     stream = client.makefile("rb")
                     client.sendall(b"\x05\x01\x00")
                     assert stream.read(2) == b"\x05\x00"
@@ -238,6 +242,54 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
                 with socket.socket() as probe:
                     probe.settimeout(.5)
                     return probe.connect_ex(("127.0.0.1", proxy_port)) != 0
+            # Remove connect-time -D without touching the authenticated master.
+            removal = burrow(w, "proxy", "remove", "socks")
+            socks_banner()
+            burrow(w, "proxy", "remove", "socks", "--review", "0" * 64, "--yes", ok=False)
+            socks_banner()
+            burrow(w, "proxy", "remove", "socks", "--review", removal["digest"], "--yes")
+            wait(proxy_closed)
+            assert burrow(w, "proxy", "inspect", "socks")["state"] == "off"
+            assert not burrow(w, "inspect", "socks").get("proxyPort")
+            create = ("proxy", "create", "socks", str(proxy_port))
+            review = burrow(w, *create)
+            assert proxy_closed(), "review allocated a SOCKS listener"
+            burrow(w, *create, "--review", "0" * 64, "--yes", ok=False)
+            assert proxy_closed()
+            burrow(w, "proxy", "create", "socks", str(occupied), "--yes", ok=False)
+            assert burrow(w, "proxy", "inspect", "socks")["state"] == "off"
+            created_proxy = burrow(w, *create, "--review", review["digest"], "--yes")
+            forward_evidence.append(created_proxy)
+            assert created_proxy["id"] != proxy["id"] and created_proxy["direction"] == "D"
+            assert burrow(w, "inspect", "socks")["masterPID"] == proxied["masterPID"]
+            socks_banner()
+            burrow(w, "proxy", "remove", "socks", "--review", removal["digest"], "--yes", ok=False)
+            socks_banner()
+            # One connection-owned proxy, with no L/R identity or count consumption.
+            burrow(w, *create, "--yes", ok=False)
+            assert burrow(w, "tunnel", "list") == []
+            with socket.socket() as free:
+                free.bind(("127.0.0.1", 0))
+                local_port = free.getsockname()[1]
+            local = burrow(w, "tunc", "socks", "l", str(local_port), "localhost", "2222", "--yes")
+            reverse = burrow(w, "tunc", "socks", "r", "0", "127.0.0.1", str(local_port), "--yes")
+            assert burrow(w, "inspect", "socks")["tunnelCount"] == 2
+            assert len(burrow(w, "tunnel", "list")) == 2
+            burrow(w, "proxy", "remove", "socks", "--yes")
+            wait(proxy_closed)
+            assert burrow(w, "tunnel", "check", local["id"])["state"] == "traffic-observed"
+            assert burrow(w, "tunnel", "check", reverse["id"])["state"] == "traffic-observed"
+            assert burrow(w, "inspect", "socks")["masterPID"] == proxied["masterPID"]
+            # Explicit non-default loopback, wildcard and IPv6 binds are observed.
+            for bind in ("127.0.0.2", "0.0.0.0", "[::1]"):
+                endpoint = f"{bind}:{proxy_port}"
+                broad = burrow(w, "proxy", "create", "socks", endpoint, "--yes")
+                assert burrow(w, "proxy", "inspect", "socks")["listen"] == endpoint
+                assert broad["state"] == "listening"
+                socks_banner({"0.0.0.0": "127.0.0.1", "[::1]": "::1"}.get(bind, bind))
+                burrow(w, "proxy", "remove", "socks", "--yes")
+            burrow(w, *create, "--yes")
+            socks_banner()
             burrow(w, "close", "socks", "--yes")
             wait(proxy_closed)
             burrow(w, "profile", "connect", "saved-socks", "--as", "socks-restored", "--yes")
@@ -246,9 +298,17 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             socks_banner()
             os.kill(restored["masterPID"], signal.SIGKILL)
             wait(lambda: state_is(w, "socks-restored", "lost"))
+            assert burrow(w, "proxy", "inspect", "socks-restored")["state"] == "unavailable"
+            burrow(w, "proxy", "create", "socks-restored", str(proxy_port), "--yes", ok=False)
+            burrow(w, "proxy", "remove", "socks-restored", "--yes", ok=False)
             wait(proxy_closed)
             burrow(w, "close", "socks-restored", "--yes")
             assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
+            retained = forward_ui(binary, env, screen_check, burrow, w, lambda: proxy_port, [], proxy=True)
+            socks_banner()
+            forward_evidence.append(retained)
+            burrow(w, "proxy", "remove", "gateway", "--yes")
+            wait(proxy_closed)
         print("PASS SOCKS traffic/remote DNS, explicit loopback, config forwarding isolation, occupied-port refusal, profile round-trip, close/loss and sibling preservation", flush=True)
         if args.proxy_check:
             burrow(w, "close", "gateway", "--yes")

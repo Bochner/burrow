@@ -3,7 +3,7 @@ exports_files(["lab-image.txt", "hovel-module.yaml"])
 go_library(
     name = "connection",
     embedsrcs = ["hovel-module.yaml"],
-    srcs = ["module.go", "connection_linux.go", "commands.go", "profiles.go", "prompt_linux.go", "ssh_config.go", "manager.go", "forward.go"],
+    srcs = ["module.go", "connection_linux.go", "commands.go", "profiles.go", "prompt_linux.go", "ssh_config.go", "manager.go", "forward.go", "proxy.go"],
     importpath = "github.com/Bochner/burrow/core/connection",
     visibility = ["//visibility:public"],
     deps = ["//core/launch", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],

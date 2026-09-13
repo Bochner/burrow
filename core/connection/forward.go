@@ -55,7 +55,13 @@ func decodeForward(raw string) (forwardRequest, error) {
 	t := r.Tunnel
 	listen, e := forwardListen(t.Listen, t.Direction)
 	dest, de := forwardEndpoint(t.Destination, false)
-	if e != nil || de != nil || listen != t.Listen || dest != t.Destination || (t.Direction != "L" && t.Direction != "R") || t.RequestedListen != "" || t.State != "" || t.RunID != "" || t.ID != t.Connection+"/"+t.Creation || t.Session != r.Owner.Session || t.Generation != r.Owner.Generation || t.ConnectionCreation == "" || t.Session == "" || t.Generation == "" {
+	if t.Direction == "D" && t.Destination == "" {
+		de = nil
+	}
+	if t.Direction == "D" && t.Destination != "" {
+		return r, fmt.Errorf("SOCKS destinations are chosen by its clients, not the forwarding request")
+	}
+	if e != nil || de != nil || listen != t.Listen || dest != t.Destination || (t.Direction != "L" && t.Direction != "R" && t.Direction != "D") || t.RequestedListen != "" || t.State != "" || t.RunID != "" || t.ID != t.Connection+"/"+t.Creation || t.Session != r.Owner.Session || t.Generation != r.Owner.Generation || t.ConnectionCreation == "" || t.Session == "" || t.Generation == "" {
 		return r, fmt.Errorf("invalid forward endpoints or owner binding")
 	}
 	return r, validateTunnelCommand(r.Owner.Workspace, []string{"unforward", t.ID})
@@ -66,11 +72,14 @@ func (s *owner) forwardControl(command string, t Tunnel) error {
 	defer cancel()
 	// -O requires this master; ProxyCommand also explicitly closes fallback.
 	direction := "-L"
+	spec := t.Listen + ":" + t.Destination
 	if t.Direction == "R" {
 		direction = "-R"
+	} else if t.Direction == "D" {
+		direction, spec = "-D", t.Listen
 	}
 	cmd := exec.CommandContext(ctx, "/usr/bin/ssh", "-F", "/dev/null", "-S", s.state.Socket,
-		"-o", "ProxyCommand=/usr/bin/false", "-o", "ExitOnForwardFailure=yes", "-O", command, direction, t.Listen+":"+t.Destination, "unused")
+		"-o", "ProxyCommand=/usr/bin/false", "-o", "ExitOnForwardFailure=yes", "-O", command, direction, spec, "unused")
 	var diagnostic, output limitedBuffer
 	cmd.Stderr, cmd.Stdout = &diagnostic, &output
 	err := cmd.Run()
@@ -146,6 +155,12 @@ func (s *owner) cancelForward(t Tunnel) error {
 	if err := s.forwardControl("cancel", t); err != nil {
 		return err
 	}
+	if t.Direction == "D" {
+		listening, err := s.proxyListener(t.Listen)
+		if err != nil || listening {
+			return errForwardUncertain
+		}
+	}
 	if t.Direction == "R" {
 		// Cancellation acknowledgement may precede server processing. Observe it
 		// before claiming removal; never remove another same-port listener.
@@ -177,7 +192,7 @@ func (s *owner) liveForwards() ([]Tunnel, error) {
 	}
 	live := s.state.State == "connected" && s.checkMaster() == nil
 	for _, t := range s.tunnels {
-		if t.State == "removed" {
+		if t.State == "removed" || t.Direction == "D" {
 			continue
 		}
 		if !live {
@@ -229,6 +244,9 @@ func (m *manager) forward(raw, review, runID string) (result Tunnel, err error) 
 		if t.ID == r.Tunnel.ID {
 			return Tunnel{}, fmt.Errorf("forward request was previously submitted; use tunnel list")
 		}
+		if r.Tunnel.Direction == "D" && t.Direction == "D" && t.State != "removed" {
+			return Tunnel{}, fmt.Errorf("connection already owns a proxy; inspect or remove it first")
+		}
 	}
 	t := r.Tunnel
 	t.RunID, t.State = runID, "listening"
@@ -246,7 +264,7 @@ attempts:
 			t.Listen = net.JoinHostPort(host, strconv.Itoa(49152+mathrand.IntN(16384)))
 		}
 		for _, existing := range s.tunnels {
-			if existing.State != "removed" && existing.Direction == t.Direction && existing.Listen == t.Listen {
+			if existing.State != "removed" && (existing.Direction == "R") == (t.Direction == "R") && existing.Listen == t.Listen {
 				allocation = fmt.Errorf("forward endpoint already reserved; use tunnel list")
 				if t.RequestedListen != "" {
 					continue attempts
@@ -299,9 +317,23 @@ attempts:
 			return Tunnel{}, fmt.Errorf("reverse exposure mismatch: requested %s, observed %s; listener removed; check GatewayPorts", t.Listen, strings.Join(actual, ","))
 		}
 	}
+	if t.Direction == "D" {
+		listening, err := s.proxyListener(t.Listen)
+		if err != nil || !listening {
+			t.State = "unverified"
+			if s.cancelForward(t) == nil {
+				t.State = "removed"
+			}
+			s.tunnels[t.ID] = t
+			s.state.TunnelRevision++
+			return Tunnel{}, fmt.Errorf("SOCKS endpoint unverified; inspect proxy state before retrying; close the connection if cleanup is uncertain")
+		}
+	}
 	s.tunnels[t.ID] = t
 	s.state.TunnelRevision++
-	s.state.TunnelCount++
+	if t.Direction != "D" {
+		s.state.TunnelCount++
+	}
 	m.milestone("forward allocated; destination traffic not yet verified")
 	return t, nil
 }
@@ -351,7 +383,7 @@ func (m *manager) tunnelCommand(req hovel.PayloadCommandRequest) (hovel.PayloadC
 		if req.Command == "unforward" {
 			if err := s.cancelForward(t); err != nil {
 				if errors.Is(err, errForwardUncertain) {
-					if t.State == "listening" {
+					if t.State == "listening" && t.Direction != "D" {
 						s.state.TunnelCount--
 					}
 					t.State = "unverified"
@@ -365,7 +397,7 @@ func (m *manager) tunnelCommand(req hovel.PayloadCommandRequest) (hovel.PayloadC
 			removed.State = "removed"
 			s.tunnels[t.ID] = removed
 			s.state.TunnelRevision++
-			if t.State == "listening" {
+			if t.State == "listening" && t.Direction != "D" {
 				s.state.TunnelCount--
 			}
 			value = map[string]string{"id": t.ID, "state": "removed", "detail": "listener removed; already accepted streams may finish; connection and sibling forwards retained"}
@@ -494,7 +526,7 @@ func executeForward(ctx context.Context, w string, args []string) (any, error) {
 	if args[0] == "tunnels" {
 		return Tunnels(ctx, w)
 	}
-	if args[0] != "forward" && args[0] != "reverse" {
+	if args[0] != "forward" && args[0] != "reverse" && args[0] != "dynamic" {
 		ts, err := Tunnels(ctx, w)
 		if err != nil {
 			return nil, err
@@ -539,6 +571,9 @@ func executeForward(ctx context.Context, w string, args []string) (any, error) {
 	}
 	bound := digest(strings.Join([]string{w, id.Session, id.Generation, s.Creation, o.Direction, o.Listen, o.Destination}, "\n"))
 	if !o.Yes {
+		if o.Direction == "D" {
+			return map[string]string{"digest": bound, "review": fmt.Sprintf("Create SOCKS proxy\nConnection: %s\nListen: %s\nSOCKS4/5 TCP through the existing master; names resolve on the SSH server.\nBroader binds expose unauthenticated proxy access to other hosts.\nListener verification does not prove destination reachability. Repeat with --yes --review %s.", s.Name, o.Listen, bound)}, nil
+		}
 		if o.Direction == "R" {
 			return map[string]string{"digest": bound, "review": fmt.Sprintf("Create reverse forward\nConnection: %s\nRemote listener: %s\nLocal destination: %s\nDestination is reached from the local SSH client. Port 0 requests a random high port (49152–65535).\nBroader binds expose access to other hosts. Linux socket-table access and shell awk/od are required.\nRemote exposure is checked after allocation; a server override may briefly expose the listener before cleanup.\nRepeat with --yes --review %s.", s.Name, o.Listen, o.Destination, bound)}, nil
 		}
@@ -553,6 +588,9 @@ func executeForward(ctx context.Context, w string, args []string) (any, error) {
 	var t Tunnel
 	err = managerThrow(ctx, w, map[string]string{"action": "forward", "generation": id.Generation, "session": id.Session, "request": string(b), "review": digest(string(b))}, &t)
 	if err != nil {
+		if o.Direction == "D" {
+			return nil, fmt.Errorf("SOCKS proxy unconfirmed; use proxy inspect %s before retrying; check bind address/occupied port and master availability; close the connection if cleanup is uncertain: %w", s.Name, err)
+		}
 		if o.Direction == "R" {
 			return nil, fmt.Errorf("reverse forward %s unconfirmed; inspect tunnel list before retrying; check occupied remote port, GatewayPorts/AllowTcpForwarding/PermitListen and Linux socket-table access; close the connection if cleanup cannot be verified: %w", r.Tunnel.ID, err)
 		}
@@ -658,6 +696,8 @@ func parseForward(w string, args []string) (forwardOptions, error) {
 	o.Direction = "L"
 	if args[0] == "reverse" {
 		o.Direction = "R"
+	} else if args[0] == "dynamic" {
+		o.Direction = "D"
 	}
 	if _, err := launch.ConnectionPath(w, o.Connection); err != nil {
 		return o, err
@@ -666,8 +706,10 @@ func parseForward(w string, args []string) (forwardOptions, error) {
 	if o.Listen, err = forwardListen(args[2], o.Direction); err != nil {
 		return o, err
 	}
-	if o.Destination, err = forwardEndpoint(args[3], false); err != nil {
-		return o, err
+	if o.Direction != "D" {
+		if o.Destination, err = forwardEndpoint(args[3], false); err != nil {
+			return o, err
+		}
 	}
 	for i := 4; i < len(args); i++ {
 		switch args[i] {

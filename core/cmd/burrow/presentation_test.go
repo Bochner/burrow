@@ -448,7 +448,7 @@ func TestSOCKSTables(t *testing.T) {
 	m := newUI(launch.Info{}, false)
 	m.height = 40
 	m.profiles.Profiles = []connection.Profile{{Name: "gateway", Host: "nas.example", User: "alice", Port: 22, Jump: "bastion", ProxyPort: 1080}}
-	m.connections = []connection.State{{Name: "gateway", Host: "nas.example", User: "alice", Port: 22, Generation: "owner", State: "connected", ProxyPort: 1080}}
+	m.connections = []connection.State{{Name: "gateway", Host: "nas.example", User: "alice", Port: 22, Generation: "owner", State: "connected", ProxyPort: 1080, Proxy: connection.Tunnel{ID: "gateway/proxy", State: "listening"}}}
 	for _, table := range []string{m.savedConnections(160), m.activeConnections(160)} {
 		if !strings.Contains(ansi.Strip(table), "1080") || strings.Contains(ansi.Strip(table), "bastion") {
 			t.Fatal("SOCKS port missing or confused with jump host", ansi.Strip(table))
@@ -456,7 +456,7 @@ func TestSOCKSTables(t *testing.T) {
 	}
 	lines := strings.Split(ansi.Strip(m.activeConnections(160)), "\n")
 	fields := strings.Fields(lines[len(lines)-1])
-	if len(fields) < 8 || fields[4] != "1080" || fields[len(fields)-2] != "0" {
+	if len(fields) < 8 || fields[4] != "Yes" || fields[5] != ":1080" || fields[len(fields)-2] != "0" {
 		t.Fatal("proxy counted as a tunnel", lines)
 	}
 	m.width = 160
@@ -479,6 +479,19 @@ func TestSOCKSTables(t *testing.T) {
 	m.connections[0].State = "lost"
 	if strings.Contains(ansi.Strip(m.activeConnections(160)), "1080") {
 		t.Fatal("lost proxy shown as live")
+	}
+	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "Unavailable") {
+		t.Fatal("lost proxy hidden instead of unavailable")
+	}
+	m.connections[0].State = "connected"
+	m.connections[0].Proxy.State = "unverified"
+	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "Unverified") {
+		t.Fatal("uncertain listener shown as usable")
+	}
+	m.connections[0].Proxy = connection.Tunnel{}
+	m.connections[0].ProxyPort = 0
+	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "No") {
+		t.Fatal("absent proxy not shown as No")
 	}
 	m.connectionError = "unverified"
 	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "unverified") {

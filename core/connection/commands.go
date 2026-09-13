@@ -35,6 +35,18 @@ Edit replaces all settings; include options to retain them. Review replies inclu
 revision/collection; repeat --revision HASH --collection PATH --yes to pin review.
 
 connections                         Inspect retained owners
+proxy create CONNECTION LISTEN [--yes] Create SOCKS on the existing master
+proxy inspect CONNECTION            Verified endpoint and retained owner identity
+proxy remove CONNECTION [--yes]     Remove SOCKS only; retain connection/L/R
+Proxy LISTEN is PORT (127.0.0.1 default) or IP:PORT, including [IPv6]:PORT.
+One SOCKS4/5 TCP proxy per connection; no L/R tunnel IDs or counts consumed.
+Names resolve on the SSH server. Explicit broader binds expose an unauthenticated
+proxy. Creation and removal recaps support --review HASH to bind approval.
+Inspection verifies the master-owned Linux listener, not destination reachability.
+Live proxy edits do not change saved reconnect settings. Keep-running quit retains
+SOCKS; close/loss ends it. Unverified/unavailable endpoints must not be consumed.
+Compatible consumers use proxy inspect's session/generation/connectionCreation
+and proxy creation identity, recheck before use and refuse stale owners/endpoints.
 tunnel create CONNECTION forward LISTEN HOST PORT [--yes] Create local tunnel
 tunnel create CONNECTION reverse LISTEN HOST PORT [--yes] Create reverse tunnel
 tunc CONNECTION l LISTEN HOST PORT [--yes] Alias for tunnel create ... forward
@@ -229,6 +241,9 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "proxy":
+		_, err := proxyArgs(workspace, args)
+		return err
 	case "tunnel", "tunc", "tund":
 		expanded, err := tunnelArgs(args)
 		if err != nil || expanded[0] == "tunnels" {
@@ -418,6 +433,8 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 		return execute(ctx, w, expanded, promptSocket)
 	}
 	switch args[0] {
+	case "proxy":
+		return executeProxy(ctx, w, args)
 	case "profile", "profiles", "history":
 		return executeProfile(ctx, w, args)
 	case "tunnel", "tunc", "tund":
@@ -510,9 +527,15 @@ func displaySetting(value, fallback string) string {
 }
 
 func Suggestions(states []State) []string {
-	values := []string{"status", "connect", "connections", "tunnel create", "tunnel list", "tunnel check", "tunnel remove", "tunc", "tund", "shells", "shell-close", "help", "quit"}
+	values := []string{"status", "connect", "connections", "proxy create", "proxy inspect", "proxy remove", "tunnel create", "tunnel list", "tunnel check", "tunnel remove", "tunc", "tund", "shells", "shell-close", "help", "quit"}
 	for _, s := range states {
+		values = append(values, "proxy inspect "+s.Name)
 		if s.State == "connected" && s.Generation != "" {
+			if s.Proxy.ID != "" {
+				values = append(values, "proxy remove "+s.Name)
+			} else if s.ProxyPort == 0 {
+				values = append(values, "proxy create "+s.Name+" ")
+			}
 			values = append(values, "shell "+s.Name)
 			values = append(values, "tunnel create "+s.Name+" forward ", "tunc "+s.Name+" l ")
 			values = append(values, "tunnel create "+s.Name+" reverse ", "tunc "+s.Name+" r ")
