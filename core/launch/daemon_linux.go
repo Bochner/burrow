@@ -48,6 +48,7 @@ type Info struct {
 }
 
 func processIdentity(pid int) (record, error) {
+	defer Phase("status.identity")()
 	if pid <= 0 {
 		return record{}, fmt.Errorf("invalid PID")
 	}
@@ -129,6 +130,7 @@ func inspect(ctx context.Context, workspace string, pid int) (record, Info, erro
 	if e != nil {
 		return empty, info, e
 	}
+	rpcPhase := Phase("status.rpc")
 	conn, e := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "unix", endpoint)
 	if e != nil {
 		return empty, info, e
@@ -151,7 +153,9 @@ func inspect(ctx context.Context, workspace string, pid int) (record, Info, erro
 	if int(peer.Pid) != pid || peer.Uid != uint32(os.Getuid()) {
 		return empty, info, refuse(endpoint, "socket belongs to another process/user")
 	}
-	if e = rpc(conn, "GetDaemonInfo", &info); e != nil {
+	e = rpc(conn, "GetDaemonInfo", &info)
+	rpcPhase()
+	if e != nil {
 		return empty, info, e
 	}
 	if info.PID != pid || info.Workspace != workspace || info.Started == "" {
@@ -186,6 +190,7 @@ func inspect(ctx context.Context, workspace string, pid int) (record, Info, erro
 // Status never starts or replaces a daemon. Every invocation revalidates the
 // selected paths and the actual peer, including after a prior disconnection.
 func Status(ctx context.Context, workspace string) (Info, error) {
+	defer Phase("status")()
 	var info Info
 	dir, e := directory(workspace, false, false)
 	if e != nil {
@@ -238,6 +243,7 @@ func Status(ctx context.Context, workspace string) (Info, error) {
 // Open is the shared CLI/TUI setup command. Starting a daemon is explicit here;
 // later status/revalidation failure never silently starts another one.
 func Open(ctx context.Context, o Options) (Info, error) {
+	defer Phase("open")()
 	var info Info
 	endpoint := filepath.Join(o.Workspace, "hoveld.sock")
 	if len([]byte(endpoint)) > 103 {

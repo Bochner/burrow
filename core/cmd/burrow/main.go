@@ -104,6 +104,7 @@ func run(args []string) error {
 		command = fs.Arg(0)
 	}
 	if command != "status" && command != "tui" {
+		defer launch.Phase("cli:" + command)()
 		args := fs.Args()
 		wizard := len(args) == 1 && command == "connect"
 		if !wizard {
@@ -178,6 +179,7 @@ func run(args []string) error {
 }
 
 func openWorkspace(ctx context.Context, options launch.Options) (launch.Info, error) {
+	defer launch.Phase("open-workspace")()
 	info, err := launch.Open(ctx, options)
 	if err == nil {
 		err = connection.EnsureProfiles(ctx, options.Workspace)

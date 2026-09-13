@@ -27,6 +27,7 @@ type Options struct {
 }
 
 func install(ctx context.Context, o Options) (string, error) {
+	defer Phase("install")()
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		return "", fmt.Errorf("initial package supports Linux amd64 only")
 	}

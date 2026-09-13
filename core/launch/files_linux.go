@@ -84,6 +84,7 @@ func regular(path string, mode os.FileMode, limit int64) ([]byte, error) {
 
 func sum(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 func digest(path string) (string, error) {
+	defer Phase("hash")()
 	f, e := os.Open(path)
 	if e != nil {
 		return "", e
