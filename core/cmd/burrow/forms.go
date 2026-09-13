@@ -81,11 +81,11 @@ func promptAnswer(f *huh.Form, secret bool) []byte {
 
 // Required and optional details stay editable in the same form. Only non-secret
 // paths/settings become command arguments; all validation still reaches Parse.
-type connectDetails struct{ name, host, user, port, key, config, jump, agent string }
+type connectDetails struct{ name, host, user, port, key, config, jump, agent, proxy string }
 
 func (d *connectDetails) args() []string {
 	args := []string{"connect", d.name, d.host, d.user}
-	for _, option := range [][2]string{{"--port", d.port}, {"--key", d.key}, {"--ssh-config", d.config}, {"--jump", d.jump}, {"--agent", d.agent}} {
+	for _, option := range [][2]string{{"--port", d.port}, {"--key", d.key}, {"--ssh-config", d.config}, {"--jump", d.jump}, {"--agent", d.agent}, {"-proxy", d.proxy}} {
 		if option[1] != "" {
 			args = append(args, option[0], option[1])
 		}
@@ -95,7 +95,7 @@ func (d *connectDetails) args() []string {
 
 var connectFields = []struct{ key, title string }{
 	{"host", "Host / IP *"}, {"port", "SSH port"}, {"user", "Username *"}, {"name", "Connection name *"},
-	{"key", "SSH key path"}, {"jump", "Jump host"}, {"agent", "Agent socket"}, {"config", "SSH config path"},
+	{"key", "SSH key path"}, {"proxy", "SOCKS proxy port"}, {"jump", "Jump host"}, {"agent", "Agent socket"}, {"config", "SSH config path"},
 }
 
 func detailsForm(workspace string, d *connectDetails) *huh.Form {
@@ -127,6 +127,16 @@ func detailsForm(workspace string, d *connectDetails) *huh.Form {
 		input("user", "Username *", "ubuntu (- uses SSH config)", &d.user).Validate(required),
 		input("name", "Connection name *", "gateway", &d.name).Validate(func(s string) error { _, e := launch.ConnectionPath(workspace, s); return e }),
 		input("key", "SSH key path", "/home/you/.ssh/id_ed25519", &d.key),
+		input("proxy", "SOCKS proxy port", "Off · enter 9050 or another port", &d.proxy).Validate(func(s string) error {
+			if s == "" {
+				return nil
+			}
+			n, e := strconv.Atoi(s)
+			if e != nil || n < 1 || n > 65535 {
+				return fmt.Errorf("Proxy port must be 1–65535")
+			}
+			return nil
+		}),
 		input("jump", "Jump host", "admin@bastion:22 (optional)", &d.jump),
 		input("agent", "Agent socket", "/run/user/1000/ssh-agent.socket (optional)", &d.agent),
 		input("config", "SSH config path", "/home/you/.ssh/config (optional)", &d.config).Validate(func(s string) error {
@@ -135,7 +145,7 @@ func detailsForm(workspace string, d *connectDetails) *huh.Form {
 			_, _, e := connection.Parse(workspace, copy.args()[1:])
 			return e
 		}),
-	).Title("Connection details").Description("* Required · blank optional settings use SSH defaults\n↑↓ / Tab / Shift+Tab to edit · Enter advances to review")).WithKeyMap(keys)
+	).Title("Connection details").Description("* Required · blank SOCKS port = off; other blanks use SSH defaults\n↑↓ / Tab / Shift+Tab to edit · Enter advances to review")).WithKeyMap(keys)
 
 }
 

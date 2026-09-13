@@ -278,7 +278,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         terminal = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"], env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
         output = bytearray()
         screen_dimensions = ["160", "40"]
-        def read_until(needle):
+        def read_until(needle, absent=b""):
             deadline = time.monotonic() + 8
             fresh = bytearray()
             while time.monotonic() < deadline:
@@ -287,7 +287,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                     fresh.extend(data)
                     output.extend(data)
                     screen = subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3, check=True).stdout
-                    if needle in screen:
+                    if needle in screen and (not absent or absent not in screen):
                         return screen
             raise AssertionError((needle, subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3).stdout, bytes(fresh)))
         try:
@@ -307,13 +307,15 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             read_until(b"Exact destination")
             assert not created.exists(), "opening New mutated the destination"
             os.write(master, str(created).encode() + b"\r")
-            read_until(("● " + created.name).encode())
+            # The submitted path is also visible in the pending New form.
+            # Wait for activation before typing into the workspace's prompt.
+            read_until(str(created).encode(), absent=b"Exact destination")
             created_info = run(created, "--offline")
             assert created_info["pid"] != info["pid"]
             os.write(master, b"draft-created\x1bw")  # preserve draft, open drawer
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[A\r")
-            read_until(("● " + w.name).encode())
+            read_until(str(w).encode())
             # Mouse opens midpoint New at the 160x40 geometry.
             os.write(master, b"\x1b[<0;3;21M\x1b[<0;3;21m")
             read_until(b"Exact destination")
@@ -326,7 +328,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\x1bw")
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[A\r")
-            read_until(("● " + w.name).encode())
+            read_until(str(w).encode())
             os.write(master, b"sta\x1bOP")  # draft, F1
             read_until(b"BURROW COMMAND MENU")
             os.write(master, b"\x1b")

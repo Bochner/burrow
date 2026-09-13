@@ -35,6 +35,22 @@ func TestWorkspaceFrame(t *testing.T) {
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 }
 
+func TestCompletionCyclesOriginalMatches(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/completion"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	frameEvent(m, tea.PasteMsg{Content: "connect"})
+	for _, event := range []struct {
+		mod  tea.KeyMod
+		want string
+	}{{0, "connect"}, {0, "connections"}, {tea.ModShift, "connect"}, {tea.ModShift, "connections"}, {0, "connect"}} {
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab, Mod: event.mod})
+		if got := m.current().management.input.Value(); got != event.want {
+			t.Fatalf("completion got %q want %q", got, event.want)
+		}
+	}
+}
+
 func TestLocalShellPresentation(t *testing.T) {
 	for _, noColor := range []bool{false, true} {
 		m := newFrame(launch.Info{Workspace: "/tmp/shell-presentation"}, noColor, launch.Options{})
@@ -48,6 +64,7 @@ func TestLocalShellPresentation(t *testing.T) {
 		}
 		defer host.Close()
 		tab := &cliTab{host: host, connection: "gateway"}
+		m.current().management.connections = []connection.State{{Name: "gateway", State: "connected"}}
 		m.current().shell, m.current().tab, m.current().focus = tab, "shell", "terminal"
 		until := time.Now().Add(3 * time.Second)
 		for !strings.Contains(tab.screen.Screen, "LOCAL-SCREEN") && time.Now().Before(until) {
@@ -70,17 +87,17 @@ func TestLocalShellPresentation(t *testing.T) {
 			}
 			if !noColor && size[0] == 160 {
 				bounds := image.Rect(0, 0, 26, m.height)
-				assertTextRole(t, screen, bounds, "gateway", lavenderColor)
-				assertTextRole(t, screen, bounds, "running", "#a6e3a1")
+				assertTextRole(t, screen, bounds, "gateway", subtextColor)
+				assertTextRole(t, screen, bounds, "●", "#a6e3a1")
 				assertTextRole(t, screen, image.Rect(26, 0, 128, 3), "gateway", lavenderColor)
 				assertTextRole(t, screen, image.Rect(26, m.height-2, 128, m.height), "gateway", lavenderColor)
 				tab.pending = true
 				closing := capturePresentation(t, m, "shell-closing")
-				assertTextRole(t, closing, bounds, "closing", "#f9e2af")
+				assertTextRole(t, closing, bounds, "◐", "#f9e2af")
 				tab.pending = false
 			}
 			if !noColor && size[0] == 80 {
-				assertTextRole(t, screen, image.Rect(0, 0, 16, m.height), "running", "#a6e3a1")
+				assertTextRole(t, screen, image.Rect(0, 0, 16, m.height), "●", "#a6e3a1")
 			}
 		}
 		frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
@@ -760,8 +777,15 @@ func TestConnectSuggestionsFollowLazySSHOrder(t *testing.T) {
 		}
 	}
 	got := connection.CommandSuggestions("connect -ip host -port 22 -user operator -socket gateway ", nil)
-	if len(got) == 0 || !strings.HasSuffix(got[0], "-ssh-key ") {
+	if len(got) < 2 || !strings.HasSuffix(got[0], "-proxy ") || !strings.HasSuffix(got[1], "-ssh-key ") {
 		t.Fatal("optional settings missing", got)
+	}
+	for _, proxy := range []string{"-proxy ", "-proxy 9050 ", "--proxy=1080 "} {
+		line := "connect -ip host -port 22 -user operator -socket gateway " + proxy
+		got := connection.CommandSuggestions(line, nil)
+		if len(got) == 0 || got[0] != line+"-ssh-key " {
+			t.Fatal("key should follow supplied proxy", got)
+		}
 	}
 }
 
@@ -784,6 +808,55 @@ func TestReviewedApprovalOverridesExplicitNo(t *testing.T) {
 	_, approved, err := connection.Parse("/tmp/forms", []string{"gateway", "example.com", "operator", "--yes=false", "--yes"})
 	if err != nil || !approved {
 		t.Fatal("explicit no prevented later interactive approval", err)
+	}
+}
+
+func TestProxyOption(t *testing.T) {
+	for _, option := range [][]string{{"-proxy"}, {"-proxy", "1080"}, {"--proxy=1080"}, {"-proxy", "--yes"}} {
+		c, _, err := connection.Parse("/tmp/forms", append([]string{"gateway", "example.com", "operator"}, option...))
+		if err != nil {
+			t.Fatal("LazySSH SOCKS proxy option rejected", option, err)
+		}
+		want := 9050
+		if strings.Contains(strings.Join(option, " "), "1080") {
+			want = 1080
+		}
+		if c.ProxyPort != want {
+			t.Fatal("incorrect SOCKS port", c.ProxyPort, want)
+		}
+		p := connection.Profile{Name: c.Name, Host: c.Host, User: c.User, ProxyPort: c.ProxyPort}
+		restored, _, err := connection.Parse("/tmp/forms", p.Args()[1:])
+		if err != nil || restored.ProxyPort != want {
+			t.Fatal("profile lost SOCKS port", restored, err)
+		}
+	}
+	d := connectDetails{name: "gateway", host: "example.com", user: "operator", proxy: "1080"}
+	c, _, err := connection.Parse("/tmp/forms", d.args()[1:])
+	if err != nil || c.ProxyPort != 1080 {
+		t.Fatal("form lost SOCKS port", err)
+	}
+	for _, line := range []string{"connect gateway host user -proxy ", "connect gateway host user -proxy 1080 ", "connect gateway host user --proxy=1080 "} {
+		for _, candidate := range connection.CommandSuggestions(line, nil) {
+			if strings.HasSuffix(candidate, "-proxy ") {
+				t.Fatal("completion repeats supplied proxy", candidate)
+			}
+		}
+	}
+	args := []string{"connect", "gateway", "example.com", "operator", "--ssh-config", "/dev/null", "-proxy"}
+	result, err := connection.Execute(context.Background(), "/tmp/forms", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := result.(map[string]string)
+	if strings.Contains(strings.ToLower(review["review"]+connection.Help), "lazyssh") {
+		t.Fatal("upstream project name leaked into program-facing text")
+	}
+	if !strings.HasPrefix(review["review"], "SSH command:\n/usr/bin/ssh -F ") || strings.Contains(review["review"], "Generated config:") || !strings.Contains(review["review"], "-D 127.0.0.1:9050") {
+		t.Fatal("recap is not the concise actual command", review)
+	}
+	_, err = connection.Execute(context.Background(), "/tmp/forms", append(args, "1080", "--yes", "--review", review["digest"]))
+	if err == nil || !strings.Contains(err.Error(), "changed after review") {
+		t.Fatal("proxy change was not bound to recap approval", err)
 	}
 }
 
@@ -886,8 +959,9 @@ func TestPanelSelectionAndExplicitCopy(t *testing.T) {
 				m.current().cli = &cliTab{screen: ptyhost.Snapshot{Screen: "alpha界é\nsecond line\nthird line"}}
 			}
 			r := m.selectionBounds()
-			before := m.View().Content
 			_, cmd := m.Update(tea.MouseClickMsg{X: r.Min.X, Y: r.Min.Y, Button: tea.MouseLeft})
+			// The press clears resource selection; dragging must stay inside the panel.
+			before := m.View().Content
 			if cmd != nil {
 				t.Fatal("selection press ran a command")
 			}

@@ -28,6 +28,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=5, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
+parser.add_argument("--proxy-check", action="store_true", help="check real connection-owned SOCKS traffic and cleanup")
 parser.add_argument("--measure", action="store_true", help="record production phase samples and separate process traces")
 parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
 args = parser.parse_args()
@@ -137,7 +138,9 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         burrow(w, "close", "unknown", "--yes")
         review = burrow(w, "connect", "gateway", "127.0.0.1", "tester", *options[:-1])
         assert "SSH command:" in review["review"] and "StrictHostKeyChecking=no" in review["review"]
-        assert "Generated config:" in review["review"] and not (w / "burrow/gateway").exists()
+        assert "Generated config:" not in review["review"] and not (w / "burrow/gateway").exists()
+        assert review["review"].startswith("SSH command:\n/usr/bin/ssh -F ")
+        assert "SOCKS proxy: Off" in review["review"]
         phase_offset = phases.stat().st_size if phases.exists() else 0
         submitted = time.monotonic_ns()
         first = burrow(w, "connect", "gateway", "127.0.0.1", "tester", *options)
@@ -157,15 +160,74 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert totals["hash"]["count"] <= 4, totals
         assert not {"hovel-cli:module", "register-module", "call:GetModuleCatalog"} & set(totals), totals
         actual = Path(f'/proc/{first["masterPID"]}/cmdline').read_bytes().split(b"\0")[:-1]
-        shown = review["review"].split("SSH command:\n",1)[1].split("\nGenerated config:",1)[0]
+        shown = review["review"].split("SSH command:\n",1)[1].split("\n\n",1)[0]
         assert shlex.split(shown) == [a.decode() for a in actual]
-        generated = review["review"].split("Generated config:\n",1)[1].split("\nLazySSH host policy:",1)[0]
-        assert generated == Path(first["socket"]).with_name("ssh_config").read_text()
+        assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
-        if not smoke:
+        if not smoke and not args.proxy_check:
             first = shell_checks(binary, w, env, screen_check, burrow, first, options)
         if args.shell_check:
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        # Real SOCKS5 negotiation reaches the container's loopback SSH service,
+        # including remote DNS. No proxy implementation or extra tool dependency.
+        with socket.socket() as held:
+            held.bind(("127.0.0.1", 0))
+            held.listen()
+            occupied = held.getsockname()[1]
+            proxy_config = root / "proxy-config"
+            proxy_config.write_text(f"Host *\n DynamicForward 127.0.0.1:{occupied}\n GatewayPorts yes\n")
+            with socket.socket() as free:
+                free.bind(("127.0.0.1", 0))
+                proxy_port = free.getsockname()[1]
+            proxy_options = [*options, "--ssh-config", str(proxy_config), "-proxy", str(proxy_port)]
+            burrow(w, "connect", "socks", "127.0.0.1", "tester", *proxy_options)
+            proxied = wait(lambda: state_is(w, "socks", "connected"))
+            assert proxied["proxyPort"] == proxy_port
+            def socks_banner():
+                with socket.create_connection(("127.0.0.1", proxy_port), timeout=3) as client:
+                    stream = client.makefile("rb")
+                    client.sendall(b"\x05\x01\x00")
+                    assert stream.read(2) == b"\x05\x00"
+                    host = b"localhost"
+                    client.sendall(b"\x05\x01\x00\x03" + bytes([len(host)]) + host + struct.pack("!H", 2222))
+                    reply = stream.read(4)
+                    assert reply[:3] == b"\x05\x00\x00", reply
+                    address_size = {1: 4, 4: 16}.get(reply[3])
+                    assert address_size is not None, reply
+                    assert len(stream.read(address_size + 2)) == address_size + 2
+                    assert stream.readline().startswith(b"SSH-"), "SOCKS did not reach remote SSH"
+                    stream.close()
+            socks_banner()
+            actual_proxy = Path(f'/proc/{proxied["masterPID"]}/cmdline').read_bytes().split(b"\0")
+            assert actual_proxy[actual_proxy.index(b"-D")+1] == f"127.0.0.1:{proxy_port}".encode()
+            burrow(w, "profile", "save", "socks", "--as", "saved-socks")
+            assert burrow(w, "profile", "select", "saved-socks")["proxyPort"] == proxy_port
+            burrow(w, "connect", "socks-busy", "127.0.0.1", "tester", *options, "-proxy", str(occupied))
+            failed = wait(lambda: state_is(w, "socks-busy", "lost"))
+            assert "proxy could not bind" in failed["detail"], failed
+            burrow(w, "close", "socks-busy", "--yes")
+            # Failed connection cleanup must not close another process's listener.
+            with socket.create_connection(("127.0.0.1", occupied), timeout=1):
+                pass
+            def proxy_closed():
+                with socket.socket() as probe:
+                    probe.settimeout(.5)
+                    return probe.connect_ex(("127.0.0.1", proxy_port)) != 0
+            burrow(w, "close", "socks", "--yes")
+            wait(proxy_closed)
+            burrow(w, "profile", "connect", "saved-socks", "--as", "socks-restored", "--yes")
+            restored = wait(lambda: state_is(w, "socks-restored", "connected"))
+            assert restored["proxyPort"] == proxy_port
+            socks_banner()
+            os.kill(restored["masterPID"], signal.SIGKILL)
+            wait(lambda: state_is(w, "socks-restored", "lost"))
+            wait(proxy_closed)
+            burrow(w, "close", "socks-restored", "--yes")
+            assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
+        print("PASS SOCKS traffic/remote DNS, explicit loopback, config forwarding isolation, occupied-port refusal, profile round-trip, close/loss and sibling preservation", flush=True)
+        if args.proxy_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
         manager_checks(binary,w,root,env,port,key,first,burrow,wait)
@@ -190,7 +252,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert burrow(w,"inspect","gateway")["masterPID"] == first["masterPID"]
         burrow(w,"profile","load",str(profile_backup))
         saved_review=burrow(w,"profile","connect","saved-gateway","--as","saved-live")
-        assert "Generated config:" in saved_review["review"] and saved_review["digest"]
+        assert "Generated config:" not in saved_review["review"] and saved_review["digest"]
         burrow(w,"profile","connect","saved-gateway","--as","saved-live","--yes")
         wait(lambda: state_is(w,"saved-live","connected"))
         burrow(w,"close","saved-live","--yes")
@@ -455,7 +517,7 @@ launch:
             os.write(outer,b"connect\r")
             for label,value in [(b"Host / IP",b"127.0.0.1"),(b"SSH port",str(port).encode()),
                                 (b"Username",b"tester"),(b"Connection name",b"guided-tui"),
-                                (b"SSH key path",str(key).encode()),(b"Jump host",b""),(b"Agent socket",b""),
+                                (b"SSH key path",str(key).encode()),(b"SOCKS proxy port",b""),(b"Jump host",b""),(b"Agent socket",b""),
                                 (b"SSH config path",b"")]:
                 # Every label is visible now; wait for the actual caret before
                 # sending the next field's value through the real PTY.

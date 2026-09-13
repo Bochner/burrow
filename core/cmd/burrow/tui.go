@@ -32,6 +32,8 @@ var pageUp = key.NewBinding(key.WithKeys("pgup"))
 var pageDown = key.NewBinding(key.WithKeys("pgdown"))
 var inventoryUp = key.NewBinding(key.WithKeys("alt+up"))
 var inventoryDown = key.NewBinding(key.WithKeys("alt+down"))
+var completionNext = key.NewBinding(key.WithKeys("tab"))
+var completionPrevious = key.NewBinding(key.WithKeys("shift+tab"))
 
 type connectionTick struct{}
 type connectionList struct {
@@ -75,6 +77,9 @@ type ui struct {
 	connections                   []connection.State
 	connectionError               string
 	helpOffset                    int
+	completionValues              []string
+	completionIndex               int
+	completionValue               string
 }
 
 func newUI(info launch.Info, noColor bool) ui {
@@ -84,12 +89,44 @@ func newUI(info launch.Info, noColor bool) ui {
 	input.Placeholder = "connect · connections · help · quit"
 	input.SetSuggestions(connection.Suggestions(nil))
 	input.ShowSuggestions = true
-	input.KeyMap.AcceptSuggestion = key.NewBinding(key.WithKeys("tab"))
+	input.KeyMap.AcceptSuggestion.Unbind()
 	input.KeyMap.NextSuggestion = next
 	input.KeyMap.PrevSuggestion = previous
 	input.CharLimit = 2048
 	input.Focus()
 	return ui{info: info, input: input, noColor: noColor, output: "Verified daemon · quit reviews connections: keep or close."}
+}
+
+func (m ui) completionOptions() ([]string, int) {
+	if len(m.completionValues) > 0 && m.input.Value() == m.completionValue {
+		return m.completionValues, m.completionIndex
+	}
+	return m.input.MatchedSuggestions(), m.input.CurrentSuggestionIndex()
+}
+
+func (m *ui) cycleCompletion(backward bool) {
+	if m.input.Position() != len([]rune(m.input.Value())) {
+		return
+	}
+	values, index := m.completionOptions()
+	if len(values) == 0 {
+		return
+	}
+	if len(m.completionValues) > 0 && m.input.Value() == m.completionValue {
+		if backward {
+			index--
+		} else {
+			index++
+		}
+	} else if backward {
+		index--
+	}
+	index = (index + len(values)) % len(values)
+	m.completionValues, m.completionIndex = values, index
+	m.completionValue = values[index]
+	m.input.SetValue(m.completionValue)
+	m.input.CursorEnd()
+	m.input.ShowSuggestions = true
 }
 
 func terminal(m *frame, noColor bool) error {
@@ -178,6 +215,8 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.help {
 			return m, nil
 		}
+		m.completionValues = nil
+		m.input.ShowSuggestions = true
 		m.input.SetValue(m.input.Value() + safe(v.Content))
 		m.input.CursorEnd()
 		m.input.SetSuggestions(m.suggestions())
@@ -195,6 +234,15 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if key.Matches(v, completionNext, completionPrevious) {
+			m.cycleCompletion(key.Matches(v, completionPrevious))
+			return m, nil
+		}
+		if len(m.completionValues) > 0 && key.Matches(v, previous, next) {
+			m.cycleCompletion(key.Matches(v, previous))
+			return m, nil
+		}
+		m.completionValues = nil
 		switch {
 		case key.Matches(v, inventoryUp):
 			m.connectionOffset = max(0, m.connectionOffset-1)
@@ -343,9 +391,16 @@ func (m ui) activeConnections(w int) string {
 		proxy, terminal, tunnels := "—", "—", "—"
 		if row.Generation != "" {
 			terminal = "Local PTY"
+			tunnels = "0"
+			if row.ProxyPort != 0 && row.State == "connected" {
+				proxy = fmt.Sprint(row.ProxyPort)
+			}
 		}
 		if m.demo {
-			proxy, terminal, tunnels = "1080", "Native", "2"
+			terminal, tunnels = "Native", "0"
+			if row.Name == "gateway" && row.State == "connected" {
+				proxy, tunnels = "1080", "2"
+			}
 		}
 		socket := safe(row.Socket)
 		if socket == "" {
@@ -394,22 +449,29 @@ func (m ui) View() tea.View {
 	b.WriteString("\n" + m.paint(secondary, footer) + "\n" + m.paint(accent, "╭─ workspace › management") + "\n" + m.input.View())
 	base := fit(b.String(), w, h)
 	if !m.help && m.input.Value() != "" && m.input.ShowSuggestions {
-		matches := m.input.MatchedSuggestions()
+		matches, selected := m.completionOptions()
 		if len(matches) > 0 {
-			rows := []string{"COMPLETION · ↑↓ select · Tab accept"}
+			rows := []string{"COMPLETION · Tab / Shift+Tab cycle"}
 			count := max(1, min(6, h-5))
-			start := min(max(0, m.input.CurrentSuggestionIndex()-count+1), max(0, len(matches)-count))
+			start := min(max(0, selected-count+1), max(0, len(matches)-count))
 			end := min(len(matches), start+count)
 			if len(matches) > count {
-				rows[0] = fmt.Sprintf("COMPLETION · %d–%d of %d · ↑↓", start+1, end, len(matches))
+				rows[0] = fmt.Sprintf("COMPLETION · %d–%d of %d · Tab/Shift+Tab", start+1, end, len(matches))
 			}
+			commandWidth := 0
+			for _, value := range matches {
+				commandWidth = max(commandWidth, lipgloss.Width(value))
+			}
+			commandWidth = min(commandWidth, max(1, w/2-2))
 			for i := start; i < end; i++ {
 				s := matches[i]
-				prefix := "  "
-				if i == m.input.CurrentSuggestionIndex() {
-					prefix = "› "
+				command := ansi.Truncate(s, commandWidth, "…")
+				line := "  " + m.paint(heading, command+strings.Repeat(" ", max(0, commandWidth-lipgloss.Width(command)))) + "  " + m.paint(secondary, completionDescription(s))
+				line = ansi.Truncate(line, w, "…")
+				if i == selected {
+					line = selectedRow(line, w, m.noColor)
 				}
-				rows = append(rows, m.choice(s, prefix == "› ", w))
+				rows = append(rows, line)
 			}
 			popup := solid(strings.Join(rows, "\n"), w, min(len(rows), max(1, h-3)), popupColor, m.noColor)
 			base = lipgloss.NewCompositor(lipgloss.NewLayer(base), lipgloss.NewLayer(popup).Y(max(0, h-3-lipgloss.Height(popup))).Z(1)).Render()

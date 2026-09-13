@@ -9,7 +9,7 @@ binary = str(Path(sys.argv[1]).resolve())
 makefile = str(Path(sys.argv[2]).resolve())
 for target, expected in {
     "run": 'aspect burrow run -- --workspace "$BURROW_MAKE_WORKSPACE" tui',
-    "restart": 'aspect burrow run -- --workspace "$BURROW_MAKE_WORKSPACE" restart',
+    "restart": 'aspect burrow run -- --workspace "$BURROW_MAKE_WORKSPACE" restart --yes',
     "clean": "aspect burrow clean",
     "check": "aspect burrow-check ci",
 }.items():
@@ -26,7 +26,8 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         assert result.returncode != 0 and "name must" in result.stderr, result
         assert not workspace.exists()
     for args, message in [
-        (["restart", "--yes"], "restart takes no arguments"),
+        (["restart", "--yes"], "restart requires terminal input"),
+        (["restart", "--invalid"], "expected restart [--yes]"),
         (["restart"], "restart requires terminal input"),
         (["shell"], "expected shell NAME"),
         (["shell", "../escape"], "name must"),
@@ -37,7 +38,10 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["connect", "-socket", "valid", "-ip", "localhost"], "NAME HOST USER"),
         (["connect", "valid", "localhost", "tester", "-ssh-key", "/tmp/key", "--key", "/tmp/other"], "duplicate"),
         (["connect", "valid", "localhost", "tester", "-no-term"], "invalid connection options"),
-        (["connect", "valid", "localhost", "tester", "-proxy", "1080"], "invalid connection options"),
+        (["connect", "valid", "localhost", "tester", "-proxy", "0"], "port"),
+        (["connect", "valid", "localhost", "tester", "-proxy", "65536"], "port"),
+        (["connect", "valid", "localhost", "tester", "-proxy=bad"], "invalid connection options"),
+        (["connect", "valid", "localhost", "tester", "-proxy=1080", "--proxy=9050"], "duplicate"),
         (["connect", "valid", "localhost", "tester", "-shell", "bash"], "invalid connection options"),
         (["connect", "valid", "localhost", "tester", "--ssh-config", "relative"], "absolute"),
         (["connect", "valid", "localhost", "tester", "--jump", "bad;command"], "jump"),

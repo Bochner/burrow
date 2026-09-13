@@ -1,7 +1,9 @@
 """Production manager acceptance through CLI and public daemon controls."""
 import hashlib
+import fcntl
 import http.client
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -34,6 +36,27 @@ def manager_checks(binary, w, root, env, port, key, first, burrow, wait):
     assert rpc("shell", ["wrong-generation", first["creation"]])[0] != 200
     assert rpc("shell", [first["generation"], "missing-creation"])[0] != 200
     base = ["127.0.0.1", "tester", "--port", str(port), "--key", str(key)]
+    # Cancellation before a queued dispatch must never launch an SSH creation.
+    dispatch_lock = os.open(w / "burrow", os.O_RDONLY | os.O_DIRECTORY)
+    fcntl.flock(dispatch_lock, fcntl.LOCK_EX)
+    queued = subprocess.Popen([binary, "--workspace", str(w), "connect", "queued-cancel", *base, "--yes"],
+                              env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        # Existing non-secret phase evidence confirms all seven immutable request
+        # fields have been submitted, so this is cancellation at the dispatch queue.
+        trace = Path(env["BURROW_PHASE_TRACE"])
+        wait(lambda: sum(f'"pid":{queued.pid},"phase":"call:SetChainConfig"' in line
+                         for line in trace.read_text().splitlines()) == 7)
+        queued.terminate()
+        queued.communicate(timeout=5)
+        assert queued.returncode != 0
+        assert not (w / "burrow/queued-cancel").exists()
+        assert burrow(w, "inspect", first["name"])["masterPID"] == first["masterPID"]
+    finally:
+        if queued.poll() is None:
+            queued.kill()
+            queued.wait()
+        os.close(dispatch_lock)
     # Independent processes submit distinct immutable request chains.
     processes = [subprocess.Popen([binary, "--workspace", str(w), "connect", name, *base, "--yes"],
                                   env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

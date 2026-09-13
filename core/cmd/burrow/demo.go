@@ -23,7 +23,7 @@ func newDemoFrame(noColor bool) *frame {
 }
 func (m ui) demoResources(w int) string {
 	saved := [][]string{{"production", "10.20.0.10", "operator", "22", "id_ed25519", "bash", "1080", "No"}, {"staging", "10.30.0.10", "deploy", "2222", "Agent", "zsh", "—", "Yes"}}
-	tunnels := [][]string{{"1", "gateway", "Local", "5432", "10.20.0.30:5432"}, {"2", "build", "Dynamic", "1080", "SOCKS"}}
+	tunnels := [][]string{{"1", "gateway", "Local", "5432", "10.20.0.30:5432"}, {"2", "gateway", "Local", "8080", "10.20.0.40:80"}}
 	if m.height < 30 {
 		saved = saved[:1]
 		tunnels = tunnels[:1]

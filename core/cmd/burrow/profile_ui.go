@@ -57,6 +57,35 @@ func (m ui) suggestions() []string {
 	}
 	return values
 }
+
+var completionDescriptions = map[string]string{
+	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",
+	"inspect": "Inspect connection state", "reconnect": "Replace a lost SSH connection", "close": "Review and close connection",
+	"shell": "Open interactive SSH shell", "shell-close": "Close this frontend's shell", "help": "Show command reference", "quit": "Review connections and quit",
+	"profiles": "List saved connections", "history": "Show retained command history",
+	"profile create": "Save connection settings", "profile edit": "Replace saved settings", "profile save": "Save authenticated settings",
+	"profile select": "Inspect saved settings", "profile delete": "Delete saved settings only", "profile connect": "Connect saved SSH profile",
+	"profile load": "Open existing collection", "profile collection": "Create/open collection", "profile backup": "Back up saved collection",
+	"-ip": "SSH host or config alias", "-port": "SSH port", "-user": "SSH username", "-socket": "Connection name", "-ssh-key": "Private-key file path",
+	"--key": "Private-key file path", "--agent": "SSH agent socket", "--port": "SSH port", "--ssh-config": "SSH config file",
+	"--jump": "SSH jump host", "--prompt": "Hidden authentication prompt", "--yes": "Confirm reviewed connection",
+	"-proxy": "Local SOCKS proxy (default 9050)",
+}
+
+func completionDescription(value string) string {
+	words := strings.Fields(value)
+	if len(words) == 0 {
+		return ""
+	}
+	if description := completionDescriptions[words[len(words)-1]]; strings.HasPrefix(words[len(words)-1], "-") && description != "" {
+		return description
+	}
+	command := words[0]
+	if command == "profile" && len(words) > 1 {
+		command += " " + words[1]
+	}
+	return completionDescriptions[command]
+}
 func (m ui) profileRows() int { return max(1, min(3, (m.height-20)/2)) }
 func (m ui) savedConnections(w int) string {
 	title := "SAVED CONNECTIONS"
@@ -87,12 +116,11 @@ func (m ui) savedConnections(w int) string {
 				auth = p.Key + " + " + auth
 			}
 		}
-		jump := p.Jump
-		if jump == "" {
-			jump = "Config"
+		proxy := "—"
+		if p.ProxyPort != 0 {
+			proxy = fmt.Sprint(p.ProxyPort)
 		}
-		// Shells/tunnels are later slices; every current master is shell-free.
-		rows = append(rows, []string{safe(p.Name), safe(p.Host), safe(p.User), port, safe(auth), "—", safe(jump), "Yes"})
+		rows = append(rows, []string{safe(p.Name), safe(p.Host), safe(p.User), port, safe(auth), "—", proxy, "Yes"})
 	}
 	text := m.dataTable(title, []string{"NAME", "HOST", "USER", "PORT", "KEY", "SHELL", "PROXY", "NO-TERM"}, rows, w)
 	if end-start < len(m.profiles.Profiles) {

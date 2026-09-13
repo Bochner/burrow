@@ -139,7 +139,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         click(2, 20)
         wait("Exact destination")
         send(str(b) + "\r")
-        wait("● b")
+        wait(str(b))  # active workspace metadata; its SSH status is disconnected
         click(39, 1)
         wait("h0v3l>")
         command("op create embedded-b", "Operation selected: embedded-b")

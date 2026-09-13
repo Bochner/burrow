@@ -96,12 +96,19 @@ func rpcBody(conn net.Conn, method string, bodyInput []byte, out any) error {
 	if response.StatusCode != 200 {
 		return fmt.Errorf("Hovel %s rejected: HTTP %d", method, response.StatusCode)
 	}
-	body, e := io.ReadAll(io.LimitReader(response.Body, 1<<20+1))
+	limit := int64(1 << 20)
+	if method == "Snapshot" {
+		// The pinned public Snapshot exports all operations and retained logs,
+		// even when the caller only needs one chain's configuration.
+		// ponytail: 64 MiB snapshot ceiling; use a scoped config RPC when Hovel exposes one.
+		limit = 64 << 20
+	}
+	body, e := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if e != nil {
 		return e
 	}
-	if len(body) > 1<<20 {
-		return fmt.Errorf("Hovel response exceeds limit")
+	if int64(len(body)) > limit {
+		return fmt.Errorf("Hovel %s response exceeds %d-byte limit", method, limit)
 	}
 	return json.Unmarshal(body, out)
 }

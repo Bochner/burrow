@@ -51,10 +51,10 @@ func (a *authenticate) Run() error {
 		if err != nil {
 			return err
 		}
-		// Keep the complete command/config in terminal scrollback; the single
+		// Keep the actual command and concise details in terminal scrollback; the single
 		// approval remains visible even on a narrow terminal.
 		fmt.Fprintln(tty, (ui{noColor: a.noColor || os.Getenv("NO_COLOR") != ""}).semanticText(review.(map[string]string)["review"]))
-		f := confirmForm("Proceed?", "Connect using the exact command/config above?", "Connect", "Cancel")
+		f := confirmForm("Proceed?", "Connect using the SSH command above?", "Connect", "Cancel")
 		if e := run(f); e != nil {
 			return e
 		}

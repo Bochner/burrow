@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"image"
@@ -164,6 +165,13 @@ func TestSSHRecap(t *testing.T) {
 	if ansi.Strip(styled) != text {
 		t.Fatal("SSH preview text changed while coloring")
 	}
+	command := "/usr/bin/ssh -M -S /tmp/master -o StrictHostKeyChecking=no -D 127.0.0.1:9050 -p 2222 alice@nas.example"
+	colored := (ui{}).syntax(command, false)
+	for _, token := range []string{keywordStyle.Render("StrictHostKeyChecking"), warningStyle.Render("9050")} {
+		if !strings.Contains(colored, token) {
+			t.Fatal("SSH command option lost semantic color", token)
+		}
+	}
 	for _, part := range []string{heading.Render("HostName"), hostStyle.Render("192.0.2.10"), successStyle.Render("tester"), warningStyle.Render("2222")} {
 		if !strings.Contains(styled, part) {
 			t.Fatalf("missing semantic role %q", part)
@@ -228,7 +236,11 @@ func assertSelected(t *testing.T, m *frame, screen *vt.Emulator, id string, want
 			}
 			found = true
 			cell := screen.CellAt(x, y)
-			got := cell != nil && colorMatches(cell.Style.Bg, lipgloss.Color(blueColor))
+			background := blueColor
+			if strings.HasPrefix(id, "profile:") || strings.HasPrefix(id, "resource:") {
+				background = rowSelectionColor
+			}
+			got := cell != nil && colorMatches(cell.Style.Bg, lipgloss.Color(background))
 			if got != want {
 				t.Fatalf("%s selection background at %d,%d: got %v want %v", id, x, y, got, want)
 			}
@@ -246,16 +258,177 @@ func colorMatches(a, b color.Color) bool {
 	br, bg, bb, ba := b.RGBA()
 	return ar == br && ag == bg && ab == bb && aa == ba
 }
+func TestCompletionPresentation(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/completion"}, plain, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			frameEvent(m, tea.PasteMsg{Content: "connect"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+			matches, index := m.current().management.completionOptions()
+			if len(matches) != 2 || index != 0 || matches[0] != "connect" || matches[1] != "connections" {
+				t.Fatal("duplicate or missing candidates", matches, index)
+			}
+			screen := capturePresentation(t, m, fmt.Sprintf("completion-%dx%d-plain-%t", size[0], size[1], plain))
+			bounds := m.selectionBounds()
+			bounds.Min.Y = m.height - 7 // completion popup, excluding inventory prose
+			if !plain {
+				assertTextRole(t, screen, bounds, "connect", blueColor)
+				assertTextRole(t, screen, bounds, "Open SSH", subtextColor)
+			} else if strings.Contains(m.View().Content, "\x1b") {
+				t.Fatal("NO_COLOR completion leaked ANSI")
+			}
+			// Polling may update inventory, but cannot collapse the active cycle.
+			m.updateManagement(m.active, connectionList{})
+			m.updateManagement(m.active, profilesReady{})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+			if m.current().management.input.Value() != "connections" {
+				t.Fatal("refresh reset cycle")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+			frameEvent(m, tea.PasteMsg{Content: " "})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+			if m.current().management.input.Value() != "connect -ip " {
+				t.Fatal("editing did not reset command cycle", m.current().management.input.Value())
+			}
+		}
+	}
+}
+
 func TestSemanticOutput(t *testing.T) {
 	m := newUI(launch.Info{}, false)
-	m.output = `{"name":"gateway","port":22,"active":true}`
+	m.output = `{"name":"gateway","port":22,"count":-2.5e-3,"active":true,"missing":null,"items":[false],"session":"session-one","detail":"Master verified","error":"refused"}`
 	styled := m.styledOutput()
-	if ansi.Strip(styled) != m.output || !strings.Contains(styled, "38;2;180;190;254") || !strings.Contains(styled, "38;2;250;179;135") {
+	if ansi.Strip(styled) != m.output || !strings.Contains(styled, "38;2;180;190;254") || !strings.Contains(styled, "38;2;250;179;135") || !strings.Contains(styled, "38;2;249;226;175") {
 		t.Fatal("JSON text or semantic token roles lost", styled)
+	}
+	screen := vt.NewEmulator(200, 2)
+	defer screen.Close()
+	if _, err := screen.Write([]byte(styled)); err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []struct{ text, color string }{{"{", subtextColor}, {"}", subtextColor}, {"[", subtextColor}, {"]", subtextColor}, {":", subtextColor}, {",", subtextColor}, {"-2.5e-3", "#fab387"}, {"true", "#cba6f7"}, {"false", "#cba6f7"}, {"null", "#cba6f7"}, {`"session-one"`, lavenderColor}, {`"Master verified"`, subtextColor}, {`"refused"`, "#f38ba8"}} {
+		assertTextRole(t, screen, image.Rect(0, 0, 200, 2), role.text, role.color)
 	}
 	m.noColor = true
 	if m.styledOutput() != m.output {
 		t.Fatal("NO_COLOR changed output")
+	}
+}
+
+func TestConciseSSHRecap(t *testing.T) {
+	result, err := connection.Execute(context.Background(), "/tmp/recap", []string{"connect", "gateway", "nas.example", "alice", "--ssh-config", "/dev/null", "-proxy", "1080"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := result.(map[string]string)["review"]
+	for _, plain := range []bool{false, true} {
+		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/recap"}, plain, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			m.reviewText = review
+			m.setForm("review", "Review SSH connection", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+			bounds := m.dialogBounds()
+			wantWidth := min(max(76, lipgloss.Width(review)+6), size[0]-4)
+			if bounds.Dx() != wantWidth {
+				t.Fatal("recap did not expand to its command", bounds, wantWidth)
+			}
+			screen := capturePresentation(t, m, fmt.Sprintf("ssh-command-%dx%d-plain-%t", size[0], size[1], plain))
+			if !strings.Contains(screen.String(), "Proceed?") || strings.Contains(screen.String(), "Generated config:") {
+				t.Fatal("recap lost controls or retained config dump")
+			}
+			if plain {
+				if strings.Contains(m.View().Content, "\x1b") {
+					t.Fatal("NO_COLOR recap leaked ANSI")
+				}
+			} else {
+				for _, role := range []struct{ text, color string }{{"/usr/bin/ssh", blueColor}, {"-M", blueColor}, {"StrictHostKeyChecking", "#cba6f7"}, {"1080", "#f9e2af"}} {
+					assertTextRole(t, screen, bounds, role.text, role.color)
+				}
+			}
+			aligned := false
+			for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+				if screen.CellAt(bounds.Min.X+3, y).Content == "/" {
+					aligned = true
+					break
+				}
+			}
+			if !aligned {
+				t.Fatal("SSH command is not left aligned")
+			}
+			m.modalOffset = 1000
+			if m.dialogBounds() != bounds {
+				t.Fatal("scroll changed recap geometry")
+			}
+		}
+	}
+}
+
+func TestSOCKSTables(t *testing.T) {
+	m := newUI(launch.Info{}, false)
+	m.height = 40
+	m.profiles.Profiles = []connection.Profile{{Name: "gateway", Host: "nas.example", User: "alice", Port: 22, Jump: "bastion", ProxyPort: 1080}}
+	m.connections = []connection.State{{Name: "gateway", Host: "nas.example", User: "alice", Port: 22, Generation: "owner", State: "connected", ProxyPort: 1080}}
+	for _, table := range []string{m.savedConnections(160), m.activeConnections(160)} {
+		if !strings.Contains(ansi.Strip(table), "1080") || strings.Contains(ansi.Strip(table), "bastion") {
+			t.Fatal("SOCKS port missing or confused with jump host", ansi.Strip(table))
+		}
+	}
+	lines := strings.Split(ansi.Strip(m.activeConnections(160)), "\n")
+	fields := strings.Fields(lines[len(lines)-1])
+	if len(fields) < 8 || fields[4] != "1080" || fields[len(fields)-2] != "0" {
+		t.Fatal("proxy counted as a tunnel", lines)
+	}
+	m.width = 160
+	view := ansi.Strip(m.View().Content)
+	if strings.Contains(view, "SOCKS") || strings.Contains(view, "/socks") || !strings.Contains(view, "Not implemented") {
+		t.Fatal("proxy listed under tunnels", view)
+	}
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			f := newFrame(launch.Info{Workspace: "/tmp/proxy-tables"}, plain, launch.Options{})
+			defer f.terminals.close()
+			frameEvent(f, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			capturePresentation(t, f, fmt.Sprintf("proxy-empty-%dx%d-%t", size.X, size.Y, plain))
+			f.current().management.connections = m.connections
+			f.current().management.profiles = m.profiles
+			capturePresentation(t, f, fmt.Sprintf("proxy-active-%dx%d-%t", size.X, size.Y, plain))
+		}
+	}
+	m.connections[0].State = "lost"
+	if strings.Contains(ansi.Strip(m.activeConnections(160)), "1080") {
+		t.Fatal("lost proxy shown as live")
+	}
+	m.connectionError = "unverified"
+	if !strings.Contains(ansi.Strip(m.activeConnections(160)), "unverified") {
+		t.Fatal("unknown inventory reported as empty")
+	}
+}
+
+func TestFinishedConnectionColors(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/result-colors"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		m.attempt = &authAttempt{path: m.active}
+		frameEvent(m, authFinished{attempt: m.attempt, result: connection.State{Generation: "generation-one", Name: "gateway", Host: "192.0.2.50", User: "alice", Port: 2222, State: "connected", Socket: "/tmp/ssh.sock", Session: "session-one", OwnerPID: 4321, MasterPID: 5432, SocketInode: 6543, Detail: "Master verified"}})
+		screen := capturePresentation(t, m, fmt.Sprintf("connect-result-plain-%t", plain))
+		if !plain {
+			for _, role := range []struct{ text, color string }{{"{", subtextColor}, {`"generation-one"`, lavenderColor}, {`"gateway"`, lavenderColor}, {`"192.0.2.50"`, "#f5c2e7"}, {`"alice"`, "#a6e3a1"}, {"2222", "#f9e2af"}, {`"connected"`, "#a6e3a1"}} {
+				assertTextRole(t, screen, m.selectionBounds(), role.text, role.color)
+			}
+		} else if strings.Contains(m.View().Content, "\x1b") {
+			t.Fatal("NO_COLOR result leaked ANSI")
+		}
+		for _, size := range [][2]int{{200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			screen = capturePresentation(t, m, fmt.Sprintf("connect-result-%dx%d-plain-%t", size[0], size[1], plain))
+			if !plain {
+				assertTextRole(t, screen, m.selectionBounds(), "{", subtextColor)
+			}
+		}
 	}
 }
 
@@ -271,7 +444,7 @@ func TestNavigationPresentation(t *testing.T) {
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF6})
 	for i := 0; i < 9; i++ {
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
-		want := "> " + filepath.Base(m.paths[m.navIndex])
+		want := "›◌ " + filepath.Base(m.paths[m.navIndex])
 		if !strings.Contains(m.View().Content, want) {
 			t.Fatalf("selected workspace offscreen: %s", want)
 		}
@@ -707,7 +880,7 @@ func TestSavedProfilesPresentation(t *testing.T) {
 			capturePresentation(t, m, prefix+"-empty")
 			list := connection.Collection{Path: "/tmp/homelab.json", Revision: strings.Repeat("a", 64), Profiles: []connection.Profile{{Name: "nas", Host: "192.168.1.20", User: "alice", Port: 2222, Key: "/home/alice/.ssh/key", Jump: "bastion"}, {Name: "router", Host: "192.168.1.1", User: "admin", Port: 22}}}
 			m.updateManagement(m.active, profilesReady{collection: list})
-			capturePresentation(t, m, prefix+"-populated")
+			before := capturePresentation(t, m, prefix+"-populated")
 			if !strings.Contains(ansi.Strip(m.View().Content), "SAVED CONNECTIONS") {
 				t.Fatal("missing saved table")
 			}
@@ -718,6 +891,17 @@ func TestSavedProfilesPresentation(t *testing.T) {
 			}
 			screen := capturePresentation(t, m, prefix+"-selected")
 			assertSelected(t, m, screen, "profile:0", !plain)
+			compositor := m.compositor()
+			for y := 0; y < m.height; y++ {
+				for x := m.selectionBounds().Min.X + 1; x < m.selectionBounds().Max.X; x++ {
+					if compositor.Hit(x, y).ID() == "profile:0" {
+						a, b := before.CellAt(x, y), screen.CellAt(x, y)
+						if a.Content != b.Content || !colorMatches(a.Style.Fg, b.Style.Fg) {
+							t.Fatalf("selection changed token at %d,%d", x, y)
+						}
+					}
+				}
+			}
 			if !strings.Contains(ansi.Strip(m.View().Content), "›") {
 				t.Fatal("selection marker missing")
 			}
@@ -745,6 +929,72 @@ func TestSavedProfilesPresentation(t *testing.T) {
 			if plain && strings.Contains(m.View().Content, "\x1b") {
 				t.Fatal("NO_COLOR leaked escapes")
 			}
+		}
+	}
+}
+
+func TestSidebarStatusAndClickAway(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/polish"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		w := m.current()
+		w.shell = &cliTab{connection: "gateway"}
+		w.management.connectionObserved = true
+		w.management.profiles.Profiles = []connection.Profile{{Name: "saved", Host: "example.com", User: "alice", Port: 22}}
+		for _, test := range []struct{ state, dot, color string }{{"connected", "●", "#a6e3a1"}, {"connecting", "◐", "#f9e2af"}, {"lost", "○", "#f38ba8"}, {"unverified", "◌", "#f38ba8"}} {
+			w.management.connections = []connection.State{{Name: "gateway", State: test.state}}
+			screen := capturePresentation(t, m, fmt.Sprintf("sidebar-%s-%t", test.state, plain))
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, 3, 26, 4), test.dot, test.color)
+				assertTextRole(t, screen, image.Rect(0, 25, 26, 26), test.dot, test.color)
+				assertTextRole(t, screen, image.Rect(0, 26, 26, 27), test.dot, test.color)
+			}
+			if w.connectionState("") != test.state || w.connectionState("gateway") != test.state {
+				t.Fatal("incorrect observed status", test.state)
+			}
+		}
+		w.management.connectionError = "offline"
+		if w.connectionState("") != "unverified" {
+			t.Fatal("stale connection remained green")
+		}
+		w.management.connectionError = ""
+		for _, id := range []string{"profile:0", "resource:0"} {
+			m.activate(id)
+			before := capturePresentation(t, m, "clear-"+strings.ReplaceAll(id, ":", "-")+fmt.Sprint(plain))
+			assertSelected(t, m, before, id, !plain)
+			r := m.selectionBounds()
+			frameEvent(m, tea.MouseClickMsg{X: r.Min.X + 1, Y: r.Max.Y - 2, Button: tea.MouseLeft})
+			if w.selected != "" || w.management.selectedProfile != "" || w.shell == nil {
+				t.Fatal("click-away did not clear rows or destroyed shell")
+			}
+			m.activate(id)
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			if w.selected != "" || w.management.selectedProfile != "" {
+				t.Fatal("escape left row selected")
+			}
+		}
+		m.activate("shell:0")
+		selectedTab := capturePresentation(t, m, fmt.Sprintf("ssh-tab-%t", plain))
+		left, _ := m.columns()
+		if !plain && !colorMatches(selectedTab.CellAt(left+28, 1).Style.Bg, lipgloss.Color(rowSelectionColor)) {
+			t.Fatal("SSH tab has no selected background")
+		}
+		if w.tab != "shell" || !strings.Contains(ansi.Strip(m.View().Content), "› SSH · gateway") || strings.Contains(ansi.Strip(m.View().Content), "› Burrow") {
+			t.Fatal("SSH tab not exclusively selected")
+		}
+		w.focus = "tabs"
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		if w.tab != "" {
+			t.Fatal("SSH missing from tab navigation")
+		}
+		other := "/tmp/other-shell"
+		m.paths = append(m.paths, other)
+		m.workspaces[other] = &workspaceView{management: newUI(launch.Info{Workspace: other}, plain), shell: &cliTab{connection: "other"}}
+		w.focus, w.shellOffset = "shells", 1
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if m.active != other || m.current().tab != "shell" {
+			t.Fatal("shell navigation opened wrong workspace")
 		}
 	}
 }

@@ -111,7 +111,12 @@ func expandIdentity(path string, c Config) string {
 	return strings.NewReplacer("%d", home, "%h", c.Host, "%r", c.User, "%p", strconv.Itoa(c.Port)).Replace(path)
 }
 
-func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
+func shellQuote(s string) string {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-") == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
 
 // A generated -F file applies the same accepted LazySSH host policy to every hop. Native
 // ssh -W implements the ProxyJump transport without inheriting arbitrary config.
@@ -197,6 +202,11 @@ func (c Config) sshArgs() []string {
 	if c.Key != "" {
 		args = append(args, "-i", c.Key)
 	}
+	if c.ProxyPort != 0 {
+		// Only the master receives forwarding. Jump children retain the generated
+		// ClearAllForwardings=yes policy; user-config forwards are never imported.
+		args = append(args, "-o", "ClearAllForwardings=no", "-o", "ExitOnForwardFailure=yes", "-D", fmt.Sprintf("127.0.0.1:%d", c.ProxyPort))
+	}
 	return append(args, "--", "burrow-hop-0")
 }
 func (c Config) reviewDigest(verb, config string) string {
@@ -214,6 +224,10 @@ func (c Config) review(ctx context.Context, verb string) (string, string, error)
 	for i := range args {
 		args[i] = shellQuote(args[i])
 	}
-	text := fmt.Sprintf("%s %s\nEndpoint: %s@%s:%d\nSSH config: %s\nJump: %s\nKey: %s\nAgent: %s\nSSH command:\n%s\nGenerated config:\n%s\nLazySSH host policy: no host approval; user known-host writes discarded.\nQuit reviews keep running or close. Repeat with --yes --review %s to confirm.", verb, c.Name, resolved.User, resolved.Host, resolved.Port, c.SSHConfig, displaySetting(resolved.Jump, "none"), displaySetting(c.Key, "SSH config/default identities"), displaySetting(resolved.Agent, "none"), strings.Join(args, " "), config, c.reviewDigest(verb, string(config)))
+	proxy := "Off"
+	if c.ProxyPort != 0 {
+		proxy = fmt.Sprintf("SOCKS4/5 · 127.0.0.1:%d", c.ProxyPort)
+	}
+	text := fmt.Sprintf("SSH command:\n%s\n\n%s %s\nEndpoint: %s@%s:%d\nSOCKS proxy: %s\nJump: %s\nKey: %s\nAgent: %s\n\nHost trust: verification disabled; known-host writes discarded.", strings.Join(args, " "), verb, c.Name, resolved.User, resolved.Host, resolved.Port, proxy, displaySetting(resolved.Jump, "none"), displaySetting(c.Key, "SSH config/default identities"), displaySetting(resolved.Agent, "none"))
 	return text, string(config), nil
 }

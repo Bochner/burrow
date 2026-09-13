@@ -190,24 +190,37 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
     evidence = workspace / "restart-evidence.txt"
     evidence.write_text("preserve this workspace evidence\n")
     daemon = burrow(workspace, "status")["pid"]
-    for reply in ("cancel", "restart"):
+    for reply in ("cancel", "restart", "--yes"):
+        if reply == "--yes":
+            burrow(workspace, "connect", "gateway", "127.0.0.1", "tester", *options)
+            deadline = time.monotonic() + 15
+            while burrow(workspace, "inspect", "gateway")["state"] != "connected":
+                assert time.monotonic() < deadline, "restart fixture did not connect"
+                time.sleep(.1)
         outer, slave = pty.openpty()
         dimensions[:] = [160, 40]
         output.clear()
         before = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
-        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "restart"],
-                                    env=env, stdin=slave, stdout=slave, stderr=slave,
+        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "restart", *(["--yes"] if reply == "--yes" else [])],
+                                    env=env | ({"NO_COLOR": "", "COLORTERM": "truecolor"} if reply == "cancel" else {}), stdin=slave, stdout=slave, stderr=slave,
                                     preexec_fn=controlling)
         try:
-            wait("Type restart to confirm")
-            same_master()
-            send(reply + "\n")
+            if reply != "--yes":
+                wait("Type restart to confirm")
+                if reply == "cancel":
+                    assert b"38;2;166;227;161" in output and b"38;2;180;190;254" in output, "restart recap lost state/name colors"
+                else:
+                    assert b"\x1b[" not in output, "NO_COLOR restart recap emitted ANSI"
+                same_master()
+                send(reply + "\n")
             if reply == "cancel":
                 assert frontend.wait(timeout=10) != 0
                 same_master()
             else:
                 wait("ACTIVE SSH CONNECTIONS")
+                if reply == "--yes":
+                    assert b"Type restart to confirm" not in output
                 assert burrow(workspace, "connections") == []
                 assert not Path(f'/proc/{first["masterPID"]}').exists()
                 frontend.terminate()

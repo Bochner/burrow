@@ -241,6 +241,7 @@ func (m *manager) connect(raw, review, runID string) (State, error) {
 	}
 	s := &owner{profile: saved(r.Settings), config: resolved, prepared: config, dir: dir, done: make(chan struct{}), manager: m}
 	s.state = State{Name: resolved.Name, Host: resolved.Host, User: resolved.User, Port: resolved.Port, State: "connecting", Socket: filepath.Join(dir.Name(), "master"), Session: m.Session, Generation: m.Generation, Creation: r.ID, RunID: runID, OwnerPID: m.OwnerPID, Dispatch: dispatch}
+	s.state.ProxyPort = resolved.ProxyPort
 	m.connections[r.ID] = s
 	initial := s.state
 	s.Open()
@@ -422,11 +423,7 @@ func managerThrow(ctx context.Context, w string, config map[string]string, out a
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	// Once dispatched, finish the receipt so cancellation can close the exact
-	// creation; cancellation before dispatch leaves SSH untouched.
-	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
-	defer cancel()
-	b, e := launch.HovelCLI(finish, w, "--op", op, "--chain", "request", "--", "throw", "--now", "--allow-dangerous", "--json")
+	b, e := launch.HovelDispatch(ctx, w, "--op", op, "--chain", "request", "--", "throw", "--now", "--allow-dangerous", "--json")
 	if e != nil {
 		return e
 	}

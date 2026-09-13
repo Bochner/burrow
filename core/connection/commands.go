@@ -51,8 +51,9 @@ in memory; they are not Hovel-recorded session I/O or collected evidence.
 Required: NAME HOST USER (- uses SSH config user), or:
 connect -ip HOST -port NUMBER -user USER -socket NAME [-ssh-key PATH]
 Named flags may appear in any order; duplicate fields/aliases are refused.
-Legacy -proxy, -shell and -no-term are unsupported, never silently accepted.
+Legacy -shell and -no-term are unsupported, never silently accepted.
 Options (required fields are shown before optional settings):
+-proxy [PORT] (local SOCKS4/5 on 127.0.0.1, default 9050; omitted = off),
 --key PATH, --agent PATH (SSH_AUTH_SOCK default), --port NUMBER (config/22),
 --ssh-config PATH (~/.ssh/config), --jump [USER@]HOST[:PORT][,...],
 --prompt (CLI hidden password/passphrase entry), --yes (confirm review),
@@ -64,6 +65,8 @@ CLI without --yes reviews; --prompt waits for authentication and cleans failure.
 Passwords/passphrases are terminal-only: never put secrets in commands.
 Aliases use OpenSSH HostName/User/Port/IdentityFile/IdentityAgent/ProxyJump.
 ProxyCommand and config forwarding/commands/trust overrides are not imported.
+SOCKS is separate from --jump: configure tools with socks5 127.0.0.1 PORT.
+The connection owns its proxy; close/loss ends it, leaving other listeners alone.
 Agent sockets must be accessible to the daemon; select the current socket with
 frontend SSH_AUTH_SOCK or --agent. No vault or daemon environment refresh.
 Hovel catalog/chain identity: burrow@0.1.0 for every capability.
@@ -109,6 +112,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	fs.StringVar(&c.Review, "review", "", "exact SSH preview digest")
 	fs.BoolVar(&c.Prompt, "prompt", false, "private terminal authentication")
 	fs.IntVar(&c.Port, "port", 0, "SSH port (configuration or 22)")
+	fs.IntVar(&c.ProxyPort, "proxy", 0, "local SOCKS port (9050 when flag is bare)")
 	yes := fs.Bool("yes", false, "confirm reviewed operation")
 	// Normalize the pinned LazySSH spellings, then let flag validate values.
 	// Required positionals and named options can be interspersed; duplicates
@@ -133,6 +137,13 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 			return c, false, fmt.Errorf("duplicate connection option %s", name)
 		}
 		seen[name] = true
+		if !assigned && name == "proxy" {
+			value, assigned = "9050", true
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+				value = args[i]
+			}
+		}
 		if !assigned && name != "yes" && name != "prompt" {
 			i++
 			if i == len(args) {
@@ -171,12 +182,12 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 		if f.Name == "agent" {
 			c.AgentExplicit = true
 		}
-		if f.Name == "port" && c.Port == 0 {
+		if (f.Name == "port" && c.Port == 0) || (f.Name == "proxy" && c.ProxyPort == 0) {
 			invalidPort = true
 		}
 	})
 	if invalidPort {
-		return c, false, fmt.Errorf("port must be 1–65535")
+		return c, false, fmt.Errorf("SSH and proxy ports must be 1–65535")
 	}
 	if strings.HasPrefix(c.Key, "~/") {
 		c.Key = filepath.Join(home, c.Key[2:])
@@ -451,7 +462,7 @@ func displaySetting(value, fallback string) string {
 }
 
 func Suggestions(states []State) []string {
-	values := []string{"status", "connections", "connect", "connect ", "shell-close", "help", "quit"}
+	values := []string{"status", "connect", "connections", "shell-close", "help", "quit"}
 	for _, s := range states {
 		if s.State == "connected" && s.Generation != "" {
 			values = append(values, "shell "+s.Name)
@@ -465,6 +476,9 @@ func Suggestions(states []State) []string {
 
 func CommandSuggestions(line string, states []State) []string {
 	args, e := Split(line)
+	if len(args) == 1 && !strings.ContainsAny(line, " \t") {
+		return Suggestions(states)
+	}
 	if e != nil || len(args) < 1 || (args[0] != "connect" && args[0] != "reconnect") {
 		return Suggestions(states)
 	}
@@ -486,6 +500,12 @@ func CommandSuggestions(line string, states []State) []string {
 		name := optionName(args[i])
 		if strings.HasPrefix(args[i], "-") {
 			seen[name] = true
+			if name == "proxy" {
+				if !strings.Contains(args[i], "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					i++
+				}
+				continue
+			}
 			if !strings.Contains(args[i], "=") && name != "yes" && name != "prompt" {
 				i++
 			}
@@ -493,7 +513,7 @@ func CommandSuggestions(line string, states []State) []string {
 			positionals++
 		}
 	}
-	options := []string{"-ssh-key ", "--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--prompt", "--yes"}
+	options := []string{"-proxy ", "-ssh-key ", "--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--prompt", "--yes"}
 	if positionals == 0 {
 		for _, required := range [][2]string{{"host", "-ip "}, {"port", "-port "}, {"user", "-user "}, {"name", "-socket "}} {
 			if !seen[required[0]] {

@@ -18,14 +18,15 @@ import (
 // Herdr's regular "catppuccin" is Catppuccin Mocha. Semantic roles follow
 // its pinned palette and Catppuccin's style guide; see ui-reference-repair.md.
 const (
-	baseColor     = "#1e1e2e"
-	sidebarColor  = "#181825"
-	popupColor    = "#181825"
-	textColor     = "#cdd6f4"
-	subtextColor  = "#a6adc8"
-	borderColor   = "#6c7086"
-	blueColor     = "#89b4fa"
-	lavenderColor = "#b4befe"
+	baseColor         = "#1e1e2e"
+	sidebarColor      = "#181825"
+	popupColor        = "#181825"
+	textColor         = "#cdd6f4"
+	subtextColor      = "#a6adc8"
+	borderColor       = "#6c7086"
+	blueColor         = "#89b4fa"
+	lavenderColor     = "#b4befe"
+	rowSelectionColor = "#313244"
 )
 
 var accent = lipgloss.NewStyle().Foreground(lipgloss.Color(lavenderColor)).Bold(true)
@@ -81,6 +82,26 @@ func solid(text string, w, h int, bg string, noColor bool) string {
 	}
 	return result
 }
+
+// Tint rendered cells without replacing semantic foregrounds or column positions.
+func selectedRow(text string, width int, noColor bool) string {
+	canvas := lipgloss.NewCanvas(width, 1).Compose(lipgloss.NewLayer(solid(text, width, 1, rowSelectionColor, noColor)))
+	for x := 0; x < width; x++ {
+		if cell := canvas.CellAt(x, 0); cell != nil && cell.Width > 0 {
+			filled := *cell
+			filled.Style.Bg = lipgloss.Color(rowSelectionColor)
+			if x == 0 {
+				filled.Content = "›"
+			}
+			canvas.SetCell(x, 0, &filled)
+		}
+	}
+	if noColor {
+		return ansi.Strip(canvas.Render())
+	}
+	return canvas.Render()
+}
+
 func styleInput(input *textinput.Model) {
 	input.SetVirtualCursor(false)
 	styles := input.Styles()
@@ -114,8 +135,20 @@ func (m ui) syntax(line string, reference bool) string {
 		switch {
 		case word == "/usr/bin/ssh":
 			style = heading
+		case prior == "-o":
+			if option, value, ok := strings.Cut(word, "="); ok {
+				valueStyle := keywordStyle
+				if strings.HasPrefix(value, "/") {
+					valueStyle = secondary
+				}
+				return strings.Replace(token, word, m.paint(keywordStyle, option)+m.paint(secondary, "=")+m.paint(valueStyle, value), 1)
+			}
+		case prior == "-d":
+			return strings.Replace(token, word, m.endpoint(word), 1)
 		case reference && strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word && word != "F1" && word != "F6":
 			style = warningStyle
+		case word == "burrow-hop-0":
+			style = hostStyle
 		case strings.Contains(word, "@"):
 			return strings.Replace(token, word, m.endpoint(word), 1)
 		case strings.HasPrefix(word, "-"):
@@ -175,6 +208,10 @@ func (m ui) semanticText(text string) string {
 	config := false
 	for i, line := range lines {
 		line = safe(line)
+		if line == "SSH command:" {
+			lines[i] = m.paint(heading, line)
+			continue
+		}
 		if line == "Generated config:" {
 			config = true
 			lines[i] = m.paint(accent, line)
@@ -217,7 +254,12 @@ func (m ui) semanticText(text string) string {
 			if label == "Endpoint" || label == "Jump" {
 				styled = m.endpoint(value)
 			}
-			if value == "none" || value == "Unavailable" || value == "Unknown" {
+			if label == "SOCKS proxy" {
+				if protocol, endpoint, ok := strings.Cut(value, " · "); ok {
+					styled = m.paint(infoStyle, protocol) + m.paint(secondary, " · ") + m.endpoint(endpoint)
+				}
+			}
+			if value == "none" || value == "Off" || value == "Unavailable" || value == "Unknown" {
 				styled = m.paint(secondary, value)
 			}
 			lines[i] = m.paint(accent, label+":") + " " + styled
@@ -228,7 +270,7 @@ func (m ui) semanticText(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-var jsonToken = regexp.MustCompile(`"(?:\\.|[^"\\])*"|\b(?:true|false|null|-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)\b`)
+var jsonToken = regexp.MustCompile(`"(?:\\.|[^"\\])*"|true|false|null|-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?`)
 
 func (m ui) styledOutput() string {
 	if m.noColor {
@@ -244,7 +286,7 @@ func (m ui) styledOutput() string {
 	end := 0
 	field := ""
 	for _, at := range jsonToken.FindAllStringIndex(m.output, -1) {
-		b.WriteString(m.output[end:at[0]])
+		b.WriteString(m.paint(secondary, m.output[end:at[0]]))
 		token := m.output[at[0]:at[1]]
 		style := numberStyle
 		if strings.HasPrefix(token, "\"") {
@@ -254,9 +296,9 @@ func (m ui) styledOutput() string {
 				_ = json.Unmarshal([]byte(token), &field)
 			} else {
 				switch field {
-				case "name", "id", "host", "user", "key", "agent", "shell", "socket", "jump":
+				case "name", "id", "generation", "creation", "runID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "error":
 					style = fieldStyle(strings.ToUpper(field))
-				case "state":
+				case "state", "status":
 					var state string
 					_ = json.Unmarshal([]byte(token), &state)
 					style = connectionStyle(state)
@@ -264,11 +306,13 @@ func (m ui) styledOutput() string {
 			}
 		} else if token == "true" || token == "false" || token == "null" {
 			style = keywordStyle
+		} else if field == "port" || field == "proxyPort" {
+			style = warningStyle
 		}
 		b.WriteString(m.paint(style, token))
 		end = at[1]
 	}
-	b.WriteString(m.output[end:])
+	b.WriteString(m.paint(secondary, m.output[end:]))
 	return b.String()
 }
 func scrollBody(text string, width, height, offset int) viewport.Model {
@@ -323,7 +367,7 @@ func (m *frame) commandHelp() string {
 	}
 	keys = append(keys, binding("drag", "select text"), selection)
 	if m.current().focus == "prompt" && m.current().tab == "" {
-		keys = append(keys, binding("Tab", "complete"), binding("↑↓", "history"))
+		keys = append(keys, binding("Tab/Shift+Tab", "cycle"), binding("↑↓", "history"))
 	} else {
 		keys = append(keys, binding("↑↓", "select"), binding("Enter", "open"), binding("Esc", "prompt"))
 	}
@@ -349,7 +393,7 @@ var infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
 
 func fieldStyle(header string) lipgloss.Style {
 	switch header {
-	case "NAME", "ID", "CONNECTION":
+	case "NAME", "ID", "CONNECTION", "GENERATION", "CREATION", "RUNID", "SESSION":
 		return accent
 	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP":
 		return hostStyle
@@ -357,14 +401,16 @@ func fieldStyle(header string) lipgloss.Style {
 		return successStyle
 	case "PORT", "LOCAL PORT":
 		return warningStyle
-	case "KEY", "AGENT", "SHELL", "PROXY":
+	case "KEY", "AGENT", "SHELL", "PROXY", "SOCKS PROXY":
 		return infoStyle
 	case "TERM", "TYPE":
 		return keywordStyle
 	case "TUNNELS", "MASTER PID", "OWNER PID":
 		return numberStyle
-	case "SOCKET", "NO-TERM", "SSH CONFIG", "COLLECTION":
+	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL":
 		return secondary
+	case "ERROR":
+		return errorStyle
 	default:
 		return pageStyle
 	}
