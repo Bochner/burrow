@@ -38,6 +38,7 @@ parser.add_argument("--reverse-check", action="store_true", help="check real rev
 parser.add_argument("--proxy-check", action="store_true", help="check real connection-owned SOCKS traffic and cleanup")
 parser.add_argument("--measure", action="store_true", help="record production phase samples and separate process traces")
 parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
+parser.add_argument("--auth-check", action="store_true", help="check private prompts, cancellation and rejected passwords only")
 args = parser.parse_args()
 smoke = args.smoke
 binary, wheel, image_file, screen_check, legacy_binary, vim_apk = [str(Path(p).resolve()) for p in args.paths]
@@ -135,10 +136,10 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         def state_is(w, name, expected):
             s = burrow(w, "inspect", name)
             return s if s["state"] == expected else None
-        if args.prompt_check:
+        if args.prompt_check or args.auth_check:
             burrow(w,"connect","gateway","127.0.0.1","tester",*options)
             wait(lambda:state_is(w,"gateway","connected"))
-            authentication_matrix(binary,w,root,env,container,port,key,fingerprint,burrow,wait,screen_check,prompt_only=True)
+            authentication_matrix(binary,w,root,env,container,port,key,fingerprint,burrow,wait,screen_check,prompt_only=args.prompt_check,auth_only=args.auth_check)
             raise SystemExit(0)
         # Owner-approved LazySSH policy authenticates without host-key approval.
         plain = ["--key", str(key), "--port", str(port), "--yes"]
