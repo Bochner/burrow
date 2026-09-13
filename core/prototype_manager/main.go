@@ -316,6 +316,7 @@ func submit(c context.Context, w string, config map[string]string) (any, error) 
 		Results []struct {
 			State   string
 			Summary string
+			RunID   string
 		}
 	}
 	if e = json.Unmarshal(b, &result); e != nil {
@@ -326,6 +327,12 @@ func submit(c context.Context, w string, config map[string]string) (any, error) 
 	}
 	var value any
 	e = json.Unmarshal([]byte(result.Results[0].Summary), &value)
+	if config["action"] == "consume" || config["action"] == "tunnel-open" {
+		correlation, ok := value.(map[string]any)
+		if !ok || correlation["runID"] != result.Results[0].RunID {
+			return nil, fmt.Errorf("consumer result/throw run correlation refused: summary=%v throw=%s", correlation["runID"], result.Results[0].RunID)
+		}
+	}
 	return value, e
 }
 func control(c context.Context, w string, o observation, command string, args []string, out any) error {

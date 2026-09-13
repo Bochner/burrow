@@ -30,6 +30,13 @@ It runs against Hovel v0.4.2 / SDK commit
 `linuxserver/openssh-server@sha256:47f82202bcbffe214cea77dc7f5ed24b875e81ce6ebf0e0368e2954727bf5116`
 image and synthetic key. No new dependency or production adapter is added.
 
+Final validation passed: `aspect burrow-check` built the packages/metadata,
+passed all 18 portable checks, and passed the production SSH/terminal fixture
+(252.1 seconds), #71 manager fixture (60.4 seconds), and #72 consumer fixture
+(50.7 seconds). Standards and Spec reviews, including the verifier correction,
+reported no outstanding findings. These are behavior-check durations, not
+connection latency benchmarks.
+
 The controlled HTTP nonce fixture comes from `prototype_transport/check.py` and
 the fixed-forward/HTTP approach from `prototype_transport/tunnel_boundary.go`.
 For the Docker network boundary, a fixture-only reverse loopback relay makes the
@@ -51,6 +58,9 @@ The check covers:
   Ordinary artifacts contain the returned nonce and complete non-secret
   selection, owner/master/adapter correlation, run ID and reviewed digest.
   They are collected evidence; live status is not treated as an audit record.
+  The verifier checks every captured successful consumer after daemon shutdown,
+  including the actual confirmation row and exact request in its plan. The
+  frontend also checks the summary's run ID against the outer Hovel throw result.
 - Stale generations/session/connection/tunnel selections, wrong workspace,
   bind or destination fail without traffic. Duplicate binds are refused.
   Closing and recreating a forward on the same port produces a new tunnel ID;
@@ -125,6 +135,16 @@ operations serialize per master and there are at most 128 retained flow IDs.
 Unknown allocation/close acknowledgement keeps the bind reserved and unusable;
 full connection teardown remains available. Same-user external socket/listener
 replacement is outside the existing ownership model, as in the #27 proof.
+
+Verification finding: opening the private workspace SQLite database repeatedly
+from Python while Hovel was running produced missing completion records, and
+explicitly closing those live readers also reproduced a malformed-database
+error. Moving all SQL inspection after daemon exit preserved the same strict
+checks and passed three concurrent fixture repetitions (49.3–50.7 seconds).
+The precise cross-runtime SQLite locking cause is not established. This proof
+uses public RPC during operation and inspects durable SQL evidence only after
+shutdown; it does not introduce live database reads into Burrow or claim that
+arbitrary external SQLite inspection is safe.
 
 Owner decision requested after the runnable proof and review: accept the bounded
 consumer and retain the manager candidate, with this generic-stream boundary

@@ -174,7 +174,7 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
         print("PASS two real SSH masters, one retained base-module manager, two frontends",flush=True)
         if "--consumer" in sys.argv:
             from core.prototype_manager.consumer_check import check
-            check(root, env, proof, w, owner, first, second, workspace, run, command, rpc, control, connected, wait)
+            check(root, env, proof, w, info["pid"], owner, first, second, workspace, run, command, rpc, control, connected, wait)
             sys.exit(0)
         # A changed request never dispatches; replay cannot recreate a connection.
         path,digest = attempts[0][1:]

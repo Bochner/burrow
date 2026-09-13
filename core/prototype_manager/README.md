@@ -87,6 +87,8 @@ forward and the existing HTTP nonce fixture. A new confirmed adapter selects the
 workspace, owner session/generation, connection creation, tunnel creation, exact
 endpoints, action and unique flow. The owner performs the bounded exchange; the
 adapter records a normal result and JSON artifact with those non-secret identities.
+The verifier checks exact persisted plans, confirmations and artifacts after the
+daemon exits; it does not open the private database while Hovel is operating.
 The fixture's reverse loopback relay makes its host HTTP server reachable inside
 the pinned SSH container. Both forwarding hops use the existing master.
 

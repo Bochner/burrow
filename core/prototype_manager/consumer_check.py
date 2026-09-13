@@ -10,11 +10,13 @@ import threading
 import os
 import signal
 import uuid
+from contextlib import closing
 
 
-def check(root, env, proof, w, owner, first, second, workspace, run, command, rpc, control, connected, wait):
+def check(root, env, proof, w, daemon_pid, owner, first, second, workspace, run, command, rpc, control, connected, wait):
     requests = []
     stalled = {}
+    evidence = []
 
     class Echo(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
@@ -61,13 +63,7 @@ def check(root, env, proof, w, owner, first, second, workspace, run, command, rp
             result = run(*args, env=env, ok=ok)
             if ok and action == "consume":
                 assert result["nonce"] == request["nonce"] and request["nonce"] in requests
-                # Real confirmed throw and normal artifact, correlated to this run.
-                with sqlite3.connect(w / "workspace.db") as db:
-                    plans = [json.loads(row[0]) for row in db.execute("select p.plan_json from throw_plans p join throw_records r on r.plan_id=p.id, json_each(r.throw_json, '$.runs') j where json_extract(j.value, '$.runId')=?", (result["runID"],))]
-                    assert len(plans) == 1 and plans[0]["confirmationId"]
-                    artifact = db.execute("select path from artifacts where run_id=?", (result["runID"],)).fetchone()[0]
-                report = json.loads((w / artifact).read_text())
-                assert report == result and report["selection"] == request
+                evidence.append((result, request))
             if not ok:
                 assert request["nonce"] not in requests
             return result, request
@@ -212,5 +208,24 @@ def check(root, env, proof, w, owner, first, second, workspace, run, command, rp
                 stalled[pending["nonce"]].set()
                 if process.poll() is None:
                     process.kill(); process.communicate(timeout=5)
+            # Inspect durable evidence only after Hovel has released its private
+            # database. Direct live SQL inspection is not a supported RPC path.
+            os.kill(daemon_pid, signal.SIGTERM)
+            def daemon_ended():
+                try:
+                    return Path(f"/proc/{daemon_pid}/stat").read_text().rsplit(")", 1)[1].split()[0] == "Z"
+                except FileNotFoundError:
+                    return True
+            wait(daemon_ended)
+            with closing(sqlite3.connect(w / "workspace.db")) as db:
+                for result, request in evidence:
+                    plans = [json.loads(row[0]) for row in db.execute("select p.plan_json from throw_plans p join throw_records r on r.plan_id=p.id, json_each(r.throw_json, '$.runs') j where json_extract(j.value, '$.runId')=?", (result["runID"],))]
+                    assert len(plans) == 1 and plans[0]["confirmationId"], {"run": result["runID"], "plans": plans}
+                    assert db.execute("select count(*) from throw_confirmations where id=?", (plans[0]["confirmationId"],)).fetchone()[0] == 1
+                    assert json.loads(plans[0]["chainConfig"]["request"]) == request
+                    artifact = db.execute("select path from artifacts where run_id=?", (result["runID"],)).fetchone()[0]
+                    report = json.loads((w / artifact).read_text())
+                    assert report == result and report["selection"] == request
+            print("PASS all collected consumer results retain exact confirmed plans and artifacts after daemon shutdown", flush=True)
         finally:
             server.shutdown()
