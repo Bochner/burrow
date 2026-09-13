@@ -570,12 +570,7 @@ func canonicalWorkspace(s string) error {
 	return nil
 }
 func (m *frame) formText() string {
-	text := m.formTitle
-	if m.modal == "menu" {
-		text = m.current().management.paletteTitle(m.dialogBounds().Dx() - 6)
-	} else {
-		text = centered(m.current().management.paint(accent, text), m.dialogBounds().Dx()-6)
-	}
+	text := centered(m.current().management.paint(accent, m.formTitle), m.dialogBounds().Dx()-6)
 	if m.modal == "quit" {
 		bounds := m.dialogBounds()
 		v := scrollBody(m.quitSummary(), bounds.Dx()-6, max(1, bounds.Dy()-14), m.modalOffset)

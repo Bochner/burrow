@@ -412,14 +412,6 @@ func (m *frame) commandHelp() string {
 	return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 }
 
-func (m ui) paletteTitle(width int) string {
-	title := m.paint(accent, "Menu ")
-	for _, c := range lipgloss.Blend1D(max(0, width-5), lipgloss.Color(lavenderColor), lipgloss.Color("#cba6f7")) {
-		title += m.paint(lipgloss.NewStyle().Foreground(c), "╱")
-	}
-	return title
-}
-
 func centered(text string, width int) string {
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, ansi.Truncate(text, width, "…"))
 }

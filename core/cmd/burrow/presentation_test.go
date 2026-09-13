@@ -688,6 +688,43 @@ func TestCommandPalette(t *testing.T) {
 	}
 }
 
+func TestMenuThemeConsistency(t *testing.T) {
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			m := newFrame(launch.Info{Workspace: "/tmp/menu"}, plain, launch.Options{})
+			if plain {
+				m = newDemoFrame(plain)
+			}
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+			bounds := m.dialogBounds()
+			for _, filter := range []string{"", "meta", "no match"} {
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+				frameEvent(m, tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+				frameEvent(m, tea.PasteMsg{Content: filter})
+				screen := capturePresentation(t, m, fmt.Sprintf("menu-%dx%d-plain-%t-%s", size.X, size.Y, plain, strings.ReplaceAll(filter, " ", "-")))
+				title := strings.Split(ansi.Strip(m.formText()), "\n")[0]
+				if title != centered("Menu", bounds.Dx()-6) || strings.Contains(m.formText(), "╱") || bounds != m.dialogBounds() {
+					t.Fatal("menu diverged from shared dialog title or stable bounds")
+				}
+				footer := ansi.Cut(strings.Split(m.View().Content, "\n")[bounds.Max.Y-3], bounds.Min.X+3, bounds.Max.X-3)
+				if ansi.Strip(footer) != centered("↑↓ select · Enter run · Esc close", bounds.Dx()-6) {
+					t.Fatal("menu footer is not centered like other dialogs")
+				}
+				if plain {
+					if strings.Contains(m.View().Content, "\x1b") {
+						t.Fatal("NO_COLOR menu leaked ANSI")
+					}
+				} else {
+					assertTextRole(t, screen, bounds.Inset(1), "Menu", lavenderColor)
+					assertTextRole(t, screen, bounds.Inset(1), "Esc close", subtextColor)
+				}
+			}
+		}
+	}
+}
+
 func TestShrinkingCenter(t *testing.T) {
 	m := newDemoFrame(true)
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})

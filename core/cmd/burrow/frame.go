@@ -1449,9 +1449,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				hint = "↑↓ select · Enter run · Esc close"
 			}
 			hint = current.management.paint(secondary, hint)
-			if m.modal != "menu" {
-				hint = centered(hint, bw)
-			}
+			hint = centered(hint, bw)
 			control("dismiss", hint, y+ph-3)
 		}
 	}
