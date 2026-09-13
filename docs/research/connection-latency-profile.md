@@ -1,8 +1,9 @@
 # Pre-SSH connection delay profile — issue #77
 
 Implementation evidence for [#77](https://github.com/Bochner/burrow/issues/77),
-following the accepted #73 retained-manager checkpoint. The owner has not yet
-accepted this result; the remaining limits below are presented for that decision.
+following the accepted #73 retained-manager checkpoint. The owner accepted this
+result and its remaining limits on 2026-09-13; the check-placement decision is
+recorded in [the connection-control decision](../adr/0001-manual-connection-approval.md).
 Measurements are from the controlled lab on a shared development machine, not a
 promise about real-server timing.
 
@@ -63,8 +64,8 @@ once per process.
 This moves the live-catalog revalidation that
 [the connection-control decision](../adr/0001-manual-connection-approval.md)
 mentions from every throw to workspace open, with the adapter's exact build
-check as the fresh per-throw substitute. That reinterpretation is presented for
-owner acceptance, not assumed.
+check as the fresh per-throw substitute. The owner accepted that
+reinterpretation on 2026-09-13.
 
 Rejected for now: a persistent digest cache (no evidence it is needed once
 per-process reuse exists), fewer verifications per RPC (each is now cheap), and

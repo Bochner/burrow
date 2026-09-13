@@ -98,6 +98,12 @@ as the execution coordinator: `--now` translates the already accepted recap
 into Hovel's single-operator confirmation, not a second user question. Existing
 launch-key restrictions still apply and can refuse the operation. Keep module
 installation on its supported path and revalidate the live catalog.
+Owner acceptance on 2026-09-13 (#77): that revalidation happens when a
+workspace is opened; each throw then binds the frontend build digest into its
+immutable request chain and the daemon-launched adapter refuses another build
+before dispatch. Every daemon, reservation, request and authentication check
+stays fresh per operation. See
+[the pre-SSH delay profile](../research/connection-latency-profile.md).
 
 The proof may prepare reusable operation/chain structure, but must bind each
 review to its own immutable resolved request. Two frontends must not overwrite
