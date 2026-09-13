@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"html"
+	"image"
 	"image/color"
 	"os"
 	"path/filepath"
@@ -185,7 +186,7 @@ func TestSemanticOutput(t *testing.T) {
 	m := newUI(launch.Info{}, false)
 	m.output = `{"name":"gateway","port":22,"active":true}`
 	styled := m.styledOutput()
-	if ansi.Strip(styled) != m.output || !strings.Contains(styled, "38;2;166;227;161") || !strings.Contains(styled, "38;2;250;179;135") {
+	if ansi.Strip(styled) != m.output || !strings.Contains(styled, "38;2;180;190;254") || !strings.Contains(styled, "38;2;250;179;135") {
 		t.Fatal("JSON text or semantic token roles lost", styled)
 	}
 	m.noColor = true
@@ -420,6 +421,93 @@ func TestDemoPreview(t *testing.T) {
 
 // Project presentation contract: compare final rendered cells to semantic roles,
 // not merely the palette function's return value.
+func assertTextRole(t *testing.T, screen *vt.Emulator, bounds image.Rectangle, value, hex string) {
+	t.Helper()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		var line strings.Builder
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			line.WriteString(screen.CellAt(x, y).Content)
+		}
+		at := strings.Index(line.String(), value)
+		if at < 0 {
+			continue
+		}
+		x := bounds.Min.X + ansi.StringWidth(line.String()[:at])
+		if !colorMatches(screen.CellAt(x, y).Style.Fg, lipgloss.Color(hex)) {
+			t.Fatalf("%q lost semantic color %s", value, hex)
+		}
+		return
+	}
+	t.Fatalf("required text missing: %q", value)
+}
+
+func TestConnectionRecapColors(t *testing.T) {
+	for _, operation := range []string{"connect", "close"} {
+		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/recap"}, false, launch.Options{})
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			review := "connect gateway\nEndpoint: alice@nas.example:2222\nSSH config: /tmp/config\nJump: bob@bastion:2200,192.0.2.1\nKey: /home/alice/.ssh/id_ed25519\nAgent: none"
+			expect := map[string]string{"connect": blueColor, "gateway": lavenderColor, "Endpoint:": lavenderColor, "alice": "#a6e3a1", "nas.example": "#f5c2e7", "2222": "#f9e2af", "192.0.2.1": "#f5c2e7", "bob": "#a6e3a1", "bastion": "#f5c2e7", "2200": "#f9e2af", "Key:": lavenderColor, "/home/alice/.ssh/id_ed25519": "#94e2d5"}
+			if operation == "close" {
+				review = "Close NAS (alice@192.0.2.2:2222), state connected, master PID 123, socket /tmp/master. Ends all owned connection access; saved settings and artifacts remain. Repeat close NAS --yes to confirm."
+				expect = map[string]string{"Close": blueColor, "NAS": lavenderColor, "alice": "#a6e3a1", "192.0.2.2": "#f5c2e7", "2222": "#f9e2af", "connected": "#a6e3a1", "123": "#fab387", "--yes": blueColor}
+			}
+			m.modal, m.commandArgs = "review", []string{operation, "gateway"}
+			frameEvent(m, m.dispatch(m.active, func() tea.Msg {
+				return commandReview{epoch: m.inputEpoch, args: m.commandArgs, review: review}
+			})())
+			screen := capturePresentation(t, m, fmt.Sprintf("recap-%s-%dx%d", operation, size[0], size[1]))
+			bounds := m.dialogBounds()
+			for value, hex := range expect {
+				assertTextRole(t, screen, bounds, value, hex)
+			}
+			colored := ansi.Strip(m.View().Content)
+			m.noColor, m.current().management.noColor = true, true
+			plain := m.View().Content
+			if plain != ansi.Strip(plain) || strings.Join(strings.Fields(plain), " ") != strings.Join(strings.Fields(colored), " ") || bounds != m.dialogBounds() {
+				t.Fatal("NO_COLOR changed recap text/layout or leaked colors")
+			}
+		}
+	}
+}
+
+func TestSharedFormAndHelpRoles(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/colors"}, false, launch.Options{})
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.setForm("profile-save", "Save settings", saveProfileForm("gateway", "/tmp/collection.json"))
+	screen := capturePresentation(t, m, "shared-form-colors")
+	assertTextRole(t, screen, m.dialogBounds(), "Collection:", lavenderColor)
+	assertTextRole(t, screen, m.dialogBounds(), "/tmp/collection.json", subtextColor)
+	assertTextRole(t, screen, m.dialogBounds(), "Enter", "#cba6f7")
+	m.dismissForm()
+	m.current().management.help = true
+	screen = capturePresentation(t, m, "help-command-colors")
+	bounds := image.Rect(35, 7, 125, 33)
+	for value, hex := range map[string]string{"profile": blueColor, "create": blueColor, "NAME": "#f9e2af", "--as": blueColor} {
+		assertTextRole(t, screen, bounds, value, hex)
+	}
+	u := &m.current().management
+	v := u.helpViewport(m.width, m.height)
+	for i, line := range strings.Split(ansi.Wrap(u.helpText(), v.Width(), ""), "\n") {
+		if strings.Contains(line, "--key PATH") {
+			u.helpOffset = i
+			break
+		}
+	}
+	screen = capturePresentation(t, m, "help-placeholder-colors")
+	assertTextRole(t, screen, bounds, "PATH", "#f9e2af")
+	assertTextRole(t, screen, bounds, "[USER@]HOST[:PORT][,...]", "#f9e2af")
+	m.current().management.helpOffset = 1000
+	screen = capturePresentation(t, m, "help-keybinding-colors")
+	assertTextRole(t, screen, bounds, "Shift+F6", "#cba6f7")
+	assertTextRole(t, screen, bounds, "PgUp/PgDn", "#cba6f7")
+	m.noColor, m.current().management.noColor = true, true
+	plain := m.View().Content
+	if plain != ansi.Strip(plain) || !strings.Contains(plain, "PgUp/PgDn") {
+		t.Fatal("NO_COLOR help lost text or leaked colors")
+	}
+}
+
 func TestTerminalStatusRoles(t *testing.T) {
 	for _, state := range []string{"pending", "refused", "exited"} {
 		m := newFrame(launch.Info{Workspace: "/tmp/terminal"}, false, launch.Options{})

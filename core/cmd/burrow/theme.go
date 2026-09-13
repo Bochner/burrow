@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -101,23 +102,92 @@ func (m ui) choice(label string, selected bool, width int) string {
 
 var commandToken = regexp.MustCompile(`\S+`)
 
-func (m ui) syntax(line string) string {
-	// Known command-reference syntax, following the accepted prototype's roles.
+func (m ui) syntax(line string, reference bool) string {
+	// ponytail: token hints cover Burrow's command reference and recaps; use a
+	// shell lexer if arbitrary shell source becomes a supported viewer input.
+	previous := ""
 	return commandToken.ReplaceAllStringFunc(line, func(token string) string {
-		word := strings.Trim(token, "[](),")
+		word := strings.Trim(token, "[](),.")
+		prior := previous
+		previous = strings.ToLower(word)
 		style := pageStyle
 		switch {
-		case strings.HasPrefix(word, "--"):
+		case reference && strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word && word != "F1" && word != "F6":
+			style = warningStyle
+		case strings.Contains(word, "@"):
+			return strings.Replace(token, word, m.endpoint(word), 1)
+		case strings.HasPrefix(word, "-"):
 			style = heading
+		case prior == "connect" || prior == "reconnect" || prior == "close" || prior == "inspect":
+			style = accent
+		case prior == "-p" || prior == "--port":
+			style = warningStyle
+		case prior == "-i" || prior == "--key":
+			style = infoStyle
+		case strings.HasPrefix(word, "/") || strings.HasPrefix(word, "~/"):
+			style = secondary
+		case strings.HasSuffix(word, ":"):
+			style = accent
+		case word == "state" || word == "master" || word == "PID" || word == "socket":
+			style = accent
+		case word == "connected" || word == "active" || word == "failed" || word == "lost" || word == "closed" || word == "disconnected" || word == "connecting":
+			style = connectionStyle(word)
+		case strings.Trim(word, "0123456789") == "" && word != "":
+			style = numberStyle
+		case strings.HasPrefix(word, "Ctrl") || strings.HasPrefix(word, "Alt") || strings.HasPrefix(word, "Shift+") || word == "Tab" || word == "Enter" || word == "Esc" || word == "F1" || word == "F6" || word == "PgUp/PgDn":
+			style = keywordStyle
 		case strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word:
 			style = warningStyle
-		case strings.HasPrefix(word, "Ctrl") || strings.HasPrefix(word, "Alt") || word == "Tab" || word == "Enter" || word == "Esc" || word == "F6":
-			style = keywordStyle
-		case word == "connect" || word == "reconnect" || word == "inspect" || word == "connections" || word == "close" || word == "status" || word == "help" || word == "quit":
+		case previous == "ssh" || previous == "connect" || previous == "reconnect" || previous == "inspect" || previous == "connections" || previous == "close" || previous == "status" || previous == "help" || previous == "quit" || previous == "profile" || previous == "profiles" || previous == "history":
+			style = heading
+		case prior == "profile" && (word == "create" || word == "select" || word == "save" || word == "edit" || word == "delete" || word == "collection" || word == "load" || word == "backup"):
 			style = heading
 		}
 		return m.paint(style, token)
 	})
+}
+
+func (m ui) endpoint(value string) string {
+	if strings.Contains(value, ",") {
+		hops := strings.Split(value, ",")
+		for i, hop := range hops {
+			hops[i] = m.endpoint(hop)
+		}
+		return strings.Join(hops, ",")
+	}
+	if user, host, ok := strings.Cut(value, "@"); ok {
+		return m.paint(successStyle, user) + "@" + m.endpoint(host)
+	}
+	if at := strings.LastIndex(value, ":"); at >= 0 {
+		if _, err := strconv.Atoi(value[at+1:]); err == nil {
+			return m.paint(hostStyle, value[:at]) + ":" + m.paint(warningStyle, value[at+1:])
+		}
+	}
+	return m.paint(hostStyle, value)
+}
+
+// Shared by form descriptions and plain operational output. Style only after
+// sanitizing external text; retain whitespace and leave secrets to masked inputs.
+func (m ui) semanticText(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		line = safe(line)
+		label, value, field := strings.Cut(line, ": ")
+		if field && !strings.ContainsAny(label, "/@") {
+			style := fieldStyle(strings.ToUpper(label))
+			styled := m.paint(style, value)
+			if label == "Endpoint" || label == "Jump" {
+				styled = m.endpoint(value)
+			}
+			if value == "none" || value == "Unavailable" || value == "Unknown" {
+				styled = m.paint(secondary, value)
+			}
+			lines[i] = m.paint(accent, label+":") + " " + styled
+		} else {
+			lines[i] = m.syntax(line, false)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 var jsonToken = regexp.MustCompile(`"(?:\\.|[^"\\])*"|\b(?:true|false|null|-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)\b`)
@@ -130,10 +200,11 @@ func (m ui) styledOutput() string {
 		if strings.HasPrefix(m.output, "REFUSED:") {
 			return m.paint(errorStyle, m.output)
 		}
-		return m.paint(pageStyle, m.output)
+		return m.semanticText(m.output)
 	}
 	var b strings.Builder
 	end := 0
+	field := ""
 	for _, at := range jsonToken.FindAllStringIndex(m.output, -1) {
 		b.WriteString(m.output[end:at[0]])
 		token := m.output[at[0]:at[1]]
@@ -142,6 +213,16 @@ func (m ui) styledOutput() string {
 			style = successStyle
 			if strings.HasPrefix(strings.TrimSpace(m.output[at[1]:]), ":") {
 				style = heading
+				_ = json.Unmarshal([]byte(token), &field)
+			} else {
+				switch field {
+				case "name", "id", "host", "user", "key", "agent", "shell", "socket", "jump":
+					style = fieldStyle(strings.ToUpper(field))
+				case "state":
+					var state string
+					_ = json.Unmarshal([]byte(token), &state)
+					style = connectionStyle(state)
+				}
 			}
 		} else if token == "true" || token == "false" || token == "null" {
 			style = keywordStyle
@@ -228,19 +309,19 @@ func fieldStyle(header string) lipgloss.Style {
 	switch header {
 	case "NAME", "ID", "CONNECTION":
 		return accent
-	case "HOST", "REMOTE":
+	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP":
 		return hostStyle
-	case "USER":
+	case "USER", "USERNAME":
 		return successStyle
 	case "PORT", "LOCAL PORT":
 		return warningStyle
-	case "KEY", "SHELL", "PROXY":
+	case "KEY", "AGENT", "SHELL", "PROXY":
 		return infoStyle
 	case "TERM", "TYPE":
 		return keywordStyle
-	case "TUNNELS":
+	case "TUNNELS", "MASTER PID", "OWNER PID":
 		return numberStyle
-	case "SOCKET", "NO-TERM":
+	case "SOCKET", "NO-TERM", "SSH CONFIG", "COLLECTION":
 		return secondary
 	default:
 		return pageStyle

@@ -22,7 +22,9 @@ import (
 func formTheme(bool) *huh.Styles {
 	s := huh.ThemeCatppuccin(true)
 	s.Focused.Title = accent
-	s.Focused.Description = secondary
+	s.Focused.Description = secondary.Transform(func(text string) string { return (ui{}).semanticText(text) })
+	s.Blurred.Title = accent
+	s.Blurred.Description = s.Focused.Description
 	s.Focused.ErrorMessage = errorStyle
 	s.Focused.FocusedButton = selectedStyle.Padding(0, 1).Transform(func(s string) string { return "[› " + s + "]" })
 	s.Focused.BlurredButton = secondary.Padding(0, 1).Transform(func(s string) string { return "[  " + s + "]" })

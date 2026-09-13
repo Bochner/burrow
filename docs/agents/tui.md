@@ -7,6 +7,20 @@ provide its evidence, not its authority.
 
 ## Semantic colors and syntax
 
+The color scheme is mandatory across the entire Burrow-owned interface: every
+screen, panel, popup, form, recap, help view and operational output. The accepted
+sidebar and resource tables are the baseline, not exceptions. Use shared theme
+roles and form styles; do not add default-white blocks of structured information
+or a separate palette for a new feature. Ordinary explanatory prose may use the
+base or secondary text role. Embedded terminal programs keep their own output
+colors; Burrow's surrounding controls still follow this standard.
+
+Connect and close recaps must distinguish category labels (for example `Key:`),
+connection names, usernames, hostnames/IPs, ports, paths, states and command
+tokens. Help must distinguish commands/subcommands, flags, placeholders and
+keybindings from explanatory prose. Generated SSH command/config previews must
+use these same roles when implemented. NO_COLOR preserves text and controls.
+
 Use the shared Catppuccin Mocha roles in `core/cmd/burrow/theme.go` (Herdr's
 regular `catppuccin`). Keep field meaning consistent across tables, metadata,
 help and output. Use the shared role functions rather than local RGB literals.

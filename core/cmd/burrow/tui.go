@@ -420,7 +420,7 @@ func (m ui) helpText() string {
 	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Review connections; keep running or close and quit\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources, saved. Saved: Enter actions; arrows select.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P menu (Alt+M), Alt+N New, Alt+W workspace drawer.\nDrag selects only the middle panel; Ctrl+C or Copy copies (no auto-copy).\nEsc clears selection; Ctrl+Shift+V pastes. Ctrl+Shift+C copies if forwarded.\nAlt+S toggles native selection (includes sidebars). Alt+mouse sends to Hovel.\nTab completes the prompt. With mouse controls enabled, click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
 }
 func (m ui) helpViewport(w, h int) viewport.Model {
-	return scrollBody(m.syntax(m.helpText()), max(1, min(96, w-4)-6), max(1, min(30, h-4)-8), m.helpOffset)
+	return scrollBody(m.syntax(m.helpText(), true), max(1, min(96, w-4)-6), max(1, min(30, h-4)-8), m.helpOffset)
 }
 func (m ui) overlay(base string, w, h int) *lipgloss.Compositor {
 	pw, ph := max(8, min(96, w-4)), max(8, min(30, h-4))
