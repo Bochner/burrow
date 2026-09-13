@@ -58,6 +58,33 @@ type State struct {
 	Detail      string `json:"detail"`
 }
 
+// ShellCommand uses the same public command/owner checks as the management UI.
+// The client owns only a multiplexed channel. ProxyCommand closes the OpenSSH
+// fallback path if the master disappears between verification and exec.
+func ShellCommand(ctx context.Context, workspace, name string) (*exec.Cmd, error) {
+	value, err := Execute(ctx, workspace, []string{"shell", name})
+	if err != nil {
+		return nil, err
+	}
+	s := value.(State)
+	path, err := launch.ConnectionPath(workspace, name)
+	if err != nil || s.Socket != path || s.Name != name || s.MasterPID <= 0 || s.SocketInode == 0 {
+		return nil, fmt.Errorf("shell owner identity changed")
+	}
+	st, err := os.Lstat(path)
+	if err != nil || st.Mode()&os.ModeSocket == 0 || st.Sys().(*syscall.Stat_t).Ino != s.SocketInode || st.Sys().(*syscall.Stat_t).Uid != uint32(os.Getuid()) {
+		return nil, fmt.Errorf("shell master socket missing or replaced")
+	}
+	if err := (&owner{state: s, socket: st}).checkMaster(); err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("/usr/bin/ssh", "-F", "/dev/null", "-S", path,
+		"-o", "ControlMaster=no", "-o", "ProxyCommand=/usr/bin/false",
+		"-o", "BatchMode=yes", "-o", "EscapeChar=none", "-tt", "unused")
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8"}
+	return cmd, nil
+}
+
 func (c Config) Validate() error {
 	if _, e := launch.ConnectionPath(c.Workspace, c.Name); e != nil {
 		return e
@@ -301,7 +328,7 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 		e := s.Close("operator confirmed connection-wide close")
 		return hovel.PayloadCommandResult{Command: req.Command}, e
 	}
-	if (req.Command != "connection-status" && req.Command != "connection-profile") || len(req.Args) != 0 {
+	if (req.Command != "connection-status" && req.Command != "connection-profile" && req.Command != "connection-shell") || len(req.Args) != 0 {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported connection command")
 	}
 	s.mu.Lock()
@@ -325,6 +352,9 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 		}
 		b, e := json.Marshal(s.profile)
 		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
+	}
+	if req.Command == "connection-shell" && (s.closed || s.state.State != "connected") {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("shell requires a verified live master; no fresh login attempted")
 	}
 	s.milestone("connection inspected")
 	b, e := json.Marshal(s.state)

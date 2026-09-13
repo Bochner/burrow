@@ -46,11 +46,19 @@ type Host struct {
 }
 
 func Start(ctx context.Context, cmd *exec.Cmd, width, height int) (*Host, error) {
+	return StartWithScrollback(ctx, cmd, width, height, math.MaxInt)
+}
+
+// StartWithScrollback bounds retained history independently of draining output.
+func StartWithScrollback(ctx context.Context, cmd *exec.Cmd, width, height, historyLines int) (*Host, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if width < 1 || height < 1 || width > 1000 || height > 1000 {
 		return nil, fmt.Errorf("terminal geometry outside 1..1000 cells")
+	}
+	if historyLines < 0 {
+		return nil, fmt.Errorf("negative terminal history limit")
 	}
 	fd, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0600)
 	if err != nil {
@@ -94,9 +102,9 @@ func Start(ctx context.Context, cmd *exec.Cmd, width, height int) (*Host, error)
 	}
 	s := &Host{em: vt.NewEmulator(width, height), pty: master, cmd: cmd, input: make(chan any, 128), done: make(chan struct{}), stopped: make(chan struct{}), modes: make(map[ansi.Mode]bool)}
 	s.state.Visible = true
-	// Retain this CLI's complete scrollback until it clears history or closes.
-	// The VT allocates lines on demand, not MaxInt cells up front.
-	s.em.SetScrollbackSize(math.MaxInt)
+	// Lines allocate on demand. Hovel retains its complete CLI history; SSH
+	// shells use a finite bound and never write transcripts to disk.
+	s.em.SetScrollbackSize(historyLines)
 	s.em.SetCallbacks(vt.Callbacks{
 		CursorVisibility: func(on bool) { s.state.Visible = on },
 		EnableMode:       func(mode ansi.Mode) { s.modes[mode] = true },
@@ -202,6 +210,9 @@ func (s *Host) Done() <-chan struct{} { return s.stopped }
 
 // Send never blocks the renderer. Refuse overload rather than lose/reorder input.
 func (s *Host) Send(event any) error {
+	if size, ok := event.(image.Point); ok && (size.X < 1 || size.Y < 1 || size.X > 1000 || size.Y > 1000) {
+		return fmt.Errorf("terminal geometry outside 1..1000 cells")
+	}
 	select {
 	case <-s.done:
 		s.mu.Lock()

@@ -104,7 +104,7 @@ func (m *manager) Close(string) error {
 }
 
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "profile", ReadOnly: true}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
+	return []hovel.PayloadCommand{{Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
 }
 
 func (m *manager) inventory() ([]State, error) {
@@ -162,7 +162,7 @@ func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 				return hovel.PayloadCommandResult{}, e
 			}
 			value = states
-		case "profile", "close":
+		case "profile", "close", "shell":
 			if len(req.Args) != 2 {
 				return hovel.PayloadCommandResult{}, fmt.Errorf("exact creation required")
 			}
@@ -172,6 +172,9 @@ func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 			}
 			if req.Command == "profile" {
 				return s.RunPayloadCommand(hovel.PayloadCommandRequest{Command: "connection-profile"})
+			}
+			if req.Command == "shell" {
+				return s.RunPayloadCommand(hovel.PayloadCommandRequest{Command: "connection-shell"})
 			}
 			if e := s.Close("operator confirmed selected close"); e != nil {
 				return hovel.PayloadCommandResult{}, e

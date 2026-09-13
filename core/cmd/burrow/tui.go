@@ -275,6 +275,12 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.busy = true
 				m.output = "Running reviewed command through Hovel…"
 				workspace := m.info.Workspace
+				if args[0] == "shell-close" {
+					return m, func() tea.Msg { return shellCloseRequested{} }
+				}
+				if args[0] == "shell" {
+					return m, func() tea.Msg { return shellRequested{args[1]} }
+				}
 				if args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
@@ -335,6 +341,9 @@ func (m ui) activeConnections(w int) string {
 	var rows [][]string
 	for _, row := range visible {
 		proxy, terminal, tunnels := "—", "—", "—"
+		if row.Generation != "" {
+			terminal = "Local PTY"
+		}
 		if m.demo {
 			proxy, terminal, tunnels = "1080", "Native", "2"
 		}

@@ -29,6 +29,10 @@ def manager_checks(binary, w, root, env, port, key, first, burrow, wait):
     assert code == 200
     owner = json.loads(result["stdout"])
     assert owner["generation"] == first["generation"]
+    code, shell = rpc("shell", [first["generation"], first["creation"]])
+    assert code == 200 and json.loads(shell["stdout"])["socketInode"] == first["socketInode"]
+    assert rpc("shell", ["wrong-generation", first["creation"]])[0] != 200
+    assert rpc("shell", [first["generation"], "missing-creation"])[0] != 200
     base = ["127.0.0.1", "tester", "--port", str(port), "--key", str(key)]
     # Independent processes submit distinct immutable request chains.
     processes = [subprocess.Popen([binary, "--workspace", str(w), "connect", name, *base, "--yes"],

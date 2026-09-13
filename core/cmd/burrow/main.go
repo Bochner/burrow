@@ -34,7 +34,7 @@ Options:
 
 status opens/reuses the workspace and prints verified daemon identity as JSON.
 tui opens the management interface (default); quit retains the daemon.
-Inside the interface: status, connections, connect, inspect, reconnect, close, help, quit.
+Inside the interface: status, connections, connect, inspect, shell, reconnect, close, help, quit.
 Linux amd64 only. Cache: $XDG_CACHE_HOME/burrow/hovel/0.4.2 (or ~/.cache).
 Unknown/stale resources require manual investigation; no automatic cleanup.
 `
@@ -111,12 +111,16 @@ func run(args []string) error {
 				return e
 			}
 		}
+		if command == "shell" && !term.IsTerminal(os.Stdin.Fd()) {
+			return fmt.Errorf("shell requires terminal input; use inspect NAME for JSON")
+		}
 		defer launch.Phase("cli:" + command)()
 		interrupt, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		ctx, cancel := context.WithTimeout(interrupt, 60*time.Second)
 		defer cancel()
-		if _, e := launch.Status(ctx, o.Workspace); e != nil {
+		info, e := launch.Status(ctx, o.Workspace)
+		if e != nil {
 			return e
 		}
 		if loadPath != "" {
@@ -124,7 +128,11 @@ func run(args []string) error {
 				return e
 			}
 		}
-		var e error
+		if command == "shell" {
+			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
+			m.initialShell = args[1]
+			return terminal(m, m.noColor)
+		}
 		args, e = connection.ProfileConnect(ctx, o.Workspace, args)
 		if e != nil {
 			return e

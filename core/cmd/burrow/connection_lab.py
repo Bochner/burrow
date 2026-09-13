@@ -22,10 +22,12 @@ import time
 from core.cmd.burrow.authentication_lab import authentication_matrix
 from core.cmd.burrow.manager_lab import manager_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
+from core.cmd.burrow.shell_lab import shell_checks
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=5, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
+parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
 parser.add_argument("--measure", action="store_true", help="record production phase samples and separate process traces")
 parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
 args = parser.parse_args()
@@ -161,6 +163,11 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert generated == Path(first["socket"]).with_name("ssh_config").read_text()
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if not smoke:
+            shell_checks(binary, w, env, screen_check, burrow, first, options)
+        if args.shell_check:
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
         manager_checks(binary,w,root,env,port,key,first,burrow,wait)
         # Both production capabilities use the one public identity.
         assert catalog() == ["burrow@0.1.0"]

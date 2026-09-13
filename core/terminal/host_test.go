@@ -188,6 +188,9 @@ func TestOwnedPTY(t *testing.T) {
 		}
 	}
 	wait("READY")
+	if err := h.Send(image.Pt(0, 20)); err == nil {
+		t.Fatal("invalid resize reported success")
+	}
 	send(uv.KeyPressEvent{Code: 'G'})
 	wait("SIZE=60x16")
 	send(image.Pt(72, 20))
@@ -233,5 +236,23 @@ func TestOwnedPTY(t *testing.T) {
 	case <-h2.Done():
 	case <-time.After(4 * time.Second):
 		t.Fatal("frontend cancellation did not reap child")
+	}
+}
+
+func TestBoundedPTYHistory(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", "i=0; while [ $i -lt 2000 ]; do echo history-$i; i=$((i+1)); done; echo BOUNDED-DONE")
+	h, err := terminal.StartWithScrollback(context.Background(), cmd, 60, 10, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	select {
+	case <-h.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("output did not drain")
+	}
+	s := h.Snapshot()
+	if s.HistoryLines != 128 || !strings.Contains(s.Screen, "BOUNDED-DONE") {
+		t.Fatal("history bound or output lost", s)
 	}
 }

@@ -38,7 +38,15 @@ connect                             Guided connection entry (terminal)
 connect NAME HOST USER [options]     Create shell-free SSH master
 reconnect NAME HOST USER [options]   Explicitly replace a lost owned connection
 inspect NAME                        State, endpoint and socket identity
+shell NAME                          Open a local interactive SSH terminal
+shell-close                         Close this frontend's shell (management)
 close NAME [--yes]                   Review/close all owned connection resources
+Shells reuse a verified master; no fresh login or authentication fallback.
+Ctrl+] returns to management, keeping the shell; Ctrl+C reaches SSH.
+Select Shells to return; shell-close ends only this frontend's local client.
+Shell exit/close preserves the connection. Frontend quit ends local shells.
+Connection close ends its shells, transfers and tunnels. Shell bytes stay local,
+in memory; they are not Hovel-recorded session I/O or collected evidence.
 
 Required: NAME HOST USER (- uses SSH config user), or:
 connect -ip HOST -port NUMBER -user USER -socket NAME [-ssh-key PATH]
@@ -187,11 +195,11 @@ func ValidateCommand(workspace string, args []string) error {
 	case "connect", "reconnect":
 		_, _, e := Parse(workspace, args[1:])
 		return e
-	case "connections":
+	case "connections", "shell-close":
 		if len(args) != 1 {
-			return fmt.Errorf("connections takes no arguments")
+			return fmt.Errorf("%s takes no arguments", args[0])
 		}
-	case "inspect", "close":
+	case "inspect", "close", "shell":
 		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && (args[0] != "close" || args[2] != "--yes")) {
 			return fmt.Errorf("expected %s NAME%s", args[0], map[string]string{"close": " [--yes]"}[args[0]])
 		}
@@ -310,7 +318,7 @@ func closeOwned(ctx context.Context, w string, s State) error {
 }
 
 func closeReview(s State) string {
-	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.Name)
+	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access, including shells, transfers and tunnels; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.Name)
 }
 
 // ReviewClose binds the displayed consequence to the exact observed owner.
@@ -358,8 +366,21 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 		return executeProfile(ctx, w, args)
 	case "connections":
 		return List(ctx, w)
+	case "shell-close":
+		return nil, fmt.Errorf("shell-close is frontend-local; use management in the frontend that opened the shell")
 	case "inspect":
 		return selected(ctx, w, args[1])
+	case "shell":
+		s, e := selected(ctx, w, args[1])
+		if e != nil {
+			return nil, e
+		}
+		if s.State != "connected" || s.Generation == "" || s.Creation == "" {
+			return nil, fmt.Errorf("shell requires a verified live manager connection; reconnect explicitly")
+		}
+		var live State
+		e = managerControl(ctx, w, managerIdentity{Session: s.Session, Generation: s.Generation}, "shell", []string{s.Creation}, &live)
+		return live, e
 	case "close":
 		s, e := selected(ctx, w, args[1])
 		if e != nil {
@@ -430,8 +451,11 @@ func displaySetting(value, fallback string) string {
 }
 
 func Suggestions(states []State) []string {
-	values := []string{"status", "connections", "connect", "connect ", "help", "quit"}
+	values := []string{"status", "connections", "connect", "connect ", "shell-close", "help", "quit"}
 	for _, s := range states {
+		if s.State == "connected" && s.Generation != "" {
+			values = append(values, "shell "+s.Name)
+		}
 		for _, verb := range []string{"inspect", "close", "reconnect"} {
 			values = append(values, verb+" "+s.Name)
 		}

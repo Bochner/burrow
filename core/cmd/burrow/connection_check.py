@@ -14,6 +14,9 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         assert result.returncode != 0 and "name must" in result.stderr, result
         assert not workspace.exists()
     for args, message in [
+        (["shell"], "expected shell NAME"),
+        (["shell", "../escape"], "name must"),
+        (["shell", "valid", "--key", "/tmp/key"], "expected shell NAME"),
         (["connect", "-ip", "localhost", "-user", "tester", "-socket", "valid", "-ssh-key", "relative"], "absolute"),
         (["connect", "--port", "0", "valid", "localhost", "tester"], "port"),
         (["connect", "valid", "localhost", "tester", "-ip", "other"], "duplicate"),

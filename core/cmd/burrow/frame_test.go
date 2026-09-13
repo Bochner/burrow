@@ -35,6 +35,52 @@ func TestWorkspaceFrame(t *testing.T) {
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 }
 
+func TestLocalShellPresentation(t *testing.T) {
+	for _, noColor := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/shell-presentation"}, noColor, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		r := m.terminalBounds()
+		cmd := exec.Command("/bin/sh", "-c", "printf '\\033[32mLOCAL-SCREEN\\033[0m\\033[3;4H'; sleep 60")
+		host, err := ptyhost.StartWithScrollback(m.terminals.context, cmd, r.Dx(), r.Dy(), 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer host.Close()
+		tab := &cliTab{host: host, connection: "gateway"}
+		m.current().shell, m.current().tab, m.current().focus = tab, "shell", "terminal"
+		until := time.Now().Add(3 * time.Second)
+		for !strings.Contains(tab.screen.Screen, "LOCAL-SCREEN") && time.Now().Before(until) {
+			frameEvent(m, m.readCLI(m.active, tab)())
+		}
+		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			screen := capturePresentation(t, m, fmt.Sprintf("shell-%dx%d-color-%v", size[0], size[1], !noColor))
+			for _, label := range []string{"LOCAL-SCREEN", "SSH:", "gateway", "Ctrl+]"} {
+				if !strings.Contains(screen.String(), label) {
+					t.Fatalf("missing %s at %v", label, size)
+				}
+			}
+			if m.View().Cursor == nil {
+				t.Fatal("shell cursor missing")
+			}
+			if noColor && strings.Contains(m.View().Content, "\x1b[") {
+				t.Fatal("color escaped NO_COLOR")
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
+		if m.current().shell != tab || m.current().tab != "" || m.current().focus != "prompt" {
+			t.Fatal("reserved background key must preserve the shell")
+		}
+		if close := m.closeShell(); close != nil {
+			frameEvent(m, close())
+		}
+		if m.current().shell != nil || m.current().tab != "" || m.current().focus != "prompt" {
+			t.Fatal("shell close did not restore management")
+		}
+	}
+}
+
 func TestEmbeddedTerminalKeepsFrameAndBackgroundOutput(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{})
 	defer m.terminals.close()

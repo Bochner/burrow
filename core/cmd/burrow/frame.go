@@ -27,6 +27,7 @@ var openNavigation = key.NewBinding(key.WithKeys("alt+w"))
 const freshFor = 8 * time.Second
 
 type workspaceView struct {
+	shell                 *cliTab
 	cli                   *cliTab
 	management            ui
 	focus, tab, selected  string
@@ -41,6 +42,7 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
+	initialShell        string
 	terminals           *terminalLifetime
 	quitReview          quitSnapshot
 	quitClosing         bool
@@ -165,10 +167,12 @@ func (m *frame) resize() {
 		w.management.width = max(1, m.width-left-right-4)
 		w.management.height = max(1, m.height-4)
 		w.management.input.SetWidth(max(1, w.management.width-4))
-		if w.cli != nil && w.cli.host != nil {
-			r := m.terminalBounds()
-			if err := w.cli.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil && !w.cli.screen.Exited {
-				w.cli.error = safe(err.Error())
+		for _, tab := range []*cliTab{w.cli, w.shell} {
+			if tab != nil && tab.host != nil {
+				r := m.terminalBounds()
+				if err := tab.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil && !tab.screen.Exited {
+					tab.error = safe(err.Error())
+				}
 			}
 		}
 	}
@@ -288,6 +292,16 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 		switch result := v.message.(type) {
+		case shellCloseRequested:
+			if path != m.active {
+				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("shell close cancelled after workspace switch")})
+			}
+			return m, m.closeShell()
+		case shellRequested:
+			if path != m.active {
+				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("shell cancelled after workspace switch")})
+			}
+			return m, m.openShell(result.name)
 		case authenticationRequested:
 			if path != m.active {
 				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("connection request cancelled after workspace switch")})
@@ -398,6 +412,11 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = max(1, v.Height)
 		m.resize()
 		m.sizeForm()
+		if m.initialShell != "" {
+			name := m.initialShell
+			m.initialShell = ""
+			return m, m.openShell(name)
+		}
 		return m, nil
 	case tea.ResumeMsg:
 		return m, tea.RequestWindowSize
@@ -555,7 +574,11 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.activate("hovel")
 		}
 		if m.terminalFocused() {
-			if key.Matches(v, restartTerminal) && m.current().canRestartCLI() {
+			if m.current().tab == "shell" && key.Matches(v, terminalEscape) {
+				m.current().tab, m.current().focus = "", "prompt"
+				return m, nil
+			}
+			if m.current().tab == "hovel" && key.Matches(v, restartTerminal) && m.current().canRestartCLI() {
 				return m, m.restartCLI()
 			} else if key.Matches(v, terminalEscape) {
 				m.current().focus = "tabs"
@@ -762,6 +785,9 @@ func (m *frame) activate(id string) tea.Cmd {
 		m.current().focus = "prompt"
 	case "shells":
 		m.current().focus = "shells"
+		if m.current().shell != nil {
+			m.current().tab, m.current().focus = "shell", "terminal"
+		}
 	case "dismiss":
 		m.dismissForm()
 	}
@@ -983,12 +1009,15 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	add("daemon", status, w-right+2, brandHeight+2, max(1, min(26, right-2)), 1, 2)
 	tabStyle, hovelStyle := activeStyle, secondary
 	tabLabel, hovelLabel := "› Burrow", "  Hovel"
-	if current.tab != "" {
+	if current.tab == "hovel" {
 		tabStyle, hovelStyle = secondary, activeStyle
 		tabLabel, hovelLabel = "  Burrow", "› Hovel"
 	}
 	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, 10, 1, 1)
 	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(16, w-cx-10), 1, 1)
+	if current.shell != nil {
+		add("shells", current.management.paint(infoStyle, "SSH · "+safe(current.shell.connection)), cx+26, 1, max(0, cw-26), 1, 2)
+	}
 	management := current.management
 	management.help = false
 	management.quitting = false
@@ -1049,11 +1078,18 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		text := "Select Hovel or press Enter to start the CLI."
 		status := "CLI: not started"
 		statusStyle := secondary
-		if tab := current.cli; tab != nil {
+		if tab := current.activeTerminal(); tab != nil {
 			text = tab.screen.Screen
 			status = "CLI: running · " + safe(m.active)
+			if tab.connection != "" {
+				status = "SSH: " + safe(tab.connection) + " · local / not recorded"
+				statusStyle = infoStyle
+			}
 			if tab.pending {
 				status = "Hovel · opening / closing…"
+				if tab.connection != "" {
+					status = "SSH · opening / closing…"
+				}
 				statusStyle = warningStyle
 			}
 			if tab.screen.Exited {
@@ -1074,7 +1110,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		r := m.terminalBounds()
 		add("terminal", text, r.Min.X, r.Min.Y, r.Dx(), r.Dy(), 3)
 		add("terminal-status", current.management.paint(statusStyle, status), cx, h-2, cw, 1, 3)
-		if current.canRestartCLI() {
+		if current.tab == "hovel" && current.canRestartCLI() {
 			add("restart-cli", current.management.paint(activeStyle, "[Restart CLI]"), cx, h-3, min(13, cw), 1, 4)
 		}
 	}
@@ -1116,9 +1152,19 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		rows = max(1, (h-midpoint-6)/groupHeight)
 		start = min(current.shellOffset, max(0, len(m.paths)-1))
 		end = min(len(m.paths), start+rows)
-		text := current.management.paint(heading, label("shells", "SHELLS")) + "\n" + current.management.paint(secondary, "Not implemented")
+		text := current.management.paint(heading, label("shells", "SHELLS")) + "\n" + current.management.paint(secondary, "Frontend-local")
 		for _, path := range m.paths[start:end] {
-			text += gap + safe(filepath.Base(path)) + "\n  No shells"
+			text += gap + current.management.paint(accent, safe(filepath.Base(path)))
+			if workspace := m.workspaces[path]; workspace != nil && workspace.shell != nil {
+				tab := workspace.shell
+				state := "running"
+				if tab.pending {
+					state = "opening"
+				}
+				text += "\n  " + current.management.paint(infoStyle, safe(tab.connection)) + " · " + current.management.paint(connectionStyle(state), state)
+			} else {
+				text += "\n  " + current.management.paint(secondary, "No shells")
+			}
 		}
 		if end-start < len(m.paths) {
 			text += fmt.Sprintf("\n%d–%d/%d", start+1, end, len(m.paths))
@@ -1259,7 +1305,7 @@ func (m *frame) View() tea.View {
 	if m.mouseDisabled {
 		v.MouseMode = tea.MouseModeNone
 	}
-	if m.terminalFocused() && m.current().cli != nil && m.current().cli.screen.MouseMotion && !m.mouseDisabled {
+	if m.terminalFocused() && m.current().activeTerminal() != nil && m.current().activeTerminal().screen.MouseMotion && !m.mouseDisabled {
 		v.MouseMode = tea.MouseModeAllMotion
 	}
 	if !m.current().management.help && !m.hasSelection() {
@@ -1267,8 +1313,8 @@ func (m *frame) View() tea.View {
 		switch m.modal {
 
 		case "":
-			if m.terminalFocused() && m.current().cli != nil {
-				s := m.current().cli.screen
+			if m.terminalFocused() && m.current().activeTerminal() != nil {
+				s := m.current().activeTerminal().screen
 				r := m.terminalBounds()
 				if s.Visible && !s.Exited && s.Cursor.In(image.Rect(0, 0, r.Dx(), r.Dy())) {
 					v.Cursor = tea.NewCursor(s.Cursor.X, s.Cursor.Y)

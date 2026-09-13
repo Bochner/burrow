@@ -120,7 +120,7 @@ func (m ui) syntax(line string, reference bool) string {
 			return strings.Replace(token, word, m.endpoint(word), 1)
 		case strings.HasPrefix(word, "-"):
 			style = heading
-		case prior == "connect" || prior == "reconnect" || prior == "close" || prior == "inspect":
+		case prior == "connect" || prior == "reconnect" || prior == "close" || prior == "inspect" || prior == "shell":
 			style = accent
 		case prior == "-p" || prior == "--port":
 			style = warningStyle
@@ -140,7 +140,7 @@ func (m ui) syntax(line string, reference bool) string {
 			style = keywordStyle
 		case strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word:
 			style = warningStyle
-		case previous == "ssh" || previous == "connect" || previous == "reconnect" || previous == "inspect" || previous == "connections" || previous == "close" || previous == "status" || previous == "help" || previous == "quit" || previous == "profile" || previous == "profiles" || previous == "history":
+		case previous == "shell" || previous == "shell-close" || previous == "ssh" || previous == "connect" || previous == "reconnect" || previous == "inspect" || previous == "connections" || previous == "close" || previous == "status" || previous == "help" || previous == "quit" || previous == "profile" || previous == "profiles" || previous == "history":
 			style = heading
 		case prior == "profile" && (word == "create" || word == "select" || word == "save" || word == "edit" || word == "delete" || word == "collection" || word == "load" || word == "backup"):
 			style = heading
@@ -311,6 +311,10 @@ func (m *frame) commandHelp() string {
 		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 	}
 	if m.terminalFocused() {
+		if m.current().tab == "shell" {
+			keys = []key.Binding{binding("Ctrl+]", "management"), binding("Ctrl+C", "interrupt"), showBurrow, binding("drag", "select text")}
+			return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
+		}
 		keys = []key.Binding{showBurrow, binding("drag", "select text"), selection, binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
 		if m.current().canRestartCLI() {
 			keys = []key.Binding{restartTerminal, showBurrow, binding("drag", "select text"), binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls")}
