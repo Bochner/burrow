@@ -8,6 +8,12 @@ go_library(
 )
 
 go_test(
+    name = "digest_test",
+    srcs = ["digest_test.go"],
+    embed = [":launch"],
+)
+
+go_test(
     name = "online_test",
     srcs = ["online_test.go"],
     deps = [":launch"],

@@ -1,0 +1,2256 @@
+{
+  "provenance": {
+    "machine": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "load": [
+      0.1884765625,
+      0.67919921875,
+      1.39404296875
+    ],
+    "binary_sha256": "00ccf27760246cbafef62c895d1810c1e846f4db445afba788690a80420ad662",
+    "build": "Aspect fastbuild",
+    "synthetic_response_delay_s": 0.02,
+    "submission": "production CLI process launch; recap approval supplied by --yes",
+    "prompt": "first private CLI prompt received on PTY with echo disabled",
+    "process_counts": "successful execve starts, frontend plus daemon descendants; includes observer-induced SSH checks",
+    "phases": "BURROW_PHASE_TRACE totals per phase name across frontend, daemon-launched adapter and manager processes; nested phases overlap, so totals are not additive"
+  },
+  "groups": {
+    "cold": {
+      "dispatch_s": {
+        "n": 20,
+        "p50": 5.178811465,
+        "p95": 5.22349248
+      },
+      "connected_s": {
+        "n": 20,
+        "p50": 5.475570085,
+        "p95": 5.557375672
+      },
+      "prompt_s": {
+        "n": 10,
+        "p50": 0.21602440299999998,
+        "p95": 0.223779743
+      }
+    },
+    "warm": {
+      "dispatch_s": {
+        "n": 20,
+        "p50": 3.6727562980000004,
+        "p95": 3.69241086
+      },
+      "connected_s": {
+        "n": 20,
+        "p50": 3.9569705905,
+        "p95": 4.015186918
+      },
+      "prompt_s": {
+        "n": 10,
+        "p50": 0.21576835500000002,
+        "p95": 0.2186241
+      }
+    }
+  },
+  "phases": {
+    "cold": {
+      "cache-module": {
+        "count_p50": 1.0,
+        "ms_p50": 17.692343
+      },
+      "call:AddModule": {
+        "count_p50": 2.0,
+        "ms_p50": 156.4011535
+      },
+      "call:AddTarget": {
+        "count_p50": 2.0,
+        "ms_p50": 155.401358
+      },
+      "call:CreateChain": {
+        "count_p50": 2.0,
+        "ms_p50": 156.1224365
+      },
+      "call:CreateOperation": {
+        "count_p50": 2.0,
+        "ms_p50": 155.5522845
+      },
+      "call:GetModuleCatalog": {
+        "count_p50": 1.0,
+        "ms_p50": 311.212558
+      },
+      "call:ListSessions": {
+        "count_p50": 2.0,
+        "ms_p50": 154.9572065
+      },
+      "call:RunSessionCommand": {
+        "count_p50": 1.0,
+        "ms_p50": 160.5235515
+      },
+      "call:SetChainConfig": {
+        "count_p50": 9.0,
+        "ms_p50": 702.4499745
+      },
+      "cli:connect": {
+        "count_p50": 1.0,
+        "ms_p50": 5749.3146295
+      },
+      "connect-managed": {
+        "count_p50": 1.0,
+        "ms_p50": 5029.013124
+      },
+      "find-manager": {
+        "count_p50": 1.5,
+        "ms_p50": 174.4360445
+      },
+      "hash": {
+        "count_p50": 110.5,
+        "ms_p50": 2108.6160075
+      },
+      "hovel-cli:module": {
+        "count_p50": 1.0,
+        "ms_p50": 821.133764
+      },
+      "hovel-cli:throw": {
+        "count_p50": 2.0,
+        "ms_p50": 2441.2218465
+      },
+      "install": {
+        "count_p50": 3.0,
+        "ms_p50": 131.859731
+      },
+      "manager-connect": {
+        "count_p50": 1.0,
+        "ms_p50": 81.7566745
+      },
+      "manager-throw:activate": {
+        "count_p50": 1.0,
+        "ms_p50": 1670.415892
+      },
+      "manager-throw:connect": {
+        "count_p50": 1.0,
+        "ms_p50": 2095.087227
+      },
+      "module:activate": {
+        "count_p50": 1.0,
+        "ms_p50": 77.504155
+      },
+      "module:connect": {
+        "count_p50": 1.0,
+        "ms_p50": 200.294421
+      },
+      "register-module": {
+        "count_p50": 1.0,
+        "ms_p50": 1187.9858805
+      },
+      "reserve-connection": {
+        "count_p50": 1.0,
+        "ms_p50": 38.4465065
+      },
+      "reserve-manager": {
+        "count_p50": 1.0,
+        "ms_p50": 38.4829315
+      },
+      "ssh-resolve": {
+        "count_p50": 2.0,
+        "ms_p50": 9.6160045
+      },
+      "status": {
+        "count_p50": 55.5,
+        "ms_p50": 2150.689915
+      },
+      "status.identity": {
+        "count_p50": 110.5,
+        "ms_p50": 2115.221563
+      },
+      "status.rpc": {
+        "count_p50": 55.0,
+        "ms_p50": 17.702508
+      },
+      "verify-reservation": {
+        "count_p50": 2.0,
+        "ms_p50": 78.008064
+      }
+    },
+    "warm": {
+      "cache-module": {
+        "count_p50": 1.0,
+        "ms_p50": 17.7465135
+      },
+      "call:AddModule": {
+        "count_p50": 1.0,
+        "ms_p50": 78.7053515
+      },
+      "call:AddTarget": {
+        "count_p50": 1.0,
+        "ms_p50": 78.2104485
+      },
+      "call:CreateChain": {
+        "count_p50": 1.0,
+        "ms_p50": 77.803393
+      },
+      "call:CreateOperation": {
+        "count_p50": 1.0,
+        "ms_p50": 78.52438
+      },
+      "call:GetModuleCatalog": {
+        "count_p50": 1.0,
+        "ms_p50": 320.3199405
+      },
+      "call:ListSessions": {
+        "count_p50": 2.0,
+        "ms_p50": 156.1422595
+      },
+      "call:RunSessionCommand": {
+        "count_p50": 2.0,
+        "ms_p50": 279.3155305
+      },
+      "call:SetChainConfig": {
+        "count_p50": 6.0,
+        "ms_p50": 470.3320565
+      },
+      "cli:connect": {
+        "count_p50": 1.0,
+        "ms_p50": 4232.174747
+      },
+      "connect-managed": {
+        "count_p50": 1.0,
+        "ms_p50": 3511.1025595
+      },
+      "find-manager": {
+        "count_p50": 1.5,
+        "ms_p50": 293.0633095
+      },
+      "hash": {
+        "count_p50": 80.5,
+        "ms_p50": 1543.9825185
+      },
+      "hovel-cli:module": {
+        "count_p50": 1.0,
+        "ms_p50": 857.083736
+      },
+      "hovel-cli:throw": {
+        "count_p50": 1.0,
+        "ms_p50": 1295.2148045
+      },
+      "install": {
+        "count_p50": 2.0,
+        "ms_p50": 80.143457
+      },
+      "manager-connect": {
+        "count_p50": 1.0,
+        "ms_p50": 82.8931235
+      },
+      "manager-throw:connect": {
+        "count_p50": 1.0,
+        "ms_p50": 2081.1906775
+      },
+      "module:connect": {
+        "count_p50": 1.0,
+        "ms_p50": 201.681466
+      },
+      "register-module": {
+        "count_p50": 1.0,
+        "ms_p50": 1234.3787245
+      },
+      "reserve-connection": {
+        "count_p50": 1.0,
+        "ms_p50": 38.623002
+      },
+      "ssh-resolve": {
+        "count_p50": 2.0,
+        "ms_p50": 9.3990955
+      },
+      "status": {
+        "count_p50": 40.5,
+        "ms_p50": 1577.014112
+      },
+      "status.identity": {
+        "count_p50": 80.5,
+        "ms_p50": 1548.8130005
+      },
+      "status.rpc": {
+        "count_p50": 40.0,
+        "ms_p50": 12.5902635
+      },
+      "verify-reservation": {
+        "count_p50": 3.0,
+        "ms_p50": 117.242673
+      }
+    },
+    "setup": {
+      "cache-module": {
+        "count_p50": 1.0,
+        "ms_p50": 17.152426
+      },
+      "call:GetModuleCatalog": {
+        "count_p50": 1.0,
+        "ms_p50": 307.9859095
+      },
+      "hash": {
+        "count_p50": 22.0,
+        "ms_p50": 419.204558
+      },
+      "hovel-cli:module": {
+        "count_p50": 2.0,
+        "ms_p50": 931.5213905
+      },
+      "install": {
+        "count_p50": 3.0,
+        "ms_p50": 137.312831
+      },
+      "open": {
+        "count_p50": 1.0,
+        "ms_p50": 414.394975
+      },
+      "open-workspace": {
+        "count_p50": 1.0,
+        "ms_p50": 1710.2472125
+      },
+      "register-module": {
+        "count_p50": 1.0,
+        "ms_p50": 1296.1330975
+      },
+      "status": {
+        "count_p50": 8.0,
+        "ms_p50": 309.688475
+      },
+      "status.identity": {
+        "count_p50": 22.0,
+        "ms_p50": 420.753652
+      },
+      "status.rpc": {
+        "count_p50": 9.0,
+        "ms_p50": 3.327624
+      }
+    }
+  },
+  "samples": [
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.952429333992768,
+      "dispatch_s": 5.179632623,
+      "connected_s": 5.405817758,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.952429333992768,
+      "dispatch_s": 3.653592888,
+      "connected_s": 3.880380834,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9482046760094818,
+      "dispatch_s": 5.196931482,
+      "connected_s": 5.522382827,
+      "prompt_s": 0.212500031,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9482046760094818,
+      "dispatch_s": 3.677397092,
+      "connected_s": 4.004408744,
+      "prompt_s": 0.214262567,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9003429240256082,
+      "dispatch_s": 5.190847472,
+      "connected_s": 5.41582688,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9003429240256082,
+      "dispatch_s": 3.680896791,
+      "connected_s": 3.906940683,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9615419099864084,
+      "dispatch_s": 5.22349248,
+      "connected_s": 5.549891993,
+      "prompt_s": 0.213781206,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9615419099864084,
+      "dispatch_s": 3.681074397,
+      "connected_s": 4.006697415,
+      "prompt_s": 0.210830231,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9529471090063453,
+      "dispatch_s": 5.174939221,
+      "connected_s": 5.401830474,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9529471090063453,
+      "dispatch_s": 3.674677508,
+      "connected_s": 3.901320564,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9589948899811134,
+      "dispatch_s": 5.221729551,
+      "connected_s": 5.557375672,
+      "prompt_s": 0.222479512,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9589948899811134,
+      "dispatch_s": 3.683189356,
+      "connected_s": 4.008938647,
+      "prompt_s": 0.214679789,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9598124179756269,
+      "dispatch_s": 5.18280431,
+      "connected_s": 5.408327144,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9598124179756269,
+      "dispatch_s": 3.703732207,
+      "connected_s": 3.92946984,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9161906579975039,
+      "dispatch_s": 5.177990307,
+      "connected_s": 5.504609338,
+      "prompt_s": 0.218062399,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9161906579975039,
+      "dispatch_s": 3.67746574,
+      "connected_s": 4.004851753,
+      "prompt_s": 0.217558636,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9450066990102641,
+      "dispatch_s": 5.165810317,
+      "connected_s": 5.391064023,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9450066990102641,
+      "dispatch_s": 3.672163862,
+      "connected_s": 3.899112515,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9559225989796687,
+      "dispatch_s": 5.193082835,
+      "connected_s": 5.5258384,
+      "prompt_s": 0.223779743,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9559225989796687,
+      "dispatch_s": 3.69241086,
+      "connected_s": 4.019336386,
+      "prompt_s": 0.216656779,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9867933269997593,
+      "dispatch_s": 5.238274432,
+      "connected_s": 5.638370244,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9867933269997593,
+      "dispatch_s": 3.660848927,
+      "connected_s": 3.886876133,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.955466998013435,
+      "dispatch_s": 5.157057537,
+      "connected_s": 5.484819364,
+      "prompt_s": 0.215957457,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.955466998013435,
+      "dispatch_s": 3.658143237,
+      "connected_s": 3.984471341,
+      "prompt_s": 0.211784239,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9507489489915315,
+      "dispatch_s": 5.185238546,
+      "connected_s": 5.411589062,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9507489489915315,
+      "dispatch_s": 3.673348734,
+      "connected_s": 3.898010987,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9624811229878105,
+      "dispatch_s": 5.16481585,
+      "connected_s": 5.492281863,
+      "prompt_s": 0.216091349,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9624811229878105,
+      "dispatch_s": 3.663121863,
+      "connected_s": 3.990501837,
+      "prompt_s": 0.215441875,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.955998343997635,
+      "dispatch_s": 5.162953901,
+      "connected_s": 5.389240897,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.955998343997635,
+      "dispatch_s": 3.544891459,
+      "connected_s": 3.771337941,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9911275960039347,
+      "dispatch_s": 5.185322673,
+      "connected_s": 5.512283608,
+      "prompt_s": 0.213480526,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9911275960039347,
+      "dispatch_s": 3.688876001,
+      "connected_s": 4.015186918,
+      "prompt_s": 0.217890193,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 2.0063033379847184,
+      "dispatch_s": 5.020405572,
+      "connected_s": 5.250093471,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 2.0063033379847184,
+      "dispatch_s": 3.661980818,
+      "connected_s": 3.887858702,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9512021130067296,
+      "dispatch_s": 5.148948255,
+      "connected_s": 5.477048745,
+      "prompt_s": 0.220311123,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9512021130067296,
+      "dispatch_s": 3.670307177,
+      "connected_s": 3.997382867,
+      "prompt_s": 0.2186241,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.900472034001723,
+      "dispatch_s": 5.146551225,
+      "connected_s": 5.371336438,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.900472034001723,
+      "dispatch_s": 3.663714696,
+      "connected_s": 3.891312893,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9502779979957268,
+      "dispatch_s": 5.147531163,
+      "connected_s": 5.474091425,
+      "prompt_s": 0.214267354,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": false,
+      "setup_s": 1.9502779979957268,
+      "dispatch_s": 3.667456253,
+      "connected_s": 3.993748729,
+      "prompt_s": 0.216094835,
+      "executable_starts": null,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": true,
+      "phased": false,
+      "setup_s": 5.612253730010707,
+      "dispatch_s": 23.487971765,
+      "connected_s": 24.834480915,
+      "prompt_s": null,
+      "executable_starts": 18,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": true,
+      "phased": false,
+      "setup_s": 5.612253730010707,
+      "dispatch_s": 16.115609678,
+      "connected_s": 17.501408425,
+      "prompt_s": null,
+      "executable_starts": 14,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": true,
+      "phased": false,
+      "setup_s": 6.012442146980902,
+      "dispatch_s": 23.420300932,
+      "connected_s": 24.895377187,
+      "prompt_s": 1.285206758,
+      "executable_starts": 22,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": true,
+      "phased": false,
+      "setup_s": 6.012442146980902,
+      "dispatch_s": 16.1043995,
+      "connected_s": 17.560171274,
+      "prompt_s": 1.265533472,
+      "executable_starts": 18,
+      "setup_phases": null,
+      "phases": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": true,
+      "setup_s": 1.9843951429938897,
+      "dispatch_s": 5.172911146,
+      "connected_s": 5.397032365,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": {
+        "install": {
+          "count": 3,
+          "ns": 140161571
+        },
+        "hash": {
+          "count": 22,
+          "ns": 419052000
+        },
+        "status.identity": {
+          "count": 22,
+          "ns": 420710120
+        },
+        "status.rpc": {
+          "count": 9,
+          "ns": 3240226
+        },
+        "status": {
+          "count": 8,
+          "ns": 308961340
+        },
+        "open": {
+          "count": 1,
+          "ns": 418775328
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17224022
+        },
+        "hovel-cli:module": {
+          "count": 2,
+          "ns": 932851499
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 311672841
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1299787906
+        },
+        "open-workspace": {
+          "count": 1,
+          "ns": 1718678387
+        }
+      },
+      "phases": {
+        "hash": {
+          "count": 108,
+          "ns": 2050605275
+        },
+        "status.identity": {
+          "count": 108,
+          "ns": 2057038442
+        },
+        "status.rpc": {
+          "count": 54,
+          "ns": 17656152
+        },
+        "status": {
+          "count": 54,
+          "ns": 2082504216
+        },
+        "ssh-resolve": {
+          "count": 2,
+          "ns": 9037445
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17505929
+        },
+        "install": {
+          "count": 3,
+          "ns": 130930846
+        },
+        "hovel-cli:module": {
+          "count": 1,
+          "ns": 822671637
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 309001355
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1187898112
+        },
+        "call:ListSessions": {
+          "count": 1,
+          "ns": 77615900
+        },
+        "find-manager": {
+          "count": 1,
+          "ns": 77622240
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 154860068
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 155811157
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 155052039
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 154539535
+        },
+        "call:SetChainConfig": {
+          "count": 9,
+          "ns": 698127374
+        },
+        "reserve-manager": {
+          "count": 1,
+          "ns": 38223253
+        },
+        "module:activate": {
+          "count": 1,
+          "ns": 77286242
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 2433430424
+        },
+        "manager-throw:activate": {
+          "count": 1,
+          "ns": 1662602472
+        },
+        "verify-reservation": {
+          "count": 2,
+          "ns": 77675703
+        },
+        "reserve-connection": {
+          "count": 1,
+          "ns": 38176942
+        },
+        "manager-connect": {
+          "count": 1,
+          "ns": 80711289
+        },
+        "call:RunSessionCommand": {
+          "count": 1,
+          "ns": 159344371
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 199387967
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 2089511699
+        },
+        "connect-managed": {
+          "count": 1,
+          "ns": 5017717355
+        },
+        "cli:connect": {
+          "count": 1,
+          "ns": 5064284358
+        }
+      }
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": true,
+      "setup_s": 1.9843951429938897,
+      "dispatch_s": 3.665579514,
+      "connected_s": 3.892634449,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": {
+        "install": {
+          "count": 3,
+          "ns": 140161571
+        },
+        "hash": {
+          "count": 22,
+          "ns": 419052000
+        },
+        "status.identity": {
+          "count": 22,
+          "ns": 420710120
+        },
+        "status.rpc": {
+          "count": 9,
+          "ns": 3240226
+        },
+        "status": {
+          "count": 8,
+          "ns": 308961340
+        },
+        "open": {
+          "count": 1,
+          "ns": 418775328
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17224022
+        },
+        "hovel-cli:module": {
+          "count": 2,
+          "ns": 932851499
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 311672841
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1299787906
+        },
+        "open-workspace": {
+          "count": 1,
+          "ns": 1718678387
+        }
+      },
+      "phases": {
+        "hash": {
+          "count": 78,
+          "ns": 1495009705
+        },
+        "status.identity": {
+          "count": 78,
+          "ns": 1499785573
+        },
+        "status.rpc": {
+          "count": 39,
+          "ns": 11608409
+        },
+        "status": {
+          "count": 39,
+          "ns": 1517028977
+        },
+        "ssh-resolve": {
+          "count": 2,
+          "ns": 9511249
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17282271
+        },
+        "install": {
+          "count": 2,
+          "ns": 79802961
+        },
+        "hovel-cli:module": {
+          "count": 1,
+          "ns": 856517661
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 320134800
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1232591817
+        },
+        "call:ListSessions": {
+          "count": 1,
+          "ns": 78129322
+        },
+        "verify-reservation": {
+          "count": 3,
+          "ns": 116793995
+        },
+        "call:RunSessionCommand": {
+          "count": 2,
+          "ns": 279066990
+        },
+        "find-manager": {
+          "count": 1,
+          "ns": 194797338
+        },
+        "call:CreateOperation": {
+          "count": 1,
+          "ns": 78284151
+        },
+        "call:CreateChain": {
+          "count": 1,
+          "ns": 77768111
+        },
+        "call:AddModule": {
+          "count": 1,
+          "ns": 79384323
+        },
+        "call:AddTarget": {
+          "count": 1,
+          "ns": 78099997
+        },
+        "call:SetChainConfig": {
+          "count": 6,
+          "ns": 470409076
+        },
+        "reserve-connection": {
+          "count": 1,
+          "ns": 40373146
+        },
+        "manager-connect": {
+          "count": 1,
+          "ns": 83157321
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 202085261
+        },
+        "hovel-cli:throw": {
+          "count": 1,
+          "ns": 1295932667
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 2080048170
+        },
+        "connect-managed": {
+          "count": 1,
+          "ns": 3507543247
+        },
+        "cli:connect": {
+          "count": 1,
+          "ns": 3554016975
+        }
+      }
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": true,
+      "setup_s": 1.9549719619972166,
+      "dispatch_s": 5.181598464,
+      "connected_s": 5.509749578,
+      "prompt_s": 0.220583586,
+      "executable_starts": null,
+      "setup_phases": {
+        "install": {
+          "count": 3,
+          "ns": 135688131
+        },
+        "hash": {
+          "count": 22,
+          "ns": 418087662
+        },
+        "status.identity": {
+          "count": 22,
+          "ns": 419683536
+        },
+        "status.rpc": {
+          "count": 9,
+          "ns": 3376849
+        },
+        "status": {
+          "count": 8,
+          "ns": 309206991
+        },
+        "open": {
+          "count": 1,
+          "ns": 412734693
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17405388
+        },
+        "hovel-cli:module": {
+          "count": 2,
+          "ns": 935037027
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 307181109
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1298383067
+        },
+        "open-workspace": {
+          "count": 1,
+          "ns": 1711227353
+        }
+      },
+      "phases": {
+        "hash": {
+          "count": 114,
+          "ns": 2179805966
+        },
+        "status.identity": {
+          "count": 114,
+          "ns": 2186627827
+        },
+        "status.rpc": {
+          "count": 57,
+          "ns": 17748864
+        },
+        "status": {
+          "count": 57,
+          "ns": 2212707968
+        },
+        "ssh-resolve": {
+          "count": 2,
+          "ns": 10309346
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17550571
+        },
+        "install": {
+          "count": 3,
+          "ns": 129220330
+        },
+        "hovel-cli:module": {
+          "count": 1,
+          "ns": 819595891
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 312169994
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1188073649
+        },
+        "call:ListSessions": {
+          "count": 3,
+          "ns": 232265727
+        },
+        "find-manager": {
+          "count": 2,
+          "ns": 271216682
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 155707297
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 156491531
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 157067414
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 155830643
+        },
+        "call:SetChainConfig": {
+          "count": 9,
+          "ns": 703647952
+        },
+        "reserve-manager": {
+          "count": 1,
+          "ns": 38536969
+        },
+        "module:activate": {
+          "count": 1,
+          "ns": 77133171
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 2441170513
+        },
+        "manager-throw:activate": {
+          "count": 1,
+          "ns": 1672166668
+        },
+        "verify-reservation": {
+          "count": 2,
+          "ns": 78880721
+        },
+        "reserve-connection": {
+          "count": 1,
+          "ns": 39039668
+        },
+        "manager-connect": {
+          "count": 1,
+          "ns": 83420652
+        },
+        "call:RunSessionCommand": {
+          "count": 1,
+          "ns": 162805224
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 202777356
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 2098024869
+        },
+        "connect-managed": {
+          "count": 1,
+          "ns": 5035808465
+        },
+        "cli:connect": {
+          "count": 1,
+          "ns": 6430696206
+        }
+      }
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": true,
+      "setup_s": 1.9549719619972166,
+      "dispatch_s": 3.662482298,
+      "connected_s": 3.989619476,
+      "prompt_s": 0.213063326,
+      "executable_starts": null,
+      "setup_phases": {
+        "install": {
+          "count": 3,
+          "ns": 135688131
+        },
+        "hash": {
+          "count": 22,
+          "ns": 418087662
+        },
+        "status.identity": {
+          "count": 22,
+          "ns": 419683536
+        },
+        "status.rpc": {
+          "count": 9,
+          "ns": 3376849
+        },
+        "status": {
+          "count": 8,
+          "ns": 309206991
+        },
+        "open": {
+          "count": 1,
+          "ns": 412734693
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17405388
+        },
+        "hovel-cli:module": {
+          "count": 2,
+          "ns": 935037027
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 307181109
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1298383067
+        },
+        "open-workspace": {
+          "count": 1,
+          "ns": 1711227353
+        }
+      },
+      "phases": {
+        "hash": {
+          "count": 83,
+          "ns": 1587055210
+        },
+        "status.identity": {
+          "count": 83,
+          "ns": 1591989673
+        },
+        "status.rpc": {
+          "count": 41,
+          "ns": 13151117
+        },
+        "status": {
+          "count": 42,
+          "ns": 1630356164
+        },
+        "ssh-resolve": {
+          "count": 2,
+          "ns": 9286942
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17441412
+        },
+        "install": {
+          "count": 2,
+          "ns": 81555561
+        },
+        "hovel-cli:module": {
+          "count": 1,
+          "ns": 856572445
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 320446647
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1233130005
+        },
+        "call:ListSessions": {
+          "count": 3,
+          "ns": 234155197
+        },
+        "verify-reservation": {
+          "count": 3,
+          "ns": 116671453
+        },
+        "call:RunSessionCommand": {
+          "count": 2,
+          "ns": 278192558
+        },
+        "find-manager": {
+          "count": 2,
+          "ns": 389158666
+        },
+        "call:CreateOperation": {
+          "count": 1,
+          "ns": 77713835
+        },
+        "call:CreateChain": {
+          "count": 1,
+          "ns": 77835111
+        },
+        "call:AddModule": {
+          "count": 1,
+          "ns": 79131688
+        },
+        "call:AddTarget": {
+          "count": 1,
+          "ns": 78099566
+        },
+        "call:SetChainConfig": {
+          "count": 6,
+          "ns": 470255037
+        },
+        "reserve-connection": {
+          "count": 1,
+          "ns": 38379989
+        },
+        "manager-connect": {
+          "count": 1,
+          "ns": 82628926
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 201277671
+        },
+        "hovel-cli:throw": {
+          "count": 1,
+          "ns": 1292379472
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 2075594702
+        },
+        "connect-managed": {
+          "count": 1,
+          "ns": 3503432990
+        },
+        "cli:connect": {
+          "count": 1,
+          "ns": 4900792302
+        }
+      }
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "phased": true,
+      "setup_s": 1.9464479750022292,
+      "dispatch_s": 5.165380374,
+      "connected_s": 5.390978449,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": {
+        "install": {
+          "count": 3,
+          "ns": 136549744
+        },
+        "hash": {
+          "count": 22,
+          "ns": 419357116
+        },
+        "status.identity": {
+          "count": 22,
+          "ns": 420797184
+        },
+        "status.rpc": {
+          "count": 9,
+          "ns": 3278399
+        },
+        "status": {
+          "count": 8,
+          "ns": 310832136
+        },
+        "open": {
+          "count": 1,
+          "ns": 413704793
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17080830
+        },
+        "hovel-cli:module": {
+          "count": 2,
+          "ns": 922490330
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 305609210
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1284161122
+        },
+        "open-workspace": {
+          "count": 1,
+          "ns": 1697994897
+        }
+      },
+      "phases": {
+        "hash": {
+          "count": 108,
+          "ns": 2056934209
+        },
+        "status.identity": {
+          "count": 108,
+          "ns": 2063421955
+        },
+        "status.rpc": {
+          "count": 54,
+          "ns": 17520277
+        },
+        "status": {
+          "count": 54,
+          "ns": 2088671862
+        },
+        "ssh-resolve": {
+          "count": 2,
+          "ns": 7731210
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 18193592
+        },
+        "install": {
+          "count": 3,
+          "ns": 132788616
+        },
+        "hovel-cli:module": {
+          "count": 1,
+          "ns": 813586736
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 310255122
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1180080394
+        },
+        "call:ListSessions": {
+          "count": 1,
+          "ns": 77648686
+        },
+        "find-manager": {
+          "count": 1,
+          "ns": 77655407
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 155397272
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 154202619
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 156422631
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 155412696
+        },
+        "call:SetChainConfig": {
+          "count": 9,
+          "ns": 701251997
+        },
+        "reserve-manager": {
+          "count": 1,
+          "ns": 39079338
+        },
+        "module:activate": {
+          "count": 1,
+          "ns": 77789296
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 2441397750
+        },
+        "manager-throw:activate": {
+          "count": 1,
+          "ns": 1672216655
+        },
+        "verify-reservation": {
+          "count": 2,
+          "ns": 78340425
+        },
+        "reserve-connection": {
+          "count": 1,
+          "ns": 38520468
+        },
+        "manager-connect": {
+          "count": 1,
+          "ns": 81451628
+        },
+        "call:RunSessionCommand": {
+          "count": 1,
+          "ns": 159990038
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 199636544
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 2092149585
+        },
+        "connect-managed": {
+          "count": 1,
+          "ns": 5022217783
+        },
+        "cli:connect": {
+          "count": 1,
+          "ns": 5067933053
+        }
+      }
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "phased": true,
+      "setup_s": 1.9464479750022292,
+      "dispatch_s": 3.673673225,
+      "connected_s": 3.899421049,
+      "prompt_s": null,
+      "executable_starts": null,
+      "setup_phases": {
+        "install": {
+          "count": 3,
+          "ns": 136549744
+        },
+        "hash": {
+          "count": 22,
+          "ns": 419357116
+        },
+        "status.identity": {
+          "count": 22,
+          "ns": 420797184
+        },
+        "status.rpc": {
+          "count": 9,
+          "ns": 3278399
+        },
+        "status": {
+          "count": 8,
+          "ns": 310832136
+        },
+        "open": {
+          "count": 1,
+          "ns": 413704793
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17080830
+        },
+        "hovel-cli:module": {
+          "count": 2,
+          "ns": 922490330
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 305609210
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1284161122
+        },
+        "open-workspace": {
+          "count": 1,
+          "ns": 1697994897
+        }
+      },
+      "phases": {
+        "hash": {
+          "count": 78,
+          "ns": 1500909827
+        },
+        "status.identity": {
+          "count": 78,
+          "ns": 1505636328
+        },
+        "status.rpc": {
+          "count": 39,
+          "ns": 12241206
+        },
+        "status": {
+          "count": 39,
+          "ns": 1523672060
+        },
+        "ssh-resolve": {
+          "count": 2,
+          "ns": 9221280
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 18115867
+        },
+        "install": {
+          "count": 2,
+          "ns": 80164047
+        },
+        "hovel-cli:module": {
+          "count": 1,
+          "ns": 859212834
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 321118588
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1237385630
+        },
+        "call:ListSessions": {
+          "count": 1,
+          "ns": 78042659
+        },
+        "verify-reservation": {
+          "count": 3,
+          "ns": 118643324
+        },
+        "call:RunSessionCommand": {
+          "count": 2,
+          "ns": 279564071
+        },
+        "find-manager": {
+          "count": 1,
+          "ns": 196967953
+        },
+        "call:CreateOperation": {
+          "count": 1,
+          "ns": 79468419
+        },
+        "call:CreateChain": {
+          "count": 1,
+          "ns": 77885117
+        },
+        "call:AddModule": {
+          "count": 1,
+          "ns": 78279015
+        },
+        "call:AddTarget": {
+          "count": 1,
+          "ns": 78493654
+        },
+        "call:SetChainConfig": {
+          "count": 6,
+          "ns": 473530814
+        },
+        "reserve-connection": {
+          "count": 1,
+          "ns": 38426340
+        },
+        "manager-connect": {
+          "count": 1,
+          "ns": 81169987
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 200182868
+        },
+        "hovel-cli:throw": {
+          "count": 1,
+          "ns": 1294496942
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 2082333185
+        },
+        "connect-managed": {
+          "count": 1,
+          "ns": 3516767240
+        },
+        "cli:connect": {
+          "count": 1,
+          "ns": 3563557192
+        }
+      }
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "phased": true,
+      "setup_s": 1.9504423800099175,
+      "dispatch_s": 5.198045979,
+      "connected_s": 5.523952728,
+      "prompt_s": 0.216021051,
+      "executable_starts": null,
+      "setup_phases": {
+        "install": {
+          "count": 3,
+          "ns": 138075918
+        },
+        "hash": {
+          "count": 22,
+          "ns": 419572539
+        },
+        "status.identity": {
+          "count": 22,
+          "ns": 421251755
+        },
+        "status.rpc": {
+          "count": 9,
+          "ns": 3731315
+        },
+        "status": {
+          "count": 8,
+          "ns": 310169959
+        },
+        "open": {
+          "count": 1,
+          "ns": 415085157
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 16607891
+        },
+        "hovel-cli:module": {
+          "count": 2,
+          "ns": 930191282
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 308790710
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1293883128
+        },
+        "open-workspace": {
+          "count": 1,
+          "ns": 1709267072
+        }
+      },
+      "phases": {
+        "hash": {
+          "count": 113,
+          "ns": 2160297806
+        },
+        "status.identity": {
+          "count": 113,
+          "ns": 2167021171
+        },
+        "status.rpc": {
+          "count": 56,
+          "ns": 18867041
+        },
+        "status": {
+          "count": 57,
+          "ns": 2213569508
+        },
+        "ssh-resolve": {
+          "count": 2,
+          "ns": 10194564
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 17834115
+        },
+        "install": {
+          "count": 3,
+          "ns": 138698637
+        },
+        "hovel-cli:module": {
+          "count": 1,
+          "ns": 827187731
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 313673524
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1197493674
+        },
+        "call:ListSessions": {
+          "count": 3,
+          "ns": 235586219
+        },
+        "find-manager": {
+          "count": 2,
+          "ns": 273520004
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 156703508
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 156433716
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 156379676
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 155390020
+        },
+        "call:SetChainConfig": {
+          "count": 9,
+          "ns": 703979277
+        },
+        "reserve-manager": {
+          "count": 1,
+          "ns": 38428894
+        },
+        "module:activate": {
+          "count": 1,
+          "ns": 77722068
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 2441273180
+        },
+        "manager-throw:activate": {
+          "count": 1,
+          "ns": 1668665116
+        },
+        "verify-reservation": {
+          "count": 2,
+          "ns": 77418061
+        },
+        "reserve-connection": {
+          "count": 1,
+          "ns": 38372545
+        },
+        "manager-connect": {
+          "count": 1,
+          "ns": 82061721
+        },
+        "call:RunSessionCommand": {
+          "count": 1,
+          "ns": 161057065
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 200952298
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 2101756225
+        },
+        "connect-managed": {
+          "count": 1,
+          "ns": 5047247570
+        },
+        "cli:connect": {
+          "count": 1,
+          "ns": 6445256926
+        }
+      }
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "phased": true,
+      "setup_s": 1.9504423800099175,
+      "dispatch_s": 3.67336161,
+      "connected_s": 3.999950837,
+      "prompt_s": 0.216941402,
+      "executable_starts": null,
+      "setup_phases": {
+        "install": {
+          "count": 3,
+          "ns": 138075918
+        },
+        "hash": {
+          "count": 22,
+          "ns": 419572539
+        },
+        "status.identity": {
+          "count": 22,
+          "ns": 421251755
+        },
+        "status.rpc": {
+          "count": 9,
+          "ns": 3731315
+        },
+        "status": {
+          "count": 8,
+          "ns": 310169959
+        },
+        "open": {
+          "count": 1,
+          "ns": 415085157
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 16607891
+        },
+        "hovel-cli:module": {
+          "count": 2,
+          "ns": 930191282
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 308790710
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1293883128
+        },
+        "open-workspace": {
+          "count": 1,
+          "ns": 1709267072
+        }
+      },
+      "phases": {
+        "hash": {
+          "count": 83,
+          "ns": 1592540880
+        },
+        "status.identity": {
+          "count": 83,
+          "ns": 1597209513
+        },
+        "status.rpc": {
+          "count": 41,
+          "ns": 12939321
+        },
+        "status": {
+          "count": 42,
+          "ns": 1635126403
+        },
+        "ssh-resolve": {
+          "count": 2,
+          "ns": 9806251
+        },
+        "cache-module": {
+          "count": 1,
+          "ns": 18051615
+        },
+        "install": {
+          "count": 2,
+          "ns": 80122867
+        },
+        "hovel-cli:module": {
+          "count": 1,
+          "ns": 857595027
+        },
+        "call:GetModuleCatalog": {
+          "count": 1,
+          "ns": 320193234
+        },
+        "register-module": {
+          "count": 1,
+          "ns": 1235627444
+        },
+        "call:ListSessions": {
+          "count": 3,
+          "ns": 236594239
+        },
+        "verify-reservation": {
+          "count": 3,
+          "ns": 117691351
+        },
+        "call:RunSessionCommand": {
+          "count": 2,
+          "ns": 280330964
+        },
+        "find-manager": {
+          "count": 2,
+          "ns": 394252672
+        },
+        "call:CreateOperation": {
+          "count": 1,
+          "ns": 78764609
+        },
+        "call:CreateChain": {
+          "count": 1,
+          "ns": 77771675
+        },
+        "call:AddModule": {
+          "count": 1,
+          "ns": 77927953
+        },
+        "call:AddTarget": {
+          "count": 1,
+          "ns": 78320900
+        },
+        "call:SetChainConfig": {
+          "count": 6,
+          "ns": 470157386
+        },
+        "reserve-connection": {
+          "count": 1,
+          "ns": 38819664
+        },
+        "manager-connect": {
+          "count": 1,
+          "ns": 83414251
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 202381507
+        },
+        "hovel-cli:throw": {
+          "count": 1,
+          "ns": 1299290142
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 2082387700
+        },
+        "connect-managed": {
+          "count": 1,
+          "ns": 3514661872
+        },
+        "cli:connect": {
+          "count": 1,
+          "ns": 4918291997
+        }
+      }
+    }
+  ],
+  "final_load": [
+    2.77685546875,
+    2.39306640625,
+    1.939453125
+  ]
+}

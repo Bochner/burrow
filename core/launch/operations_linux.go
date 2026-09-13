@@ -207,6 +207,13 @@ func hovelCommand(ctx context.Context, workspace, role string, args ...string) (
 	return cmd, nil
 }
 
+// Build is this executable's content digest. A frontend sends it with every
+// throw and the daemon-launched adapter refuses a different build before
+// dispatch, so module registration can stay a startup check.
+func Build() (string, error) {
+	return digest("/proc/self/exe")
+}
+
 // CacheModule publishes an immutable, private copy of this executable and its
 // manifest for Hovel's public linked-package installer.
 func CacheModule(ctx context.Context, manifest []byte) (string, error) {

@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -61,20 +63,29 @@ func directory(path string, create, private bool) (*os.File, error) {
 	return os.NewFile(uintptr(fd), path), nil
 }
 
-func regular(path string, mode os.FileMode, limit int64) ([]byte, error) {
+func openRegular(path string, mode os.FileMode, limit int64) (*os.File, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
 	f := os.NewFile(uintptr(fd), path)
-	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
+		f.Close()
 		return nil, err
 	}
 	if !st.Mode().IsRegular() || st.Mode().Perm() != mode || st.Sys().(*syscall.Stat_t).Uid != uint32(os.Getuid()) || st.Size() > limit {
+		f.Close()
 		return nil, refuse(path, "expected bounded private regular file")
 	}
+	return f, nil
+}
+func regular(path string, mode os.FileMode, limit int64) ([]byte, error) {
+	f, err := openRegular(path, mode, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if int64(len(b)) > limit {
 		return nil, refuse(path, "file exceeds size limit")
@@ -82,17 +93,70 @@ func regular(path string, mode os.FileMode, limit int64) ([]byte, error) {
 	return b, err
 }
 
+// regularDigest applies the same private-file checks and digests the opened file.
+func regularDigest(path string, mode os.FileMode, limit int64) (string, error) {
+	f, err := openRegular(path, mode, limit)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	return fileDigest(f)
+}
+
 func sum(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
-func digest(path string) (string, error) {
+
+// A verified content digest is reused only inside this process, and only while
+// the opened file's identity is unchanged: device, inode, size, modification
+// time and change time. Any rewrite moves the change time and any replacement
+// changes the inode, so both are hashed again; a running executable cannot be
+// rewritten in place, and a deleted-but-running image keeps its identity and
+// content. Nothing is persisted, so a new process always hashes once.
+type fileKey struct {
+	device, inode     uint64
+	size              int64
+	modified, changed unix.Timespec
+}
+
+var digests struct {
+	sync.Mutex
+	known map[fileKey]string
+}
+var hashes atomic.Int64 // completed content hashes, for behavior checks
+
+func fileDigest(f *os.File) (string, error) {
+	var st unix.Stat_t
+	if e := unix.Fstat(int(f.Fd()), &st); e != nil {
+		return "", e
+	}
+	key := fileKey{uint64(st.Dev), st.Ino, st.Size, st.Mtim, st.Ctim}
+	digests.Lock()
+	sum, known := digests.known[key]
+	digests.Unlock()
+	if known {
+		return sum, nil
+	}
 	defer Phase("hash")()
+	h := sha256.New()
+	if _, e := io.Copy(h, f); e != nil {
+		return "", e
+	}
+	sum = hex.EncodeToString(h.Sum(nil))
+	hashes.Add(1)
+	digests.Lock()
+	if digests.known == nil || len(digests.known) >= 16 {
+		digests.known = map[fileKey]string{}
+	}
+	digests.known[key] = sum
+	digests.Unlock()
+	return sum, nil
+}
+func digest(path string) (string, error) {
 	f, e := os.Open(path)
 	if e != nil {
 		return "", e
 	}
 	defer f.Close()
-	h := sha256.New()
-	_, e = io.Copy(h, f)
-	return hex.EncodeToString(h.Sum(nil)), e
+	return fileDigest(f)
 }
 func lock(ctx context.Context, f *os.File) error {
 	for {

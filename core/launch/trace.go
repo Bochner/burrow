@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -12,9 +13,9 @@ import (
 // BURROW_PHASE_TRACE names an absolute private file, every process on the
 // connection path appends one line per completed phase: its process ID, the
 // phase name, and monotonic begin/duration nanoseconds. Names are fixed
-// program constants plus public RPC method names or a Hovel CLI verb; inputs,
-// paths, workspace identities and secrets never enter the trace. Tracing
-// never changes control flow or skips a check.
+// program constants, validated command verbs, public RPC method names or a
+// Hovel CLI verb; inputs, paths, workspace identities and secrets never enter
+// the trace. Tracing never changes control flow or skips a check.
 var trace = openTrace()
 
 func openTrace() *os.File {
@@ -26,7 +27,13 @@ func openTrace() *os.File {
 	if e != nil {
 		return nil
 	}
-	return os.NewFile(uintptr(fd), path)
+	f := os.NewFile(uintptr(fd), path)
+	st, e := f.Stat()
+	if e != nil || !st.Mode().IsRegular() || st.Mode().Perm() != 0600 || st.Sys().(*syscall.Stat_t).Uid != uint32(os.Getuid()) {
+		f.Close()
+		return nil
+	}
+	return f
 }
 
 // Monotonic returns CLOCK_MONOTONIC nanoseconds, comparable across processes

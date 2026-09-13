@@ -50,9 +50,9 @@ func install(ctx context.Context, o Options) (string, error) {
 		}
 	}
 	executable := filepath.Join(path, "hovel")
-	b, e := regular(executable, 0700, packageLimit)
+	installed, e := regularDigest(executable, 0700, packageLimit)
 	if e == nil {
-		if sum(b) != ExecutableSHA {
+		if installed != ExecutableSHA {
 			return "", refuse(executable, "executable checksum differs from pinned package")
 		}
 		return executable, nil

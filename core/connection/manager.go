@@ -21,6 +21,9 @@ import (
 // Version the control contract separately from the public module identity.
 const managerKind = "burrow-manager-v1"
 
+// The adapter's fixed pre-dispatch refusal, recognized again in throw results.
+const buildMismatch = "installed Burrow module build differs from the requesting frontend; run burrow status to register this build; nothing was dispatched"
+
 type managerIdentity struct {
 	Session    string `json:"session"`
 	Generation string `json:"generation"`
@@ -254,6 +257,13 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 	if os.Getppid() != info.PID {
 		return hovel.Result{}, fmt.Errorf("manager adapter requires verified workspace daemon")
 	}
+	build, e := launch.Build()
+	if e != nil {
+		return hovel.Result{}, e
+	}
+	if ctx.InputString("build", "") != build {
+		return hovel.Result{}, fmt.Errorf("%s", buildMismatch)
+	}
 	if ctx.InputString("command", "") != "" || ctx.InputString("connection", "") != "" {
 		return hovel.Result{}, fmt.Errorf("manager action excludes legacy connection and profile commands")
 	}
@@ -339,6 +349,10 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 func managerThrow(ctx context.Context, w string, config map[string]string, out any) error {
 	defer launch.Phase("manager-throw:" + config["action"])()
 	op := "burrow-" + rand.Text()
+	build, e := launch.Build()
+	if e != nil {
+		return e
+	}
 	for _, call := range []struct {
 		method string
 		input  any
@@ -350,10 +364,14 @@ func managerThrow(ctx context.Context, w string, config map[string]string, out a
 	} {
 		var result any
 		if e := launch.Call(ctx, w, call.method, call.input, &result); e != nil {
+			if call.method == "AddModule" {
+				return fmt.Errorf("Burrow module is not registered in this daemon; run burrow status to register this build: %w", e)
+			}
 			return e
 		}
 	}
 	config["workspace"] = w
+	config["build"] = build
 	for key, value := range config {
 		var result any
 		if e := launch.Call(ctx, w, "SetChainConfig", map[string]string{"Operation": op, "Chain": "request", "Key": key, "Value": value}, &result); e != nil {
@@ -372,9 +390,21 @@ func managerThrow(ctx context.Context, w string, config map[string]string, out a
 		return e
 	}
 	var result struct {
-		Results []struct{ State, Summary, RunID string }
+		Results []struct {
+			State, Summary, RunID string
+			Logs                  []struct{ Fields map[string]string }
+		}
 	}
 	if json.Unmarshal(b, &result) != nil || len(result.Results) != 1 || result.Results[0].State != "succeeded" {
+		// Surface only the adapter's fixed pre-dispatch refusal; other run
+		// diagnostics stay in Hovel history rather than in this error.
+		for _, entry := range result.Results {
+			for _, log := range entry.Logs {
+				if strings.HasSuffix(log.Fields["error"], buildMismatch) {
+					return fmt.Errorf("manager throw refused before dispatch: %s", buildMismatch)
+				}
+			}
+		}
 		return fmt.Errorf("manager throw failed; inspect Hovel history; do not retry automatically")
 	}
 	var correlation struct {
@@ -386,11 +416,11 @@ func managerThrow(ctx context.Context, w string, config map[string]string, out a
 	return json.Unmarshal([]byte(result.Results[0].Summary), out)
 }
 
+// Module registration is startup work (status/tui open). Each throw carries
+// the frontend build digest, and the adapter refuses another build before
+// dispatch, so the daemon's inventory is not re-read per connection.
 func connectManaged(ctx context.Context, c Config, preview string) (State, error) {
 	defer launch.Phase("connect-managed")()
-	if e := launch.RegisterModule(ctx, c.Workspace, "burrow@0.1.0", Manifest); e != nil {
-		return State{}, e
-	}
 	id, e := findManager(ctx, c.Workspace)
 	if e != nil {
 		return State{}, e
