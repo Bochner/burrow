@@ -63,6 +63,7 @@ type manager struct {
 	workspace   string
 	closed      bool
 	connections map[string]*master
+	flows       map[string]context.CancelFunc
 	logMu       sync.Mutex
 	log         *hovel.Logger
 	logs        int
@@ -84,6 +85,8 @@ func (module) Run(ctx *hovel.Context) (hovel.Result, error) {
 		return hovel.Result{}, fmt.Errorf("missing generation")
 	}
 	switch ctx.InputString("action", "") {
+	case "tunnel-open", "consume":
+		return consumerAdapter(ctx, w)
 	case "activate":
 		dir, e := launch.ReserveConnection(c, w, "manager")
 		if e != nil {
@@ -165,13 +168,16 @@ func (s *manager) Close(string) error {
 	return s.dir.Close()
 }
 func (s *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "identity", ReadOnly: true}, {Name: "probe", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Adapter forwarding only; session commands do not certify throw approval"}}, nil
+	return []hovel.PayloadCommand{{Name: "identity", ReadOnly: true}, {Name: "probe", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Adapter forwarding only; session commands do not certify throw approval"}, {Name: "tunnel-open", Summary: "Confirmed adapter only"}, {Name: "consume", Summary: "Confirmed adapter only"}, {Name: "tunnel-close"}, {Name: "flow-close"}, {Name: "flow-status", ReadOnly: true}}, nil
 }
 func (s *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
 	if len(req.Config) > 0 || req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported inputs")
 	}
 	var value any
+	if req.Command == "tunnel-open" || req.Command == "consume" || req.Command == "tunnel-close" || req.Command == "flow-close" || req.Command == "flow-status" {
+		return s.consumerControl(req)
+	}
 	if req.Command == "identity" && len(req.Args) == 0 {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -422,6 +428,19 @@ func run() (any, error) {
 	defer cancel()
 	w := os.Args[2]
 	switch os.Args[1] {
+	case "tunnel-open", "consume":
+		if len(os.Args) != 5 {
+			return nil, fmt.Errorf("request file and review required")
+		}
+		b, e := os.ReadFile(os.Args[3])
+		if e != nil {
+			return nil, e
+		}
+		r, e := decodeConsumer(string(b))
+		if e != nil || r.Action != os.Args[1] || r.Workspace != w || digest(string(b)) != os.Args[4] {
+			return nil, fmt.Errorf("consumer review changed")
+		}
+		return submit(c, w, map[string]string{"action": os.Args[1], "session": r.Session, "generation": r.Generation, "request": string(b), "review": os.Args[4]})
 	case "prepare":
 		if len(os.Args) < 7 {
 			return nil, fmt.Errorf("session, generation and connection arguments required")

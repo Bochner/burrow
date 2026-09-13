@@ -8,6 +8,7 @@ Run only in the temporary workspaces created by the Aspect tasks:
 ```
 aspect burrow-prototype manager-check
 aspect burrow-prototype manager-latency
+aspect burrow-prototype consumer-check
 ```
 
 Requires Docker and the host OpenSSH client tools. Measurement is an explicit
@@ -78,3 +79,34 @@ PATH searches; traced durations never enter the phase percentiles.
 the incomplete tracing/provenance results. The sampled binary predates the final
 prepare/reconcile/quit additions; no final-build speed claim is inferred from it.
 Further speed work is deferred per the owner, rather than rerunning benchmarks.
+
+## Fresh consumers — issue #72
+
+`consumer-check` extends this same candidate owner with a disposable, fixed local
+forward and the existing HTTP nonce fixture. A new confirmed adapter selects the
+workspace, owner session/generation, connection creation, tunnel creation, exact
+endpoints, action and unique flow. The owner performs the bounded exchange; the
+adapter records a normal result and JSON artifact with those non-secret identities.
+The fixture's reverse loopback relay makes its host HTTP server reachable inside
+the pinned SSH container. Both forwarding hops use the existing master.
+
+Run the focused check above or the full `aspect burrow-check`. It checks changed
+approved inputs at the actual adapter, launch-key refusal, replay, stale selection,
+same-port recreation, concurrent sibling traffic, frontend disconnect, explicit
+flow cancellation, and owner loss. Close acknowledgement means cancellation was
+requested; `flow-status` separately observes completion. Frontend disconnect does
+not promise cancellation: the operation may finish and has an eight-second I/O
+deadline. Operations serialize per connection; siblings on another connection
+remain usable. Used flow IDs are retained up to a hard limit of 128 in this proof.
+Unknown forwarding outcomes reserve their identity/bind and require inspection
+or full connection teardown; they never become usable automatically.
+
+The single generic TCP exploration deliberately returns the retained owner's
+session ID from a fresh `OpenMeshStream` provider. Hovel rejects adoption with
+`already tracked`. This is a **negative routing result**, not a byte-stream or
+close-routing success. No bridge endpoint or bearer capability is created; no
+execution-capable Mesh task is implemented. No public module identity is added.
+
+See [the #72 evidence and proposed decision](../../docs/research/retained-consumer-proof.md).
+Owner acceptance remains pending; production L/R/SOCKS consumers stay in #62 and
+manager integration stays in #73. This proof does not migrate production.

@@ -80,6 +80,7 @@ type master struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 	manager *manager
+	tunnels map[string]consumerTunnel
 }
 
 func (m *master) snapshot() (connectionState, error) {

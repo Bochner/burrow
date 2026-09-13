@@ -87,6 +87,9 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
             except OSError:
                 return False
         wait(ready)
+        if "--consumer" in sys.argv:
+            command("docker", "exec", container, "sh", "-c",
+                    "sed -i 's/^AllowTcpForwarding no$/AllowTcpForwarding yes/' /config/sshd/sshd_config && kill -HUP $(cat /config/sshd.pid)")
         secret = "proof-" + uuid.uuid4().hex
         command("docker", "exec", "-i", container, "chpasswd", input="tester:"+secret+"\n")
         def workspace(name):
@@ -169,6 +172,10 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
             views = list(pool.map(lambda _: run(proof,"control",w,owner["session"],"list",owner["generation"],env=env),range(2)))
         assert {s["id"] for s in views[0]} == {s["id"] for s in views[1]} == {first["id"],second["id"]}
         print("PASS two real SSH masters, one retained base-module manager, two frontends",flush=True)
+        if "--consumer" in sys.argv:
+            from core.prototype_manager.consumer_check import check
+            check(root, env, proof, w, owner, first, second, workspace, run, command, rpc, control, connected, wait)
+            sys.exit(0)
         # A changed request never dispatches; replay cannot recreate a connection.
         path,digest = attempts[0][1:]
         raw = path.read_text()

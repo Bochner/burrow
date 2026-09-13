@@ -3,8 +3,19 @@ load("@rules_python//python:defs.bzl", "py_test", "py_binary")
 
 go_binary(
     name = "burrow",
-    srcs = ["main.go", "ssh.go"],
+    srcs = ["main.go", "ssh.go", "consumer.go"],
     deps = ["//core/launch", "//core/connection", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],
+)
+
+py_test(
+    name = "consumer_check",
+    srcs = ["check.py", "latency.py", "consumer_check.py"],
+    main = "check.py",
+    args = ["$(location :burrow)", "$(location //core/cmd/burrow:burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :baseline)", "--consumer"],
+    data = [":burrow", "//core/cmd/burrow:burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":baseline"],
+    tags = ["local", "external"],
+    size = "large",
+    legacy_create_init = 0,
 )
 
 py_test(
