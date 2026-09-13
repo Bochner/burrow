@@ -107,15 +107,16 @@ func newUI(info launch.Info, noColor bool) ui {
 	input := textinput.New()
 	styleInput(&input)
 	input.Prompt = "╰─ "
-	input.Placeholder = "connect · connections · help · quit"
-	input.SetSuggestions(connection.Suggestions(nil))
+	input.Placeholder = "connect · tunnel create · help · quit"
 	input.ShowSuggestions = true
 	input.KeyMap.AcceptSuggestion.Unbind()
 	input.KeyMap.NextSuggestion = next
 	input.KeyMap.PrevSuggestion = previous
 	input.CharLimit = 2048
 	input.Focus()
-	return ui{info: info, input: input, noColor: noColor, tunnelError: "UNVERIFIED · loading forwarding inventory", output: "Verified daemon · quit reviews connections: keep or close."}
+	m := ui{info: info, input: input, noColor: noColor, tunnelError: "UNVERIFIED · loading forwarding inventory", output: "Verified daemon · quit reviews connections: keep or close."}
+	m.input.SetSuggestions(m.suggestions())
+	return m
 }
 
 func (m ui) completionOptions() ([]string, int) {
@@ -523,8 +524,9 @@ func (m ui) View() tea.View {
 	base := fit(b.String(), w, h)
 	if !m.help && m.input.Value() != "" && m.input.ShowSuggestions {
 		matches, selected := m.completionOptions()
+		var rows []string
 		if len(matches) > 0 {
-			rows := []string{"COMPLETION · Tab / Shift+Tab cycle"}
+			rows = []string{"COMPLETION · Tab / Shift+Tab cycle"}
 			count := max(1, min(6, h-5))
 			start := min(max(0, selected-count+1), max(0, len(matches)-count))
 			end := min(len(matches), start+count)
@@ -546,7 +548,13 @@ func (m ui) View() tea.View {
 				}
 				rows = append(rows, line)
 			}
-			popup := solid(strings.Join(rows, "\n"), w, min(len(rows), max(1, h-3)), popupColor, m.noColor)
+		}
+		if hint := m.forwardingGuidance(); hint != "" {
+			rows = append(rows, ansi.Wrap(hint, w, ""))
+		}
+		if len(rows) > 0 {
+			text := strings.Join(rows, "\n")
+			popup := solid(text, w, min(lipgloss.Height(text), max(1, h-3)), popupColor, m.noColor)
 			base = lipgloss.NewCompositor(lipgloss.NewLayer(base), lipgloss.NewLayer(popup).Y(max(0, h-3-lipgloss.Height(popup))).Z(1)).Render()
 		}
 	}

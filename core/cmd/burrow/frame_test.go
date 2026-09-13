@@ -105,11 +105,11 @@ func TestCompletionCyclesOriginalMatches(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/completion"}, true, launch.Options{})
 	defer m.terminals.close()
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
-	frameEvent(m, tea.PasteMsg{Content: "connect"})
+	frameEvent(m, tea.PasteMsg{Content: "tunnel "})
 	for _, event := range []struct {
 		mod  tea.KeyMod
 		want string
-	}{{0, "connect"}, {0, "connections"}, {tea.ModShift, "connect"}, {tea.ModShift, "connections"}, {0, "connect"}} {
+	}{{0, "tunnel create"}, {0, "tunnel check"}, {tea.ModShift, "tunnel create"}, {tea.ModShift, "tunnel remove"}, {0, "tunnel create"}} {
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab, Mod: event.mod})
 		if got := m.current().management.input.Value(); got != event.want {
 			t.Fatalf("completion got %q want %q", got, event.want)

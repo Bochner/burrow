@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -63,11 +64,19 @@ func (m ui) suggestions() []string {
 			values = append(values, "profile save "+s.Name)
 		}
 	}
-	return values
+	// The dashboard already presents these inventories. Keep the commands
+	// callable (and in shared CLI help), without promoting duplicate TUI actions.
+	return slices.DeleteFunc(values, func(value string) bool {
+		switch value {
+		case "connections", "profiles", "shells", "tunnel list":
+			return true
+		}
+		return false
+	})
 }
 
 var completionDescriptions = map[string]string{
-	"tunnel create": "CONNECTION forward|reverse LISTEN HOST PORT", "tunc": "CONNECTION l|r LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected listener", "tund": "Remove selected listener", "tunnel check": "Observe destination greeting without retaining content",
+	"tunnel create": "CONNECTION forward|reverse LISTEN HOST PORT", "tunc": "CONNECTION l|r LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected listener", "tund": "Remove selected listener", "tunnel check": "Test tunnel connectivity (destination greeting)",
 	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",
 	"inspect": "Inspect connection state", "reconnect": "Replace a lost SSH connection", "close": "Review and close connection",
 	"shell": "Open interactive SSH shell", "shells": "List this frontend's local shells", "resume": "Resume a local shell ID", "shell-close": "Close selected local shell or ID", "help": "Show command reference", "quit": "Review connections and quit",
@@ -90,10 +99,35 @@ func completionDescription(value string) string {
 		return description
 	}
 	command := words[0]
-	if command == "profile" && len(words) > 1 {
+	if (command == "profile" || command == "tunnel") && len(words) > 1 {
 		command += " " + words[1]
 	}
 	return completionDescriptions[command]
+}
+
+func (m ui) forwardingGuidance() string {
+	words := strings.Fields(safe(m.input.Value()))
+	direction := 2
+	if len(words) >= 2 && words[0] == "tunnel" && words[1] == "create" {
+		direction = 3
+	} else if len(words) == 0 || words[0] != "tunc" {
+		return ""
+	}
+	if len(words) <= direction {
+		return ""
+	}
+	side := "Local listener · remote destination"
+	switch words[direction] {
+	case "forward", "l":
+	case "reverse", "r":
+		side = "Remote listener · local destination · LISTEN 0: random port"
+	default:
+		return ""
+	}
+	example := strings.Join(words[:direction+1], " ") + " 8080 localhost 80"
+	return m.paint(warningStyle, "LISTEN HOST PORT") + "\n" +
+		m.paint(secondary, side+"\nLISTEN: port or IP:port (default 127.0.0.1)") + "\n" +
+		m.paint(accent, "Example:") + "\n" + m.syntax(example, false)
 }
 func (m ui) profileRows() int { return max(1, min(3, (m.height-20)/2)) }
 func (m ui) savedConnections(w int) string {

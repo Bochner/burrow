@@ -169,13 +169,13 @@ def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, rev
     frontend = subprocess.Popen([binary, "--workspace", str(workspace), "tui"], env=env,
                                 stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
     output = bytearray()
-    def wait(needle):
+    def wait(needle, present=True):
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             if select.select([outer], [], [], .05)[0]:
                 output.extend(os.read(outer, 65536))
             screen = subprocess.run([decoder, "160", "40"], input=output, capture_output=True, check=True).stdout.decode()
-            if needle in screen:
+            if (needle in screen) == present:
                 return
             assert frontend.poll() is None, screen
         raise AssertionError((needle, screen))
@@ -184,6 +184,7 @@ def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, rev
         port = free_port()
         os.write(outer, b"tunnel create \t\t" if reverse else b"tunnel create \t")
         wait("tunnel create gateway reverse" if reverse else "tunnel create gateway forward")
+        wait("Example:")
         os.write(outer, f"{port} localhost {destination_port}\r".encode())
         wait("Proceed?")
         os.write(outer, b"\x1b")
@@ -200,6 +201,13 @@ def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, rev
         wait("Proceed?")
         os.write(outer, b"\t\r")
         wait('"removed"')
+        # External automation and the watching TUI share the retained inventory.
+        external = burrow(workspace, "tunc", "gateway", "r" if reverse else "l",
+                          str(port), "localhost", destination_port, "--yes")
+        inventory_count = f"of {len(siblings)+1} · Alt+Shift+"
+        wait(inventory_count)
+        burrow(workspace, "tund", external["id"], "--yes")
+        wait(inventory_count, present=False)
         os.write(outer, b"quit\r")
         wait("Keep running")
         os.write(outer, b"\r")

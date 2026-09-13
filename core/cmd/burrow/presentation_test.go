@@ -264,18 +264,18 @@ func TestCompletionPresentation(t *testing.T) {
 			m := newFrame(launch.Info{Workspace: "/tmp/completion"}, plain, launch.Options{})
 			defer m.terminals.close()
 			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-			frameEvent(m, tea.PasteMsg{Content: "connect"})
+			frameEvent(m, tea.PasteMsg{Content: "tunnel "})
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
 			matches, index := m.current().management.completionOptions()
-			if len(matches) != 2 || index != 0 || matches[0] != "connect" || matches[1] != "connections" {
+			if len(matches) != 3 || index != 0 || matches[0] != "tunnel create" || matches[1] != "tunnel check" || matches[2] != "tunnel remove" {
 				t.Fatal("duplicate or missing candidates", matches, index)
 			}
 			screen := capturePresentation(t, m, fmt.Sprintf("completion-%dx%d-plain-%t", size[0], size[1], plain))
 			bounds := m.selectionBounds()
 			bounds.Min.Y = m.height - 7 // completion popup, excluding inventory prose
 			if !plain {
-				assertTextRole(t, screen, bounds, "connect", blueColor)
-				assertTextRole(t, screen, bounds, "Open SSH", subtextColor)
+				assertTextRole(t, screen, bounds, "tunnel create", blueColor)
+				assertTextRole(t, screen, bounds, "CONNECTION", subtextColor)
 			} else if strings.Contains(m.View().Content, "\x1b") {
 				t.Fatal("NO_COLOR completion leaked ANSI")
 			}
@@ -283,14 +283,71 @@ func TestCompletionPresentation(t *testing.T) {
 			m.updateManagement(m.active, connectionList{})
 			m.updateManagement(m.active, profilesReady{})
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
-			if m.current().management.input.Value() != "connections" {
+			if m.current().management.input.Value() != "tunnel check" {
 				t.Fatal("refresh reset cycle")
 			}
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-			frameEvent(m, tea.PasteMsg{Content: " "})
+			m.current().management.input.Reset()
+			frameEvent(m, tea.PasteMsg{Content: "connect "})
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
 			if m.current().management.input.Value() != "connect -ip " {
 				t.Fatal("editing did not reset command cycle", m.current().management.input.Value())
+			}
+		}
+	}
+}
+
+func TestCommandRecommendationScope(t *testing.T) {
+	m := newUI(launch.Info{}, true)
+	for _, command := range []string{"connections", "profiles", "shells", "tunnel list"} {
+		m.input.SetValue(command)
+		for _, suggestion := range m.input.MatchedSuggestions() {
+			if suggestion == command {
+				t.Fatalf("initial recommendations bypass filter: %s", command)
+			}
+		}
+		for _, suggestion := range m.suggestions() {
+			if suggestion == command {
+				t.Fatalf("dashboard inventory promoted in TUI: %s", command)
+			}
+		}
+		if err := connection.ValidateCommand("/tmp/recommendations", strings.Fields(command)); err != nil {
+			t.Fatalf("command removed instead of recommendation: %s: %v", command, err)
+		}
+	}
+	if !strings.Contains(completionDescription("tunnel check gateway/id"), "connectivity") {
+		t.Fatal("active check has no diagnostic description")
+	}
+}
+
+func TestForwardArgumentGuidance(t *testing.T) {
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			for _, prefix := range []string{"tunnel create gateway forward", "tunnel create gateway reverse", "tunc gateway l", "tunc gateway r"} {
+				m := newFrame(launch.Info{Workspace: "/tmp/guidance"}, plain, launch.Options{})
+				defer m.terminals.close()
+				frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+				for _, suffix := range []string{"", " ", " 8080 ", " 8080 localhost "} {
+					m.current().management.input.Reset()
+					frameEvent(m, tea.PasteMsg{Content: prefix + suffix})
+					screen := capturePresentation(t, m, fmt.Sprintf("forward-guidance-%dx%d-%t-%s-%d", size.X, size.Y, plain, strings.ReplaceAll(prefix, " ", "-"), len(suffix)))
+					for _, text := range []string{"LISTEN HOST PORT", "Example:", "8080", "localhost"} {
+						if !strings.Contains(screen.String(), text) {
+							t.Fatalf("guidance missing %q for %q at %v", text, prefix+suffix, size)
+						}
+					}
+					if plain && strings.Contains(m.View().Content, "\x1b") {
+						t.Fatal("NO_COLOR guidance leaked ANSI")
+					}
+					if !plain {
+						assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y-3), "8080", "#f9e2af")
+					}
+					before := m.current().management.input.Value()
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+					if m.current().management.input.Value() != before {
+						t.Fatal("non-selectable example changed command")
+					}
+				}
 			}
 		}
 	}
