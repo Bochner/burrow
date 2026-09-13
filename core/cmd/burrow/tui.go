@@ -58,6 +58,7 @@ func connectionTimer() tea.Cmd {
 }
 
 type ui struct {
+	shellIDs                      []string
 	profiles                      connection.Collection
 	profileError, selectedProfile string
 	profileOffset                 int
@@ -323,8 +324,8 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.busy = true
 				m.output = "Running reviewed command through Hovel…"
 				workspace := m.info.Workspace
-				if args[0] == "shell-close" {
-					return m, func() tea.Msg { return shellCloseRequested{} }
+				if args[0] == "shell-close" || args[0] == "shells" || args[0] == "resume" {
+					return m, func() tea.Msg { return shellControlRequested{args} }
 				}
 				if args[0] == "shell" {
 					return m, func() tea.Msg { return shellRequested{args[1]} }

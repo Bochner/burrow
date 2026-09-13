@@ -63,7 +63,8 @@ func TestLocalShellPresentation(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer host.Close()
-		tab := &cliTab{host: host, connection: "gateway"}
+		tab := &cliTab{id: "1", host: host, connection: "gateway"}
+		m.current().shells = []*cliTab{tab}
 		m.current().management.connections = []connection.State{{Name: "gateway", State: "connected"}}
 		m.current().shell, m.current().tab, m.current().focus = tab, "shell", "terminal"
 		until := time.Now().Add(3 * time.Second)
@@ -118,7 +119,7 @@ func TestLocalShellPresentation(t *testing.T) {
 		if !strings.Contains(tab.error, "geometry") {
 			t.Fatal("opening-time resize refusal discarded")
 		}
-		if close := m.closeShell(); close != nil {
+		if close := m.shellControl([]string{"shell-close"}); close != nil {
 			frameEvent(m, close())
 		}
 		if m.current().shell != nil || m.current().tab != "" || m.current().focus != "prompt" {
@@ -188,6 +189,98 @@ func TestEmbeddedTerminalKeepsFrameAndBackgroundOutput(t *testing.T) {
 	frameEvent(m, tea.KeyPressMsg{Code: 's', Mod: tea.ModAlt})
 	if m.View().MouseMode != tea.MouseModeNone {
 		t.Fatal("mouse text selection unavailable while Hovel is focused")
+	}
+}
+
+func TestIndependentShellViews(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/shells"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		w := m.current()
+		w.management.connections = []connection.State{{Name: "gateway", State: "connected"}}
+		for i := 1; i <= 2; i++ {
+			cmd := exec.Command("/bin/sh", "-c", fmt.Sprintf("stty -echo; printf '\\033[?1049h\\033[32mSCREEN-%d\\033[0m\\033[3;4H'; read line; printf '\\033[2J\\033[HINPUT-%d=%%s' \"$line\"; read line", i, i))
+			h, err := ptyhost.StartWithScrollback(m.terminals.context, cmd, 98, 35, 1000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer h.Close()
+			w.shells = append(w.shells, &cliTab{id: fmt.Sprint(i), connection: "gateway", host: h})
+		}
+		refresh := func(tab *cliTab, text string) {
+			t.Helper()
+			for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+				frameEvent(m, m.readCLI(m.active, tab)())
+				if strings.Contains(tab.screen.Screen, text) {
+					return
+				}
+			}
+			t.Fatal("shell output missing", text, tab.screen)
+		}
+		first, second := w.shells[0], w.shells[1]
+		refresh(first, "SCREEN-1")
+		refresh(second, "SCREEN-2")
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			for _, tab := range w.shells {
+				m.shellControl([]string{"resume", tab.id})
+				refresh(tab, "SCREEN-"+tab.id)
+				screen := capturePresentation(t, m, fmt.Sprintf("multi-shell-%s-%dx%d-%t", tab.id, size.X, size.Y, plain))
+				if !strings.Contains(screen.String(), "SCREEN-"+tab.id) || m.View().Cursor == nil {
+					t.Fatal("resume lost screen/cursor")
+				}
+				if !plain {
+					assertTextRole(t, screen, m.terminalBounds(), "SCREEN-"+tab.id, "#008000")
+				}
+				frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
+			}
+		}
+		m.shellControl([]string{"resume", "2"})
+		frameEvent(m, tea.KeyPressMsg{Code: 'x', Text: "x"})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		refresh(second, "INPUT-2=x")
+		if strings.Contains(first.host.Snapshot().Screen, "INPUT-1") {
+			t.Fatal("input reached background shell")
+		}
+		// A real background exit must not steal the controlling view. Its queued
+		// snapshots must not resurrect it after removal.
+		first.host.Close()
+		late := m.readCLI(m.active, first)()
+		frameEvent(m, late)
+		if w.shell != second || w.tab != "shell" || len(w.shells) != 1 {
+			t.Fatal("background exit stole selection")
+		}
+		frameEvent(m, late)
+		if len(w.shells) != 1 {
+			t.Fatal("stale result resurrected shell")
+		}
+		m.activate("burrow")
+		frameEvent(m, tea.PasteMsg{Content: "resume "})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if w.management.input.Value() != "resume 2" {
+			t.Fatal("shell ID completion missing", w.management.input.Value())
+		}
+		m.shellControl([]string{"resume", "1"})
+		if w.tab != "" || !strings.Contains(w.management.output, "REFUSED") {
+			t.Fatal("unknown ID changed view")
+		}
+		// Synthetic inventory is explicitly for overflow, not SSH success evidence.
+		for i := 3; i <= 15; i++ {
+			w.shells = append(w.shells, &cliTab{id: fmt.Sprint(i), connection: "gateway"})
+		}
+		w.focus = "shells"
+		for i := 0; i < 20; i++ {
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+		}
+		screen := capturePresentation(t, m, fmt.Sprintf("shell-overflow-%t", plain))
+		if !strings.Contains(screen.String(), "#15") || !strings.Contains(screen.String(), "14–14/14") {
+			t.Fatal("last shell hidden", screen.String())
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if w.shell.id != "15" {
+			t.Fatal("overflow selection opened wrong shell")
+		}
 	}
 }
 

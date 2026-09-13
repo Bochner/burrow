@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,11 +40,14 @@ connect NAME HOST USER [options]     Create shell-free SSH master
 reconnect NAME HOST USER [options]   Explicitly replace a lost owned connection
 inspect NAME                        State, endpoint and socket identity
 shell NAME                          Open a local interactive SSH terminal
-shell-close                         Close this frontend's shell (management)
+shells                              List this frontend's shells in the workspace
+resume ID                           Resume a local shell by ID
+shell-close [ID]                     Close ID, or the last selected local shell
 close NAME [--yes]                   Review/close all owned connection resources
 Shells reuse a verified master; no fresh login or authentication fallback.
 Ctrl+] returns to management, keeping the shell; Ctrl+C reaches SSH.
-Select Shells to return; shell-close ends only this frontend's local client.
+Select a Shells entry or use resume ID to return; shell-close ends only that client.
+Multiple shells share the connection's existing master socket and authentication.
 Shell exit/close preserves the connection. Frontend quit ends local shells.
 Connection close ends its shells, transfers and tunnels. Shell bytes stay local,
 in memory; they are not Hovel-recorded session I/O or collected evidence.
@@ -206,9 +210,20 @@ func ValidateCommand(workspace string, args []string) error {
 	case "connect", "reconnect":
 		_, _, e := Parse(workspace, args[1:])
 		return e
-	case "connections", "shell-close":
+	case "connections", "shells":
 		if len(args) != 1 {
 			return fmt.Errorf("%s takes no arguments", args[0])
+		}
+	case "resume", "shell-close":
+		if args[0] == "shell-close" && len(args) == 1 {
+			return nil
+		}
+		if len(args) != 2 {
+			return fmt.Errorf("expected %s ID", args[0])
+		}
+		id, err := strconv.ParseUint(args[1], 10, 64)
+		if err != nil || id == 0 || strconv.FormatUint(id, 10) != args[1] {
+			return fmt.Errorf("shell ID must be a positive decimal integer; use shells")
 		}
 	case "inspect", "close", "shell":
 		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && (args[0] != "close" || args[2] != "--yes")) {
@@ -377,8 +392,8 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 		return executeProfile(ctx, w, args)
 	case "connections":
 		return List(ctx, w)
-	case "shell-close":
-		return nil, fmt.Errorf("shell-close is frontend-local; use management in the frontend that opened the shell")
+	case "shell-close", "shells", "resume":
+		return nil, fmt.Errorf("%s is frontend-local; use management in the frontend that opened the shell", args[0])
 	case "inspect":
 		return selected(ctx, w, args[1])
 	case "shell":
@@ -462,7 +477,7 @@ func displaySetting(value, fallback string) string {
 }
 
 func Suggestions(states []State) []string {
-	values := []string{"status", "connect", "connections", "shell-close", "help", "quit"}
+	values := []string{"status", "connect", "connections", "shells", "shell-close", "help", "quit"}
 	for _, s := range states {
 		if s.State == "connected" && s.Generation != "" {
 			values = append(values, "shell "+s.Name)

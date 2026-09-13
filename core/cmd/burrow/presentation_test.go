@@ -940,6 +940,7 @@ func TestSidebarStatusAndClickAway(t *testing.T) {
 		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 		w := m.current()
 		w.shell = &cliTab{connection: "gateway"}
+		w.shells = []*cliTab{w.shell}
 		w.management.connectionObserved = true
 		w.management.profiles.Profiles = []connection.Profile{{Name: "saved", Host: "example.com", User: "alice", Port: 22}}
 		for _, test := range []struct{ state, dot, color string }{{"connected", "●", "#a6e3a1"}, {"connecting", "◐", "#f9e2af"}, {"lost", "○", "#f38ba8"}, {"unverified", "◌", "#f38ba8"}} {
@@ -991,6 +992,7 @@ func TestSidebarStatusAndClickAway(t *testing.T) {
 		other := "/tmp/other-shell"
 		m.paths = append(m.paths, other)
 		m.workspaces[other] = &workspaceView{management: newUI(launch.Info{Workspace: other}, plain), shell: &cliTab{connection: "other"}}
+		m.workspaces[other].shells = []*cliTab{m.workspaces[other].shell}
 		w.focus, w.shellOffset = "shells", 1
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		if m.active != other || m.current().tab != "shell" {

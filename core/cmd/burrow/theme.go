@@ -153,7 +153,9 @@ func (m ui) syntax(line string, reference bool) string {
 			return strings.Replace(token, word, m.endpoint(word), 1)
 		case strings.HasPrefix(word, "-"):
 			style = heading
-		case prior == "connect" || prior == "reconnect" || prior == "close" || prior == "inspect" || prior == "shell":
+		case prior == "connect" || prior == "reconnect" || prior == "close" || prior == "inspect" || prior == "shell" || prior == "resume" || prior == "shell-close":
+			style = accent
+		case strings.HasPrefix(word, "#") && strings.TrimPrefix(word, "#") != "" && strings.Trim(strings.TrimPrefix(word, "#"), "0123456789") == "":
 			style = accent
 		case prior == "-p" || prior == "--port":
 			style = warningStyle
@@ -167,13 +169,17 @@ func (m ui) syntax(line string, reference bool) string {
 			style = accent
 		case word == "connected" || word == "active" || word == "failed" || word == "lost" || word == "closed" || word == "disconnected" || word == "connecting":
 			style = connectionStyle(word)
+		case word == "background":
+			style = infoStyle
+		case word == "opening" || word == "closing":
+			style = warningStyle
 		case strings.Trim(word, "0123456789") == "" && word != "":
 			style = numberStyle
 		case strings.HasPrefix(word, "Ctrl") || strings.HasPrefix(word, "Alt") || strings.HasPrefix(word, "Shift+") || word == "Tab" || word == "Enter" || word == "Esc" || word == "F1" || word == "F6" || word == "PgUp/PgDn":
 			style = keywordStyle
 		case strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word:
 			style = warningStyle
-		case previous == "shell" || previous == "shell-close" || previous == "ssh" || previous == "connect" || previous == "reconnect" || previous == "inspect" || previous == "connections" || previous == "close" || previous == "status" || previous == "help" || previous == "quit" || previous == "profile" || previous == "profiles" || previous == "history":
+		case previous == "shell" || previous == "shells" || previous == "resume" || previous == "shell-close" || previous == "ssh" || previous == "connect" || previous == "reconnect" || previous == "inspect" || previous == "connections" || previous == "close" || previous == "status" || previous == "help" || previous == "quit" || previous == "profile" || previous == "profiles" || previous == "history":
 			style = heading
 		case prior == "profile" && (word == "create" || word == "select" || word == "save" || word == "edit" || word == "delete" || word == "collection" || word == "load" || word == "backup"):
 			style = heading

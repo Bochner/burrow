@@ -41,6 +41,9 @@ func refreshProfiles(workspace string) tea.Cmd {
 func (m ui) suggestions() []string {
 	line := m.input.Value()
 	values := connection.CommandSuggestions(line, m.connections)
+	for _, id := range m.shellIDs {
+		values = append(values, "resume "+id, "shell-close "+id)
+	}
 	if strings.HasPrefix(line, "profile create ") || strings.HasPrefix(line, "profile edit ") {
 		sub := strings.TrimPrefix(strings.TrimPrefix(line, "profile create "), "profile edit ")
 		for _, value := range connection.CommandSuggestions("connect "+sub, nil) {
@@ -61,7 +64,7 @@ func (m ui) suggestions() []string {
 var completionDescriptions = map[string]string{
 	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",
 	"inspect": "Inspect connection state", "reconnect": "Replace a lost SSH connection", "close": "Review and close connection",
-	"shell": "Open interactive SSH shell", "shell-close": "Close this frontend's shell", "help": "Show command reference", "quit": "Review connections and quit",
+	"shell": "Open interactive SSH shell", "shells": "List this frontend's local shells", "resume": "Resume a local shell ID", "shell-close": "Close selected local shell or ID", "help": "Show command reference", "quit": "Review connections and quit",
 	"profiles": "List saved connections", "history": "Show retained command history",
 	"profile create": "Save connection settings", "profile edit": "Replace saved settings", "profile save": "Save authenticated settings",
 	"profile select": "Inspect saved settings", "profile delete": "Delete saved settings only", "profile connect": "Connect saved SSH profile",

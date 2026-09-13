@@ -15,6 +15,7 @@ import sqlite3
 import socket
 import struct
 import subprocess
+import tarfile
 import tempfile
 import termios
 import time
@@ -25,7 +26,7 @@ from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("paths", nargs=5, metavar="PATH")
+parser.add_argument("paths", nargs=6, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
 parser.add_argument("--proxy-check", action="store_true", help="check real connection-owned SOCKS traffic and cleanup")
@@ -33,7 +34,7 @@ parser.add_argument("--measure", action="store_true", help="record production ph
 parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
 args = parser.parse_args()
 smoke = args.smoke
-binary, wheel, image_file, screen_check, legacy_binary = [str(Path(p).resolve()) for p in args.paths]
+binary, wheel, image_file, screen_check, legacy_binary, vim_apk = [str(Path(p).resolve()) for p in args.paths]
 image = Path(image_file).read_text().strip()
 started = stage_started = time.monotonic()
 
@@ -166,6 +167,12 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
         if not smoke and not args.proxy_check:
+            # Extract only the declared executable, never APK paths or scripts.
+            with tarfile.open(vim_apk, "r:gz", ignore_zeros=True) as archive:
+                vim = root / "vim"
+                vim.write_bytes(archive.extractfile("usr/bin/vim").read())
+            vim.chmod(0o755)
+            command("docker", "cp", vim, container + ":/usr/local/bin/vim")
             first = shell_checks(binary, w, env, screen_check, burrow, first, options)
         if args.shell_check:
             burrow(w, "close", "gateway", "--yes")
