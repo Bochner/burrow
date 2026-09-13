@@ -3,14 +3,109 @@ package main
 import (
 	"context"
 	"fmt"
+	"image"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"github.com/Bochner/burrow/core/connection"
 )
+
+var resourceActions = key.NewBinding(key.WithKeys("shift+f10"), key.WithHelp("Shift+F10", "row actions"))
+
+type resourceMenu struct {
+	at         image.Point
+	labels     []string
+	state      connection.State
+	profile    connection.Profile
+	collection connection.Collection
+}
+
+func (m *frame) columnsLeft() int { left, _ := m.columns(); return left + 2 }
+
+func (m *frame) openResourceMenu(hit string, at image.Point) tea.Cmd {
+	w := m.current()
+	u := &w.management
+	menu := &resourceMenu{at: at}
+	if hit == "" {
+		if w.focus == "saved" {
+			for i, p := range u.profiles.Profiles {
+				if p.Name == u.selectedProfile {
+					hit = fmt.Sprintf("profile:%d", i)
+					break
+				}
+			}
+		} else if w.focus == "resources" {
+			for i, s := range u.connections {
+				if s.Name == w.selected {
+					hit = fmt.Sprintf("resource:%d", i)
+					break
+				}
+			}
+		}
+	}
+	if strings.HasPrefix(hit, "profile:") {
+		i, err := strconv.Atoi(strings.TrimPrefix(hit, "profile:"))
+		if err != nil || i < 0 || i >= len(u.profiles.Profiles) {
+			return nil
+		}
+		menu.profile, menu.collection = u.profiles.Profiles[i], u.profiles
+		menu.labels = []string{"Execute connection", "Edit in Vim"}
+		u.selectedProfile = menu.profile.Name
+		w.focus = "saved"
+	} else if strings.HasPrefix(hit, "resource:") {
+		i, err := strconv.Atoi(strings.TrimPrefix(hit, "resource:"))
+		if err != nil || i < 0 || i >= len(u.connections) {
+			return nil
+		}
+		menu.state = u.connections[i]
+		if menu.state.State != "connected" || u.connectionError != "" {
+			return nil
+		}
+		menu.labels = []string{"Enter file mode"}
+		w.selected, w.focus = menu.state.Name, "resources"
+	} else {
+		return nil
+	}
+	m.selection = nil
+	m.contextMenu = menu
+	options := make([]huh.Option[int], len(menu.labels))
+	for i, label := range menu.labels {
+		options[i] = huh.NewOption(label, i)
+	}
+	m.menu = huh.NewSelect[int]().Key("action").Options(options...)
+	name := menu.state.Name
+	if menu.profile.Name != "" {
+		name = menu.profile.Name
+	}
+	return m.setForm("context", safe(name), newForm(huh.NewGroup(m.menu)).WithShowHelp(false))
+}
+
+func (m *frame) resourceAction(i int) tea.Cmd {
+	menu := m.contextMenu
+	m.dismissForm()
+	m.contextMenu = nil
+	if menu == nil || i < 0 || i >= len(menu.labels) {
+		return nil
+	}
+	if menu.profile.Name != "" {
+		if i == 1 {
+			return m.openProfileEditor(menu.profile, menu.collection)
+		}
+		return m.reviewCommand(menu.profile.Args())
+	}
+	for _, state := range m.current().management.connections {
+		if state.Name == menu.state.Name && state.Creation == menu.state.Creation && state.Generation == menu.state.Generation && state.State == "connected" {
+			return m.openFileTab(state.Name)
+		}
+	}
+	m.current().management.output = "REFUSED: connection changed while the menu was open; select it again"
+	return nil
+}
 
 type profilesReady struct {
 	collection connection.Collection
@@ -40,8 +135,17 @@ func refreshProfiles(workspace string) tea.Cmd {
 	}
 }
 func (m ui) suggestions() []string {
+	if m.files != nil {
+		return []string{"ls ", "cd ", "tree ", "pwd", "local", "local download ", "local upload ", "lcd ", "lcd upload ", "lls ", "lls upload ", "history", "back", "help", "quit"}
+	}
 	line := m.input.Value()
 	values := connection.CommandSuggestions(line, m.connections)
+	values = append(values, "scp ", "local", "lls ", "lcd ")
+	for _, s := range m.connections {
+		if s.State == "connected" {
+			values = append(values, "scp "+s.Name)
+		}
+	}
 	if m.tunnelError == "" {
 		for _, t := range m.tunnels {
 			values = append(values, "tunnel remove "+t.ID, "tunnel check "+t.ID, "tund "+t.ID)

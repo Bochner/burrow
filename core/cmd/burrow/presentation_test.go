@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"image"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -19,6 +21,238 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 )
+
+func TestProfileEditorValidation(t *testing.T) {
+	dir := t.TempDir()
+	profile := connection.Profile{Name: "gateway", Host: "example.test", User: "tester", Port: 22}
+	original, _ := json.Marshal(profile)
+	edit := &profileEdit{profile: profile, collection: connection.Collection{Path: "/tmp/profiles.json", Revision: strings.Repeat("a", 64)}, directory: dir, original: original}
+	write := func(data []byte) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "connection.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(original)
+	if args, err := editedProfileArgs("/tmp/edit-workspace", edit); err != nil || args != nil {
+		t.Fatal(args, err)
+	}
+	profile.Port = 2222
+	changed, _ := json.Marshal(profile)
+	write(changed)
+	args, err := editedProfileArgs("/tmp/edit-workspace", edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := connection.CommandLine(args)
+	for _, part := range []string{"profile edit gateway", "--port 2222", "--revision " + strings.Repeat("a", 64), "--collection /tmp/profiles.json", "--yes"} {
+		if !strings.Contains(line, part) {
+			t.Fatal(line)
+		}
+	}
+	for _, data := range []string{`{}`, `{"name":"other"}`, `{"name":"gateway","password":"secret"}`, `{"name":"gateway","host":"example.test","user":"tester","port":70000}`, string(changed) + ` {}`, strings.Repeat("x", 65537)} {
+		write([]byte(data))
+		if _, err := editedProfileArgs("/tmp/edit-workspace", edit); err == nil {
+			t.Fatal("accepted invalid edit")
+		}
+		if _, err := os.Stat(filepath.Join(dir, "connection.json")); err != nil {
+			t.Fatal("failed edit was lost")
+		}
+	}
+	for _, want := range []string{"nomodeline", "noexrc", "noloadplugins", "noswapfile", "noundofile", "conceallevel=0", "highlight jsonKeyword", "highlight jsonString"} {
+		if !strings.Contains(profileVimrc(false), want) {
+			t.Fatal("missing Vim policy", want)
+		}
+	}
+	if strings.Contains(profileVimrc(true), "guifg") || !strings.Contains(profileVimrc(true), "syntax off") {
+		t.Fatal("Vim NO_COLOR policy")
+	}
+}
+
+func TestFilePermissionAndTypeColors(t *testing.T) {
+	mode := "-rwxr-Sr-t"
+	for _, plain := range []bool{false, true} {
+		u := ui{noColor: plain}
+		s := vt.NewEmulator(40, 2)
+		defer s.Close()
+		s.Write([]byte(u.filePermissions(mode)))
+		if !strings.Contains(s.String(), mode) {
+			t.Fatal("permission text changed", s.String())
+		}
+		if !plain {
+			for i, want := range []string{"#a6e3a1", "#f9e2af", "#f38ba8", "#a6e3a1", "#f9e2af", subtextColor, "#cba6f7", "#f9e2af", subtextColor, "#cba6f7"} {
+				if !colorMatches(s.CellAt(i, 0).Style.Fg, lipgloss.Color(want)) {
+					t.Fatalf("permission %d lost its role", i)
+				}
+			}
+		}
+		for _, entry := range []connection.FileEntry{{Name: "folder", Permissions: "drwxr-xr-x", Directory: true}, {Name: "run", Permissions: "-rwxr-xr-x"}, {Name: "alias", Permissions: "lrwxrwxrwx", Link: "folder"}, {Name: "broken", Permissions: "lrwxrwxrwx", Link: "missing", Error: "broken link"}, {Name: "pipe", Permissions: "prw-------"}, {Name: "socket", Permissions: "srw-------"}, {Name: "device", Permissions: "crw-------"}} {
+			text := u.fileName(entry)
+			if !strings.Contains(ansi.Strip(text), entry.Name) {
+				t.Fatal(text)
+			}
+			if plain && strings.Contains(text, "\x1b") {
+				t.Fatal("color leaked into NO_COLOR")
+			}
+			if !plain {
+				v := vt.NewEmulator(60, 1)
+				v.Write([]byte(text))
+				if !colorMatches(v.CellAt(0, 0).Style.Fg, fileKindStyle(entry).GetForeground()) {
+					t.Fatal("file kind color lost", entry.Name)
+				}
+				v.Close()
+			}
+		}
+	}
+}
+
+func TestFileTabsAndContextMenus(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/file-tabs"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		a := connection.State{Name: "gateway", State: "connected", Generation: "g", Creation: "a"}
+		b := a
+		b.Name = "second"
+		b.Creation = "b"
+		m.updateManagement(m.active, connectionList{states: []connection.State{a, b}})
+		m.current().management.profiles = connection.Collection{Path: "/tmp/profiles.json", Revision: "rev", Profiles: []connection.Profile{{Name: "saved", Host: "example.test", User: "tester"}}}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			m.openResourceMenu("profile:0", image.Pt(size.X-1, size.Y-1))
+			if !m.dialogBounds().In(image.Rect(0, 0, size.X, size.Y)) {
+				t.Fatal("menu escaped terminal")
+			}
+			capturePresentation(t, m, fmt.Sprintf("context-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "Edit in Vim") {
+				t.Fatal("missing editor action")
+			}
+			frameEvent(m, tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft})
+			if m.modal != "" {
+				t.Fatal("outside click did not dismiss menu")
+			}
+		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		// Find the actual row hit target, then take the real right-click route.
+		found := false
+		for y := 3; y < 35 && !found; y++ {
+			for x := 28; x < 126; x++ {
+				if m.compositor().Hit(x, y).ID() == "resource:0" {
+					frameEvent(m, tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseRight})
+					found = true
+					break
+				}
+			}
+		}
+		if !found || m.modal != "context" {
+			t.Fatal("right-click menu did not open")
+		}
+		m.resourceAction(0)
+		first := m.current().file
+		if first == nil || m.current().tab != "files" {
+			t.Fatal("menu did not open file tab")
+		}
+		defer first.files.cancel()
+		first.input.SetValue("cd draft")
+		m.activate("burrow")
+		m.updateManagement(m.active, fileResult{mode: first.files, sequence: first.files.sequence, operation: "cd", value: connection.FileListing{Path: "/home/gateway"}})
+		if m.current().tab != "" || first.files.remote != "/home/gateway" {
+			t.Fatal("background result stole tab or was lost")
+		}
+		m.openFileTab("second")
+		second := m.current().file
+		defer second.files.cancel()
+		m.activate("burrow")
+		if cmd := m.openFileTab("gateway"); cmd != nil {
+			t.Fatal("reopening tab must not rediscover")
+		}
+		if m.current().file != first || first.input.Value() != "cd draft" || len(m.current().fileViews) != 2 {
+			t.Fatal("tab state not retained")
+		}
+		m.activate("file-tab:1")
+		if m.current().file != second {
+			t.Fatal("file tab click selected wrong view")
+		}
+		second.busy = false
+		frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+		if len(m.current().fileViews) != 1 || m.current().tab != "" {
+			t.Fatal("back did not close only selected file tab")
+		}
+		a.Creation = "replacement"
+		m.updateManagement(m.active, connectionList{states: []connection.State{a}})
+		m.selectFileTab(first)
+		if first.fileState() != "unavailable" || !strings.Contains(ansi.Strip(m.metadata()), "UNAVAILABLE") {
+			t.Fatal("old file view borrowed replacement connection health")
+		}
+		m.current().shells = append(m.current().shells, &cliTab{editor: &profileEdit{profile: connection.Profile{Name: "draft"}}})
+		if !strings.Contains(ansi.Strip(m.quitSummary()), "quitting loses unsaved edits") {
+			t.Fatal("quit review omitted unsaved editor warning")
+		}
+	}
+}
+
+func TestFilePresentation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/files"}, plain, launch.Options{})
+			t.Cleanup(m.terminals.close)
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			state := connection.State{Name: "gateway", Host: "example.test", User: "tester", State: "connected", Creation: "creation", Generation: "generation"}
+			m.updateManagement(m.active, connectionList{states: []connection.State{state}})
+			frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			f := m.current().activeUI().files
+			if f == nil {
+				t.Fatal("scp did not enter file mode")
+			}
+			if f.cancel != nil {
+				f.cancel()
+			}
+			roots := connection.FileRoots{Version: 1, Upload: "/tmp/files/uploads", Download: "/tmp/files/downloads"}
+			m.updateManagement(m.active, fileResult{mode: f, sequence: f.sequence, operation: "cd", roots: roots, value: connection.FileListing{Path: "/home/tester", Entries: []connection.FileEntry{}}})
+			prefix := fmt.Sprintf("files-%dx%d-%t", size.X, size.Y, plain)
+			screen := capturePresentation(t, m, prefix+"-empty")
+			if !strings.Contains(screen.String(), "No entries") {
+				t.Fatal(screen.String())
+			}
+			listing := connection.FileListing{Path: "/home/tester", Entries: []connection.FileEntry{{Name: "α.txt", Path: "/home/tester/α.txt", Permissions: "-rw-r--r--", Owner: "tester", Group: "staff", Size: 1234, Modified: time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)}, {Name: "linked", Link: "sub dir", Permissions: "lrwxrwxrwx", Owner: "tester", Group: "staff", Directory: true}, {Name: "bad\x1b]52;c;x\a", Error: "broken link"}}}
+			m.updateManagement(m.active, fileResult{mode: f, sequence: f.sequence, operation: "ls", roots: roots, value: listing})
+			screen = capturePresentation(t, m, prefix+"-listing")
+			if strings.Contains(m.View().Content, "\x1b]52;") {
+				t.Fatal("remote filename escaped into terminal control")
+			}
+			if size.X >= 160 {
+				for _, want := range []string{"PERMISSIONS", "OWNER", "GROUP", "SIZE", "MODIFIED", "NAME", "α.txt", "linked → sub dir"} {
+					if !strings.Contains(screen.String(), want) {
+						t.Fatal("missing", want, screen.String())
+					}
+				}
+				if !plain {
+					left, right := m.columns()
+					bounds := image.Rect(left+2, 3, m.width-right-2, m.height-4)
+					assertTextRole(t, screen, bounds, "linked", "#94e2d5")
+					assertTextRole(t, screen, bounds, "1234", "#fab387")
+					assertTextRole(t, screen, bounds, "staff", "#a6e3a1")
+				}
+			}
+			frameEvent(m, tea.PasteMsg{Content: "cd draft"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+			capturePresentation(t, m, prefix+"-help")
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			if m.current().activeUI().input.Value() != "cd draft" {
+				t.Fatal("help lost draft")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+			m.updateManagement(m.active, fileResult{mode: f, sequence: f.sequence, operation: "ls", roots: roots, value: listing})
+			if m.current().activeUI().files != nil {
+				t.Fatal("late result reopened file mode")
+			}
+			if !strings.Contains(m.View().Content, "SAVED CONNECTION") {
+				t.Fatal("management not restored")
+			}
+		}
+	}
+}
 
 // Export the actual ANSI view through the existing pinned VT cell model. These
 // artifacts reveal backgrounds and selected controls that text-only checks miss.

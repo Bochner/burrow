@@ -1,0 +1,53 @@
+<!-- burrow-doc: {"title":"File browsing and workspace roots","group":"Foundations","order":147} -->
+<article>
+<h1>File browsing and workspace roots</h1>
+<p>Use <code>scp gateway</code> in Burrow management to browse an existing live connection. Bare <code>scp</code> offers live workspace connections through the command picker. File mode uses structured SFTP over that connection's OpenSSH master; it never starts authentication. Missing, lost, replaced or unverifiable owners are refused. <code>back</code> or idle Ctrl+C returns to management without closing the connection, restoring its prompt, history and output.</p>
+<h2>Remote navigation</h2>
+<p>Each connection gets a file-mode tab beside Burrow, Hovel and the shell tabs, plus a matching entry in the left sidebar. Switching tabs preserves its directories, draft, listing and history without refreshing the remote directory. Entering file mode again selects the existing tab for that exact transport; a reconnected transport gets a new view. <code>back</code> closes only the selected file tab. Alt+B returns to management while retaining the tab; F6 focuses the tab bar for keyboard navigation.</p>
+<pre><code>ls
+ls /var/log
+cd /var/log
+cd 'directory with spaces'
+cd ~
+pwd
+tree /var/log
+history
+back</code></pre>
+<p>Listings include hidden entries and omit only <code>.</code> and <code>..</code>. They show permissions, owner, group, size in bytes, modification time, and name, oldest modification first with a name tie-break. Symlinks show their targets; explicit <code>cd</code> can follow directory links. Recursive trees never traverse directory links and label inaccessible subtrees or interrupted work as incomplete. Hard-link counts are intentionally omitted.</p>
+<p>SFTP provides numeric ownership. A bounded, cached lookup of only the required account IDs supplies names when shell access and <code>getent</code>/<code>cut</code> are available. Otherwise a reduced-metadata notice accompanies numeric IDs; browsing remains available, including on SFTP-only servers. No uploaded helper is required. Remote control characters are escaped for display; use JSON CLI arguments for filenames that cannot round-trip through a terminal line editor.</p>
+<p>File colors follow eza's distinction between file kinds and individual permission bits, using Burrow's Catppuccin palette: directories blue, executables green, links teal, and broken or refused entries red. Read permissions are yellow, write red, execute green, special bits mauve, and absent bits muted. Listings and trees use the same classification from observed metadata; coloring never triggers remote commands. All permission characters, directory suffixes and link targets remain visible without color.</p>
+<h2>Row actions and saved-connection editing</h2>
+<p>Right-click an active SSH row and choose <strong>Enter file mode</strong>. Right-click a saved connection to <strong>Execute connection</strong> through the usual connection recap or <strong>Edit in Vim</strong>. Keyboard users can focus a row with F6 and use Shift+F10. Escape or clicking outside dismisses the menu without executing an action.</p>
+<p>Editing uses locally installed Vim in a Burrow terminal tab. Burrow supplies a small private configuration with Catppuccin syntax highlighting, line numbers, indentation and visible JSON syntax; personal vimrc files and plugins are not loaded or modified. Vim must include syntax support and its standard JSON runtime files. No editor is downloaded automatically.</p>
+<p>Only the selected saved connection is staged, not the shared collection. Use <code>:wq</code> to save and exit, or <code>:q!</code> to discard unsaved changes. Burrow validates the saved JSON and applies it through the existing revision-checked profile command; edits never reconnect or alter active SSH resources. Keep the profile name unchanged. Invalid edits or concurrent collection changes are refused and the draft path is shown for recovery. Successful or unchanged edits remove their temporary staging directory. Quitting Burrow ends frontend-local editors; saved staging files from an unfinished edit remain in the editor's private temporary directory, while text not written by Vim is lost.</p>
+<h2>Workspace roots</h2>
+<p>Each workspace has private default directories <code>WORKSPACE/burrow-files/uploads</code> and <code>WORKSPACE/burrow-files/downloads</code>. Overrides persist in <code>WORKSPACE/burrow-files/config.json</code>. Opening a workspace creates absent defaults but refuses invalid, missing configured, inaccessible or symlink roots without falling back. A root must be an absolute canonical directory path owned by the current user with private permissions.</p>
+<pre><code>local
+local download /absolute/download-root
+local upload /absolute/upload-root
+lcd upload 'sub directory'
+lls upload
+lcd download 'collected files'
+lls
+local /absolute/download-root</code></pre>
+<p><code>local</code> shows effective roots. A root change persists but never moves or deletes old files. <code>local PATH</code> is the download shorthand. <code>lcd</code> changes only the frontend's current directory inside the selected root; <code>lls</code> lists it. Both default to download. Local links may resolve to relative or absolute targets inside that root. Broken and escaping links remain visible but cannot be traversed. Upload navigation never uses the process working directory as an implicit alternative.</p>
+<h2>Completion and server load</h2>
+<p>Tab and Shift+Tab cycle contextual, quoted path suggestions. Automatic discovery is asynchronous, debounced, cached for 30 seconds and limited to one in-flight lookup and at most one cache-miss start per second per connection. There is no idle directory polling, recursive prefetch or <code>find</code> discovery. Explicit listings are fresh and also populate completion. Account-name observations, including unavailable names, are cached for five minutes. Completion is an observation, not a guarantee that a path still exists.</p>
+<p>Ctrl+C cancels current work; the prompt and help remain usable during slow discovery. Trees have a 30-second and 3,000-returned-entry ceiling, with partial results labelled. A large directory is read using the pinned SFTP client's directory-list API; the entry ceiling is not a guarantee of exactly 3,000 remote protocol records or bounded remote directory size. Responses are bounded to 768 KiB: trees may return fewer entries with an explicit incomplete notice; oversized flat listings are refused, asking for a narrower directory. No truncated listing is reported as complete.</p>
+<h2>CLI and Hovel</h2>
+<pre><code>burrow --workspace /absolute/workspace scp gateway ls /var/log
+burrow --workspace /absolute/workspace scp gateway tree /var/log
+burrow --workspace /absolute/workspace local
+burrow --workspace /absolute/workspace lls upload 'sub directory'
+burrow --workspace /absolute/workspace files-history</code></pre>
+<p>The CLI returns structured JSON with full fields, independent of terminal width. CLI navigation is stateless: pass the path on each invocation. The TUI keeps current remote, upload and download directories independently. Canonical successful file commands use Hovel's retained <code>burrow/files</code> log chain, separate from profile history. Authentication answers, rejected input and speculative completion are not written as file history; paths and filenames deliberately supplied to successful commands are retained. History follows Hovel's retention, not a separate Burrow database.</p>
+<p>The single <code>burrow@0.1.0</code> module accepts the same file commands through its <code>command</code> configuration. Hovel's throw CLI exposes the JSON result in its result <code>summary</code>. Existing retained-manager consumers can use <code>files GENERATION CONNECTION_CREATION QUERY_JSON</code>; query fields are <code>operation</code>, <code>path</code> and an optional request <code>id</code>. A <code>cancel</code> operation targets that exact ID. Reuse the owning session/generation/creation and refuse stale identity; name reuse never grants an old file view access to a new connection. Older running managers must be explicitly closed and restarted to gain newly built controls.</p>
+<p>This ticket implements browsing only. <code>get</code>, <code>put</code>, and <code>mget</code> remain in the following transfer tickets. Download counters remain unavailable until completed-transfer records exist.</p>
+<h2>Verification and provenance</h2>
+<pre><code>aspect test //core/cmd/burrow:files_test //core/cmd/burrow:interaction_test
+aspect burrow files-check
+aspect burrow-check
+aspect burrow-site check</code></pre>
+<p>The local checks exercise roots, containment, cross-workspace isolation, persistence and the public Hovel module. The disposable real-SSH check covers remote metadata, navigation, links, restricted servers, interactive completion and cancellation, and server-side request counts. Presentation checks cover semantic colors, escaped text, help, restoration and narrow/no-color layouts. These are behavior checks, not a promise of subjective visual acceptance.</p>
+<p>The workflow traces the pinned <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/scp_mode.py">LazySSH SCP mode</a> and <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/tests/test_scp_mode.py">its tests</a>. Intentional differences include structured SFTP instead of parsing human command output, explicit root containment, bounded discovery, truthful partial results and ownership fallback, omission of hard-link counts and dot rows, and the shared Catppuccin/Charm presentation.</p>
+</article>

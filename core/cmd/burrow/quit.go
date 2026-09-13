@@ -38,6 +38,13 @@ func (m *frame) quitSummary() string {
 		}
 	}
 	var lines []string
+	for _, workspace := range m.workspaces {
+		for _, tab := range workspace.shells {
+			if tab.editor != nil {
+				lines = append(lines, u.paint(warningStyle, "Vim: "+safe(tab.editor.profile.Name)+" — quitting loses unsaved edits; finish :wq first"))
+			}
+		}
+	}
 	if len(rows) > 0 {
 		lines = append(lines, u.dataTable("", []string{"WORKSPACE", "CONNECTION", "STATUS"}, rows, max(1, m.dialogBounds().Dx()-6)))
 	}

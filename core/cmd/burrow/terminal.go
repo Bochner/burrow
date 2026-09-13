@@ -56,6 +56,7 @@ func (l *terminalLifetime) close() {
 }
 
 type cliTab struct {
+	editor     *profileEdit
 	id         string
 	connection string
 	host       *ptyhost.Host
@@ -78,6 +79,7 @@ type shellRequested struct{ name string }
 type shellEntry struct {
 	workspace int
 	tab       *cliTab
+	files     *ui
 }
 
 func (m *frame) shellEntries() []shellEntry {
@@ -89,7 +91,10 @@ func (m *frame) shellEntries() []shellEntry {
 			continue
 		}
 		for _, tab := range w.shells {
-			entries = append(entries, shellEntry{i, tab})
+			entries = append(entries, shellEntry{workspace: i, tab: tab})
+		}
+		for _, files := range w.fileViews {
+			entries = append(entries, shellEntry{workspace: i, files: files})
 		}
 	}
 	return entries
@@ -117,6 +122,9 @@ func (w *workspaceView) removeShell(tab *cliTab) {
 	}
 }
 func (tab *cliTab) label() string {
+	if tab.editor != nil {
+		return "Edit " + tab.editor.profile.Name
+	}
 	return tab.connection + " #" + tab.id
 }
 func (tab *cliTab) state() string {
@@ -254,16 +262,21 @@ func (m *frame) cycleShell(delta int) {
 
 func (m *frame) cycleTab(delta int) {
 	w := m.current()
+	total := len(w.shells) + len(w.fileViews) + 2
 	i := 0
 	if w.tab == "hovel" {
 		i = 1
 	} else if w.tab == "shell" {
 		i = slices.Index(w.shells, w.shell) + 2
+	} else if w.tab == "files" {
+		i = slices.Index(w.fileViews, w.file) + len(w.shells) + 2
 	}
-	i = (i + delta + len(w.shells) + 2) % (len(w.shells) + 2)
+	i = (i + delta + total) % total
 	w.tab = ""
 	if i == 1 {
 		w.tab = "hovel"
+	} else if i >= len(w.shells)+2 {
+		m.selectFileTab(w.fileViews[i-len(w.shells)-2])
 	} else if i >= 2 {
 		m.resumeShell(w.shells[i-2])
 	}
@@ -272,6 +285,11 @@ func (m *frame) cycleTab(delta int) {
 
 func (m *frame) closeShellTab(tab *cliTab) tea.Cmd {
 	w, path := m.current(), m.active
+	if tab != nil && tab.editor != nil {
+		w.management.output = "Finish the Vim edit with :wq to save or :q! to discard"
+		m.resumeShell(tab)
+		return nil
+	}
 	if tab == nil || tab.pending {
 		w.management.busy = false
 		w.management.output = "No ready local shell to close."
@@ -296,7 +314,7 @@ func (m *frame) terminalBounds() image.Rectangle {
 }
 func (m *frame) terminalFocused() bool {
 	w := m.current()
-	return m.modal == "" && !w.management.help && !w.management.quitting && (w.tab == "hovel" || w.tab == "shell") && w.focus == "terminal"
+	return m.modal == "" && !w.activeUI().help && !w.activeUI().quitting && (w.tab == "hovel" || w.tab == "shell") && w.focus == "terminal"
 }
 func (m *frame) openCLI() tea.Cmd {
 	w := m.current()
@@ -374,6 +392,9 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 		v.tab.pending = false
 		if v.err != nil {
 			v.tab.error = "REFUSED: " + safe(v.err.Error())
+			if v.tab.editor != nil && v.tab.editor.directory != "" {
+				v.tab.error += "; draft retained at " + safe(v.tab.editor.directory)
+			}
 			if v.tab.connection != "" {
 				w.removeShell(v.tab)
 				w.management.output = v.tab.error
@@ -402,6 +423,10 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 		} // Explicit close reports after reaping.
 		v.tab.screen = v.screen
 		if v.tab.connection != "" && v.screen.Exited {
+			if v.tab.editor != nil {
+				v.tab.pending = true
+				return m.dispatch(path, finishProfileEditor(path, v.tab))
+			}
 			w.removeShell(v.tab)
 			w.management.output = "Local SSH shell exited (" + v.tab.label() + "); connection retained if still live."
 			if v.screen.Err != nil {

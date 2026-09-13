@@ -26,11 +26,13 @@ from core.cmd.burrow.manager_lab import manager_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
+from core.cmd.burrow.files_lab import file_checks, load_checks, file_ui
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=6, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
+parser.add_argument("--files-check", action="store_true", help="check real SFTP browsing only")
 parser.add_argument("--forward-check", action="store_true", help="check real local forwarding only")
 parser.add_argument("--reverse-check", action="store_true", help="check real reverse forwarding only")
 parser.add_argument("--proxy-check", action="store_true", help="check real connection-owned SOCKS traffic and cleanup")
@@ -57,7 +59,7 @@ signal.alarm(1200 if args.measure else 600)
 def command(*args, env=None, ok=True):
     p = subprocess.run(list(map(str, args)), env=env, capture_output=True, text=True, timeout=60)
     assert (p.returncode == 0) == ok, (args[:3], p.stdout, p.stderr)
-    return p.stdout
+    return p.stdout if ok else p.stdout + p.stderr
 
 def wait(check):
     deadline = time.monotonic() + 20
@@ -172,6 +174,13 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if args.files_check or not (smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check):
+            file_checks(burrow, w, first, container, command)
+            file_ui(binary, env, screen_check, w)
+            load_checks(burrow, w, container, command, options, binary, env, screen_check)
+        if args.files_check:
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
         if not smoke and not args.proxy_check and not args.shell_check and not args.forward_check:
             forward_evidence.append(reverse_checks(binary, env, screen_check, burrow, w, first, options, container, command))
         if args.reverse_check:

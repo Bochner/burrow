@@ -28,20 +28,20 @@ type textSelection struct {
 
 func (m *frame) selectionBounds() image.Rectangle {
 	r := m.terminalBounds()
-	if m.current().tab == "" {
+	if m.current().tab == "" || m.current().tab == "files" {
 		r.Max.Y++
 	}
 	return r
 }
 func (m *frame) hasSelection() bool {
 	s := m.selection
-	return s != nil && s.moved && !m.tooSmall() && !m.mouseDisabled && m.modal == "" && !m.current().management.help && s.workspace == m.active && s.tab == m.current().tab && s.bounds == m.selectionBounds()
+	return s != nil && s.moved && !m.tooSmall() && !m.mouseDisabled && m.modal == "" && !m.current().activeUI().help && s.workspace == m.active && s.tab == m.current().tab && s.bounds == m.selectionBounds()
 }
 func (m *frame) copyBounds() image.Rectangle {
 	return image.Rect(m.width-8, m.height-1, m.width-2, m.height)
 }
 func (m *frame) selectionMouse(msg tea.MouseMsg, hit string) (bool, tea.Cmd) {
-	if m.modal != "" || m.current().management.help {
+	if m.modal != "" || m.current().activeUI().help {
 		m.selection = nil
 		return false, nil
 	}

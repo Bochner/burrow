@@ -365,6 +365,8 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		}
 	case "menu":
 		return m.menuAction(completed.GetInt("action"))
+	case "context":
+		return m.resourceAction(completed.GetInt("action"))
 	case "new":
 		cmd := m.submitWorkspace()
 		if !m.launchPending {
@@ -638,8 +640,12 @@ func (m *frame) formControls(text string) map[string]int {
 				}
 			}
 		}
-		if m.modal == "menu" {
-			for i, label := range menuActions {
+		if m.modal == "menu" || m.modal == "context" {
+			labels := menuActions
+			if m.modal == "context" && m.contextMenu != nil {
+				labels = m.contextMenu.labels
+			}
+			for i, label := range labels {
 				if strings.Contains(plain, label) {
 					targets[fmt.Sprintf("action:%d", i)] = y
 				}

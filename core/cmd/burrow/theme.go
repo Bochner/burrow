@@ -382,6 +382,9 @@ func (m *frame) commandHelp() string {
 		return key.NewBinding(key.WithKeys(strings.ToLower(keys)), key.WithHelp(keys, label))
 	}
 	keys := []key.Binding{showHovel, binding("Ctrl+P", "menu"), binding("F1", "help"), binding("Ctrl+C", "quit")}
+	if m.current().activeUI().files != nil {
+		keys = []key.Binding{binding("back", "management"), binding("Ctrl+C", "cancel/back"), binding("F1", "help"), binding("PgUp/PgDn", "scroll"), showHovel}
+	}
 	selection := binding("Alt+S", "native selection")
 	if m.mouseDisabled {
 		selection = binding("Alt+S", "panel selection")
@@ -403,7 +406,7 @@ func (m *frame) commandHelp() string {
 		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 	}
 	keys = append(keys, binding("drag", "select text"), selection)
-	if m.current().focus == "prompt" && m.current().tab == "" {
+	if m.current().focus == "prompt" && (m.current().tab == "" || m.current().tab == "files") {
 		keys = append(keys, binding("Tab/Shift+Tab", "cycle"), binding("↑↓", "history"))
 	} else {
 		keys = append(keys, binding("↑↓", "select"), binding("Enter", "open"), binding("Esc", "prompt"))
@@ -426,15 +429,15 @@ func fieldStyle(header string) lipgloss.Style {
 		return accent
 	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION":
 		return hostStyle
-	case "USER", "USERNAME":
+	case "USER", "USERNAME", "OWNER", "GROUP":
 		return successStyle
 	case "PORT", "LOCAL PORT":
 		return warningStyle
 	case "KEY", "AGENT", "SHELL", "PROXY", "SOCKS PROXY":
 		return infoStyle
-	case "TERM", "TYPE":
+	case "TERM", "TYPE", "PERMISSIONS":
 		return keywordStyle
-	case "TUNNELS", "MASTER PID", "OWNER PID":
+	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED":
 		return numberStyle
 	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL":
 		return secondary

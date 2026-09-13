@@ -17,7 +17,24 @@ import (
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
-const Help = `profiles                            List saved entries and selected collection
+const Help = `scp NAME [ls|tree|cd|pwd|complete] [PATH] Browse an existing live master (JSON)
+In the TUI, scp [NAME] enters file mode; back restores management.
+local [download|upload] PATH         Persist an absolute workspace root (local PATH: download)
+local                               Show effective upload and download roots
+lcd [download|upload] PATH           Validate navigation inside a root
+lls [download|upload] [PATH]         List inside a root (default: download)
+files-history                       Retained file commands, separate from profile history
+CLI navigation is stateless: pass PATH on each call; TUI keeps per-mode directories.
+Defaults: WORKSPACE/burrow-files/{uploads,downloads}; config: burrow-files/config.json.
+Root changes never move/delete files. Invalid roots fail without fallback.
+Local links must resolve inside their root. Remote cd follows directory links;
+tree never traverses directory links. Hidden files are included except . and ...
+Listings are oldest-first; numeric owner/group fallback is clearly labelled.
+Tree scans stop at 3000 entries or 30 seconds and label partial results.
+Completion is cached and throttled; no idle scans or recursive prefetch.
+Transfers (get/put/mget) follow in #54-56; browsing does not authenticate.
+
+profiles                            List saved entries and selected collection
 profile create NAME HOST USER [options] Save settings without connecting
 profile select NAME                 Inspect saved settings only
 profile connect NAME [--as LIVE] [--yes] [--prompt] Connect a saved profile
@@ -241,6 +258,21 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "files-history":
+		if len(args) != 1 {
+			return fmt.Errorf("expected files-history")
+		}
+		return nil
+	case "scp":
+		_, err := fileArgs(args)
+		if err != nil {
+			return err
+		}
+		_, err = launch.ConnectionPath(workspace, args[1])
+		return err
+	case "local", "lcd", "lls":
+		_, _, err := localArgs(args)
+		return err
 	case "proxy":
 		_, err := proxyArgs(workspace, args)
 		return err
@@ -433,6 +465,19 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 		return execute(ctx, w, expanded, promptSocket)
 	}
 	switch args[0] {
+	case "files-history":
+		return FileHistory(ctx, w)
+	case "scp":
+		query, _ := fileArgs(args)
+		state, err := selected(ctx, w, args[1])
+		if err != nil {
+			return nil, err
+		}
+		value, err := Browse(ctx, w, state, query)
+		return fileCommandResult(ctx, w, args, value, err)
+	case "local", "lcd", "lls":
+		value, err := executeLocal(ctx, w, args)
+		return fileCommandResult(ctx, w, args, value, err)
 	case "proxy":
 		return executeProxy(ctx, w, args)
 	case "profile", "profiles", "history":

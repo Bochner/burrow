@@ -241,6 +241,9 @@ func openWorkspace(ctx context.Context, options launch.Options) (launch.Info, er
 		err = connection.EnsureProfiles(ctx, options.Workspace)
 	}
 	if err == nil {
+		err = connection.EnsureFileRoots(ctx, options.Workspace)
+	}
+	if err == nil {
 		err = launch.RegisterModule(ctx, options.Workspace, "burrow@0.1.0", connection.Manifest)
 	}
 	return info, err
