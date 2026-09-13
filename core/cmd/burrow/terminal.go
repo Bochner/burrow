@@ -74,7 +74,6 @@ type cliScreen struct {
 }
 type cliClosed struct{ tab *cliTab }
 type shellRequested struct{ name string }
-type shellControlRequested struct{ args []string }
 
 type shellEntry struct {
 	workspace int
@@ -142,7 +141,7 @@ func (m *frame) resumeShell(tab *cliTab) {
 	w.shell, w.tab, w.focus = tab, "shell", "terminal"
 	for i, entry := range m.shellEntries() {
 		if entry.tab == tab {
-			m.revealSidebar(i)
+			m.revealShell(i)
 			break
 		}
 	}
@@ -192,6 +191,7 @@ func (m *frame) shellControl(args []string) tea.Cmd {
 	}
 	if args[0] == "resume" {
 		m.resumeShell(tab)
+		w.management.output = "Local SSH shell selected (" + tab.label() + ") · " + tab.state() + "."
 		return nil
 	}
 	return m.closeShellTab(tab)
@@ -212,6 +212,8 @@ func (m *frame) openShell(name string) tea.Cmd {
 		return nil
 	}
 	tab := &cliTab{id: strconv.Itoa(len(w.shells) + 1), pending: true, connection: name}
+	w.management.output = "Opening local SSH shell (" + tab.label() + ")…"
+	w.management.outputOffset = 0
 	w.shells = append(w.shells, tab)
 	m.resumeShell(tab)
 	path, bounds, lifetime := m.active, m.terminalBounds(), m.terminals
@@ -379,6 +381,9 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		v.tab.host = v.host
+		if v.tab.connection != "" && w.management.output == "Opening local SSH shell ("+v.tab.label()+")…" {
+			w.management.output = "Local SSH shell started (" + v.tab.label() + "); output is in its shell tab."
+		}
 		r := m.terminalBounds()
 		if m.invalidGeometry {
 			v.tab.error = invalidTerminalGeometry

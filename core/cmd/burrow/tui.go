@@ -59,6 +59,7 @@ func connectionTimer() tea.Cmd {
 
 type ui struct {
 	shellIDs                      []string
+	shellControl                  []string
 	profiles                      connection.Collection
 	profileError, selectedProfile string
 	profileOffset                 int
@@ -322,14 +323,15 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.history = append(m.history, command)
 				m.historyIndex = len(m.history)
 				m.busy = true
-				m.output = "Running reviewed command through Hovel…"
 				workspace := m.info.Workspace
 				if args[0] == "shell-close" || args[0] == "shells" || args[0] == "resume" {
-					return m, func() tea.Msg { return shellControlRequested{args} }
+					m.shellControl = args
+					return m, nil
 				}
 				if args[0] == "shell" {
 					return m, func() tea.Msg { return shellRequested{args[1]} }
 				}
+				m.output = "Running reviewed command through Hovel…"
 				if args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
@@ -414,12 +416,18 @@ func (m ui) activeConnections(w int) string {
 
 // Preserve field identity through color, padding and headers.
 func (m ui) dataTable(title string, headers []string, rows [][]string, w int) string {
-	return m.paint(heading, title) + "\n" + table.New().Headers(headers...).Rows(rows...).Width(w).Wrap(false).
+	prefix := ""
+	if title != "" {
+		prefix = m.paint(heading, title) + "\n"
+	}
+	return prefix + table.New().Headers(headers...).Rows(rows...).Width(w).Wrap(false).
 		Border(lipgloss.NormalBorder()).BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderStyle(separatorStyle).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			style := fieldStyle(headers[col])
 			if row == table.HeaderRow {
 				style = accent
+			} else if headers[col] == "STATUS" {
+				style = connectionStyle(rows[row][col])
 			}
 			if row >= 0 && rows[row][col] == "—" {
 				style = secondary
@@ -489,7 +497,7 @@ func (m ui) View() tea.View {
 }
 
 func (m ui) helpText() string {
-	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Review connections; keep running or close and quit\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspace tree, New, Menu, tabs, resources, saved. Saved: Enter actions; arrows select.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P menu (Alt+M), Alt+N New, Alt+W workspace drawer.\nShells: click a workspace child or its top tab; Alt+1–9 selects, Alt+Left/Right cycles.\nShell numbers are current workspace positions (1…N); closing a shell closes the gap.\nCtrl+] or Alt+B returns to management; Alt+H selects Hovel.\nDrag selects only the middle panel; Ctrl+C or Copy copies (no auto-copy).\nEsc clears selection; Ctrl+Shift+V pastes. Ctrl+Shift+C copies if forwarded.\nAlt+S toggles native selection (includes sidebars). Alt+mouse sends to Hovel.\nTab completes the prompt. With mouse controls enabled, click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
+	return "status   Verify this workspace and daemon\nhelp     Return to this reference\nquit     Review connections; keep running or close and quit\n\n" + connection.Help + "\nF6 / Shift+F6 focus: prompt, workspaces, New, Menu, shells, tabs, resources, saved. Saved: Enter actions; arrows select.\nArrows select; Enter activates; Esc returns to prompt.\nCtrl+P menu (Alt+M), Alt+N New, Alt+W workspace drawer.\nNew: enter a name; Tab edits optional parent location; Ctrl+O browses. Enter creates & opens.\nWorkspace above New/Menu returns to management; SHELLS - SSH below resumes shells.\nShells: click a workspace child or its top tab; Alt+1–9 selects, Alt+Left/Right cycles.\nShell numbers are current workspace positions (1…N); closing a shell closes the gap.\nCtrl+] or Alt+B returns to management; Alt+H selects Hovel.\nDrag selects only the middle panel; Ctrl+C or Copy copies (no auto-copy).\nEsc clears selection; Ctrl+Shift+V pastes. Ctrl+Shift+C copies if forwarded.\nAlt+S toggles native selection (includes sidebars). Alt+mouse sends to Hovel.\nTab completes the prompt. With mouse controls enabled, click daemon for metadata.\nAlt+↑↓ scroll connections. PgUp/PgDn scroll output.\nCLI: --workspace PATH is required first.\nOptions: --offline, --hovel-package FILE"
 }
 func (m ui) helpViewport(w, h int) viewport.Model {
 	return scrollBody(m.syntax(m.helpText(), true), max(1, min(96, w-4)-6), max(1, min(30, h-4)-8), m.helpOffset)

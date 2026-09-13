@@ -29,10 +29,76 @@ func TestWorkspaceFrame(t *testing.T) {
 		}
 	}
 	frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
-	if !strings.Contains(m.View().Content, "Exact destination") {
+	if !strings.Contains(m.View().Content, "Workspace name") {
 		t.Fatal("New must show destination before launch")
 	}
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+}
+
+func TestNewWorkspace(t *testing.T) {
+	t.Setenv("HOME", "/tmp/home")
+	t.Setenv("XDG_DATA_HOME", "/tmp/data")
+	for _, test := range []struct{ name, location, want string }{
+		{"lab", "", "/tmp/data/burrow/workspaces/lab"},
+		{"lab", "/tmp/engagements", "/tmp/engagements/lab"},
+		{"lab", "~/work", "/tmp/home/work/lab"},
+		{"", "", ""}, {".", "", ""}, {"../lab", "", ""}, {"/burrow2", "", ""},
+		{"lab", "relative", ""}, {"lab", "/tmp/../root", ""}, {"lab", "/tmp/\x1b", ""},
+		{"lab", "/" + strings.Repeat("a", 80), ""},
+	} {
+		got, err := workspaceDestination(test.name, test.location)
+		if (err != nil) != (test.want == "") || got != test.want {
+			t.Fatalf("%+v: %q %v", test, got, err)
+		}
+	}
+	for _, xdg := range []string{"", "relative"} {
+		t.Setenv("XDG_DATA_HOME", xdg)
+		got, err := workspaceDestination("lab", "")
+		if err != nil || got != "/tmp/home/.local/share/burrow/workspaces/lab" {
+			t.Fatal(got, err)
+		}
+	}
+	t.Setenv("XDG_DATA_HOME", "/tmp/data")
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/existing"}, plain, launch.Options{Offline: true})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
+			frameEvent(m, tea.PasteMsg{Content: "burrow2"})
+			screen := capturePresentation(t, m, fmt.Sprintf("new-workspace-%dx%d-%t", size.X, size.Y, plain))
+			for _, want := range []string{"Workspace name", "Location (optional)", "/tmp/data/burrow/workspaces/burrow2", "Create & open"} {
+				if !strings.Contains(screen.String(), want) {
+					t.Fatal("missing", want, screen.String())
+				}
+			}
+			if !plain {
+				assertTextRole(t, screen, m.dialogBounds(), "Destination:", subtextColor)
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			if !m.launchPending || m.destination != "/tmp/data/burrow/workspaces/burrow2" || m.form != nil {
+				t.Fatal("name-only launch failed")
+			}
+			if m.submitWorkspace() != nil {
+				t.Fatal("duplicate launch")
+			}
+		}
+	}
+	m := newFrame(launch.Info{Workspace: "/tmp/existing"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
+	frameEvent(m, tea.PasteMsg{Content: "lab"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	frameEvent(m, tea.PasteMsg{Content: "/tmp/custom"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if m.launchPending || m.form.GetFocusedField().GetKey() != "workspace-name" {
+		t.Fatal("Tab must only navigate")
+	}
+	frameEvent(m, m.activate("submit"))
+	if !m.launchPending || m.destination != "/tmp/custom/lab" {
+		t.Fatal("location override failed", m.destination)
+	}
 }
 
 func TestCompletionCyclesOriginalMatches(t *testing.T) {
@@ -51,20 +117,60 @@ func TestCompletionCyclesOriginalMatches(t *testing.T) {
 	}
 }
 
+func TestShellCommandKeepsSubmittedTarget(t *testing.T) {
+	for _, command := range []string{"shell-close 2", "resume 2", "shell-close"} {
+		t.Run(command, func(t *testing.T) {
+			m := newFrame(launch.Info{Workspace: "/tmp/shell-target"}, true, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+			a, b, c := &cliTab{id: "1", connection: "first"}, &cliTab{id: "2", connection: "intended"}, &cliTab{id: "3", connection: "sibling"}
+			w := m.current()
+			w.shells, w.shell = []*cliTab{a, b, c}, b
+			w.management.input.SetValue(command)
+			_, request := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			// A background exit arrives before any queued command is delivered.
+			exited := a
+			if command == "shell-close" {
+				exited = b
+			}
+			m.terminalResult(m.active, cliScreen{tab: exited, screen: ptyhost.Snapshot{Exited: true}})
+			if request != nil {
+				m.Update(request())
+			}
+			if !w.ownsTerminal(c) {
+				t.Fatal("command closed an unintended sibling after renumbering")
+			}
+			if command == "resume 2" {
+				if w.shell != b {
+					t.Fatal("resume selected a different shell after renumbering")
+				}
+			} else if w.ownsTerminal(b) {
+				t.Fatal("close did not close the submitted shell")
+			}
+		})
+	}
+}
+
 func TestLocalShellPresentation(t *testing.T) {
 	for _, noColor := range []bool{false, true} {
 		m := newFrame(launch.Info{Workspace: "/tmp/shell-presentation"}, noColor, launch.Options{})
 		defer m.terminals.close()
 		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 		r := m.terminalBounds()
+		m.current().management.input.SetValue("shell gateway")
+		_, request := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		if request == nil {
+			t.Fatal("shell request missing")
+		}
+		m.Update(request()) // Create the tab; substitute only the SSH transport below.
 		cmd := exec.Command("/bin/sh", "-c", "printf '\\033[32mLOCAL-SCREEN\\033[0m\\033[3;4H'; sleep 60")
 		host, err := ptyhost.StartWithScrollback(m.terminals.context, cmd, r.Dx(), r.Dy(), 1000)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer host.Close()
-		tab := &cliTab{id: "1", host: host, connection: "gateway"}
-		m.current().shells = []*cliTab{tab}
+		tab := m.current().shell
+		m.terminalResult(m.active, cliOpened{tab: tab, host: host})
 		m.current().management.connections = []connection.State{{Name: "gateway", State: "connected"}}
 		m.current().shell, m.current().tab, m.current().focus = tab, "shell", "terminal"
 		until := time.Now().Add(3 * time.Second)
@@ -104,6 +210,23 @@ func TestLocalShellPresentation(t *testing.T) {
 		frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
 		if m.current().shell != tab || m.current().tab != "" || m.current().focus != "prompt" {
 			t.Fatal("reserved background key must preserve the shell")
+		}
+		if !strings.Contains(m.current().management.output, "Local SSH shell started") || strings.Contains(m.current().management.output, "Running reviewed command") {
+			t.Fatal("shell launch did not acknowledge completion: " + m.current().management.output)
+		}
+		m.current().management.input.SetValue("resume 1")
+		_, request = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		if request != nil {
+			m.Update(request())
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
+		if !strings.Contains(m.current().management.output, "Local SSH shell selected") {
+			t.Fatal("shell resume did not acknowledge selection")
+		}
+		m.current().management.output = "Newer command result"
+		m.terminalResult(m.active, cliOpened{tab: tab, host: host})
+		if m.current().management.output != "Newer command result" {
+			t.Fatal("late shell launch overwrote newer command output")
 		}
 		frameEvent(m, tea.WindowSizeMsg{Width: 0, Height: 24})
 		if !strings.Contains(tab.error, "geometry") || m.width != 80 {
@@ -180,7 +303,7 @@ func TestEmbeddedTerminalKeepsFrameAndBackgroundOutput(t *testing.T) {
 		if view.Cursor == nil || !image.Pt(view.Cursor.Position.X, view.Cursor.Position.Y).In(r) {
 			t.Fatalf("cursor must stay in pane: %+v %+v", view.Cursor, r)
 		}
-		frameEvent(m, tea.MouseClickMsg{X: 2, Y: size.Y - 3, Button: tea.MouseLeft})
+		frameEvent(m, tea.MouseClickMsg{X: 2, Y: size.Y / 2, Button: tea.MouseLeft})
 		if m.modal != "new" {
 			t.Fatal("terminal intercepted New")
 		}
@@ -269,7 +392,7 @@ func TestIndependentShellViews(t *testing.T) {
 		for i := 2; i <= 25; i++ {
 			w.shells = append(w.shells, &cliTab{id: fmt.Sprint(i), connection: "gateway"})
 		}
-		w.focus = "workspaces"
+		w.focus = "shells"
 		for i := 0; i < 30; i++ {
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
 		}
@@ -324,16 +447,20 @@ func TestShellTreeTabsAndNumbering(t *testing.T) {
 			screen := capturePresentation(t, m, fmt.Sprintf("shell-tree-tabs-%dx%d-%t", size.X, size.Y, plain))
 			left, _ := m.columns()
 			for row, text := range []string{"tree", "#1", "#2"} {
-				line := ansi.Strip(ansi.Cut(strings.Split(screen.String(), "\n")[row+3], 0, left))
+				line := ansi.Strip(ansi.Cut(strings.Split(screen.String(), "\n")[row+size.Y/2+4], 0, left))
 				if !strings.Contains(line, text) {
 					t.Fatal("tree hierarchy missing", line, text)
 				}
 			}
 			if !plain {
-				assertTextRole(t, screen, image.Rect(0, 4, left, 6), "#1", lavenderColor)
+				assertTextRole(t, screen, image.Rect(0, size.Y/2+5, left, size.Y/2+7), "#1", lavenderColor)
 				if size.X >= 120 {
-					assertTextRole(t, screen, image.Rect(0, 4, left, 6), "gateway", subtextColor)
+					assertTextRole(t, screen, image.Rect(0, size.Y/2+5, left, size.Y/2+7), "gateway", subtextColor)
 				}
+			}
+			click("workspace:0")
+			if w.tab != "" || w.focus != "prompt" || w.shell != second || len(w.shells) != 2 {
+				t.Fatal("workspace click must show management and retain shells")
 			}
 			frameEvent(m, tea.KeyPressMsg{Code: '1', Mod: tea.ModAlt})
 			if w.shell != first {
@@ -510,8 +637,12 @@ func TestWorkspaceTabShortcuts(t *testing.T) {
 	}
 	press('b')
 	m.selectWorkspace(0)
-	if m.current().tab != "hovel" || m.current().cli != tab {
-		t.Fatal("workspace tab selection was not retained")
+	if m.current().tab != "" || m.current().cli != tab {
+		t.Fatal("workspace selection must show management and retain CLI")
+	}
+	press('h')
+	if m.current().cli != tab || m.current().tab != "hovel" {
+		t.Fatal("retained CLI cannot resume")
 	}
 }
 
@@ -607,9 +738,9 @@ func TestResizeClickAndModalCapture(t *testing.T) {
 		if size[0] < minimumWidth {
 			continue
 		}
-		// Anchored bottom controls, followed by real native hit routing.
-		click(2, size[1]-3)
-		if !strings.Contains(m.View().Content, "Exact destination") {
+		// Anchored midpoint controls, followed by real native hit routing.
+		click(2, size[1]/2)
+		if !strings.Contains(m.View().Content, "Workspace name") {
 			t.Fatal(m.View().Content)
 		}
 		click(25, 1) // underlying tab cannot capture input
@@ -617,7 +748,7 @@ func TestResizeClickAndModalCapture(t *testing.T) {
 			t.Fatal("modal click-through")
 		}
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
-		click(22, size[1]-3)
+		click(22, size[1]/2)
 		if m.modal != "menu" {
 			t.Fatal("menu target moved after resize")
 		}
@@ -661,7 +792,15 @@ func TestOverflowAndResourceSelection(t *testing.T) {
 	if m.navOffset != 1 || !strings.Contains(m.View().Content, "workspace-00") || strings.Contains(m.View().Content, "● one") {
 		t.Fatal(m.View().Content)
 	}
-	frameEvent(m, tea.MouseClickMsg{X: 2, Y: m.height - 3, Button: tea.MouseLeft})
+	frameEvent(m, tea.MouseWheelMsg{X: 2, Y: m.height/2 + 4, Button: tea.MouseWheelDown})
+	if m.navOffset != 1 || m.shellOffset != 1 {
+		t.Fatal("shell scroll changed workspace scroll")
+	}
+	frameEvent(m, tea.MouseWheelMsg{X: 2, Y: 4, Button: tea.MouseWheelDown})
+	if m.navOffset != 2 || m.shellOffset != 1 {
+		t.Fatal("workspace scroll changed shell scroll")
+	}
+	frameEvent(m, tea.MouseClickMsg{X: 2, Y: m.height / 2, Button: tea.MouseLeft})
 	if m.modal != "new" {
 		t.Fatal("New scrolled away")
 	}
@@ -776,10 +915,13 @@ func frameEvent(m *frame, msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func TestFormsBrowseValidationAndIsolation(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/tmp/data")
 	m := newFrame(launch.Info{Workspace: "/tmp/forms"}, true, launch.Options{Offline: true})
 	defer m.terminals.close()
 	frameEvent(m, tea.WindowSizeMsg{Width: 120, Height: 30})
 	frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
+	frameEvent(m, tea.PasteMsg{Content: "lab"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	frameEvent(m, tea.PasteMsg{Content: "relative"})
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.launchPending || !strings.Contains(m.View().Content, "absolute canonical") {
@@ -792,6 +934,9 @@ func TestFormsBrowseValidationAndIsolation(t *testing.T) {
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.modal != "new" || !strings.Contains(m.View().Content, "relative") {
 		t.Fatal("browse cancellation lost typed draft")
+	}
+	if m.workspaceName != "lab" || m.form.GetFocusedField().GetKey() != "workspace-location" {
+		t.Fatal("directory browser changed workspace name")
 	}
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
@@ -857,11 +1002,12 @@ func TestFormDraftsAndCaretAcrossSizes(t *testing.T) {
 }
 
 func TestPendingWorkspaceDoesNotBlockOtherForms(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/tmp/w")
 	m := newFrame(launch.Info{Workspace: "/tmp/forms"}, true, launch.Options{Offline: true})
 	defer m.terminals.close()
 	frameEvent(m, tea.WindowSizeMsg{Width: 120, Height: 30})
 	frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModAlt})
-	frameEvent(m, tea.PasteMsg{Content: "/tmp/retry-destination"})
+	frameEvent(m, tea.PasteMsg{Content: "retry-destination"})
 	// Advance the actual form; hold the returned launch command to deliver a
 	// deterministic failure at the public operation-completion seam.
 	f := m.form
@@ -1097,11 +1243,25 @@ func TestQuitReviewsAllOpenedConnections(t *testing.T) {
 	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
 		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
 		capturePresentation(t, m, fmt.Sprintf("%dx%d-quit-connections", size.X, size.Y))
-		for _, label := range []string{"gateway", "jump", "/tmp/one", "/tmp/two", "Keep running", "Close connections"} {
+		for _, label := range []string{"WORKSPACE", "CONNECTION", "STATUS", "gateway", "jump", "one", "two", "connected", "lost", "Keep running", "Close connections"} {
 			if !strings.Contains(m.View().Content, label) {
 				t.Fatal("quit omitted", size, label, m.View().Content)
 			}
 		}
+		if strings.Contains(m.quitSummary(), "/tmp/") || strings.Contains(m.quitSummary(), "example") {
+			t.Fatal("quit inventory must show names and status, not paths or endpoints")
+		}
+		if strings.Contains(m.quitSummary(), "CONNECTIONS") {
+			t.Fatal("quit inventory has redundant section heading")
+		}
+		m.current().management.noColor = false
+		m.noColor = false
+		screen := capturePresentation(t, m, fmt.Sprintf("%dx%d-quit-connections-color", size.X, size.Y))
+		for value, color := range map[string]string{"WORKSPACE": lavenderColor, "gateway": lavenderColor, "connected": "#a6e3a1", "lost": "#f38ba8"} {
+			assertTextRole(t, screen, m.dialogBounds(), value, color)
+		}
+		m.noColor = true
+		m.current().management.noColor = true
 	}
 	if !m.form.GetFocusedField().GetValue().(bool) {
 		t.Fatal("quit defaults to destructive cleanup")

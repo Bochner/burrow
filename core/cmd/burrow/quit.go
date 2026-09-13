@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -30,14 +30,21 @@ func (q quitSnapshot) count() int {
 
 func (m *frame) quitSummary() string {
 	q := m.quitReview
-	paint := m.current().management.paint
-	lines := []string{fmt.Sprintf("Observed connections across opened workspaces: %d", q.count())}
+	u := m.current().management
+	var rows [][]string
 	for _, path := range q.paths {
 		for _, s := range q.states[path] {
-			lines = append(lines, fmt.Sprintf("%s · %s · %s@%s:%s · %s", paint(secondary, safe(path)), paint(accent, safe(s.Name)), paint(successStyle, safe(s.User)), paint(hostStyle, safe(s.Host)), paint(warningStyle, fmt.Sprint(s.Port)), paint(connectionStyle(s.State), safe(s.State))))
+			rows = append(rows, []string{safe(filepath.Base(path)), safe(s.Name), safe(s.State)})
 		}
 	}
-	return strings.Join(append(lines, q.errors...), "\n")
+	var lines []string
+	if len(rows) > 0 {
+		lines = append(lines, u.dataTable("", []string{"WORKSPACE", "CONNECTION", "STATUS"}, rows, max(1, m.dialogBounds().Dx()-6)))
+	}
+	for _, err := range q.errors {
+		lines = append(lines, u.paint(errorStyle, err))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func readQuit(ctx context.Context, paths []string) quitSnapshot {

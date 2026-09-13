@@ -449,7 +449,7 @@ func TestNavigationPresentation(t *testing.T) {
 			t.Fatalf("selected workspace offscreen: %s", want)
 		}
 	}
-	if strings.Contains(m.View().Content, "/10") || strings.Count(m.View().Content, "ws") < 9 {
+	if strings.Contains(m.View().Content, "/10") || !strings.Contains(m.View().Content, "SHELLS - SSH") {
 		t.Fatal("workspace tree hid entries behind a summary", m.View().Content)
 	}
 	m.activate("hovel")
@@ -948,7 +948,7 @@ func TestSidebarStatusAndClickAway(t *testing.T) {
 			screen := capturePresentation(t, m, fmt.Sprintf("sidebar-%s-%t", test.state, plain))
 			if !plain {
 				assertTextRole(t, screen, image.Rect(0, 3, 26, 4), test.dot, test.color)
-				assertTextRole(t, screen, image.Rect(0, 4, 26, 5), test.dot, test.color)
+				assertTextRole(t, screen, image.Rect(0, 25, 26, 26), test.dot, test.color)
 			}
 			if w.connectionState("") != test.state || w.connectionState("gateway") != test.state {
 				t.Fatal("incorrect observed status", test.state)
@@ -992,7 +992,7 @@ func TestSidebarStatusAndClickAway(t *testing.T) {
 		m.paths = append(m.paths, other)
 		m.workspaces[other] = &workspaceView{management: newUI(launch.Info{Workspace: other}, plain), shell: &cliTab{connection: "other"}}
 		m.workspaces[other].shells = []*cliTab{m.workspaces[other].shell}
-		w.focus, m.navIndex = "workspaces", 3
+		w.focus, m.shellIndex = "shells", 3
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		if m.active != other || m.current().tab != "shell" {
 			t.Fatal("shell navigation opened wrong workspace")

@@ -123,8 +123,13 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         send(b"\x1d")
         wait("ACTIVE SSH CONNECTIONS")
         assert Path(f"/proc/{client}").exists(), "background key closed shell"
+
         command("shell gateway", "SSH: gateway #2")
         assert transport() == first_transport, "second shell created a new SSH transport"
+        background()
+        wait("Local SSH shell started")
+        assert "Running reviewed command through Hovel" not in view()
+        command("resume 2", "SSH: gateway #2")
         clients = shell_children()
         assert len(clients) == 2, clients
         for pid in clients:

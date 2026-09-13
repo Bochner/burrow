@@ -22,7 +22,7 @@ binary, wheel, package, screen_check = [str(Path(p).resolve()) for p in sys.argv
 with tempfile.TemporaryDirectory(prefix="br-") as scratch:
     root = Path(scratch)
     env = {k: v for k, v in os.environ.items() if not k.startswith("HOVEL_")}
-    env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
+    env.update(HOME=scratch, XDG_DATA_HOME=str(root / "data"), XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
     processes = set()
 
     def run(w, *options, ok=True, use_env=None):
@@ -302,23 +302,24 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\x1b")
             time.sleep(.2)
             # Real New form launches through the shared verified Open operation.
-            created = root / "nav-created"
+            created = root / "data" / "burrow" / "workspaces" / "nav-created"
             os.write(master, b"\x1bn")  # Alt+N
-            read_until(b"Exact destination")
+            read_until(b"Workspace name")
             assert not created.exists(), "opening New mutated the destination"
-            os.write(master, str(created).encode() + b"\r")
+            os.write(master, b"nav-created\r")
             # The submitted path is also visible in the pending New form.
             # Wait for activation before typing into the workspace's prompt.
-            read_until(str(created).encode(), absent=b"Exact destination")
+            read_until(b"nav-created", absent=b"NEW WORKSPACE")
+            assert (created / "burrow-launch.json").is_file(), "New did not launch the exact default destination"
             created_info = run(created, "--offline")
             assert created_info["pid"] != info["pid"]
             os.write(master, b"draft-created\x1bw")  # preserve draft, open drawer
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[A\r")
             read_until(str(w).encode())
-            # Mouse opens bottom-anchored New at the 160x40 geometry.
-            os.write(master, b"\x1b[<0;3;38M\x1b[<0;3;38m")
-            read_until(b"Exact destination")
+            # Mouse opens midpoint-anchored New at the 160x40 geometry.
+            os.write(master, b"\x1b[<0;3;21M\x1b[<0;3;21m")
+            read_until(b"Workspace name")
             os.write(master, b"\x1b")
             time.sleep(.2)
             os.write(master, b"\x1bw")

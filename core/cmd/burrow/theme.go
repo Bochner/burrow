@@ -399,7 +399,7 @@ var infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
 
 func fieldStyle(header string) lipgloss.Style {
 	switch header {
-	case "NAME", "ID", "CONNECTION", "GENERATION", "CREATION", "RUNID", "SESSION":
+	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUNID", "SESSION":
 		return accent
 	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP":
 		return hostStyle

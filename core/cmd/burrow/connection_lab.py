@@ -452,8 +452,8 @@ launch:
             # The same named connection in another workspace stays independent
             # when selected through production navigation, with drafts retained.
             os.write(outer, b"ins\x1bn")
-            wait(lambda: screen_contains(b"Exact destination"))
-            os.write(outer, str(other).encode() + b"\r")
+            wait(lambda: screen_contains(b"Workspace name"))
+            os.write(outer, other.name.encode() + b"\t" + str(other.parent).encode() + b"\r")
             wait(lambda: screen_contains(("● " + other.name).encode()))
             wait(lambda: screen_contains(b"gateway"))
             assert burrow(other, "inspect", "gateway")["socket"] != first["socket"]
@@ -603,13 +603,14 @@ launch:
         try:
             wait(lambda: screen_contains(b"gateway"))
             os.write(outer, b"\x1bn")
-            wait(lambda: screen_contains(b"Exact destination"))
-            os.write(outer, str(other).encode() + b"\r")
+            wait(lambda: screen_contains(b"Workspace name"))
+            os.write(outer, other.name.encode() + b"\t" + str(other.parent).encode() + b"\r")
             wait(lambda: screen_contains(("● " + other.name).encode()))
             wait(lambda: screen_contains(b"gateway"))
             os.write(outer, b"\x03")
             wait(lambda: screen_contains(b"Close connections"))
-            assert screen_contains(str(w).encode()) and screen_contains(str(other).encode())
+            assert screen_contains(b"WORKSPACE") and screen_contains(b"STATUS")
+            assert screen_contains(w.name.encode()) and screen_contains(other.name.encode())
             os.write(outer, b"\t\r")  # explicit cleanup, default is Keep running
             wait(lambda: screen_contains(b"Connections remain or changed"))
             assert tui.poll() is None and leftover.exists()
