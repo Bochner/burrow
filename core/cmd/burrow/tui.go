@@ -552,7 +552,7 @@ func (m ui) dataTable(title string, headers []string, rows [][]string, w int) st
 					style = warningStyle
 				}
 			}
-			if row >= 0 && rows[row][col] == "—" {
+			if row >= 0 && (rows[row][col] == "—" || rows[row][col] == "Unavailable" || rows[row][col] == "Unknown") {
 				style = secondary
 			}
 			return style.Padding(0, 1).Align(lipgloss.Center)

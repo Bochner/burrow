@@ -25,8 +25,6 @@ type resourceMenu struct {
 	collection connection.Collection
 }
 
-func (m *frame) columnsLeft() int { left, _ := m.columns(); return left + 2 }
-
 func (m *frame) openResourceMenu(hit string, at image.Point) tea.Cmd {
 	w := m.current()
 	u := &w.management

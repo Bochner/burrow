@@ -797,7 +797,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(v, openMenu):
 			return m, m.openPalette()
 		case key.Matches(v, resourceActions):
-			return m, m.openResourceMenu("", image.Pt(m.columnsLeft(), 4))
+			left, _ := m.columns()
+			return m, m.openResourceMenu("", image.Pt(left+2, 4))
 		case key.Matches(v, openNavigation):
 			m.modal = "navigation"
 			return m, nil

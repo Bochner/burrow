@@ -330,6 +330,7 @@ func (m *ui) acceptFiles(result fileResult) {
 func (m ui) fileCompletionContext() (args []string, side, dir, prefix string, dirs bool) {
 	line := m.input.Value()
 	args, err := connection.Split(line)
+	unfinished := err != nil
 	if err != nil {
 		for _, quote := range []string{"'", "\""} {
 			args, err = connection.Split(line + quote)
@@ -341,8 +342,11 @@ func (m ui) fileCompletionContext() (args []string, side, dir, prefix string, di
 	if err != nil || len(args) == 0 {
 		return nil, "", "", "", false
 	}
-	if strings.HasSuffix(line, " ") && !strings.HasSuffix(line, "\\ ") {
-		args = append(args, "")
+	if !unfinished && strings.HasSuffix(line, " ") {
+		probe, _ := connection.Split(line + "x")
+		if len(probe) > len(args) {
+			args = append(args, "")
+		}
 	}
 	op := args[0]
 	side = "remote"
@@ -373,7 +377,7 @@ func (m ui) fileCompletionContext() (args []string, side, dir, prefix string, di
 	if dir == "" {
 		dir = base
 	} else if !path.IsAbs(dir) && !strings.HasPrefix(dir, "~") {
-		dir = path.Join(base, dir)
+		dir = strings.TrimSuffix(base, "/") + "/" + dir
 	}
 	return args, side, dir, prefix, dirs
 }
@@ -522,7 +526,7 @@ func (m ui) fileContent(w int) string {
 	b.WriteString(m.paint(accent, "Resources:      ") + m.paint(numberStyle, fmt.Sprint(len(m.connections))) + m.paint(secondary, " connections · ") + m.paint(numberStyle, fmt.Sprint(len(m.tunnels))) + m.paint(secondary, " tunnels") + "\n\n")
 	if m.output != "" {
 		style := warningStyle
-		if strings.HasPrefix(m.output, "REFUSED:") {
+		if strings.HasPrefix(m.output, "REFUSED:") || strings.HasPrefix(m.output, "Completion unavailable:") {
 			style = errorStyle
 		}
 		b.WriteString(m.paint(style, safe(m.output)) + "\n\n")
@@ -553,6 +557,9 @@ func (m ui) fileContent(w int) string {
 		lines := strings.Split(root.String(), "\n")
 		b.WriteString(strings.Join(lines[min(m.outputOffset, len(lines)):], "\n"))
 	} else {
+		if f.listing.Notice != "" && f.listing.Notice != m.output {
+			b.WriteString(m.paint(warningStyle, safe(f.listing.Notice)) + "\n")
+		}
 		var rows [][]string
 		start := min(m.outputOffset, len(f.listing.Entries))
 		for _, e := range f.listing.Entries[start:min(len(f.listing.Entries), start+max(1, m.height-12))] {

@@ -106,6 +106,40 @@ func TestFilePermissionAndTypeColors(t *testing.T) {
 	}
 }
 
+func TestFileCompletionAndRetainedMetadata(t *testing.T) {
+	u := newUI(launch.Info{Workspace: "/tmp/file-completion"}, true)
+	u.files = &fileMode{remote: "/home/tester", cache: map[string]fileObservation{}, listing: connection.FileListing{Notice: "Reduced metadata: numeric IDs"}}
+	for _, test := range []struct{ line, dir, prefix string }{
+		{"cd 'sub ", "/home/tester", "sub "},
+		{"cd \"sub ", "/home/tester", "sub "},
+		{"cd sub\\ ", "/home/tester", "sub "},
+		{"cd ", "/home/tester", ""},
+		{"cd link/../", "/home/tester/link/../", ""},
+	} {
+		u.input.SetValue(test.line)
+		_, side, dir, prefix, _ := u.fileCompletionContext()
+		if side != "remote" || dir != test.dir || prefix != test.prefix {
+			t.Fatalf("%q: %q %q %q", test.line, side, dir, prefix)
+		}
+	}
+	for _, output := range []string{"Local upload directory: /tmp/upload", "Workspace roots verified", "Completion unavailable: denied"} {
+		u.output = output
+		if !strings.Contains(u.fileContent(100), u.files.listing.Notice) {
+			t.Fatal("retained listing lost reduced-metadata warning")
+		}
+	}
+	u.noColor = false
+	screen := vt.NewEmulator(100, 4)
+	defer screen.Close()
+	screen.Write([]byte(u.dataTable("", []string{"OWNER", "GROUP", "SIZE", "MODIFIED"}, [][]string{{"Unavailable", "Unavailable", "Unavailable", "Unavailable"}}, 100)))
+	for x := 0; x < 100; x++ {
+		cell := screen.CellAt(x, 2)
+		if cell != nil && cell.Content != "" && strings.Contains("Unavailable", cell.Content) && !colorMatches(cell.Style.Fg, secondary.GetForeground()) {
+			t.Fatal("unavailable metadata lost subtext role")
+		}
+	}
+}
+
 func TestFileTabsAndContextMenus(t *testing.T) {
 	for _, plain := range []bool{false, true} {
 		m := newFrame(launch.Info{Workspace: "/tmp/file-tabs"}, plain, launch.Options{})
