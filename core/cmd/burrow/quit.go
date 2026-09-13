@@ -111,10 +111,8 @@ func (m *frame) closeForQuit() tea.Cmd {
 		defer cancel()
 		var failures []string
 		for _, path := range q.paths {
-			for _, s := range q.states[path] {
-				if _, err := connection.CloseReviewed(ctx, path, s); err != nil {
-					failures = append(failures, safe(path)+" / "+safe(s.Name)+": "+safe(err.Error()))
-				}
+			if err := connection.CloseInventory(ctx, path, q.states[path]); err != nil {
+				failures = append(failures, safe(path)+": "+safe(err.Error()))
 			}
 		}
 		result := readQuit(ctx, q.paths)

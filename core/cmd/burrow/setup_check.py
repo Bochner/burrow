@@ -263,7 +263,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                           chainConfig={"workspace": str(w), "command": "profiles", "connection": "{}"})
             rpc("execute", params, error="mutually exclusive")
             params["chainConfig"] = {"workspace": str(w), "connection": json.dumps({"workspace": str(root / "other")})}
-            rpc("execute", params, error="workspace must match")
+            rpc("execute", params, error="legacy per-connection submission retired")
             rpc("shutdown")
             assert module.wait(timeout=5) == 0
             assert module.stdout.read() == b""

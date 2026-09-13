@@ -36,7 +36,7 @@ authorization service or audit database are added.
 The lab checks two independent frontends, concurrent immutable connects,
 cross-workspace names, changed/replayed requests, launch-key refusal, explicit
 keys, config-selected keys, the current frontend's synthetic SSH agent, private
-passwords and cancellation. `prepare` reuses `connection.Parse` to freeze the
+passwords and cancellation. `prepare` reuses the frozen `connection.Parse` to freeze the
 frontend agent socket before request review. Passwords use the existing private
 askpass socket/pipe and never become argv, environment or Hovel metadata.
 The fixture uses controlled SSH config and synthetic keys, not operator keys.
@@ -59,6 +59,15 @@ its masters; daemon EOF ends the owner and masters. Unknown reservations and
 runtime contents remain for manual investigation and explicit reconnect.
 
 ## Measurements
+
+`baseline_source/` freezes the pre-integration production connection package
+verbatim from local `17b1746c4c730ee596954bcf20ff7a65bd466f86`. Issue #73
+adapts the production owner without rewriting this historical comparison.
+The declared instrumenter still adds only the original phase/policy changes.
+The production legacy-owner fixture uses the uninstrumented frozen implementation,
+including its historical host-trust approval; it exercises both earlier catalog
+identities. The bounded manager proof uses the instrumented Config/Parse/Askpass
+package so production input changes cannot silently alter the comparison.
 
 `instrument.py` declares generated baseline sources from the actual existing
 per-connection implementation, adding monotonic dispatch/connected timestamps

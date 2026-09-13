@@ -81,11 +81,11 @@ func promptAnswer(f *huh.Form, secret bool) []byte {
 
 // Required and optional details stay editable in the same form. Only non-secret
 // paths/settings become command arguments; all validation still reaches Parse.
-type connectDetails struct{ name, host, user, port, key, config, hosts, jump, agent string }
+type connectDetails struct{ name, host, user, port, key, config, jump, agent string }
 
 func (d *connectDetails) args() []string {
 	args := []string{"connect", d.name, d.host, d.user}
-	for _, option := range [][2]string{{"--port", d.port}, {"--key", d.key}, {"--ssh-config", d.config}, {"--known-hosts", d.hosts}, {"--jump", d.jump}, {"--agent", d.agent}} {
+	for _, option := range [][2]string{{"--port", d.port}, {"--key", d.key}, {"--ssh-config", d.config}, {"--jump", d.jump}, {"--agent", d.agent}} {
 		if option[1] != "" {
 			args = append(args, option[0], option[1])
 		}
@@ -95,7 +95,7 @@ func (d *connectDetails) args() []string {
 
 var connectFields = []struct{ key, title string }{
 	{"host", "Host / IP *"}, {"port", "SSH port"}, {"user", "Username *"}, {"name", "Connection name *"},
-	{"key", "SSH key path"}, {"jump", "Jump host"}, {"agent", "Agent socket"}, {"config", "SSH config path"}, {"hosts", "Known-hosts path"},
+	{"key", "SSH key path"}, {"jump", "Jump host"}, {"agent", "Agent socket"}, {"config", "SSH config path"},
 }
 
 func detailsForm(workspace string, d *connectDetails) *huh.Form {
@@ -129,10 +129,9 @@ func detailsForm(workspace string, d *connectDetails) *huh.Form {
 		input("key", "SSH key path", "/home/you/.ssh/id_ed25519", &d.key),
 		input("jump", "Jump host", "admin@bastion:22 (optional)", &d.jump),
 		input("agent", "Agent socket", "/run/user/1000/ssh-agent.socket (optional)", &d.agent),
-		input("config", "SSH config path", "/home/you/.ssh/config (optional)", &d.config),
-		input("hosts", "Known-hosts path", "/home/you/.ssh/known_hosts (optional)", &d.hosts).Validate(func(s string) error {
+		input("config", "SSH config path", "/home/you/.ssh/config (optional)", &d.config).Validate(func(s string) error {
 			copy := *d
-			copy.hosts = s
+			copy.config = s
 			_, _, e := connection.Parse(workspace, copy.args()[1:])
 			return e
 		}),
@@ -383,9 +382,6 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 				case "config":
 					m.details.config = value
 					input.Value(&m.details.config)
-				case "hosts":
-					m.details.hosts = value
-					input.Value(&m.details.hosts)
 				}
 			}
 		}
@@ -427,6 +423,7 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 	}
 	path := m.active
 	m.commandArgs = args
+	m.reviewText = ""
 	m.inputEpoch++
 	epoch := m.inputEpoch
 	m.modal = "review"
@@ -465,6 +462,9 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 			r.result = result
 			if details, ok := result.(map[string]string); ok {
 				r.review = details["review"]
+				if details["digest"] != "" {
+					r.args = append(r.args, "--review", details["digest"])
+				}
 				if details["revision"] != "" {
 					r.args = append(r.args, "--revision", details["revision"], "--collection", details["collection"])
 				}
@@ -485,7 +485,7 @@ func (m *frame) browse() tea.Cmd {
 		return nil
 	}
 	field := input.GetKey()
-	if m.modal != "new" && (m.modal != "connect" || (field != "key" && field != "config" && field != "hosts")) {
+	if m.modal != "new" && (m.modal != "connect" || (field != "key" && field != "config")) {
 		return nil
 	}
 	m.savedForm, m.savedModal, m.savedTitle = m.form, m.modal, m.formTitle
@@ -516,6 +516,11 @@ func (m *frame) formText() string {
 	if m.modal == "quit" {
 		bounds := m.dialogBounds()
 		v := scrollBody(m.quitSummary(), bounds.Dx()-6, max(1, bounds.Dy()-14), m.modalOffset)
+		text += "\n\n" + v.View()
+	}
+	if m.modal == "review" && m.reviewText != "" {
+		bounds := m.dialogBounds()
+		v := scrollBody(m.current().management.semanticText(m.reviewText), bounds.Dx()-6, max(1, bounds.Dy()-14), m.modalOffset)
 		text += "\n\n" + v.View()
 	}
 	if m.form != nil {

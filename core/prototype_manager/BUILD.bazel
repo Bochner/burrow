@@ -4,7 +4,7 @@ load("@rules_python//python:defs.bzl", "py_test", "py_binary")
 go_binary(
     name = "burrow",
     srcs = ["main.go", "ssh.go", "consumer.go"],
-    deps = ["//core/launch", "//core/connection", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],
+    deps = ["//core/launch", ":baseline_connection", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],
 )
 
 py_test(
@@ -36,10 +36,19 @@ py_binary(
 
 genrule(
     name = "baseline_sources",
-    srcs = ["//core/connection:proof_sources"],
+    srcs = glob(["baseline_source/*"]),
     outs = ["baseline/module.go", "baseline/connection_linux.go", "baseline/commands.go", "baseline/profiles.go", "baseline/prompt_linux.go", "baseline/ssh_config.go", "baseline/hovel-module.yaml"],
     tools = [":instrument"],
     cmd = "$(location :instrument) $(@D)/baseline $(SRCS)",
+)
+
+go_library(
+    name = "legacy_connection",
+    visibility = ["//core/cmd/burrow:__pkg__"],
+    srcs = glob(["baseline_source/*.go"]),
+    embedsrcs = ["baseline_source/hovel-module.yaml"],
+    importpath = "github.com/Bochner/burrow/core/connection",
+    deps = ["//core/launch", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],
 )
 
 go_library(

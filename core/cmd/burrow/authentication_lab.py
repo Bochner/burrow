@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import signal
 import struct
@@ -12,7 +13,7 @@ import termios
 import time
 
 
-def authentication_matrix(binary, workspace, root, env, container, port, key, fingerprint, burrow, wait, screen_check):
+def authentication_matrix(binary, workspace, root, env, container, port, key, fingerprint, burrow, wait, screen_check, prompt_only=False):
     secret = "synthetic-auth-" + os.urandom(16).hex()
     encrypted = root / "auth-key"
     subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", secret, "-f", str(encrypted)], check=True, capture_output=True)
@@ -36,7 +37,7 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                 assert secret.encode() not in data, "secret persisted in workspace"
                 assert b"BEGIN OPENSSH PRIVATE KEY" not in data, "private key persisted in workspace"
 
-    def terminal(args, answers, success=True, size=(30, 120), terminal_env=None, redirect=False, save=False):
+    def terminal(args, answers, success=True, size=(30, 120), terminal_env=None, redirect=False, save=False, observe=False):
         outer, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", *size, 0, 0))
         before = termios.tcgetattr(slave)
@@ -73,6 +74,22 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                 if needle.startswith(("SSH password", "SSH key passphrase")):
                     assert not termios.tcgetattr(slave)[3] & termios.ECHO, "secret prompt published with echo enabled"
                 no_leaks(output)
+                if observe:
+                    began = time.monotonic()
+                    inventory = burrow(workspace,"connections")
+                    listed = time.monotonic()-began
+                    print(f"TIMING stalled-prompt CLI list: {listed:.3f}s", flush=True)
+                    # Bound completion while the secret remains unanswered;
+                    # #73 supersedes the historical one-second latency cutoff.
+                    assert listed < 5, "list blocked behind a private prompt"
+                    assert any(s["name"]=="prompt-sibling" for s in inventory)
+                    began = time.monotonic()
+                    burrow(workspace,"close","prompt-sibling","--yes")
+                    closed = time.monotonic()-began
+                    print(f"TIMING stalled-prompt CLI close: {closed:.3f}s", flush=True)
+                    assert closed < 5, "sibling close blocked behind a private prompt"
+                    assert burrow(workspace,"inspect","gateway")["state"]=="connected"
+                    observe=False
                 if answer is None:
                     p.send_signal(signal.SIGTERM)
                 else:
@@ -83,6 +100,8 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                 assert time.monotonic() < deadline, "interactive command did not finish"
             read()
             no_leaks(output)
+            if "--no-color" in args:
+                assert not re.search(rb"\x1b\[[0-9;:]*[34]8[;:]", output), "--no-color leaked form/recap colors"
             assert (p.returncode == 0) == success, bytes(output)
             assert termios.tcgetattr(slave) == before, "terminal modes not restored"
             if redirect:
@@ -98,37 +117,18 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
             os.close(slave)
 
     base = ["127.0.0.1", "tester", "--port", port, "--prompt", "--yes"]
-    # Never truncate a trust file: entries past the bound can be revoked or
-    # changed keys. Reject each oversized source and their oversized union
-    # before any authentication (even with explicit fingerprint approval).
-    trust_file = workspace / "burrow-known_hosts"
-    saved_trust = trust_file.read_bytes()
-    extra_trust = root / "extra-known-hosts"
-    try:
-        for name, workspace_bytes, selected_bytes in (
-            ("large-workspace-trust", (1 << 20) + 1, 0),
-            ("large-selected-trust", 0, (1 << 20) + 1),
-            ("large-combined-trust", 600000, 600000),
-        ):
-            trust_file.write_bytes(b"#" + b"x" * workspace_bytes + b"\n" + saved_trust)
-            extra_trust.write_bytes(b"#" + b"x" * selected_bytes + b"\n")
-            burrow(workspace, "connect", name, "127.0.0.1", "tester", "--port", port,
-                   "--key", key, "--trust", fingerprint, "--known-hosts", extra_trust, "--yes")
-            wait(lambda: burrow(workspace, "inspect", name)["state"] == "lost")
-            refused = burrow(workspace, "inspect", name)
-            assert refused["masterPID"] == 0 and "oversized" in refused["detail"], refused
-            burrow(workspace, "close", name, "--yes")
-            assert not (workspace / "burrow" / name).exists()
-    finally:
-        trust_file.write_bytes(saved_trust)
     terminal(["connect", "password", *base], [("SSH password", secret.encode()+b"\r")],redirect=True,save=True)
     assert burrow(workspace, "inspect", "password")["state"] == "connected"
     assert burrow(workspace, "profile", "select", "password")["host"] == "127.0.0.1"
     no_leaks()
     burrow(workspace, "close", "password", "--yes")
-    terminal(["connect", "passphrase", *base, "--key", encrypted], [("SSH key passphrase", secret.encode()+b"\r")])
+    burrow(workspace,"connect","prompt-sibling","127.0.0.1","tester","--key",key,"--port",port,"--yes")
+    wait(lambda:burrow(workspace,"inspect","prompt-sibling")["state"]=="connected")
+    terminal(["connect", "passphrase", *base, "--key", encrypted], [("SSH key passphrase", secret.encode()+b"\r")],observe=True)
     assert burrow(workspace, "inspect", "passphrase")["state"] == "connected"
     burrow(workspace, "close", "passphrase", "--yes")
+    if prompt_only:
+        return secret, encrypted
     terminal(["connect", "signal-cancel", *base],[("SSH password",None)],success=False)
     terminal(["connect", "cancel-key", *base, "--key", encrypted], [("SSH key passphrase", b"\x03")], success=False)
     terminal(["connect", "bad-password", *base], [("SSH password", b"wrong\r")] * 3, success=False)
@@ -142,9 +142,7 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                       "Host lab-target\n HostName 127.0.0.1\n Port 2222\n User tester\n ProxyJump lab-jump\n"
                       "Host *\n StrictHostKeyChecking no\n UserKnownHostsFile /dev/null\n")
     alias_args = ["lab-target", "-", "--ssh-config", config, "--key", key, "--prompt", "--yes"]
-    terminal(["connect", "reject-trust", *alias_args], [("Trust this host?", b"\r")], success=False)
-    assert not (workspace / "burrow/reject-trust").exists()
-    terminal(["connect", "jumped", *alias_args], [("Trust this host?", b"\t\r")])
+    terminal(["connect", "jumped", *alias_args], [])
     jumped = burrow(workspace, "inspect", "jumped")
     assert jumped["state"] == "connected" and jumped["port"] == 2222 and jumped["host"] == "127.0.0.1"
     burrow(workspace, "close", "jumped", "--yes")
@@ -200,17 +198,14 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
     finally:
         crowded.terminate()
         crowded.wait(timeout=5)
+    # Existing changed host entries are ignored under the accepted host policy.
     trust = workspace / "burrow-known_hosts"
     approved = trust.read_text()
-    for endpoint, name in ((f"[127.0.0.1]:{port}", "changed-jump"), ("[127.0.0.1]:2222", "changed-target")):
-        trust.write_text("\n".join(endpoint + " " + encrypted.with_suffix(".pub").read_text().strip()
-                                   if line.startswith(endpoint + " ") else line for line in approved.splitlines()) + "\n")
-        try:
-            output = terminal(["connect", name, *alias_args, "--trust", fingerprint], [], success=False)
-            assert b"changed or revoked host key" in output
-            assert not (workspace / "burrow" / name).exists()
-        finally:
-            trust.write_text(approved)
+    trust.write_text(f"[127.0.0.1]:{port} " + encrypted.with_suffix(".pub").read_text())
+    terminal(["connect", "changed-jump", *alias_args], [])
+    burrow(workspace, "close", "changed-jump", "--yes")
+    assert trust.read_text() != approved
+    trust.write_text(approved)
     bad = root / "bad-config"
     bad.write_text(config.read_text().replace(f"Port {port}", "Port 1"))
     terminal(["connect", "jump-failed", *[bad if a == config else a for a in alias_args]], [], success=False)
@@ -223,13 +218,13 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
     answers = [("Host / IP", b"127.0.0.1\r"), ("SSH port", str(port).encode()+b"\r"),
                ("Username", b"tester\r"), ("Connection name", b"guided\r"),
                ("SSH key path", b"\r"), ("Jump host", b"\r"), ("Agent socket", b"\r"),
-               ("SSH config path", b"\r"), ("Known-hosts path", b"\r"), ("Proceed?", b"\t\r"),
+               ("SSH config path", b"\r"), ("Proceed?", b"\t\r"),
                ("SSH password", secret.encode()+b"\r")]
-    terminal(["connect"], answers, size=(24, 80))
+    terminal(["--no-color", "connect"], answers, size=(24, 80), terminal_env={k:v for k,v in env.items() if k != "NO_COLOR"})
     burrow(workspace, "close", "guided", "--yes")
     terminal(["connect", "review-cancel", "127.0.0.1", "tester", "--port", port, "--prompt"],
              [("Proceed?", b"\r")], success=False)
     assert not (workspace / "burrow/review-cancel").exists()
     no_leaks()
-    print("PASS password/encrypted-key prompts, no-echo, cancellation, aliases, per-hop agents, IdentitiesOnly, trust bounds, jump trust/failure, guided review and leakage checks", flush=True)
+    print("PASS password/encrypted-key prompts, no-echo, cancellation, aliases, per-hop agents, IdentitiesOnly, LazySSH jump policy/failure, guided review and leakage checks", flush=True)
     return secret, encrypted

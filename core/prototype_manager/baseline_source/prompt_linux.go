@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -42,7 +43,15 @@ func sameUser(c *net.UnixConn) error {
 // OpenSSH's anonymous pipe; it is never run as a module or an operator command.
 func Askpass(prompt string) error {
 	request := Prompt{}
+	fingerprint := regexp.MustCompile(`SHA256:[A-Za-z0-9+/]{43}`).FindString(prompt)
 	switch {
+	case strings.Contains(prompt, "The authenticity of host ") && fingerprint != "":
+		if fingerprint == os.Getenv("BURROW_TRUST") {
+			_, e := io.WriteString(os.Stdout, "yes\n")
+			return e
+		}
+		first, _, _ := strings.Cut(prompt, "\n")
+		request.Text = first + "\nFingerprint: " + fingerprint + "\nVerify independently. Trust this host? [yes/no]"
 	case strings.HasPrefix(prompt, "Enter passphrase for key "):
 		request = Prompt{Text: "SSH key passphrase (hidden; Ctrl+C cancels)", Secret: true}
 	case strings.HasSuffix(strings.TrimSpace(prompt), "password:"):
@@ -135,7 +144,7 @@ func ExecutePrompt(ctx context.Context, w string, args []string, ask PromptFunc)
 	defer func() { cancel(); listener.Close(); <-finished }()
 	// Finish Hovel's launch receipt even if secret entry cancels while throw is
 	// returning, so cleanup addresses the exact owner instead of losing its ID.
-	launchCtx, finish := context.WithTimeout(ctx, 60*time.Second)
+	launchCtx, finish := context.WithTimeout(context.Background(), 60*time.Second)
 	defer finish()
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("authentication cancelled")
@@ -174,11 +183,7 @@ func ExecutePrompt(ctx context.Context, w string, args []string, ask PromptFunc)
 			if err != nil {
 				cancel()
 			} else {
-				if next.Session != s.Session || next.Generation != s.Generation || next.Creation != s.Creation {
-					cancel()
-				} else {
-					s = next
-				}
+				s = next
 			}
 		}
 	}

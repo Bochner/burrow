@@ -13,6 +13,9 @@ type legacyModule struct{ connection.Module }
 func (legacyModule) Info() hovel.Info {
 	info := (connection.Module{}).Info()
 	info.Name = "burrow-connection"
+	if len(os.Args) == 2 && os.Args[1] == "base-module" {
+		info.Name = "burrow"
+	}
 	return info
 }
 

@@ -20,21 +20,14 @@ func (Module) Info() hovel.Info {
 	return hovel.Info{Name: "burrow", Version: "0.1.0", Type: hovel.TypeSurvey, Tags: []string{"dangerous"}, Summary: "Manage Burrow workspace, saved profiles and retained SSH connections"}
 }
 func (Module) Schema() hovel.Schema {
-	req := []hovel.Requirement{hovel.Req("workspace", "string", "Explicit canonical Burrow workspace"), {Key: "command", Type: "string", Description: "Saved-profile command; empty inspects workspace"}, {Key: "connection", Type: "string", Description: "Retired per-connection input; use the manager connect adapter"}}
-	for _, key := range []string{"action", "generation", "session", "request", "review"} {
-		req = append(req, hovel.Requirement{Key: key, Type: "string"})
-	}
-	return hovel.Schema{ChainConfig: req}
+	return hovel.Schema{ChainConfig: []hovel.Requirement{hovel.Req("workspace", "string", "Explicit canonical Burrow workspace"), hovel.Requirement{Key: "command", Type: "string", Description: "Saved-profile command; empty inspects workspace"}, hovel.Requirement{Key: "connection", Type: "string", Description: "Non-secret connection JSON; mutually exclusive with command"}}}
 }
 func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
-	if ctx.InputString("action", "") != "" {
-		return runManager(ctx)
-	}
 	if ctx.InputString("connection", "") != "" {
 		if ctx.InputString("command", "") != "" {
 			return hovel.Result{}, fmt.Errorf("command and connection are mutually exclusive")
 		}
-		return hovel.Result{}, fmt.Errorf("legacy per-connection submission retired; use Burrow connect for a reviewed manager throw; existing owners remain inspectable and explicitly closeable")
+		return runConnection(ctx)
 	}
 	c, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

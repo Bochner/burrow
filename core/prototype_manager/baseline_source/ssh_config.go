@@ -2,8 +2,8 @@ package connection
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,18 +44,12 @@ func (c Config) resolve(ctx context.Context) (Config, error) {
 		return c, fmt.Errorf("SSH configuration could not be resolved; check Host/Match settings")
 	}
 	var identities []string
-	c.authOptions = nil
 	for _, line := range strings.Split(string(out.data), "\n") {
 		key, value, ok := strings.Cut(line, " ")
 		if !ok {
 			continue
 		}
 		switch key {
-		case "passwordauthentication", "pubkeyauthentication", "preferredauthentications":
-			if !regexp.MustCompile(`^[A-Za-z0-9,@._+-]+$`).MatchString(value) {
-				return c, fmt.Errorf("unsupported SSH authentication configuration")
-			}
-			c.authOptions = append(c.authOptions, key+" "+value)
 		case "hostname":
 			c.Host = value
 		case "user":
@@ -112,14 +106,16 @@ func expandIdentity(path string, c Config) string {
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 
-// A generated -F file applies the same accepted LazySSH host policy to every hop. Native
+// A generated -F file applies the same strict trust policy to every hop. Native
 // ssh -W implements the ProxyJump transport without inheriting arbitrary config.
-func (original Config) generated(ctx context.Context) (Config, []byte, error) {
-	frontendAgent := original.Agent
-	c, e := original.resolve(ctx)
+func (s *owner) sshConfig(ctx context.Context, trustPath string) ([]byte, error) {
+	frontendAgent := s.config.Agent
+	c, e := s.config.resolve(ctx)
 	if e != nil {
-		return c, nil, e
+		return nil, e
 	}
+	s.config = c
+	s.state.Host, s.state.User, s.state.Port = c.Host, c.User, c.Port
 	hops := []Config{c}
 	seen := map[string]bool{}
 	for i := 0; i < len(hops); i++ {
@@ -127,26 +123,26 @@ func (original Config) generated(ctx context.Context) (Config, []byte, error) {
 			continue
 		}
 		if len(hops) >= 9 {
-			return c, nil, fmt.Errorf("jump chain exceeds eight hops or contains a cycle")
+			return nil, fmt.Errorf("jump chain exceeds eight hops or contains a cycle")
 		}
 		parts := strings.Split(hops[i].Jump, ",")
 		last := parts[len(parts)-1]
 		if seen[last] {
-			return c, nil, fmt.Errorf("jump chain contains a cycle")
+			return nil, fmt.Errorf("jump chain contains a cycle")
 		}
 		seen[last] = true
 		match := regexp.MustCompile(`^(?:([A-Za-z0-9_][A-Za-z0-9_.-]*)@)?(\[[A-Za-z0-9:]+\]|[A-Za-z0-9][A-Za-z0-9_.-]*)(?::([0-9]+))?$`).FindStringSubmatch(last)
 		if match == nil {
-			return c, nil, fmt.Errorf("invalid jump host; use [USER@]HOST[:PORT]")
+			return nil, fmt.Errorf("invalid jump host; use [USER@]HOST[:PORT]")
 		}
-		jump := Config{Workspace: c.Workspace, Name: c.Name, Host: strings.Trim(match[2], "[]"), User: match[1], SSHConfig: c.SSHConfig, Agent: frontendAgent, AgentExplicit: c.AgentExplicit}
+		jump := Config{Workspace: c.Workspace, Name: c.Name, Host: strings.Trim(match[2], "[]"), User: match[1], SSHConfig: c.SSHConfig, Agent: frontendAgent, AgentExplicit: c.AgentExplicit, KnownHosts: c.KnownHosts}
 		if jump.User == "" {
 			jump.User = "-"
 		}
 		if match[3] != "" {
 			jump.Port, _ = strconv.Atoi(match[3])
 			if jump.Port < 1 || jump.Port > 65535 {
-				return c, nil, fmt.Errorf("invalid jump port")
+				return nil, fmt.Errorf("invalid jump port")
 			}
 		}
 		if len(parts) > 1 {
@@ -154,16 +150,13 @@ func (original Config) generated(ctx context.Context) (Config, []byte, error) {
 		}
 		jump, e = jump.resolve(ctx)
 		if e != nil {
-			return c, nil, e
+			return nil, e
 		}
 		hops = append(hops, jump)
 	}
 	var b strings.Builder
 	for i, hop := range hops {
 		fmt.Fprintf(&b, "Host burrow-hop-%d\n HostName %s\n User %s\n Port %d\n", i, hop.Host, hop.User, hop.Port)
-		for _, option := range hop.authOptions {
-			fmt.Fprintf(&b, " %s\n", option)
-		}
 		for _, identity := range hop.identities {
 			fmt.Fprintf(&b, " IdentityFile %s\n", strconv.Quote(identity))
 		}
@@ -179,40 +172,73 @@ func (original Config) generated(ctx context.Context) (Config, []byte, error) {
 		}
 		fmt.Fprintf(&b, " IdentityAgent %s\n", strconv.Quote(agent))
 		if i+1 < len(hops) {
-			fmt.Fprintf(&b, " ProxyCommand /usr/bin/ssh -F %s -W %s burrow-hop-%d\n", shellQuote(configPath(c)), shellQuote(fmt.Sprintf("[%s]:%d", hop.Host, hop.Port)), i+1)
+			fmt.Fprintf(&b, " ProxyCommand /usr/bin/ssh -F %s -W %s burrow-hop-%d\n", shellQuote(filepath.Join(s.dir.Name(), "ssh_config")), shellQuote(fmt.Sprintf("[%s]:%d", hop.Host, hop.Port)), i+1)
 		}
 	}
-	b.WriteString("Host *\n StrictHostKeyChecking no\n UserKnownHostsFile /dev/null\n GlobalKnownHostsFile /dev/null\n UpdateHostKeys no\n CheckHostIP no\n HashKnownHosts no\n ControlMaster no\n ControlPersist no\n ClearAllForwardings yes\n ForwardAgent no\n PermitLocalCommand no\n RequestTTY no\n ConnectTimeout 8\n ServerAliveInterval 2\n ServerAliveCountMax 2\n NumberOfPasswordPrompts 3\n PreferredAuthentications publickey,password\n")
-	return c, []byte(b.String()), nil
+	fmt.Fprintf(&b, "Host *\n StrictHostKeyChecking ask\n UserKnownHostsFile %s\n GlobalKnownHostsFile /dev/null\n UpdateHostKeys no\n CheckHostIP no\n HashKnownHosts no\n ControlMaster no\n ControlPersist no\n ClearAllForwardings yes\n ForwardAgent no\n PermitLocalCommand no\n RequestTTY no\n ConnectTimeout 8\n ServerAliveInterval 2\n ServerAliveCountMax 2\n NumberOfPasswordPrompts 3\n PreferredAuthentications publickey,password\n", strconv.Quote(trustPath))
+	return []byte(b.String()), nil
 }
 
-func configPath(c Config) string {
-	socket, _ := launch.ConnectionPath(c.Workspace, c.Name)
-	return filepath.Join(filepath.Dir(socket), "ssh_config")
-}
-func (c Config) sshArgs() []string {
-	socket, _ := launch.ConnectionPath(c.Workspace, c.Name)
-	args := []string{"-F", configPath(c), "-M", "-N", "-T", "-S", socket, "-o", "UserKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=no"}
-	if c.Key != "" {
-		args = append(args, "-i", c.Key)
-	}
-	return append(args, "--", "burrow-hop-0")
-}
-func (c Config) reviewDigest(verb, config string) string {
-	c.Review = ""
-	c.PromptSocket = ""
-	raw, _ := json.Marshal(c)
-	return digest(verb + "\x00" + string(raw) + "\x00" + config)
-}
-func (c Config) review(ctx context.Context, verb string) (string, string, error) {
-	resolved, config, e := c.generated(ctx)
+func (s *owner) trustSnapshot(ctx context.Context) ([]byte, error) {
+	store, e := launch.TrustStore(ctx, s.config.Workspace)
 	if e != nil {
-		return "", "", e
+		return nil, e
 	}
-	args := append([]string{"/usr/bin/ssh"}, c.sshArgs()...)
-	for i := range args {
-		args[i] = shellQuote(args[i])
+	defer store.Close()
+	data, e := io.ReadAll(io.LimitReader(store, (1<<20)+1))
+	if e != nil || len(data) > 1<<20 {
+		return nil, fmt.Errorf("workspace trust snapshot unreadable or oversized")
 	}
-	text := fmt.Sprintf("%s %s\nEndpoint: %s@%s:%d\nSSH config: %s\nJump: %s\nKey: %s\nAgent: %s\nSSH command:\n%s\nGenerated config:\n%s\nLazySSH host policy: no host approval; user known-host writes discarded.\nQuit reviews keep running or close. Repeat with --yes --review %s to confirm.", verb, c.Name, resolved.User, resolved.Host, resolved.Port, c.SSHConfig, displaySetting(resolved.Jump, "none"), displaySetting(c.Key, "SSH config/default identities"), displaySetting(resolved.Agent, "none"), strings.Join(args, " "), config, c.reviewDigest(verb, string(config)))
-	return text, string(config), nil
+	file, e := os.Open(s.config.KnownHosts)
+	if os.IsNotExist(e) {
+		return data, nil
+	}
+	if e != nil {
+		return nil, fmt.Errorf("selected known-hosts file unavailable")
+	}
+	defer file.Close()
+	extra, e := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if e != nil || len(extra) > 1<<20 {
+		return nil, fmt.Errorf("selected known-hosts file unreadable or oversized")
+	}
+	// The snapshot has the same bound as approval persistence. Reject its
+	// combined size before starting SSH, not after credentials are offered.
+	if len(data)+len(extra)+2 > 1<<20 {
+		return nil, fmt.Errorf("combined trust snapshot oversized (limit 1 MiB)")
+	}
+	return append(append(data, '\n'), append(extra, '\n')...), nil
+}
+
+func (s *owner) saveTrust() error {
+	path := filepath.Join(s.dir.Name(), "known_hosts")
+	f, e := os.Open(path)
+	if e != nil {
+		return e
+	}
+	defer f.Close()
+	st, e := f.Stat()
+	if e != nil || !os.SameFile(st, s.trustFile) {
+		return fmt.Errorf("trust snapshot replaced; investigate manually")
+	}
+	data, e := io.ReadAll(io.LimitReader(f, (1<<20)+1))
+	if e != nil || len(data) > 1<<20 || len(data) < s.trustBytes {
+		return fmt.Errorf("trust snapshot unreadable or oversized")
+	}
+	if len(data) == s.trustBytes {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5e9)
+	defer cancel()
+	store, e := launch.TrustStore(ctx, s.config.Workspace)
+	if e != nil {
+		return e
+	}
+	defer store.Close()
+	if _, e = store.Write(data[s.trustBytes:]); e != nil {
+		return e
+	}
+	if e = store.Sync(); e == nil {
+		s.trustBytes = len(data)
+	}
+	return e
 }

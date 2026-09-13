@@ -30,8 +30,7 @@ burrow --workspace /home/alice/lab profiles</code></pre>
       "host": "192.168.1.20",
       "user": "alice",
       "port": 22,
-      "key": "/home/alice/.ssh/id_ed25519",
-      "knownHosts": "/home/alice/.ssh/known_hosts"
+      "key": "/home/alice/.ssh/id_ed25519"
     },
     {
       "name": "build",
@@ -50,11 +49,10 @@ burrow --workspace /home/alice/lab profiles</code></pre>
 <tr><td><code>port</code></td><td>Explicit port 1–65535, or 0/omitted to use SSH configuration or 22.</td></tr>
 <tr><td><code>key</code></td><td>Optional absolute key-file reference. The key bytes are never copied.</td></tr>
 <tr><td><code>sshConfig</code></td><td>Optional absolute trusted SSH config path. Omitted uses the current user's default.</td></tr>
-<tr><td><code>knownHosts</code></td><td>Optional absolute known-hosts file reference. Omitted uses the current user's default; workspace trust still applies.</td></tr>
 <tr><td><code>jump</code></td><td>Optional explicit jump chain, such as <code>alice@bastion.example:22</code>; omitted inherits configuration.</td></tr>
 <tr><td><code>agentExplicit</code>, <code>agent</code></td><td>Normally omit both: resolve the current frontend agent/config at connect time. For a deliberately fixed agent, use <code>"agentExplicit": true, "agent": "/run/user/1000/agent.sock"</code>. To disable agent use, set <code>agentExplicit</code> true and <code>agent</code> to an empty string.</td></tr>
 </tbody></table>
-<p>Key, agent, SSH-config and known-hosts paths must be absolute and canonical when supplied. File copies between computers may need path edits. Burrow validates the schema and names on load, but does not open key files or evaluate SSH configuration. A saved row may show “Config” or “Config/agent” until explicit connect resolves it. <code>Match exec</code> can execute local commands during SSH configuration evaluation: choose trusted configuration and review the resulting endpoint.</p>
+<p>Key, agent and SSH-config paths must be absolute and canonical when supplied. File copies between computers may need path edits. Burrow validates the schema and names on load, but does not open key files or evaluate SSH configuration. A saved row may show “Config” or “Config/agent” until explicit connect resolves it. <code>Match exec</code> can execute local commands during SSH configuration evaluation: choose trusted configuration and review the resulting endpoint.</p>
 <h2>Create, inspect and connect</h2>
 <pre><code>burrow --workspace /home/alice/lab profile create nas 192.168.1.20 alice --key /home/alice/.ssh/id_ed25519
 burrow --workspace /home/alice/lab profiles
@@ -76,7 +74,7 @@ burrow --workspace /home/alice/lab profile save nas --as home-nas
 burrow --workspace /home/alice/lab close nas --yes
 burrow --workspace /home/alice/lab profile connect home-nas --prompt</code></pre>
 <p>Only an authenticated active owner can supply reusable settings. A failed, connecting or lost connection cannot be saved as a successful connection. Saving preserves original alias/override choices, not the resolved address or an inherited temporary agent socket. Unchanged profiles do not trigger another automatic save offer. The offer uses the active connection's name by default; an existing different profile requires replacement review. Skipping or failing a save leaves the successful connection alive. A noninteractive asynchronous connection offers no terminal dialog: use <code>profile save</code> after observing <code>connected</code>.</p>
-<p>Profiles contain no passwords, passphrases, private-key contents, process IDs, master sockets, authentication-helper sockets or one-time trust approvals. They are settings, not a credential backup. Known-host trust remains separate. Do not put secrets in command arguments, collection comments or example fields.</p>
+<p>Profiles contain no passwords, passphrases, private-key contents, process IDs, master sockets, authentication-helper sockets or one-time trust approvals. They are settings, not a credential backup. The <code>knownHosts</code> setting was removed in issue #73. Remove it from older collections before loading them; existing files and known-host records are not rewritten or deleted. Do not put secrets in command arguments, collection comments or example fields.</p>
 <h2>Edit and delete</h2>
 <pre><code># Edit replaces the full saved recipe; include options you want to keep.
 burrow --workspace /home/alice/lab profile edit nas 192.168.1.21 alice --port 2222 --key /home/alice/.ssh/id_ed25519

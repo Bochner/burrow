@@ -20,10 +20,14 @@ import termios
 import time
 
 from core.cmd.burrow.authentication_lab import authentication_matrix
+from core.cmd.burrow.manager_lab import manager_checks
+from core.cmd.burrow.latency_lab import measure
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=5, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
+parser.add_argument("--measure", action="store_true", help="record production phase samples and separate process traces")
+parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
 args = parser.parse_args()
 smoke = args.smoke
 binary, wheel, image_file, screen_check, legacy_binary = [str(Path(p).resolve()) for p in args.paths]
@@ -40,7 +44,7 @@ def interrupted(signum, _frame):
     raise SystemExit(f"acceptance interrupted by signal {signum}")
 for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
     signal.signal(signum, interrupted)
-signal.alarm(600)
+signal.alarm(1200 if args.measure else 600)
 
 def command(*args, env=None, ok=True):
     p = subprocess.run(list(map(str, args)), env=env, capture_output=True, text=True, timeout=60)
@@ -89,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             out = command(binary, "--workspace", w, *args, env=env, ok=ok)
             if ok and args[0] in ("connect", "reconnect") and "--yes" in args:
                 # Response can precede authentication: never label this dispatch
-                # or full connection latency. Phase instrumentation belongs to #71.
+                # or full connection latency. --measure records the separate phases.
                 print(f"TIMING {args[0]} {args[1]} submission-to-CLI-return: "
                       f"{time.monotonic() - submitted:.3f}s", flush=True)
             return json.loads(out) if ok else out
@@ -105,28 +109,40 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             return sorted(m["id"] for m in modules if m["name"].startswith("burrow"))
         assert catalog() == ["burrow@0.1.0"]
         timing("fixture and workspace setup")
-        options = ["--key", str(key), "--port", str(port), "--trust", fingerprint, "--yes"]
+        if args.measure:
+            measure(binary,root,env,container,port,key,command,wait)
+            raise SystemExit(0)
+        options = ["--key", str(key), "--port", str(port), "--yes"]
         def state_is(w, name, expected):
             s = burrow(w, "inspect", name)
             return s if s["state"] == expected else None
-        # Unknown-host refusal happens before authentication; explicit reconnect
-        # approves a key obtained independently from the controlled server.
+        if args.prompt_check:
+            burrow(w,"connect","gateway","127.0.0.1","tester",*options)
+            wait(lambda:state_is(w,"gateway","connected"))
+            authentication_matrix(binary,w,root,env,container,port,key,fingerprint,burrow,wait,screen_check,prompt_only=True)
+            raise SystemExit(0)
+        # Owner-approved LazySSH policy authenticates without host-key approval.
         plain = ["--key", str(key), "--port", str(port), "--yes"]
         burrow(w, "connect", "unknown", "127.0.0.1", "tester", *plain)
-        refused = wait(lambda: state_is(w, "unknown", "lost"))
-        assert "unknown host" in refused["detail"], refused
-        assert not Path(refused["socket"]).exists()
-        burrow(w, "reconnect", "unknown", "127.0.0.1", "tester", *options)
         wait(lambda: state_is(w, "unknown", "connected"))
         burrow(w, "close", "unknown", "--yes")
         review = burrow(w, "connect", "gateway", "127.0.0.1", "tester", *options[:-1])
-        assert "review" in review and not (w / "burrow/gateway").exists()
+        assert "SSH command:" in review["review"] and "StrictHostKeyChecking=no" in review["review"]
+        assert "Generated config:" in review["review"] and not (w / "burrow/gateway").exists()
         first = burrow(w, "connect", "gateway", "127.0.0.1", "tester", *options)
         def connected():
             state = burrow(w, "inspect", "gateway")
             assert state["state"] != "lost", state
             return state if state["state"] == "connected" else None
         first = wait(connected)
+        actual = Path(f'/proc/{first["masterPID"]}/cmdline').read_bytes().split(b"\0")[:-1]
+        shown = review["review"].split("SSH command:\n",1)[1].split("\nGenerated config:",1)[0]
+        assert shlex.split(shown) == [a.decode() for a in actual]
+        generated = review["review"].split("Generated config:\n",1)[1].split("\nLazySSH host policy:",1)[0]
+        assert generated == Path(first["socket"]).with_name("ssh_config").read_text()
+        assert first["generation"] and first["creation"] and first["runID"]
+        assert first["connected"] >= first["dispatch"] > 0
+        manager_checks(binary,w,root,env,port,key,first,burrow,wait)
         # Both production capabilities use the one public identity.
         assert catalog() == ["burrow@0.1.0"]
         hv("chain", "create", "consolidation")
@@ -147,6 +163,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         burrow(w,"profile","delete","saved-gateway","--yes")
         assert burrow(w,"inspect","gateway")["masterPID"] == first["masterPID"]
         burrow(w,"profile","load",str(profile_backup))
+        saved_review=burrow(w,"profile","connect","saved-gateway","--as","saved-live")
+        assert "Generated config:" in saved_review["review"] and saved_review["digest"]
         burrow(w,"profile","connect","saved-gateway","--as","saved-live","--yes")
         wait(lambda: state_is(w,"saved-live","connected"))
         burrow(w,"close","saved-live","--yes")
@@ -166,16 +184,16 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             timing("explicit close")
             print("PASS SSH smoke only; full authentication/PTY/lifecycle matrix not run", flush=True)
             raise SystemExit(0)
-        # Test-only old identity: retain its live owner through installation/setup,
-        # refuse collisions, and close explicitly without affecting the new sibling.
-        legacy_package = root / "legacy-package"
-        legacy_package.mkdir(mode=0o700)
-        (legacy_package / "burrow").write_bytes(Path(legacy_binary).read_bytes())
-        (legacy_package / "burrow").chmod(0o700)
-        (legacy_package / "hovel-module.yaml").write_text("""apiVersion: hovel.dev/v1alpha1
+        # Both historical catalog identities remain inspectable without adoption.
+        for module in ("burrow-connection", "burrow"):
+            legacy_package = root / ("legacy-package-" + module)
+            legacy_package.mkdir(mode=0o700)
+            (legacy_package / "burrow").write_bytes(Path(legacy_binary).read_bytes())
+            (legacy_package / "burrow").chmod(0o700)
+            (legacy_package / "hovel-module.yaml").write_text(f"""apiVersion: hovel.dev/v1alpha1
 kind: ModulePackage
 metadata:
-  name: burrow-connection
+  name: {module}
   version: 0.1.0
   moduleType: survey
 runtime:
@@ -184,34 +202,35 @@ launch:
   - selector:
       os: linux
       arch: amd64
-    command: ["burrow"]
+    command: {json.dumps(["burrow", "base-module"] if module == "burrow" else ["burrow"])}
 """)
-        hv("module", "install", "--link", str(legacy_package), "--no-scripts")
-        hv("chain", "create", "legacy", chain="legacy")
-        hv("chain", "add", "burrow-connection@0.1.0", chain="legacy")
-        hv("target", "add", "ssh://127.0.0.1", chain="legacy")
-        hv("chain", "config", "set", "workspace", str(w), chain="legacy")
-        legacy_config = dict(workspace=str(w), name="legacy", host="127.0.0.1", user="tester",
-                             port=port, key=str(key), knownHosts=str(w / "burrow-known_hosts"))
-        hv("chain", "config", "set", "connection", json.dumps(legacy_config), chain="legacy")
-        result = json.loads(hv("throw", "--now", "--allow-dangerous", "--json", chain="legacy"))
-        assert result["results"][0]["state"] == "succeeded", result
-        legacy = wait(lambda: state_is(w, "legacy", "connected"))
-        evidence = w / "legacy-evidence"
-        evidence.write_text("preserve legacy evidence")
-        assert burrow(w, "--offline", "status")["pid"] == info["pid"]
-        assert burrow(w, "inspect", "legacy")["masterPID"] == legacy["masterPID"]
-        burrow(w, "connect", "legacy", "127.0.0.1", "tester", *options, ok=False)
-        assert burrow(w, "inspect", "legacy")["socketInode"] == legacy["socketInode"]
-        burrow(w, "profile", "save", "legacy", "--as", "legacy-settings")
-        assert "review" in burrow(w, "close", "legacy")
-        burrow(w, "close", "legacy", "--yes")
-        assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
-        assert evidence.read_text() == "preserve legacy evidence"
-        assert burrow(w, "profile", "select", "legacy-settings")["host"] == "127.0.0.1"
-        # Manual uninstall after owners are closed; chain/evidence remain historical.
-        hv("module", "uninstall", "burrow-connection@0.1.0")
-        assert catalog() == ["burrow@0.1.0"]
+            hv("module", "install", "--link", str(legacy_package), "--no-scripts")
+            hv("chain", "create", module, chain=module)
+            hv("chain", "add", module + "@0.1.0", chain=module)
+            hv("target", "add", "ssh://127.0.0.1", chain=module)
+            hv("chain", "config", "set", "workspace", str(w), chain=module)
+            legacy_config = dict(workspace=str(w), name="legacy", host="127.0.0.1", user="tester",
+                                 port=port, key=str(key), knownHosts=str(w / "burrow-known_hosts"), trust=fingerprint)
+            hv("chain", "config", "set", "connection", json.dumps(legacy_config), chain=module)
+            result = json.loads(hv("throw", "--now", "--allow-dangerous", "--json", chain=module))
+            assert result["results"][0]["state"] == "succeeded", result
+            legacy = wait(lambda: state_is(w, "legacy", "connected"))
+            evidence = w / "legacy-evidence"
+            evidence.write_text("preserve legacy evidence")
+            assert burrow(w, "--offline", "status")["pid"] == info["pid"]
+            assert burrow(w, "inspect", "legacy")["masterPID"] == legacy["masterPID"]
+            burrow(w, "connect", "legacy", "127.0.0.1", "tester", *options, ok=False)
+            assert burrow(w, "inspect", "legacy")["socketInode"] == legacy["socketInode"]
+            burrow(w, "profile", "save", "legacy", "--as", "legacy-settings")
+            assert "review" in burrow(w, "close", "legacy")
+            burrow(w, "close", "legacy", "--yes")
+            assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
+            assert evidence.read_text() == "preserve legacy evidence"
+            assert burrow(w, "profile", "select", "legacy-settings")["host"] == "127.0.0.1"
+            # Manual uninstall after owners are closed; chain/evidence remain historical.
+            if module != "burrow":
+                hv("module", "uninstall", module + "@0.1.0")
+            assert catalog() == ["burrow@0.1.0"]
         retired = subprocess.run([binary, "connection-module"], env=env, capture_output=True, text=True)
         assert retired.returncode != 0 and not retired.stdout and "retired" in retired.stderr
         timing("single module and legacy owner transition")
@@ -255,19 +274,17 @@ launch:
         burrow(w, "reconnect", "gateway", "127.0.0.1", "tester", *options)
         second = wait(connected)
         assert second["masterPID"] != first["masterPID"]
-        # A previously approved host key must be remembered, and reconnect must
-        # not need a fresh trust override after closing its runtime directory.
+        # Closing/reconnecting does not introduce another host-trust prompt.
         burrow(w, "close", "gateway", "--yes")
         without_trust = ["--key", str(key), "--port", str(port), "--yes"]
         burrow(w, "connect", "gateway", "127.0.0.1", "tester", *without_trust)
         first = wait(connected)
-        # Workspace trust refuses changed keys, even with a fresh --trust flag.
+        # Legacy host records are preserved, but no longer govern authentication.
         trust_file = w / "burrow-known_hosts"
-        trusted = trust_file.read_bytes()
+        trusted = trust_file.read_bytes() if trust_file.exists() else b""
         trust_file.write_text(f"[127.0.0.1]:{port} " + key.with_suffix(".pub").read_text())
         burrow(w, "connect", "changed", "127.0.0.1", "tester", *options)
-        changed = wait(lambda: state_is(w, "changed", "lost"))
-        assert "host key" in changed["detail"] and "refusing authentication" in changed["detail"], changed
+        changed = wait(lambda: state_is(w, "changed", "connected"))
         burrow(w, "close", "changed", "--yes")
         trust_file.write_bytes(trusted)
         # Failed public-key authentication and cancellation of slow discovery.
@@ -408,34 +425,12 @@ launch:
             wait(lambda: screen_contains(b"attempt closed"))
             assert not (w / "burrow/terminal-cancel").exists()
             assert auth_secret.encode() not in output
-            # First-use trust is an embedded default-reject confirmation with
-            # the actual endpoint and fingerprint, independent of --yes.
-            trust_file.write_bytes(b"")
-            for name,answer in [("tui-reject",b"\r"),("tui-trust",b"\t\r")]:
-                ui_command=shlex.join(["connect",name,"127.0.0.1","tester","--key",str(key),"--port",str(port),"--yes"])
-                os.write(outer,ui_command.encode()+b"\r")
-                wait(lambda: screen_contains(b"Trust host"))
-                assert screen_contains(fingerprint.encode()) and screen_contains(b"127.0.0.1")
-                assert screen_contains(b"WORKSPACES")
-                os.write(outer,answer)
-                if name=="tui-reject":
-                    wait(lambda: screen_contains(b"attempt closed"))
-                    assert not (w/"burrow"/name).exists()
-                else:
-                    wait(lambda: screen_contains(b'"tui-trust"'))
-                    assert burrow(w,"inspect",name)["state"]=="connected"
-                    wait(lambda: screen_contains(b"Save profile as"))
-                    os.write(outer,b"\x1b")
-                    wait(lambda: not screen_contains(b"Save profile as"))
-                    os.write(outer,b"close tui-trust --yes\r")
-                    wait(lambda: screen_contains(b'"closed"'))
-            trust_file.write_bytes(trusted)
             # Bare connect is optional guided entry in the same production frame.
             os.write(outer,b"connect\r")
             for label,value in [(b"Host / IP",b"127.0.0.1"),(b"SSH port",str(port).encode()),
                                 (b"Username",b"tester"),(b"Connection name",b"guided-tui"),
                                 (b"SSH key path",str(key).encode()),(b"Jump host",b""),(b"Agent socket",b""),
-                                (b"SSH config path",b""),(b"Known-hosts path",b"")]:
+                                (b"SSH config path",b"")]:
                 # Every label is visible now; wait for the actual caret before
                 # sending the next field's value through the real PTY.
                 wait(lambda: screen_contains(label, cursor=True))
@@ -492,8 +487,8 @@ launch:
             conn.close()
             return status, json.loads(body)
         for _ in range(265):
-            code, result = rpc("RunSessionCommand", {"SessionID": first["session"], "Request": {"command": "connection-status"}})
-            assert code == 200 and json.loads(result["stdout"])["state"] == "connected", result
+            code, result = rpc("RunSessionCommand", {"SessionID": first["session"], "Request": {"command": "list", "args": [first["generation"]]}})
+            assert code == 200 and any(s["name"] == "gateway" and s["state"] == "connected" for s in json.loads(result["stdout"])), result
         timing("retained log ceiling")
         # Cleanup failures preserve unknown contents and the control session.
         evidence = w / "operator-evidence"
@@ -568,7 +563,7 @@ launch:
         unknown_dir.mkdir(mode=0o700)
         unknown_socket = unknown_dir / "master"
         stranger = subprocess.Popen(["ssh", "-F", "/dev/null", "-M", "-N", "-S", str(unknown_socket),
-                                     "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o",
+                                     "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o",
                                      f"UserKnownHostsFile={trust_file}", "-i", str(key), "-p", str(port), "tester@127.0.0.1"],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         children.append(stranger)
@@ -576,16 +571,16 @@ launch:
         inode = unknown_socket.stat().st_ino
         burrow(w, "connect", "stranger", "127.0.0.1", "tester", *plain, ok=False)
         assert stranger.poll() is None and unknown_socket.stat().st_ino == inode
-        # The Hovel throw evidence includes real plans and confirmations.
-        with sqlite3.connect(w / "workspace.db") as db:
-            plans = [json.loads(r[0]) for r in db.execute("select plan_json from throw_plans")]
-            assert plans and all(p["confirmationId"] for p in plans)
-            assert db.execute("select count(*) from throw_confirmations").fetchone()[0] >= len(plans)
         # Daemon loss cannot silently recreate a daemon, master or trust record.
         os.kill(info["pid"], signal.SIGKILL)
         burrow(w, "--offline", "status", ok=False)
         burrow(w, "connect", "afterloss", "127.0.0.1", "tester", *plain, ok=False)
         assert not (w / "burrow/afterloss").exists() and evidence.read_text() == "retain evidence"
+        # The Hovel throw evidence includes real plans and confirmations.
+        with sqlite3.connect(w / "workspace.db") as db:
+            plans = [json.loads(r[0]) for r in db.execute("select plan_json from throw_plans")]
+            assert plans and all(p["confirmationId"] for p in plans)
+            assert db.execute("select count(*) from throw_confirmations").fetchone()[0] >= len(plans)
         timing("failure ownership and evidence")
         print("PASS production key/agent auth, trust, cancellation, ownership, cross-workspace isolation, loss/reconnect, bounded logs and truthful close", flush=True)
     finally:

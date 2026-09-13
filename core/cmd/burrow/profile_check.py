@@ -68,6 +68,7 @@ with tempfile.TemporaryDirectory(prefix="bp-") as scratch:
         current = backup.read_bytes()
         bad = root / "bad.json"
         for data in [b"{", b'{"version":99,"profiles":[]}',
+                     b'{"version":1,"profiles":[{"name":"old","host":"host","user":"user","knownHosts":"/tmp/known_hosts"}]}',
                      b'{"version":1,"profiles":[{"name":"bad","host":"host","user":"user","password":"SECRET-CANARY"}]}']:
             bad.write_bytes(data); bad.chmod(0o600)
             error=run("profile", "load", str(bad), ok=False)

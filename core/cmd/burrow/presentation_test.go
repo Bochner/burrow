@@ -127,6 +127,70 @@ func TestPresentation(t *testing.T) {
 	}
 }
 
+func TestSSHRecap(t *testing.T) {
+	preview := "Generated config:\n ConnectTimeout 8\n UserKnownHostsFile /dev/null\n StrictHostKeyChecking no\n"
+	m := newFrame(launch.Info{Workspace: "/tmp/recap"}, false, launch.Options{})
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.reviewText = preview
+	m.setForm("review", "Review exact target", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+	screen := capturePresentation(t, m, "160x40-recap-value-roles")
+	for value, hex := range map[string]string{"8": "#fab387", "/dev/null": "#a6adc8", "no": "#cba6f7"} {
+		found := false
+		for y := 0; y < m.height; y++ {
+			var line strings.Builder
+			for x := 0; x < m.width; x++ {
+				line.WriteString(screen.CellAt(x, y).Content)
+			}
+			at := strings.Index(line.String(), " "+value)
+			if at < 0 {
+				continue
+			}
+			x := ansi.StringWidth(line.String()[:at+1])
+			if !colorMatches(screen.CellAt(x, y).Style.Fg, lipgloss.Color(hex)) {
+				t.Fatalf("recap value %s lost semantic color %s", value, hex)
+			}
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("recap value missing: %s", value)
+		}
+	}
+	if got := (ui{noColor: true}).semanticText(preview); got != preview {
+		t.Fatal("NO_COLOR changed exact config")
+	}
+	text := "connect gateway\nSSH command:\n'/usr/bin/ssh' '-i' '/tmp/client key' '-p' '2222'\nGenerated config:\nHost burrow-hop-0\n HostName 192.0.2.10\n User tester\n Port 2222\n IdentityFile \"/tmp/client key\"\n StrictHostKeyChecking no\n"
+	styled := (ui{}).semanticText(text)
+	if ansi.Strip(styled) != text {
+		t.Fatal("SSH preview text changed while coloring")
+	}
+	for _, part := range []string{heading.Render("HostName"), hostStyle.Render("192.0.2.10"), successStyle.Render("tester"), warningStyle.Render("2222")} {
+		if !strings.Contains(styled, part) {
+			t.Fatalf("missing semantic role %q", part)
+		}
+	}
+	for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		m := newFrame(launch.Info{Workspace: "/tmp/recap", PID: 123}, false, launch.Options{})
+		frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m.reviewText = text + strings.Repeat(" ServerAliveInterval 2\n", 40) + "FINAL CONFIG LINE"
+		m.setForm("review", "Review exact target", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+		for _, offset := range []int{0, 1000} {
+			m.modalOffset = offset
+			screen := capturePresentation(t, m, fmt.Sprintf("%dx%d-recap-%d", size[0], size[1], offset))
+			if !strings.Contains(screen.String(), "Proceed?") {
+				t.Fatal("long recap hid approval controls")
+			}
+			if offset > 0 && !strings.Contains(screen.String(), "FINAL CONFIG LINE") {
+				t.Fatal("recap cannot scroll to end")
+			}
+		}
+		m.noColor = true
+		if strings.Contains(m.View().Content, "\x1b[") {
+			t.Fatal("NO_COLOR recap contains ANSI")
+		}
+	}
+}
+
 func TestConnectionOptionCompletion(t *testing.T) {
 	for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
 		m := newFrame(launch.Info{Workspace: "/tmp/auth-completion"}, true, launch.Options{})

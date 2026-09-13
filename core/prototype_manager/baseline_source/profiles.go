@@ -23,12 +23,13 @@ type Profile struct {
 	Key           string `json:"key,omitempty"`
 	Agent         string `json:"agent,omitempty"`
 	AgentExplicit bool   `json:"agentExplicit,omitempty"`
+	KnownHosts    string `json:"knownHosts,omitempty"`
 	SSHConfig     string `json:"sshConfig,omitempty"`
 	Jump          string `json:"jump,omitempty"`
 }
 
 func saved(c Config) Profile {
-	p := Profile{c.Name, c.Host, c.User, c.Port, c.Key, c.Agent, c.AgentExplicit, c.SSHConfig, c.Jump}
+	p := Profile{c.Name, c.Host, c.User, c.Port, c.Key, c.Agent, c.AgentExplicit, c.KnownHosts, c.SSHConfig, c.Jump}
 	if !p.AgentExplicit {
 		p.Agent = ""
 	}
@@ -39,7 +40,7 @@ func (p Profile) Args() []string {
 	if p.Port != 0 {
 		args = append(args, "--port", fmt.Sprint(p.Port))
 	}
-	for _, option := range [][2]string{{"--key", p.Key}, {"--ssh-config", p.SSHConfig}, {"--jump", p.Jump}} {
+	for _, option := range [][2]string{{"--key", p.Key}, {"--known-hosts", p.KnownHosts}, {"--ssh-config", p.SSHConfig}, {"--jump", p.Jump}} {
 		if option[1] != "" {
 			args = append(args, option[0], option[1])
 		}
@@ -198,8 +199,8 @@ func validateProfile(w string, args []string) error {
 		if e != nil {
 			return e
 		}
-		if c.Prompt {
-			return fmt.Errorf("profiles cannot retain authentication prompts")
+		if c.Prompt || c.Trust != "" {
+			return fmt.Errorf("profiles cannot retain prompt or one-time trust approval")
 		}
 		return nil
 	case "load", "collection", "backup":
@@ -350,7 +351,7 @@ func changeProfile(ctx context.Context, w string, args []string) (any, error) {
 		if e != nil {
 			return nil, e
 		}
-		result, e := profileCommand(ctx, w, s)
+		result, e := ownerCommand(ctx, w, s.Session, "connection-profile", nil)
 		if e != nil {
 			return nil, e
 		}
@@ -491,7 +492,7 @@ func SaveOffer(ctx context.Context, w, name string) (bool, error) {
 	if e != nil {
 		return false, e
 	}
-	result, e := profileCommand(ctx, w, s)
+	result, e := ownerCommand(ctx, w, s.Session, "connection-profile", nil)
 	if e != nil {
 		return false, e
 	}

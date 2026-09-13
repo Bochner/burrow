@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -24,7 +25,6 @@ import (
 type Config struct {
 	identities     []string
 	identitiesOnly bool
-	authOptions    []string
 	Workspace      string `json:"workspace"`
 	Name           string `json:"name"`
 	Host           string `json:"host"`
@@ -33,18 +33,14 @@ type Config struct {
 	Key            string `json:"key,omitempty"`
 	Agent          string `json:"agent,omitempty"`
 	AgentExplicit  bool   `json:"agentExplicit,omitempty"`
+	KnownHosts     string `json:"knownHosts"`
+	Trust          string `json:"trust,omitempty"`
 	SSHConfig      string `json:"sshConfig,omitempty"`
 	Jump           string `json:"jump,omitempty"`
 	Prompt         bool   `json:"prompt,omitempty"`
 	PromptSocket   string `json:"promptSocket,omitempty"`
-	Review         string `json:"review,omitempty"`
 }
 type State struct {
-	Generation  string `json:"generation,omitempty"`
-	Creation    string `json:"creation,omitempty"`
-	RunID       string `json:"runID,omitempty"`
-	Dispatch    int64  `json:"dispatch,omitempty"`
-	Connected   int64  `json:"connected,omitempty"`
 	Name        string `json:"name"`
 	Host        string `json:"host"`
 	User        string `json:"user"`
@@ -71,12 +67,12 @@ func (c Config) Validate() error {
 	if c.Port < 0 || c.Port > 65535 {
 		return fmt.Errorf("port must be 1–65535")
 	}
-	if c.Review != "" && !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(c.Review) {
-		return fmt.Errorf("review must be the exact recap digest")
+	if c.Trust != "" && !regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`).MatchString(c.Trust) {
+		return fmt.Errorf("trust must be a SHA256 host-key fingerprint")
 	}
-	for _, p := range []string{c.Key, c.Agent, c.SSHConfig, c.PromptSocket} {
+	for _, p := range []string{c.Key, c.Agent, c.KnownHosts, c.SSHConfig, c.PromptSocket} {
 		if p != "" && (!filepath.IsAbs(p) || filepath.Clean(p) != p || strings.ContainsAny(p, "\x00\r\n\t\"%")) {
-			return fmt.Errorf("key, agent, SSH config and authentication socket paths must be absolute canonical paths without SSH expansions or control characters")
+			return fmt.Errorf("key, agent and known-hosts paths must be absolute canonical paths without SSH expansions or control characters")
 		}
 	}
 	if c.Jump != "" && !regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.:@,\[\]-]{0,1000}$`).MatchString(c.Jump) {
@@ -119,10 +115,10 @@ func (f *sshFailure) detail() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.changed {
-		return "SSH reported a changed or revoked host key; authentication refused"
+		return "changed or revoked host key; refusing authentication even with --trust"
 	}
 	if f.trust {
-		return "SSH host key verification failed"
+		return "host key verification failed: unknown host approval rejected or unavailable; use --prompt to verify the fingerprint"
 	}
 	if f.credentials {
 		return "SSH authentication failed: terminal entry unavailable; use --prompt for passwords/encrypted keys or select an accessible key/agent"
@@ -133,9 +129,45 @@ func (f *sshFailure) detail() string {
 	return "SSH ended: authentication failed, cancelled, or transport lost; reconnect explicitly"
 }
 
+func runConnection(ctx *hovel.Context) (hovel.Result, error) {
+	var c Config
+	d := json.NewDecoder(strings.NewReader(ctx.InputString("connection", "")))
+	d.DisallowUnknownFields()
+	if e := d.Decode(&c); e != nil {
+		return hovel.Result{}, fmt.Errorf("invalid connection settings")
+	}
+	if d.Decode(new(any)) != io.EOF {
+		return hovel.Result{}, fmt.Errorf("invalid trailing connection settings")
+	}
+	if c.Workspace != ctx.InputString("workspace", "") {
+		return hovel.Result{}, fmt.Errorf("connection workspace must match the module workspace input")
+	}
+	if e := c.Validate(); e != nil {
+		return hovel.Result{}, e
+	}
+	check, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	info, e := launch.Status(check, c.Workspace)
+	if e != nil {
+		return hovel.Result{}, e
+	}
+	if os.Getppid() != info.PID {
+		return hovel.Result{}, fmt.Errorf("connection module must be launched by the verified workspace daemon")
+	}
+	dir, e := launch.ReserveConnection(check, c.Workspace, c.Name)
+	if e != nil {
+		return hovel.Result{}, e
+	}
+	s := &owner{profile: saved(c), config: c, dir: dir, done: make(chan struct{}), log: ctx.Log}
+	s.state = State{Name: c.Name, Host: c.Host, User: c.User, Port: c.Port, State: "connecting", Socket: filepath.Join(dir.Name(), "master"), OwnerPID: os.Getpid()}
+	if _, e = ctx.OpenSession(s, hovel.WithName(c.Name), hovel.WithKind("connection"), hovel.WithTransport("ssh")); e != nil {
+		s.Close("registration failed")
+		return hovel.Result{}, e
+	}
+	return hovel.Ok(nil, hovel.WithSummary("Connection attempt retained; inspect live owner state")), nil
+}
+
 type owner struct {
-	manager    *manager
-	prepared   []byte
 	profile    Profile
 	mu         sync.Mutex
 	config     Config
@@ -143,13 +175,28 @@ type owner struct {
 	state      State
 	master     *exec.Cmd
 	socket     os.FileInfo
+	trustFile  os.FileInfo
 	configFile os.FileInfo
+	trustBytes int
 	done       chan struct{}
 	cancel     context.CancelFunc
 	closed     bool
+	log        *hovel.Logger
+	logs       int
 }
 
-func (s *owner) milestone(message string) { s.manager.milestone(message) }
+func (s *owner) milestone(message string) {
+	// ponytail: 200 lifetime diagnostics, then one warning; remove when Hovel drains retained logs safely (#30).
+	if s.logs < 200 {
+		s.log.Info(message, "connection", s.config.Name)
+	}
+	if s.logs == 200 {
+		s.log.Warn("diagnostic budget exhausted; further milestones suppressed", "connection", s.config.Name)
+	}
+	if s.logs <= 200 {
+		s.logs++
+	}
+}
 func (s *owner) Open() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
@@ -161,7 +208,10 @@ func (s *owner) connect(ctx context.Context) {
 	auth, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	s.mu.Lock()
-	e := launch.VerifyReservation(auth, s.config.Workspace, s.dir)
+	keys, e := s.trustSnapshot(auth)
+	if e == nil {
+		e = launch.VerifyReservation(auth, s.config.Workspace, s.dir)
+	}
 	if e != nil {
 		s.state.State = "lost"
 		s.state.Detail = e.Error()
@@ -169,7 +219,24 @@ func (s *owner) connect(ctx context.Context) {
 		s.mu.Unlock()
 		return
 	}
-	config := s.prepared
+	path := filepath.Join(s.dir.Name(), "known_hosts")
+	file, e := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if e == nil {
+		_, e = file.Write(keys)
+		s.trustBytes = len(keys)
+		s.trustFile, _ = file.Stat()
+		ce := file.Close()
+		if e == nil {
+			e = ce
+		}
+	}
+	if e != nil {
+		s.state.State = "lost"
+		s.state.Detail = "private trust snapshot could not be created"
+		s.mu.Unlock()
+		return
+	}
+	config, e := s.sshConfig(auth, path)
 	configPath := filepath.Join(s.dir.Name(), "ssh_config")
 	if e == nil {
 		var f *os.File
@@ -189,7 +256,7 @@ func (s *owner) connect(ctx context.Context) {
 		s.mu.Unlock()
 		return
 	}
-	args := s.config.sshArgs()
+	args := []string{"-F", configPath, "-M", "-N", "-T", "-S", s.state.Socket, "--", "burrow-hop-0"}
 	s.master = exec.Command("/usr/bin/ssh", args...)
 	// A jump child may hold stderr open after the master exits. Bound Wait so
 	// the owner can reap the entire process group on loss as well as on close.
@@ -203,7 +270,7 @@ func (s *owner) connect(ctx context.Context) {
 		s.mu.Unlock()
 		return
 	}
-	s.master.Env = []string{"PATH=/usr/bin:/bin", "LANG=C", "SSH_ASKPASS_REQUIRE=force", "SSH_ASKPASS=" + executable, "BURROW_ASKPASS=1", "BURROW_PROMPT_SOCKET=" + s.config.PromptSocket}
+	s.master.Env = []string{"PATH=/usr/bin:/bin", "LANG=C", "SSH_ASKPASS_REQUIRE=force", "SSH_ASKPASS=" + executable, "BURROW_ASKPASS=1", "BURROW_PROMPT_SOCKET=" + s.config.PromptSocket, "BURROW_TRUST=" + s.config.Trust}
 	s.master.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM, Setpgid: true}
 	// Linux parent-death signals follow the spawning thread, not the Go process.
 	runtime.LockOSThread()
@@ -228,6 +295,9 @@ func (s *owner) connect(ctx context.Context) {
 			syscall.Kill(-master.Process.Pid, syscall.SIGKILL)
 			s.state.State = "lost"
 			s.state.Detail = failure.detail()
+			if e := s.saveTrust(); e != nil {
+				s.state.Detail = "host approval persistence failed; inspect workspace trust"
+			}
 			s.milestone("connection lost")
 			s.mu.Unlock()
 			return
@@ -242,8 +312,12 @@ func (s *owner) connect(ctx context.Context) {
 				if err == nil && st.Mode()&os.ModeSocket != 0 && st.Sys().(*syscall.Stat_t).Uid == uint32(os.Getuid()) {
 					s.socket = st
 					if s.checkMaster() == nil {
+						if e := s.saveTrust(); e != nil {
+							syscall.Kill(-master.Process.Pid, syscall.SIGKILL)
+							s.mu.Unlock()
+							continue
+						}
 						s.state.State = "connected"
-						s.state.Connected = phaseNow()
 						s.state.SocketInode = st.Sys().(*syscall.Stat_t).Ino
 						s.state.Detail = "shell-free master"
 						s.milestone("connected")
@@ -292,6 +366,14 @@ func (s *owner) checkMaster() error {
 		return fmt.Errorf("master check failed; no fresh login attempted")
 	}
 	return nil
+}
+func (s *owner) Closed() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.closed }
+func (s *owner) Write([]byte) error {
+	return fmt.Errorf("connection control uses structured session commands")
+}
+func (s *owner) Read(time.Duration) ([]byte, error) { return nil, nil }
+func (s *owner) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
+	return []hovel.PayloadCommand{{Name: "connection-status", ReadOnly: true}, {Name: "connection-profile", ReadOnly: true, Summary: "Reusable settings after successful authentication"}, {Name: "connection-close", Summary: "Close all owned connection resources after review"}}, nil
 }
 func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
 	if req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" || len(req.Config) > 0 {
@@ -361,15 +443,12 @@ func (s *owner) Close(reason string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return nil
-	}
 	c, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if e = launch.VerifyReservation(c, s.config.Workspace, s.dir); e != nil {
 		return e
 	}
-	for path, expected := range map[string]os.FileInfo{s.state.Socket: s.socket, filepath.Join(s.dir.Name(), "ssh_config"): s.configFile} {
+	for path, expected := range map[string]os.FileInfo{s.state.Socket: s.socket, filepath.Join(s.dir.Name(), "known_hosts"): s.trustFile, filepath.Join(s.dir.Name(), "ssh_config"): s.configFile} {
 		st, err := os.Lstat(path)
 		if os.IsNotExist(err) {
 			continue

@@ -100,18 +100,20 @@ func (m ui) choice(label string, selected bool, width int) string {
 	return m.paint(style.Width(width), ansi.Truncate(prefix+label, width, "…"))
 }
 
-var commandToken = regexp.MustCompile(`\S+`)
+var commandToken = regexp.MustCompile(`'[^']*'|"(?:\\.|[^"\\])*"|\S+`)
 
 func (m ui) syntax(line string, reference bool) string {
 	// ponytail: token hints cover Burrow's command reference and recaps; use a
 	// shell lexer if arbitrary shell source becomes a supported viewer input.
 	previous := ""
 	return commandToken.ReplaceAllStringFunc(line, func(token string) string {
-		word := strings.Trim(token, "[](),.")
+		word := strings.Trim(token, "'\"[](),.")
 		prior := previous
 		previous = strings.ToLower(word)
 		style := pageStyle
 		switch {
+		case word == "/usr/bin/ssh":
+			style = heading
 		case reference && strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word && word != "F1" && word != "F6":
 			style = warningStyle
 		case strings.Contains(word, "@"):
@@ -170,8 +172,44 @@ func (m ui) endpoint(value string) string {
 // sanitizing external text; retain whitespace and leave secrets to masked inputs.
 func (m ui) semanticText(text string) string {
 	lines := strings.Split(text, "\n")
+	config := false
 	for i, line := range lines {
 		line = safe(line)
+		if line == "Generated config:" {
+			config = true
+			lines[i] = m.paint(accent, line)
+			continue
+		}
+		if config && strings.TrimSpace(line) == "" {
+			config = false
+		}
+		if config {
+			trimmed := strings.TrimLeft(line, " ")
+			key, value, ok := strings.Cut(trimmed, " ")
+			if ok {
+				style := fieldStyle(strings.ToUpper(key))
+				switch {
+				case strings.Trim(value, "0123456789") == "" && key != "Port":
+					style = numberStyle
+				case strings.HasPrefix(strings.Trim(value, "\""), "/"):
+					style = secondary
+				case value == "yes" || value == "no":
+					style = keywordStyle
+				}
+				switch key {
+				case "Host":
+					style = accent
+				case "IdentityFile", "IdentityAgent":
+					style = infoStyle
+				}
+				colored := m.paint(style, value)
+				if key == "ProxyCommand" {
+					colored = m.syntax(value, false)
+				}
+				lines[i] = line[:len(line)-len(trimmed)] + m.paint(heading, key) + " " + colored
+				continue
+			}
+		}
 		label, value, field := strings.Cut(line, ": ")
 		if field && !strings.ContainsAny(label, "/@") {
 			style := fieldStyle(strings.ToUpper(label))

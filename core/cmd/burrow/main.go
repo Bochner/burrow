@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -57,7 +59,7 @@ func run(args []string) error {
 		return connection.Askpass(args[0])
 	}
 	if len(args) == 1 && args[0] == "connection-module" {
-		return fmt.Errorf("legacy connection-module entry point retired; use burrow module with connection settings; existing retained owners remain available through connections/inspect/close")
+		return fmt.Errorf("legacy connection-module entry point retired; use Burrow connect for reviewed manager submission; existing retained owners remain available through connections/inspect/close")
 	}
 	if len(args) == 1 && args[0] == "module" {
 		hovel.Serve(connection.Module{})
@@ -79,6 +81,11 @@ func run(args []string) error {
 			return nil
 		}
 		return e
+	}
+	if noColor {
+		if e := os.Setenv("NO_COLOR", "1"); e != nil {
+			return e
+		}
 	}
 	if demo {
 		if fs.NArg() > 0 {
@@ -104,7 +111,9 @@ func run(args []string) error {
 				return e
 			}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		interrupt, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		ctx, cancel := context.WithTimeout(interrupt, 60*time.Second)
 		defer cancel()
 		if _, e := launch.Status(ctx, o.Workspace); e != nil {
 			return e
@@ -129,7 +138,7 @@ func run(args []string) error {
 				interactive = c.Prompt || (!yes && term.IsTerminal(os.Stdin.Fd()))
 			}
 			if interactive {
-				a := &authenticate{workspace: o.Workspace, args: args}
+				a := &authenticate{workspace: o.Workspace, args: args, noColor: noColor}
 				if e := a.Run(); e != nil {
 					return e
 				}

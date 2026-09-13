@@ -1,0 +1,499 @@
+{
+  "provenance": {
+    "machine": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "load": [
+      2.21142578125,
+      3.90478515625,
+      3.3017578125
+    ],
+    "binary_sha256": "f5d544c0e1e44263547b408df54b215174407579597bd792279c9d2f3d395ff7",
+    "build": "Aspect fastbuild",
+    "synthetic_response_delay_s": 0.02,
+    "submission": "production CLI process launch; recap approval supplied by --yes",
+    "prompt": "first private CLI prompt received on PTY with echo disabled",
+    "process_counts": "successful execve starts, frontend plus daemon descendants; includes observer-induced SSH checks"
+  },
+  "groups": {
+    "cold": {
+      "dispatch_s": {
+        "n": 20,
+        "p50": 5.235746249,
+        "p95": 5.25332141
+      },
+      "connected_s": {
+        "n": 20,
+        "p50": 5.4747858375,
+        "p95": 5.583594769
+      },
+      "prompt_s": {
+        "n": 10,
+        "p50": 0.21879993050000002,
+        "p95": 0.22287328
+      }
+    },
+    "warm": {
+      "dispatch_s": {
+        "n": 20,
+        "p50": 3.7204741025,
+        "p95": 3.73536928
+      },
+      "connected_s": {
+        "n": 20,
+        "p50": 3.9531259545,
+        "p95": 4.064708523
+      },
+      "prompt_s": {
+        "n": 10,
+        "p50": 0.2202742105,
+        "p95": 0.221569711
+      }
+    }
+  },
+  "samples": [
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9112340540159494,
+      "dispatch_s": 4.973052935,
+      "connected_s": 5.202274681,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9112340540159494,
+      "dispatch_s": 3.60910855,
+      "connected_s": 3.838786909,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.857950312027242,
+      "dispatch_s": 4.983057315,
+      "connected_s": 5.314825274,
+      "prompt_s": 0.222297148,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.857950312027242,
+      "dispatch_s": 3.551212553,
+      "connected_s": 3.882754495,
+      "prompt_s": 0.220389931,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9216497750021517,
+      "dispatch_s": 4.970455713,
+      "connected_s": 5.200411308,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9216497750021517,
+      "dispatch_s": 3.57036437,
+      "connected_s": 3.798722354,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.73926372997812,
+      "dispatch_s": 5.037492267,
+      "connected_s": 5.367773783,
+      "prompt_s": 0.216655614,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.73926372997812,
+      "dispatch_s": 3.586401426,
+      "connected_s": 3.916516549,
+      "prompt_s": 0.220121136,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.7615465260169003,
+      "dispatch_s": 5.026047185,
+      "connected_s": 5.256832666,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.7615465260169003,
+      "dispatch_s": 3.558654185,
+      "connected_s": 3.792225566,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.8083363060140982,
+      "dispatch_s": 5.239824868,
+      "connected_s": 5.569927843,
+      "prompt_s": 0.216234517,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.8083363060140982,
+      "dispatch_s": 3.70169358,
+      "connected_s": 4.031368904,
+      "prompt_s": 0.221143929,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 2.037882005010033,
+      "dispatch_s": 5.248923114,
+      "connected_s": 5.476560588,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 2.037882005010033,
+      "dispatch_s": 3.726056589,
+      "connected_s": 3.954818564,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.982479334983509,
+      "dispatch_s": 5.240455916,
+      "connected_s": 5.569920309,
+      "prompt_s": 0.215222659,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.982479334983509,
+      "dispatch_s": 3.740836427,
+      "connected_s": 4.071082384,
+      "prompt_s": 0.218931434,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 2.005140630004462,
+      "dispatch_s": 5.241928473,
+      "connected_s": 5.470491825,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 2.005140630004462,
+      "dispatch_s": 3.71262125,
+      "connected_s": 3.942618452,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.9743343580048531,
+      "dispatch_s": 5.246663534,
+      "connected_s": 5.578100693,
+      "prompt_s": 0.222484658,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.9743343580048531,
+      "dispatch_s": 3.73110833,
+      "connected_s": 4.06251642,
+      "prompt_s": 0.221569711,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.984563612000784,
+      "dispatch_s": 5.242466738,
+      "connected_s": 5.473011087,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.984563612000784,
+      "dispatch_s": 3.721516141,
+      "connected_s": 3.954772785,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.989561292983126,
+      "dispatch_s": 5.25332141,
+      "connected_s": 5.583594769,
+      "prompt_s": 0.22287328,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.989561292983126,
+      "dispatch_s": 3.547312886,
+      "connected_s": 3.880235563,
+      "prompt_s": 0.220522883,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9852533460070845,
+      "dispatch_s": 5.250183586,
+      "connected_s": 5.480825499,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9852533460070845,
+      "dispatch_s": 3.719432064,
+      "connected_s": 3.948965238,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.955030907993205,
+      "dispatch_s": 5.231197481,
+      "connected_s": 5.560294205,
+      "prompt_s": 0.216475338,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.955030907993205,
+      "dispatch_s": 3.726484852,
+      "connected_s": 4.058212046,
+      "prompt_s": 0.2186374,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9793900360236876,
+      "dispatch_s": 5.228664903,
+      "connected_s": 5.457710386,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9793900360236876,
+      "dispatch_s": 3.721674751,
+      "connected_s": 3.951479124,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.9741098459926434,
+      "dispatch_s": 5.233983539,
+      "connected_s": 5.56453448,
+      "prompt_s": 0.218245025,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.9741098459926434,
+      "dispatch_s": 3.73536928,
+      "connected_s": 4.064708523,
+      "prompt_s": 0.22015849,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9794227430247702,
+      "dispatch_s": 5.237508959,
+      "connected_s": 5.467394602,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9794227430247702,
+      "dispatch_s": 3.713994349,
+      "connected_s": 3.944285889,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.9828865390154533,
+      "dispatch_s": 5.260727158,
+      "connected_s": 5.591673326,
+      "prompt_s": 0.219354836,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.9828865390154533,
+      "dispatch_s": 3.722835631,
+      "connected_s": 4.054422962,
+      "prompt_s": 0.216908605,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9859787439927459,
+      "dispatch_s": 5.228288324,
+      "connected_s": 5.456409021,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": false,
+      "setup_s": 1.9859787439927459,
+      "dispatch_s": 3.728866712,
+      "connected_s": 3.958794749,
+      "prompt_s": null,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.9844706569856498,
+      "dispatch_s": 5.226973619,
+      "connected_s": 5.561323999,
+      "prompt_s": 0.220183704,
+      "executable_starts": null
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": false,
+      "setup_s": 1.9844706569856498,
+      "dispatch_s": 3.723849961,
+      "connected_s": 4.055874648,
+      "prompt_s": 0.220645604,
+      "executable_starts": null
+    },
+    {
+      "temperature": "cold",
+      "auth": "key",
+      "traced": true,
+      "setup_s": 5.511829253984615,
+      "dispatch_s": 22.536339394,
+      "connected_s": 23.922344235,
+      "prompt_s": null,
+      "executable_starts": 18
+    },
+    {
+      "temperature": "warm",
+      "auth": "key",
+      "traced": true,
+      "setup_s": 5.511829253984615,
+      "dispatch_s": 16.226321076,
+      "connected_s": 17.592068698,
+      "prompt_s": null,
+      "executable_starts": 14
+    },
+    {
+      "temperature": "cold",
+      "auth": "password",
+      "traced": true,
+      "setup_s": 5.612263547984185,
+      "dispatch_s": 22.614193621,
+      "connected_s": 24.058758746,
+      "prompt_s": 1.257108906,
+      "executable_starts": 22
+    },
+    {
+      "temperature": "warm",
+      "auth": "password",
+      "traced": true,
+      "setup_s": 5.612263547984185,
+      "dispatch_s": 16.595578527,
+      "connected_s": 18.073139877,
+      "prompt_s": 1.274237314,
+      "executable_starts": 18
+    }
+  ],
+  "final_load": [
+    3.90185546875,
+    3.2978515625,
+    3.18310546875
+  ]
+}

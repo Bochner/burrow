@@ -47,6 +47,18 @@ func ReserveConnection(ctx context.Context, workspace, name string) (*os.File, e
 	return directory(dir, false, true)
 }
 
+// ReserveManager uses a non-connection name so existing operator names remain valid.
+func ReserveManager(ctx context.Context, workspace string) (*os.File, error) {
+	if _, e := Status(ctx, workspace); e != nil {
+		return nil, e
+	}
+	path := filepath.Join(workspace, "burrow", ".manager-v1")
+	if e := os.Mkdir(path, 0700); e != nil {
+		return nil, refuse(path, "manager reservation exists; inspect retained sessions; do not retry activation automatically")
+	}
+	return directory(path, false, true)
+}
+
 // VerifyReservation rechecks the enclosing launch receipt and the held directory.
 func VerifyReservation(ctx context.Context, workspace string, dir *os.File) error {
 	if _, e := Status(ctx, workspace); e != nil {

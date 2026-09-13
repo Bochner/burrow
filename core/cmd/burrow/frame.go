@@ -56,6 +56,7 @@ type frame struct {
 	navIndex, navOffset int
 	modal               string
 	modalOffset         int
+	reviewText          string
 	destination         string
 	form                *huh.Form
 	formTitle           string
@@ -319,7 +320,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.commandArgs = result.args
 			m.closeTarget = result.target
-			return m, m.setForm("review", "Review exact target", confirmForm("Proceed?", publicPrompt(connection.Prompt{Text: result.review}), "Proceed", "Cancel"))
+			m.reviewText = publicPrompt(connection.Prompt{Text: result.review})
+			m.modalOffset = 0
+			return m, m.setForm("review", "Review exact target · ↑↓ / PgUp/PgDn scroll", confirmForm("Proceed?", "", "Proceed", "Cancel"))
 		case cliOpened, cliScreen, cliClosed:
 			return m, m.terminalResult(path, result)
 		case tea.QuitMsg:
@@ -432,7 +435,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if wheel.Button == tea.MouseWheelUp {
 				delta = -1
 			}
-			if m.modal == "quit" {
+			if m.modal == "quit" || m.modal == "review" {
 				m.modalOffset = max(0, m.modalOffset+delta)
 				return m, nil
 			}
@@ -808,7 +811,7 @@ func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
 	if m.modal == "quit" && m.quitClosing {
 		return nil
 	}
-	if m.modal == "quit" && key.Matches(v, pageUp, pageDown, previous, next) {
+	if (m.modal == "quit" || m.modal == "review") && key.Matches(v, pageUp, pageDown, previous, next) {
 		delta := 1
 		if key.Matches(v, pageUp, previous) {
 			delta = -1
@@ -1181,7 +1184,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				control("submit", current.management.paint(heading, "[Launch exact destination]"), y+ph-4)
 			}
 			if m.form != nil && (m.modal == "new" || m.modal == "connect") {
-				if input, ok := m.form.GetFocusedField().(*huh.Input); ok && (m.modal == "new" || input.GetKey() == "key" || input.GetKey() == "config" || input.GetKey() == "hosts") {
+				if input, ok := m.form.GetFocusedField().(*huh.Input); ok && (m.modal == "new" || input.GetKey() == "key" || input.GetKey() == "config") {
 					label := current.management.paint(heading, "[Browse paths]")
 					layers = append(layers, lipgloss.NewLayer(solid(label, 14, 1, popupColor, m.noColor)).ID("browse").X(x+pw-17).Y(y+ph-4).Z(5))
 				}
@@ -1189,6 +1192,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			hint := "[Esc close]"
 			if m.modal == "quit" {
 				hint = "↑↓ scroll connections · Esc cancel"
+			}
+			if m.modal == "review" && m.reviewText != "" {
+				hint = "↑↓ / PgUp/PgDn scroll recap · Esc cancel"
 			}
 			if m.modal == "menu" {
 				hint = "↑↓ select · Enter run · Esc close"

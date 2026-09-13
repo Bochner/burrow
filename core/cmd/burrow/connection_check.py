@@ -25,7 +25,8 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["connect", "valid", "localhost", "tester", "--ssh-config", "relative"], "absolute"),
         (["connect", "valid", "localhost", "tester", "--jump", "bad;command"], "jump"),
         (["connect", "valid", "localhost", "tester", "--key", "/tmp/key", "--port", "0"], "port"),
-        (["connect", "valid", "localhost", "tester", "--key", "/tmp/key", "--trust", "not-a-fingerprint"], "fingerprint"),
+        (["connect", "valid", "localhost", "tester", "--trust", "not-a-fingerprint"], "invalid connection options"),
+        (["connect", "valid", "localhost", "tester", "--known-hosts", "/tmp/known_hosts"], "invalid connection options"),
         (["connect", "valid", "localhost", "tester", "--key", "relative"], "absolute"),
         (["connect", "valid", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection options"),
     ]:

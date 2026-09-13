@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/Bochner/burrow/core/launch"
 	"github.com/vibepwners/hovel/sdk/go/hovel"
@@ -47,10 +47,8 @@ Legacy -proxy, -shell and -no-term are unsupported, never silently accepted.
 Options (required fields are shown before optional settings):
 --key PATH, --agent PATH (SSH_AUTH_SOCK default), --port NUMBER (config/22),
 --ssh-config PATH (~/.ssh/config), --jump [USER@]HOST[:PORT][,...],
---prompt (CLI hidden password/passphrase entry), --yes (confirm review),
---review HASH (bind --yes to the exact previously displayed recap).
-Every hop uses UserKnownHostsFile=/dev/null and StrictHostKeyChecking=no.
-There is no host-key approval.
+--known-hosts PATH (~/.ssh/known_hosts), --trust SHA256:FINGERPRINT,
+--prompt (CLI hidden secret entry and host approval), --yes (confirm review).
 TUI connects review and prompt interactively; Ctrl+C/Esc cancels the attempt.
 CLI without --yes reviews; --prompt waits for authentication and cleans failure.
 Passwords/passphrases are terminal-only: never put secrets in commands.
@@ -61,9 +59,6 @@ frontend SSH_AUTH_SOCK or --agent. No vault or daemon environment refresh.
 Hovel catalog/chain identity: burrow@0.1.0 for every capability.
 Hovel throws require --allow-dangerous, including workspace/profile actions.
 Existing burrow-connection@0.1.0 owners remain inspectable/closeable; no adoption.
-Earlier burrow@0.1.0 connection sessions also remain separate from the manager.
-Old connection-JSON chain submissions are retired; use Burrow connect.
-Manager failure may end all workspace connections; reconnect is always explicit.
 Retire old chain submissions, close their owners explicitly, then manually
 uninstall the old module through Hovel; retain chains/evidence for inspection.
 Unknown reservations require manual investigation; no force adoption.
@@ -88,6 +83,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	if e != nil {
 		return c, false, e
 	}
+	c.KnownHosts = filepath.Join(home, ".ssh", "known_hosts")
 	c.SSHConfig = filepath.Join(home, ".ssh", "config")
 	fs := flag.NewFlagSet("connect", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -96,9 +92,10 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	fs.StringVar(&c.User, "user", "", "username")
 	fs.StringVar(&c.Key, "key", "", "key path")
 	fs.StringVar(&c.Agent, "agent", c.Agent, "agent socket")
+	fs.StringVar(&c.KnownHosts, "known-hosts", c.KnownHosts, "known-hosts path")
+	fs.StringVar(&c.Trust, "trust", "", "approved fingerprint")
 	fs.StringVar(&c.SSHConfig, "ssh-config", c.SSHConfig, "OpenSSH configuration")
 	fs.StringVar(&c.Jump, "jump", "", "jump hosts")
-	fs.StringVar(&c.Review, "review", "", "exact SSH preview digest")
 	fs.BoolVar(&c.Prompt, "prompt", false, "private terminal authentication")
 	fs.IntVar(&c.Port, "port", 0, "SSH port (configuration or 22)")
 	yes := fs.Bool("yes", false, "confirm reviewed operation")
@@ -170,9 +167,6 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	if invalidPort {
 		return c, false, fmt.Errorf("port must be 1–65535")
 	}
-	if strings.HasPrefix(c.Key, "~/") {
-		c.Key = filepath.Join(home, c.Key[2:])
-	}
 	return c, *yes, c.Validate()
 }
 
@@ -208,12 +202,6 @@ func ownerCommand(ctx context.Context, workspace, id, command string, args []str
 	e := launch.Call(ctx, workspace, "RunSessionCommand", map[string]any{"SessionID": id, "Request": hovel.PayloadCommandRequest{Command: command, Args: args}}, &result)
 	return result, e
 }
-func profileCommand(ctx context.Context, w string, s State) (hovel.PayloadCommandResult, error) {
-	if s.Generation != "" {
-		return ownerCommand(ctx, w, s.Session, "profile", []string{s.Generation, s.Creation})
-	}
-	return ownerCommand(ctx, w, s.Session, "connection-profile", nil)
-}
 func List(ctx context.Context, workspace string) ([]State, error) {
 	var refs struct{ Sessions []hovel.SessionRef }
 	if e := launch.Call(ctx, workspace, "ListSessions", map[string]any{}, &refs); e != nil {
@@ -221,21 +209,6 @@ func List(ctx context.Context, workspace string) ([]State, error) {
 	}
 	states := []State{}
 	names := map[string]bool{}
-	id, e := findManager(ctx, workspace)
-	if e != nil {
-		return nil, e
-	}
-	if id.Session != "" {
-		if e = managerControl(ctx, workspace, id, "list", nil, &states); e != nil {
-			return nil, fmt.Errorf("manager inventory unverified; resources preserved: %w", e)
-		}
-		for _, s := range states {
-			if s.Session != id.Session || s.Generation != id.Generation || s.Creation == "" {
-				return nil, fmt.Errorf("invalid manager inventory identity")
-			}
-			names[s.Name] = true
-		}
-	}
 	// Compatibility is limited to existing sessions, never a legacy registration.
 	for _, ref := range refs.Sessions {
 		if (ref.ModuleID != "burrow@0.1.0" && ref.ModuleID != "burrow-connection@0.1.0") || ref.Kind != "connection" || ref.State == "closed" {
@@ -268,11 +241,6 @@ func List(ctx context.Context, workspace string) ([]State, error) {
 		}
 	}
 	sort.Slice(states, func(i, j int) bool { return states[i].Name < states[j].Name })
-	if id.Session == "" && len(states) == 0 {
-		if _, e := os.Lstat(filepath.Join(workspace, "burrow", ".manager-v1")); !os.IsNotExist(e) {
-			return nil, fmt.Errorf("manager unavailable with an unidentified reservation; inventory unverified; investigate burrow/.manager-v1 manually")
-		}
-	}
 	return states, nil
 }
 func selected(ctx context.Context, w, name string) (State, error) {
@@ -294,13 +262,6 @@ func selected(ctx context.Context, w, name string) (State, error) {
 func closeOwned(ctx context.Context, w string, s State) error {
 	if s.Session == "" {
 		return fmt.Errorf("owner unavailable; inspect %q before manual recovery; unknown resources were not removed", s.Socket)
-	}
-	if s.Generation != "" {
-		var result any
-		if e := managerControl(ctx, w, managerIdentity{Session: s.Session, Generation: s.Generation}, "close", []string{s.Creation}, &result); e != nil {
-			return fmt.Errorf("selected close unverified; inspect creation %s; no rollback promised: %w", s.Creation, e)
-		}
-		return nil
 	}
 	if _, e := ownerCommand(ctx, w, s.Session, "connection-close", []string{"confirm"}); e != nil {
 		return fmt.Errorf("connection close failed or cleanup is uncertain; inspect %q and Hovel session %s; resources were not force-removed", s.Socket, s.Session)
@@ -328,7 +289,7 @@ func CloseReviewed(ctx context.Context, w string, expected State) (any, error) {
 	if e != nil {
 		return nil, e
 	}
-	if current.Session != expected.Session || current.Generation != expected.Generation || current.Creation != expected.Creation || current.MasterPID != expected.MasterPID || current.Socket != expected.Socket || current.SocketInode != expected.SocketInode || current.State != expected.State {
+	if current.Session != expected.Session || current.MasterPID != expected.MasterPID || current.Socket != expected.Socket || current.SocketInode != expected.SocketInode || current.State != expected.State {
 		return nil, fmt.Errorf("connection changed after review; inspect and review close again")
 	}
 	if e := closeOwned(ctx, w, expected); e != nil {
@@ -378,15 +339,12 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	if e != nil {
 		return nil, e
 	}
-	review, preview, e := c.review(ctx, args[0])
-	if e != nil {
-		return nil, e
-	}
 	if !yes {
-		return map[string]string{"review": review, "digest": c.reviewDigest(args[0], preview)}, nil
-	}
-	if c.Review != "" && c.Review != c.reviewDigest(args[0], preview) {
-		return nil, fmt.Errorf("SSH settings changed after review; review again")
+		c, e = c.resolve(ctx)
+		if e != nil {
+			return nil, e
+		}
+		return map[string]string{"review": fmt.Sprintf("%s %s\nEndpoint: %s@%s:%d\nSSH config: %s\nJump: %s\nKey: %s\nAgent: %s\nHost trust is verified. Retain a shell-free master after frontend quit. Repeat with --yes to confirm.", args[0], c.Name, c.User, c.Host, c.Port, c.SSHConfig, displaySetting(c.Jump, "none"), displaySetting(c.Key, "SSH config/default identities"), displaySetting(c.Agent, "none"))}, nil
 	}
 	if c.Prompt && promptSocket == "" {
 		return nil, fmt.Errorf("--prompt requires a private interactive frontend; secrets cannot be supplied as command inputs")
@@ -410,16 +368,36 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	if _, e = os.Lstat(filepath.Dir(path)); !os.IsNotExist(e) {
 		return nil, fmt.Errorf("connection reservation %q exists or cannot be inspected; inspect ownership before manual recovery", filepath.Dir(path))
 	}
-	state, e := connectManaged(ctx, c, preview)
-	if e == nil && ctx.Err() != nil {
-		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
-		defer stop()
-		if e = closeOwned(cleanup, w, state); e != nil {
-			return nil, fmt.Errorf("cancelled; cleanup uncertain: %w", e)
-		}
-		return nil, fmt.Errorf("cancelled; exact attempt closed")
+	if e = launch.RegisterModule(ctx, w, "burrow@0.1.0", Manifest); e != nil {
+		return nil, e
 	}
-	return state, e
+	chain := "ssh-" + rand.Text()[:12]
+	prefix := []string{"--op", "burrow", "--chain", chain, "--"}
+	config, _ := json.Marshal(c)
+	for _, cmd := range [][]string{{"op", "create", "burrow"}, {"chain", "create", chain}, {"chain", "add", "burrow@0.1.0"}, {"target", "add", "ssh://" + c.Host}, {"chain", "config", "set", "workspace", w}, {"chain", "config", "set", "connection", string(config)}} {
+		if _, e = launch.HovelCLI(ctx, w, append(append([]string{}, prefix...), cmd...)...); e != nil {
+			return nil, e
+		}
+	}
+	// --now is Hovel's explicit single-operator confirmation, not an unconfirmed
+	// ExecuteModule RPC; Hovel still checks dangerous allowance and launch policy.
+	data, e := launch.HovelCLI(ctx, w, append(prefix, "throw", "--now", "--allow-dangerous", "--json")...)
+	if e != nil {
+		return nil, e
+	}
+	var result struct {
+		Results []struct {
+			State    string
+			Sessions []hovel.SessionRef
+		}
+	}
+	if e = json.Unmarshal(data, &result); e != nil {
+		return nil, fmt.Errorf("invalid Hovel throw response")
+	}
+	if len(result.Results) != 1 || result.Results[0].State != "succeeded" || len(result.Results[0].Sessions) != 1 {
+		return nil, fmt.Errorf("connection launch failed; inspect Hovel throw history")
+	}
+	return selected(ctx, w, c.Name)
 }
 
 func displaySetting(value, fallback string) string {
@@ -450,7 +428,7 @@ func CommandSuggestions(line string, states []State) []string {
 	}
 	if start == len(line) && len(args) > 1 && strings.HasPrefix(args[len(args)-1], "-") && !strings.Contains(args[len(args)-1], "=") {
 		switch optionName(args[len(args)-1]) {
-		case "key", "agent", "port", "ssh-config", "jump", "host", "name", "user":
+		case "key", "agent", "port", "ssh-config", "jump", "known-hosts", "trust", "host", "name", "user":
 			return nil
 		}
 	}
@@ -469,7 +447,7 @@ func CommandSuggestions(line string, states []State) []string {
 			positionals++
 		}
 	}
-	options := []string{"-ssh-key ", "--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--prompt", "--yes"}
+	options := []string{"-ssh-key ", "--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--known-hosts ", "--trust ", "--prompt", "--yes"}
 	if positionals == 0 {
 		for _, required := range [][2]string{{"host", "-ip "}, {"port", "-port "}, {"user", "-user "}, {"name", "-socket "}} {
 			if !seen[required[0]] {

@@ -15,6 +15,7 @@ import (
 
 type authenticate struct {
 	workspace string
+	noColor   bool
 	args      []string
 	result    any
 }
@@ -50,7 +51,10 @@ func (a *authenticate) Run() error {
 		if err != nil {
 			return err
 		}
-		f := confirmForm("Proceed?", review.(map[string]string)["review"], "Connect", "Cancel")
+		// Keep the complete command/config in terminal scrollback; the single
+		// approval remains visible even on a narrow terminal.
+		fmt.Fprintln(tty, (ui{noColor: a.noColor || os.Getenv("NO_COLOR") != ""}).semanticText(review.(map[string]string)["review"]))
+		f := confirmForm("Proceed?", "Connect using the exact command/config above?", "Connect", "Cancel")
 		if e := run(f); e != nil {
 			return e
 		}
@@ -58,6 +62,7 @@ func (a *authenticate) Run() error {
 			return fmt.Errorf("connection cancelled; no authentication attempted")
 		}
 		args = append(args, "--yes")
+		args = append(args, "--review", review.(map[string]string)["digest"])
 	}
 	a.result, e = connection.ExecutePrompt(ctx, a.workspace, args, func(ctx context.Context, p connection.Prompt) ([]byte, error) { return readPrompt(ctx, tty, p) })
 	if e != nil {
