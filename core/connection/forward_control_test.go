@@ -77,7 +77,7 @@ func TestForwardControlAcknowledgement(t *testing.T) {
 					done <- err
 				}()
 				s := owner{state: State{Socket: path}}
-				err = s.forwardControl(command, Tunnel{Listen: "127.0.0.1:8123", Destination: "localhost:2222"})
+				err = s.forwardControl(command, Tunnel{Direction: "L", Listen: "127.0.0.1:8123", Destination: "localhost:2222"})
 				if (err == nil) != (reply == "ok") {
 					t.Fatalf("%s acknowledgement: %v", reply, err)
 				}

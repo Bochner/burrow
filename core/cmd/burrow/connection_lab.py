@@ -24,13 +24,14 @@ from core.cmd.burrow.authentication_lab import authentication_matrix
 from core.cmd.burrow.manager_lab import manager_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
-from core.cmd.burrow.forward_lab import forward_checks
+from core.cmd.burrow.forward_lab import forward_checks, reverse_checks
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=6, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
 parser.add_argument("--forward-check", action="store_true", help="check real local forwarding only")
+parser.add_argument("--reverse-check", action="store_true", help="check real reverse forwarding only")
 parser.add_argument("--proxy-check", action="store_true", help="check real connection-owned SOCKS traffic and cleanup")
 parser.add_argument("--measure", action="store_true", help="record production phase samples and separate process traces")
 parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
@@ -168,6 +169,11 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if not smoke and not args.proxy_check and not args.shell_check and not args.forward_check:
+            reverse_checks(binary, env, screen_check, burrow, w, first, options, container, command)
+        if args.reverse_check:
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
         if not smoke and not args.proxy_check:
             forward_checks(binary, env, screen_check, burrow, w, first, options, container, command)
         if args.forward_check:

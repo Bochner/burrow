@@ -280,7 +280,7 @@ func (m ui) semanticText(text string) string {
 		if field && !strings.ContainsAny(label, "/@") {
 			style := fieldStyle(strings.ToUpper(label))
 			styled := m.paint(style, value)
-			if label == "Endpoint" || label == "Jump" || label == "Listen" || label == "Destination" {
+			if label == "Endpoint" || label == "Jump" || label == "Listen" || label == "Destination" || label == "Remote listener" || label == "Local destination" || label == "Local listener" || label == "Remote destination" {
 				styled = m.endpoint(value)
 			}
 			if label == "SOCKS proxy" {
@@ -325,6 +325,12 @@ func (m ui) styledOutput() string {
 				_ = json.Unmarshal([]byte(token), &field)
 			} else {
 				switch field {
+				case "listen", "destination", "requestedListen":
+					b.WriteString(m.endpoint(token))
+					end = at[1]
+					continue
+				case "direction":
+					style = keywordStyle
 				case "name", "id", "generation", "creation", "runID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "error":
 					style = fieldStyle(strings.ToUpper(field))
 				case "state", "status":
@@ -424,7 +430,7 @@ func fieldStyle(header string) lipgloss.Style {
 	switch header {
 	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUNID", "SESSION":
 		return accent
-	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "DESTINATION":
+	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION":
 		return hostStyle
 	case "USER", "USERNAME":
 		return successStyle

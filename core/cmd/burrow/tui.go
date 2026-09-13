@@ -460,15 +460,19 @@ func (m ui) localForwards(w int) string {
 		return title + "\n" + m.paint(errorStyle, "UNVERIFIED · connection owner status unavailable")
 	}
 	if len(m.tunnels) == 0 {
-		return title + "\n" + m.paint(secondary, "No local forwards")
+		return title + "\n" + m.paint(secondary, "No forwards")
 	}
 	start := min(m.tunnelOffset, max(0, len(m.tunnels)-m.tunnelRows()))
 	end := min(len(m.tunnels), start+m.tunnelRows())
 	var rows [][]string
 	for _, t := range m.tunnels[start:end] {
-		rows = append(rows, []string{safe(t.ID), safe(t.Connection), "Local", m.endpoint(safe(t.Listen)), m.endpoint(safe(t.Destination)), safe(t.State)})
+		kind, listenSide, destinationSide := "Local", "Local ", "Remote "
+		if t.Direction == "R" {
+			kind, listenSide, destinationSide = "Reverse", "Remote ", "Local "
+		}
+		rows = append(rows, []string{safe(t.ID), safe(t.Connection), kind, m.paint(secondary, listenSide) + m.endpoint(safe(t.Listen)), m.paint(secondary, destinationSide) + m.endpoint(safe(t.Destination)), safe(t.State)})
 	}
-	result := m.dataTable("TUNNELS", []string{"ID", "CONNECTION", "TYPE", "LISTEN", "REMOTE", "STATUS"}, rows, w)
+	result := m.dataTable("TUNNELS", []string{"ID", "CONNECTION", "TYPE", "LISTENER", "DESTINATION", "STATUS"}, rows, w)
 	if end-start < len(m.tunnels) {
 		result += "\n" + m.paint(numberStyle, fmt.Sprintf("%d–%d", start+1, end)) + m.paint(secondary, " of ") + m.paint(numberStyle, fmt.Sprint(len(m.tunnels))) + m.paint(secondary, " · ") + m.paint(keywordStyle, "Alt+Shift+↑↓") + m.paint(secondary, " scroll")
 	}

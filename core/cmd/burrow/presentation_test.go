@@ -384,7 +384,7 @@ func TestSOCKSTables(t *testing.T) {
 	m.width = 160
 	m.tunnelError = ""
 	view := ansi.Strip(m.View().Content)
-	if strings.Contains(view, "SOCKS") || strings.Contains(view, "/socks") || !strings.Contains(view, "No local forwards") {
+	if strings.Contains(view, "SOCKS") || strings.Contains(view, "/socks") || !strings.Contains(view, "No forwards") {
 		t.Fatal("proxy listed under tunnels", view)
 	}
 	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
@@ -421,7 +421,11 @@ func TestLocalForwardPresentation(t *testing.T) {
 			frameEvent(m, tunnelList{})
 			capturePresentation(t, m, fmt.Sprintf("forward-empty-%dx%d-%t", size.X, size.Y, plain))
 			for i := 0; i < 12; i++ {
-				u.tunnels = append(u.tunnels, connection.Tunnel{ID: fmt.Sprintf("gateway/%032x", i+1), Connection: "gateway", Direction: "L", Listen: fmt.Sprintf("127.0.0.1:%d", 8000+i), Destination: "nas.example:80", State: "listening"})
+				direction := "L"
+				if i%2 != 0 {
+					direction = "R"
+				}
+				u.tunnels = append(u.tunnels, connection.Tunnel{ID: fmt.Sprintf("gateway/%032x", i+1), Connection: "gateway", Direction: direction, Listen: fmt.Sprintf("127.0.0.1:%d", 8000+i), Destination: "nas.example:80", State: "listening"})
 			}
 			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
 			screen := capturePresentation(t, m, fmt.Sprintf("forward-populated-%dx%d-%t", size.X, size.Y, plain))
@@ -432,6 +436,9 @@ func TestLocalForwardPresentation(t *testing.T) {
 				t.Fatal("NO_COLOR forwarding leaked ANSI")
 			}
 			if !plain && size.X == 200 {
+				if !strings.Contains(screen.String(), "Reverse") || !strings.Contains(screen.String(), "Remote") || !strings.Contains(screen.String(), "DESTINATION") {
+					t.Fatal("reverse endpoint semantics missing", screen.String())
+				}
 				for _, role := range []struct{ text, color string }{{"gateway", lavenderColor}, {"Local", "#cba6f7"}, {"127.0.0.1", "#f5c2e7"}, {"8000", "#f9e2af"}, {"listening", "#a6e3a1"}, {"1–3", "#fab387"}, {"Alt+Shift+↑↓", "#cba6f7"}} {
 					assertTextRole(t, screen, m.selectionBounds(), role.text, role.color)
 				}
@@ -456,8 +463,8 @@ func TestLocalForwardPresentation(t *testing.T) {
 			if strings.Contains(u.localForwards(160), "\x1b]52;") {
 				t.Fatal("remote control sequence escaped renderer")
 			}
-			m.reviewText = "Create local forward\nConnection: gateway\nListen: 127.0.0.1:8080\nDestination: nas.example:80"
-			m.setForm("review", "Review local forward", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+			m.reviewText = "Create reverse forward\nConnection: gateway\nRemote listener: 127.0.0.1:8080\nLocal destination: nas.example:80"
+			m.setForm("review", "Review reverse forward", confirmForm("Proceed?", "", "Proceed", "Cancel"))
 			capturePresentation(t, m, fmt.Sprintf("forward-review-%dx%d-%t", size.X, size.Y, plain))
 			bounds := m.dialogBounds()
 			m.modalOffset = 100
@@ -478,8 +485,9 @@ func TestTunnelConnectionCompletion(t *testing.T) {
 		{Name: "lost-host", State: "lost", Generation: "g"},
 	}})
 	u := &m.current().management
-	for _, c := range []struct{ prefix, want string }{{"tunnel create ", "tunnel create gateway forward "}, {"tunc ", "tunc gateway l "}} {
+	for _, c := range []struct{ prefix, want string }{{"tunnel create ", "tunnel create gateway forward "}, {"tunc ", "tunc gateway l "}, {"tunnel create gateway r", "tunnel create gateway reverse "}, {"tunc gateway r", "tunc gateway r "}} {
 		u.input.SetValue(c.prefix)
+		u.input.CursorEnd()
 		u.input.SetSuggestions(u.suggestions())
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
 		if u.input.Value() != c.want {

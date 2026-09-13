@@ -25,13 +25,14 @@ def _impl(ctx: TaskContext) -> int:
         "ssh-check": ["test", "//core/cmd/burrow:connection_lab"],
         "shell-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--shell-check"],
         "forward-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--forward-check"],
+        "reverse-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--reverse-check"],
         "ssh-smoke": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--smoke"],
         "ssh-latency": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--measure"],
         "package": ["build", "//core/cmd/burrow:package"],
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected run, check, clean, ssh-check, shell-check, forward-check, ssh-smoke, ssh-latency, package, or format")
+        print("expected run, check, clean, ssh-check, shell-check, forward-check, reverse-check, ssh-smoke, ssh-latency, package, or format")
         return 2
     return ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait().code or 0
 
@@ -40,6 +41,6 @@ burrow = task(
         "mode": args.positional(default = ["check"], minimum = 0, maximum = 1),
         "options": args.trailing_var_args(description = "Burrow options, starting with --workspace PATH."),
     },
-    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, forward-check, ssh-latency, format or package the production Linux frontend.",
+    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, forward-check, reverse-check, ssh-latency, format or package the production Linux frontend.",
     implementation = _impl,
 )

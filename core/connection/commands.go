@@ -36,13 +36,22 @@ revision/collection; repeat --revision HASH --collection PATH --yes to pin revie
 
 connections                         Inspect retained owners
 tunnel create CONNECTION forward LISTEN HOST PORT [--yes] Create local tunnel
+tunnel create CONNECTION reverse LISTEN HOST PORT [--yes] Create reverse tunnel
 tunc CONNECTION l LISTEN HOST PORT [--yes] Alias for tunnel create ... forward
-tunnel list                         List retained local tunnels and exact IDs
-tunnel remove CONNECTION/ID [--yes] Review/remove exactly one local listener
+tunc CONNECTION r LISTEN HOST PORT [--yes] Alias for tunnel create ... reverse
+tunnel list                         List retained tunnels and exact IDs
+tunnel remove CONNECTION/ID [--yes] Review/remove exactly one listener
 tund CONNECTION/ID [--yes]          Alias for tunnel remove
 tunnel check CONNECTION/ID          Passive greeting check; no remote bytes retained
 LISTEN is PORT (127.0.0.1 default) or IP:PORT; broader binds require explicit IP.
-HOST PORT is the destination reached from the SSH server; HOST may be bare IPv6.
+Forward: local listener, remote destination reached from the SSH server.
+Reverse: remote listener, local destination reached from the SSH client.
+HOST may be bare IPv6. Reverse LISTEN 0 requests a random high port (49152–65535);
+up to eight real bind attempts; inventory reports the successfully assigned endpoint.
+Reverse exposure requires Linux /proc/net/tcp tables and remote shell awk/od.
+GatewayPorts overrides are checked after allocation; mismatches are removed.
+The listener may briefly have the server-forced exposure before cleanup.
+Reverse checks originate on the server and require AllowTcpForwarding/PermitOpen.
 Creation uses a confirmed Hovel throw. --review HASH binds --yes to the recap.
 Keep-running quit retains forwards; connection close/loss ends their listeners.
 Removal stops new connections; already accepted streams may finish.
@@ -506,6 +515,7 @@ func Suggestions(states []State) []string {
 		if s.State == "connected" && s.Generation != "" {
 			values = append(values, "shell "+s.Name)
 			values = append(values, "tunnel create "+s.Name+" forward ", "tunc "+s.Name+" l ")
+			values = append(values, "tunnel create "+s.Name+" reverse ", "tunc "+s.Name+" r ")
 		}
 		for _, verb := range []string{"inspect", "close", "reconnect"} {
 			values = append(values, verb+" "+s.Name)

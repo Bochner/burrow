@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         assert result.returncode != 0 and "name must" in result.stderr, result
         assert not workspace.exists()
     for args, message in [
-        (["tunnel", "create", "gateway", "forward", "8080"], "CONNECTION forward LISTEN HOST PORT"),
+        (["tunnel", "create", "gateway", "forward", "8080"], "CONNECTION forward|reverse LISTEN HOST PORT"),
         (["tunnel", "create", "gateway", "forward", "0", "localhost", "80", "--yes"], "port"),
         (["tunc", "gateway", "l", "8080", "localhost", "0"], "port"),
         (["tunc", "gateway", "l", "*:8080", "localhost", "80"], "literal IP"),
@@ -35,8 +35,13 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["tund", "1", "--yes"], "qualified tunnel ID"),
         (["tunnel", "list", "extra"], "takes no arguments"),
         (["tunnel"], "create|list|check|remove"),
-        (["tunnel", "create", "gateway", "reverse", "8080", "localhost", "80"], "not implemented"),
-        (["tunc", "gateway", "r", "8080", "localhost", "80"], "not implemented"),
+        (["tunnel", "create", "gateway", "reverse", "8080"], "explicit local destination"),
+        (["tunc", "gateway", "r", "0", "localhost", "0"], "port"),
+        (["tunc", "gateway", "r", "00", "localhost", "80"], "port"),
+        (["tunc", "gateway", "r", "0", "host\u001b]52;c;bad", "80"], "destination"),
+        (["tunc", "gateway", "r", "*:0", "localhost", "80"], "literal IP"),
+        (["tunc", "gateway", "r", "0", "localhost", "80", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "forward options"),
+        (["tunnel", "create", "gateway", "other", "8080", "localhost", "80"], "direction"),
         (["restart", "--yes"], "restart requires terminal input"),
         (["restart", "--invalid"], "expected restart [--yes]"),
         (["restart"], "restart requires terminal input"),
