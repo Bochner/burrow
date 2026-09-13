@@ -165,6 +165,12 @@ func TestFileTabsAndContextMenus(t *testing.T) {
 			if m.modal != "" {
 				t.Fatal("outside click did not dismiss menu")
 			}
+			m.openResourceMenu("resource:0", image.Pt(size.X-1, size.Y-1))
+			capturePresentation(t, m, fmt.Sprintf("connection-context-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "Enter Shell") {
+				t.Fatal("missing shell action")
+			}
+			m.dismissForm()
 		}
 		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 		// Find the actual row hit target, then take the real right-click route.
@@ -181,6 +187,18 @@ func TestFileTabsAndContextMenus(t *testing.T) {
 		if !found || m.modal != "context" {
 			t.Fatal("right-click menu did not open")
 		}
+		if cmd := m.resourceAction(1); cmd == nil || m.current().tab != "shell" || m.current().shell.connection != a.Name {
+			t.Fatal("shell action did not use selected connection")
+		}
+		m.current().removeShell(m.current().shell)
+		m.activate("burrow")
+		m.openResourceMenu("resource:0", image.Pt(30, 10))
+		m.current().management.connectionError = "unverified"
+		if cmd := m.resourceAction(1); cmd != nil || len(m.current().shells) != 0 {
+			t.Fatal("shell action accepted unverified observation")
+		}
+		m.current().management.connectionError = ""
+		m.openResourceMenu("resource:0", image.Pt(30, 10))
 		m.resourceAction(0)
 		first := m.current().file
 		if first == nil || m.current().tab != "files" {

@@ -85,6 +85,20 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None):
         wait("local.txt")
         os.write(outer, b"back\r")
         wait("SAVED CONNECTIONS")
+        screen = wait((name, "tester", "127.0.0.1"))
+        row = next(i for i, line in enumerate(screen.splitlines()) if all(part in line for part in (name, "tester", "127.0.0.1")))
+        master = cli("inspect", name)["masterPID"]
+        os.write(outer, f"\x1b[<2;32;{row+1}M".encode())
+        wait("Enter Shell")
+        os.write(outer, b"\x1b[B\r")
+        wait("Shell #1")
+        wait("local / not recorded")
+        os.write(outer, b"printf '%s%s\\n' BURROW_ MENU_SHELL\r")
+        wait("BURROW_MENU_SHELL")
+        assert cli("inspect", name)["masterPID"] == master
+        os.write(outer, b"exit\r")
+        wait("SAVED CONNECTIONS")
+        print("PASS right-click active connection opens real same-master shell tab", flush=True)
         screen = wait("edit-fixture")
         row = next(i for i, line in enumerate(screen.splitlines()) if "edit-fixture" in line)
         # SGR right-click the saved row, choose Huh's second action, and edit in

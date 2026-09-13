@@ -64,7 +64,7 @@ func (m *frame) openResourceMenu(hit string, at image.Point) tea.Cmd {
 		if menu.state.State != "connected" || u.connectionError != "" {
 			return nil
 		}
-		menu.labels = []string{"Enter file mode"}
+		menu.labels = []string{"Enter file mode", "Enter Shell"}
 		w.selected, w.focus = menu.state.Name, "resources"
 	} else {
 		return nil
@@ -97,7 +97,10 @@ func (m *frame) resourceAction(i int) tea.Cmd {
 		return m.reviewCommand(menu.profile.Args())
 	}
 	for _, state := range m.current().management.connections {
-		if state.Name == menu.state.Name && state.Creation == menu.state.Creation && state.Generation == menu.state.Generation && state.State == "connected" {
+		if state.Name == menu.state.Name && state.Creation == menu.state.Creation && state.Generation == menu.state.Generation && state.State == "connected" && m.current().management.connectionError == "" {
+			if i == 1 {
+				return m.openShell(state.Name)
+			}
 			return m.openFileTab(state.Name)
 		}
 	}
