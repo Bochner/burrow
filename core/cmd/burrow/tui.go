@@ -492,6 +492,12 @@ func (m ui) dataTable(title string, headers []string, rows [][]string, w int) st
 				style = accent
 			} else if headers[col] == "STATUS" {
 				style = connectionStyle(rows[row][col])
+			} else if headers[col] == "PROXY" {
+				if rows[row][col] == "Unavailable" {
+					style = secondary
+				} else if rows[row][col] == "Unverified" {
+					style = warningStyle
+				}
 			}
 			if row >= 0 && rows[row][col] == "—" {
 				style = secondary

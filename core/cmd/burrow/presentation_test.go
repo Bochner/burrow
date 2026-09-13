@@ -473,7 +473,27 @@ func TestSOCKSTables(t *testing.T) {
 			capturePresentation(t, f, fmt.Sprintf("proxy-empty-%dx%d-%t", size.X, size.Y, plain))
 			f.current().management.connections = m.connections
 			f.current().management.profiles = m.profiles
-			capturePresentation(t, f, fmt.Sprintf("proxy-active-%dx%d-%t", size.X, size.Y, plain))
+			screen := capturePresentation(t, f, fmt.Sprintf("proxy-active-%dx%d-%t", size.X, size.Y, plain))
+			if !plain && size.X >= 160 {
+				assertTextRole(t, screen, f.selectionBounds(), "Yes :1080", "#94e2d5")
+			}
+			for _, state := range []struct{ state, text, color string }{{"lost", "Unavailable", "#a6adc8"}, {"connected", "Unverified", "#f9e2af"}} {
+				row := m.connections[0]
+				row.State, row.Proxy.State = state.state, "unverified"
+				f.current().management.connections = []connection.State{row}
+				screen = capturePresentation(t, f, fmt.Sprintf("proxy-%s-%dx%d-%t", state.text, size.X, size.Y, plain))
+				if !plain && size.X >= 160 {
+					assertTextRole(t, screen, f.selectionBounds(), state.text, state.color)
+				}
+			}
+			for _, verb := range []string{"Create", "Remove"} {
+				f.reviewText = verb + " SOCKS proxy\nConnection: gateway\nListen: 127.0.0.1:1080\nConnection and L/R siblings remain."
+				f.setForm("review", "Review SOCKS proxy", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+				capturePresentation(t, f, fmt.Sprintf("proxy-%s-review-%dx%d-%t", verb, size.X, size.Y, plain))
+				if plain && strings.Contains(f.View().Content, "\x1b") {
+					t.Fatal("proxy review leaked ANSI in NO_COLOR")
+				}
+			}
 		}
 	}
 	m.connections[0].State = "lost"
