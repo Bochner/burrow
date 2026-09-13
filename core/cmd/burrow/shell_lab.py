@@ -132,6 +132,10 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
             assert argv[argv.index(b"-S") + 1] == first["socket"].encode(), argv
             assert b"ControlMaster=no" in argv and b"ProxyCommand=/usr/bin/false" in argv
         command("printf 'SECOND_%s\\n' READY", "SECOND_READY")
+        send(b"\x1b1")
+        wait("REMOTE_SCREEN")
+        send(b"\x1b2")
+        wait("SECOND_READY")
         send(b"\x1d")
         wait("ACTIVE SSH CONNECTIONS")
         command("shells", "gateway #1")
@@ -183,6 +187,11 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         command("resume 1", "BACKGROUND_COMPLETED")
         same_master()
         background()
+        command("shell-close 2", "Local SSH shell closed (gateway #2)")
+        command("shell gateway", "SSH: gateway #2")
+        assert transport() == first_transport, "reopened shell created a new SSH transport"
+        background()
+        command("shells", "Shell gateway #2")
         command("shell-close 2", "Local SSH shell closed (gateway #2)")
         command("shell-close", "Local SSH shell closed (gateway #1)")
         assert not Path(f"/proc/{client}").exists(), "shell client not reaped"

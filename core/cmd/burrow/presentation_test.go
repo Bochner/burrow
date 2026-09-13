@@ -449,8 +449,8 @@ func TestNavigationPresentation(t *testing.T) {
 			t.Fatalf("selected workspace offscreen: %s", want)
 		}
 	}
-	if !strings.Contains(m.View().Content, "1–4/10") {
-		t.Fatal("shell footer clipped", m.View().Content)
+	if strings.Contains(m.View().Content, "/10") || strings.Count(m.View().Content, "ws") < 9 {
+		t.Fatal("workspace tree hid entries behind a summary", m.View().Content)
 	}
 	m.activate("hovel")
 	if !strings.Contains(m.View().Content, "› Hovel") {
@@ -939,7 +939,7 @@ func TestSidebarStatusAndClickAway(t *testing.T) {
 		defer m.terminals.close()
 		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 		w := m.current()
-		w.shell = &cliTab{connection: "gateway"}
+		w.shell = &cliTab{id: "1", connection: "gateway"}
 		w.shells = []*cliTab{w.shell}
 		w.management.connectionObserved = true
 		w.management.profiles.Profiles = []connection.Profile{{Name: "saved", Host: "example.com", User: "alice", Port: 22}}
@@ -948,8 +948,7 @@ func TestSidebarStatusAndClickAway(t *testing.T) {
 			screen := capturePresentation(t, m, fmt.Sprintf("sidebar-%s-%t", test.state, plain))
 			if !plain {
 				assertTextRole(t, screen, image.Rect(0, 3, 26, 4), test.dot, test.color)
-				assertTextRole(t, screen, image.Rect(0, 25, 26, 26), test.dot, test.color)
-				assertTextRole(t, screen, image.Rect(0, 26, 26, 27), test.dot, test.color)
+				assertTextRole(t, screen, image.Rect(0, 4, 26, 5), test.dot, test.color)
 			}
 			if w.connectionState("") != test.state || w.connectionState("gateway") != test.state {
 				t.Fatal("incorrect observed status", test.state)
@@ -975,13 +974,13 @@ func TestSidebarStatusAndClickAway(t *testing.T) {
 				t.Fatal("escape left row selected")
 			}
 		}
-		m.activate("shell:0")
+		m.activate("shell:1")
 		selectedTab := capturePresentation(t, m, fmt.Sprintf("ssh-tab-%t", plain))
 		left, _ := m.columns()
-		if !plain && !colorMatches(selectedTab.CellAt(left+28, 1).Style.Bg, lipgloss.Color(rowSelectionColor)) {
+		if !plain && !colorMatches(selectedTab.CellAt(left+21, 1).Style.Bg, lipgloss.Color(rowSelectionColor)) {
 			t.Fatal("SSH tab has no selected background")
 		}
-		if w.tab != "shell" || !strings.Contains(ansi.Strip(m.View().Content), "› SSH · gateway") || strings.Contains(ansi.Strip(m.View().Content), "› Burrow") {
+		if w.tab != "shell" || !strings.Contains(ansi.Strip(m.View().Content), "› Shell #1") || strings.Contains(ansi.Strip(m.View().Content), "› Burrow") {
 			t.Fatal("SSH tab not exclusively selected")
 		}
 		w.focus = "tabs"
@@ -993,7 +992,7 @@ func TestSidebarStatusAndClickAway(t *testing.T) {
 		m.paths = append(m.paths, other)
 		m.workspaces[other] = &workspaceView{management: newUI(launch.Info{Workspace: other}, plain), shell: &cliTab{connection: "other"}}
 		m.workspaces[other].shells = []*cliTab{m.workspaces[other].shell}
-		w.focus, w.shellOffset = "shells", 1
+		w.focus, m.navIndex = "workspaces", 3
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		if m.active != other || m.current().tab != "shell" {
 			t.Fatal("shell navigation opened wrong workspace")

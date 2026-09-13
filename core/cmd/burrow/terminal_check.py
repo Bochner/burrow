@@ -136,7 +136,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         assert json.loads(cli(a, "throw", "list", "--json")) is None
         command("throw --allow-dangerous", "yes", False)
         # Leave A's actual confirmation pending while operating B's independent CLI.
-        click(2, 20)
+        click(2, 37)
         wait("Exact destination")
         send(str(b) + "\r")
         wait(str(b))  # active workspace metadata; its SSH status is disconnected

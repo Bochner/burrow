@@ -25,6 +25,9 @@ const invalidTerminalGeometry = "REFUSED: terminal geometry outside 1..1000 cell
 var toggleMouse = key.NewBinding(key.WithKeys("alt+s"))
 var showBurrow = key.NewBinding(key.WithKeys("alt+b"), key.WithHelp("Alt+B", "Burrow"))
 var showHovel = key.NewBinding(key.WithKeys("alt+h"), key.WithHelp("Alt+H", "Hovel"))
+var previousShell = key.NewBinding(key.WithKeys("alt+left"), key.WithHelp("Alt+←/→", "shells"))
+var nextShell = key.NewBinding(key.WithKeys("alt+right"))
+var numberedShell = key.NewBinding(key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9"), key.WithHelp("Alt+1–9", "shell"))
 var restartTerminal = key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+R", "restart CLI"))
 
 // Serializes launch registration against shutdown, including commands Bubble
@@ -82,8 +85,8 @@ func (m *frame) shellEntries() []shellEntry {
 	var entries []shellEntry
 	for i, path := range m.paths {
 		w := m.workspaces[path]
-		if w == nil || len(w.shells) == 0 {
-			entries = append(entries, shellEntry{workspace: i})
+		entries = append(entries, shellEntry{workspace: i})
+		if w == nil {
 			continue
 		}
 		for _, tab := range w.shells {
@@ -99,6 +102,11 @@ func (w *workspaceView) ownsTerminal(tab *cliTab) bool {
 }
 func (w *workspaceView) removeShell(tab *cliTab) {
 	w.shells = slices.DeleteFunc(w.shells, func(s *cliTab) bool { return s == tab })
+	// Numbers are workspace-local positions; asynchronous results use pointers,
+	// never these reusable labels, to identify their terminal.
+	for i, shell := range w.shells {
+		shell.id = strconv.Itoa(i + 1)
+	}
 	if w.shell == tab {
 		w.shell = nil
 		if w.tab == "shell" {
@@ -132,6 +140,12 @@ func (m *frame) resumeShell(tab *cliTab) {
 	w := m.current()
 	m.selection = nil
 	w.shell, w.tab, w.focus = tab, "shell", "terminal"
+	for i, entry := range m.shellEntries() {
+		if entry.tab == tab {
+			m.revealSidebar(i)
+			break
+		}
+	}
 	if tab.host != nil && !tab.pending && !m.invalidGeometry {
 		r := m.terminalBounds()
 		if err := tab.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil {
@@ -197,11 +211,9 @@ func (m *frame) openShell(name string) tea.Cmd {
 		w.management.output = invalidTerminalGeometry
 		return nil
 	}
-	m.nextShellID++
-	tab := &cliTab{id: strconv.FormatUint(m.nextShellID, 10), pending: true, connection: name}
+	tab := &cliTab{id: strconv.Itoa(len(w.shells) + 1), pending: true, connection: name}
 	w.shells = append(w.shells, tab)
-	w.shell = tab
-	w.tab, w.focus = "shell", "terminal"
+	m.resumeShell(tab)
 	path, bounds, lifetime := m.active, m.terminalBounds(), m.terminals
 	return m.dispatch(path, func() tea.Msg {
 		if !lifetime.begin() {
@@ -221,6 +233,39 @@ func (m *frame) openShell(name string) tea.Cmd {
 		}
 		return cliOpened{tab, host, err}
 	})
+}
+
+func (m *frame) cycleShell(delta int) {
+	w := m.current()
+	if len(w.shells) == 0 {
+		return
+	}
+	i := slices.Index(w.shells, w.shell)
+	if w.tab != "shell" {
+		i = -1
+		if delta < 0 {
+			i = 0
+		}
+	}
+	m.resumeShell(w.shells[(i+delta+len(w.shells))%len(w.shells)])
+}
+
+func (m *frame) cycleTab(delta int) {
+	w := m.current()
+	i := 0
+	if w.tab == "hovel" {
+		i = 1
+	} else if w.tab == "shell" {
+		i = slices.Index(w.shells, w.shell) + 2
+	}
+	i = (i + delta + len(w.shells) + 2) % (len(w.shells) + 2)
+	w.tab = ""
+	if i == 1 {
+		w.tab = "hovel"
+	} else if i >= 2 {
+		m.resumeShell(w.shells[i-2])
+	}
+	w.focus = "tabs"
 }
 
 func (m *frame) closeShellTab(tab *cliTab) tea.Cmd {

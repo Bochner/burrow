@@ -23,7 +23,7 @@ func TestWorkspaceFrame(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{Offline: true})
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 	view := m.View().Content
-	for _, label := range []string{"WORKSPACES", "New", "Menu", "Hovel", "SAVED CONNECTION", "No shells"} {
+	for _, label := range []string{"WORKSPACES", "New", "Menu", "Hovel", "SAVED CONNECTION"} {
 		if !strings.Contains(view, label) {
 			t.Fatalf("missing %s: %s", label, view)
 		}
@@ -90,7 +90,7 @@ func TestLocalShellPresentation(t *testing.T) {
 				bounds := image.Rect(0, 0, 26, m.height)
 				assertTextRole(t, screen, bounds, "gateway", subtextColor)
 				assertTextRole(t, screen, bounds, "●", "#a6e3a1")
-				assertTextRole(t, screen, image.Rect(26, 0, 128, 3), "gateway", lavenderColor)
+				assertTextRole(t, screen, image.Rect(26, 0, 128, 3), "Shell #1", lavenderColor)
 				assertTextRole(t, screen, image.Rect(26, m.height-2, 128, m.height), "gateway", lavenderColor)
 				tab.pending = true
 				closing := capturePresentation(t, m, "shell-closing")
@@ -180,7 +180,7 @@ func TestEmbeddedTerminalKeepsFrameAndBackgroundOutput(t *testing.T) {
 		if view.Cursor == nil || !image.Pt(view.Cursor.Position.X, view.Cursor.Position.Y).In(r) {
 			t.Fatalf("cursor must stay in pane: %+v %+v", view.Cursor, r)
 		}
-		frameEvent(m, tea.MouseClickMsg{X: 2, Y: size.Y / 2, Button: tea.MouseLeft})
+		frameEvent(m, tea.MouseClickMsg{X: 2, Y: size.Y - 3, Button: tea.MouseLeft})
 		if m.modal != "new" {
 			t.Fatal("terminal intercepted New")
 		}
@@ -258,28 +258,139 @@ func TestIndependentShellViews(t *testing.T) {
 		m.activate("burrow")
 		frameEvent(m, tea.PasteMsg{Content: "resume "})
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
-		if w.management.input.Value() != "resume 2" {
+		if w.management.input.Value() != "resume 1" {
 			t.Fatal("shell ID completion missing", w.management.input.Value())
 		}
-		m.shellControl([]string{"resume", "1"})
+		m.shellControl([]string{"resume", "2"})
 		if w.tab != "" || !strings.Contains(w.management.output, "REFUSED") {
 			t.Fatal("unknown ID changed view")
 		}
 		// Synthetic inventory is explicitly for overflow, not SSH success evidence.
-		for i := 3; i <= 15; i++ {
+		for i := 2; i <= 25; i++ {
 			w.shells = append(w.shells, &cliTab{id: fmt.Sprint(i), connection: "gateway"})
 		}
-		w.focus = "shells"
-		for i := 0; i < 20; i++ {
+		w.focus = "workspaces"
+		for i := 0; i < 30; i++ {
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
 		}
 		screen := capturePresentation(t, m, fmt.Sprintf("shell-overflow-%t", plain))
-		if !strings.Contains(screen.String(), "#15") || !strings.Contains(screen.String(), "14–14/14") {
+		if !strings.Contains(screen.String(), "#25") || strings.Contains(screen.String(), "/25") {
 			t.Fatal("last shell hidden", screen.String())
 		}
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-		if w.shell.id != "15" {
+		if w.shell.id != "25" {
 			t.Fatal("overflow selection opened wrong shell")
+		}
+	}
+}
+
+func TestShellTreeTabsAndNumbering(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/tree"}, plain, launch.Options{})
+		defer m.terminals.close()
+		w := m.current()
+		w.management.connections = []connection.State{{Name: "gateway", State: "connected"}}
+		w.shells = []*cliTab{{id: "1", connection: "gateway"}, {id: "2", connection: "gateway"}}
+		first, second := w.shells[0], w.shells[1]
+		click := func(id string) {
+			t.Helper()
+			compositor := m.compositor()
+			for y := 0; y < m.height; y++ {
+				for x := 0; x < m.width; x++ {
+					if compositor.Hit(x, y).ID() == id {
+						frameEvent(m, tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+						return
+					}
+				}
+			}
+			t.Fatal("missing clickable control", id)
+		}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			for _, tab := range []*cliTab{first, second} {
+				click("shell:" + tab.id)
+				if w.shell != tab || !m.terminalFocused() {
+					t.Fatal("tree did not focus exact shell")
+				}
+			}
+			click("shell-tab:0")
+			if w.shell != first {
+				t.Fatal("first tab selected wrong shell")
+			}
+			click("shell-tab:1")
+			if w.shell != second {
+				t.Fatal("second tab selected wrong shell")
+			}
+			screen := capturePresentation(t, m, fmt.Sprintf("shell-tree-tabs-%dx%d-%t", size.X, size.Y, plain))
+			left, _ := m.columns()
+			for row, text := range []string{"tree", "#1", "#2"} {
+				line := ansi.Strip(ansi.Cut(strings.Split(screen.String(), "\n")[row+3], 0, left))
+				if !strings.Contains(line, text) {
+					t.Fatal("tree hierarchy missing", line, text)
+				}
+			}
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, 4, left, 6), "#1", lavenderColor)
+				if size.X >= 120 {
+					assertTextRole(t, screen, image.Rect(0, 4, left, 6), "gateway", subtextColor)
+				}
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: '1', Mod: tea.ModAlt})
+			if w.shell != first {
+				t.Fatal("Alt+1 did not select first shell")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModAlt})
+			if w.shell != second {
+				t.Fatal("Alt+Right did not select second shell")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModAlt})
+			if w.shell != first {
+				t.Fatal("Alt+Left did not select first shell")
+			}
+			w.focus = "tabs"
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyRight})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			if w.shell != second || !m.terminalFocused() {
+				t.Fatal("tab keyboard navigation skipped sibling")
+			}
+		}
+		m.modal = "navigation"
+		frameEvent(m, tea.KeyPressMsg{Code: '1', Mod: tea.ModAlt})
+		if w.shell != second || m.modal != "navigation" {
+			t.Fatal("shell shortcut escaped modal")
+		}
+		m.modal = ""
+		// Close #2, open #2 again, and deliver the old terminal's late events.
+		m.terminalResult(m.active, cliClosed{second})
+		m.openShell("gateway") // Leave launch queued; no external SSH fixture needed here.
+		replacement := w.shell
+		if replacement.id != "2" || len(w.shells) != 2 {
+			t.Fatal("closed number not reused")
+		}
+		m.terminalResult(m.active, cliClosed{second})
+		m.terminalResult(m.active, cliScreen{tab: second, screen: ptyhost.Snapshot{Exited: true}})
+		if w.shell != replacement || len(w.shells) != 2 {
+			t.Fatal("stale event removed replacement")
+		}
+		m.terminalResult(m.active, cliClosed{first})
+		if replacement.id != "1" || w.shell != replacement {
+			t.Fatal("number gap or changed terminal identity")
+		}
+		m.openShell("gateway")
+		if w.shell.id != "2" {
+			t.Fatal("number did not reflect current shell count")
+		}
+		for i := 3; i <= 20; i++ {
+			w.shells = append(w.shells, &cliTab{id: fmt.Sprint(i), connection: "gateway"})
+		}
+		m.resumeShell(w.shells[19])
+		click("shell-tab:19")
+		if w.shell.id != "20" {
+			t.Fatal("last overflowing tab unreachable")
+		}
+		click("next-shell")
+		if w.shell.id != "1" {
+			t.Fatal("tab overflow control failed to wrap")
 		}
 	}
 }
@@ -496,8 +607,8 @@ func TestResizeClickAndModalCapture(t *testing.T) {
 		if size[0] < minimumWidth {
 			continue
 		}
-		// Independent expected midpoint coordinates, followed by real native hit routing.
-		click(2, size[1]/2)
+		// Anchored bottom controls, followed by real native hit routing.
+		click(2, size[1]-3)
 		if !strings.Contains(m.View().Content, "Exact destination") {
 			t.Fatal(m.View().Content)
 		}
@@ -506,7 +617,7 @@ func TestResizeClickAndModalCapture(t *testing.T) {
 			t.Fatal("modal click-through")
 		}
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
-		click(22, size[1]/2)
+		click(22, size[1]-3)
 		if m.modal != "menu" {
 			t.Fatal("menu target moved after resize")
 		}
@@ -541,7 +652,7 @@ func TestResizeClickAndModalCapture(t *testing.T) {
 func TestOverflowAndResourceSelection(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{})
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 40; i++ {
 		path := fmt.Sprintf("/tmp/workspace-%02d", i)
 		frameEvent(m, m.dispatch(m.active, func() tea.Msg { return workspaceOpened{info: launch.Info{Workspace: path}} })())
 	}
@@ -550,7 +661,7 @@ func TestOverflowAndResourceSelection(t *testing.T) {
 	if m.navOffset != 1 || !strings.Contains(m.View().Content, "workspace-00") || strings.Contains(m.View().Content, "● one") {
 		t.Fatal(m.View().Content)
 	}
-	frameEvent(m, tea.MouseClickMsg{X: 2, Y: 20, Button: tea.MouseLeft})
+	frameEvent(m, tea.MouseClickMsg{X: 2, Y: m.height - 3, Button: tea.MouseLeft})
 	if m.modal != "new" {
 		t.Fatal("New scrolled away")
 	}

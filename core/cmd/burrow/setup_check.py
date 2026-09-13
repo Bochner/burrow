@@ -316,8 +316,8 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[A\r")
             read_until(str(w).encode())
-            # Mouse opens midpoint New at the 160x40 geometry.
-            os.write(master, b"\x1b[<0;3;21M\x1b[<0;3;21m")
+            # Mouse opens bottom-anchored New at the 160x40 geometry.
+            os.write(master, b"\x1b[<0;3;38M\x1b[<0;3;38m")
             read_until(b"Exact destination")
             os.write(master, b"\x1b")
             time.sleep(.2)

@@ -32,7 +32,6 @@ type workspaceView struct {
 	cli                   *cliTab
 	management            ui
 	focus, tab, selected  string
-	shellOffset           int
 	checking, showCheck   bool
 	lastSuccess, observed time.Time
 	duration              time.Duration
@@ -43,7 +42,6 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
-	nextShellID         uint64
 	invalidGeometry     bool
 	initialShell        string
 	terminals           *terminalLifetime
@@ -164,6 +162,7 @@ func (w *workspaceView) health(now time.Time) (string, lipgloss.Style) {
 	return "connected", successStyle
 }
 func (m *frame) resize() {
+	m.revealSidebar(m.navIndex)
 	m.selection = nil
 	left, right := m.columns()
 	for _, w := range m.workspaces {
@@ -192,9 +191,24 @@ func (m *frame) selectWorkspace(i int) tea.Cmd {
 		return nil
 	}
 	m.active = m.paths[i]
-	m.navIndex = i
+	for row, entry := range m.shellEntries() {
+		if entry.workspace == i && entry.tab == nil {
+			m.revealSidebar(row)
+			break
+		}
+	}
 	m.modal = ""
 	return m.check(m.active)
+}
+
+func (m *frame) sidebarRows() int { return max(1, m.height-7) }
+
+func (m *frame) revealSidebar(i int) {
+	m.navIndex = max(0, min(len(m.shellEntries())-1, i))
+	m.navOffset = max(0, min(m.navOffset, m.navIndex))
+	if m.navIndex >= m.navOffset+m.sidebarRows() {
+		m.navOffset = m.navIndex - m.sidebarRows() + 1
+	}
 }
 func (m *frame) openNew() tea.Cmd {
 	m.modal = "new"
@@ -505,11 +519,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			if strings.HasPrefix(hit.ID(), "workspace:") || hit.ID() == "workspaces" {
-				m.navOffset = max(0, min(len(m.paths)-1, m.navOffset+delta))
-			}
-			if hit.ID() == "shells" || strings.HasPrefix(hit.ID(), "shell:") {
-				m.current().shellOffset = max(0, min(len(m.shellEntries())-1, m.current().shellOffset+delta))
+			if strings.HasPrefix(hit.ID(), "workspace:") || hit.ID() == "workspaces" || strings.HasPrefix(hit.ID(), "shell:") {
+				m.navOffset = max(0, min(max(0, len(m.shellEntries())-m.sidebarRows()), m.navOffset+delta))
 			}
 			if strings.HasPrefix(hit.ID(), "profile:") || hit.ID() == "saved" {
 				u := &m.current().management
@@ -600,6 +611,21 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.Matches(v, showHovel) {
 			return m, m.activate("hovel")
 		}
+		if key.Matches(v, numberedShell) {
+			i := int(v.Code - '1')
+			if i >= 0 && i < len(m.current().shells) {
+				m.resumeShell(m.current().shells[i])
+			}
+			return m, nil
+		}
+		if key.Matches(v, previousShell, nextShell) {
+			delta := 1
+			if key.Matches(v, previousShell) {
+				delta = -1
+			}
+			m.cycleShell(delta)
+			return m, nil
+		}
 		if m.terminalFocused() {
 			if m.current().tab == "shell" && key.Matches(v, terminalEscape) {
 				m.current().tab, m.current().focus = "", "prompt"
@@ -623,7 +649,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modal = "navigation"
 			return m, nil
 		case key.Matches(v, focusNext):
-			names := []string{"prompt", "workspaces", "new", "menu", "shells", "tabs", "resources", "saved"}
+			names := []string{"prompt", "workspaces", "new", "menu", "tabs", "resources", "saved"}
 			for i, name := range names {
 				if name == m.current().focus {
 					delta := 1
@@ -649,18 +675,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			switch w.focus {
 			case "workspaces":
-				m.navIndex = max(0, min(len(m.paths)-1, m.navIndex+delta))
-				m.navOffset = max(0, min(m.navOffset, m.navIndex))
-				if m.navIndex >= m.navOffset+max(1, m.height/2-5) {
-					m.navOffset = m.navIndex - max(1, m.height/2-5) + 1
-				}
+				m.revealSidebar(m.navIndex + delta)
 				if key.Matches(v, enter) {
-					return m, m.selectWorkspace(m.navIndex)
-				}
-			case "shells":
-				w.shellOffset = max(0, min(len(m.shellEntries())-1, w.shellOffset+delta))
-				if key.Matches(v, enter) {
-					return m, m.activate(fmt.Sprintf("shell:%d", w.shellOffset))
+					return m, m.activate(fmt.Sprintf("shell:%d", m.navIndex))
 				}
 			case "tabs":
 				if key.Matches(v, enter) && w.tab == "hovel" {
@@ -670,19 +687,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.activate("shells")
 				}
 				if key.Matches(v, choose, previous, next) {
-					tabs := []string{"", "hovel"}
-					if w.shell != nil {
-						tabs = append(tabs, "shell")
-					}
 					if delta == 0 {
 						delta = 1
 					}
-					for i, tab := range tabs {
-						if tab == w.tab {
-							w.tab = tabs[(i+delta+len(tabs))%len(tabs)]
-							break
-						}
-					}
+					m.cycleTab(delta)
 				}
 			case "saved":
 				rows := w.management.profiles.Profiles
@@ -737,7 +745,7 @@ func (m *frame) clearRows() {
 	for _, w := range m.workspaces {
 		w.selected, w.management.selectedProfile = "", ""
 		switch w.focus {
-		case "saved", "resources", "workspaces", "shells":
+		case "saved", "resources", "workspaces":
 			w.focus = "prompt"
 		}
 	}
@@ -822,17 +830,26 @@ func (m *frame) activate(id string) tea.Cmd {
 		if err == nil && i >= 0 && i < len(entries) {
 			entry := entries[i]
 			cmd := m.selectWorkspace(entry.workspace)
-			m.current().shellOffset = i
+			m.revealSidebar(i)
 			if entry.tab != nil {
 				m.resumeShell(entry.tab)
-			} else {
-				m.current().focus = "shells"
 			}
 			return cmd
 		}
 		return nil
 	}
+	if strings.HasPrefix(id, "shell-tab:") {
+		i, err := strconv.Atoi(strings.TrimPrefix(id, "shell-tab:"))
+		if err == nil && i >= 0 && i < len(m.current().shells) {
+			m.resumeShell(m.current().shells[i])
+		}
+		return nil
+	}
 	switch id {
+	case "previous-shell":
+		m.cycleShell(-1)
+	case "next-shell":
+		m.cycleShell(1)
 	case "saved":
 		return m.profileMenu()
 	case "new":
@@ -854,7 +871,7 @@ func (m *frame) activate(id string) tea.Cmd {
 	case "center":
 		m.current().focus = "prompt"
 	case "shells":
-		m.current().focus = "shells"
+		m.current().focus = "workspaces"
 		if m.current().shell != nil {
 			m.resumeShell(m.current().shell)
 		}
@@ -935,14 +952,13 @@ func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
 			return m.openPalette()
 		}
 		if key.Matches(v, previous) {
-			m.navIndex = max(0, m.navIndex-1)
+			m.revealSidebar(m.navIndex - 1)
 		}
 		if key.Matches(v, next) {
-			m.navIndex = min(len(m.paths)-1, m.navIndex+1)
+			m.revealSidebar(m.navIndex + 1)
 		}
-		m.navOffset = m.navIndex
 		if key.Matches(v, enter) {
-			return m.selectWorkspace(m.navIndex)
+			return m.activate(fmt.Sprintf("shell:%d", m.navIndex))
 		}
 	default:
 		if key.Matches(v, previous, pageUp) {
@@ -1123,21 +1139,47 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	}
 	add("brand", current.management.paint(accent, brand), w-right+2, 1, right-4, brandHeight, 2)
 	add("daemon", status, w-right+2, brandHeight+2, max(1, min(26, right-2)), 1, 2)
-	tabStyle, hovelStyle, shellStyle := secondary, secondary, secondary
-	tabLabel, hovelLabel, shellLabel := "  Burrow", "  Hovel", "  SSH · "
+	tabStyle, hovelStyle := secondary, secondary
+	tabLabel, hovelLabel := "  Burrow", "  Hovel"
 	if current.tab == "" {
 		tabStyle, tabLabel = activeStyle, "› Burrow"
 	}
 	if current.tab == "hovel" {
 		hovelStyle, hovelLabel = activeStyle, "› Hovel"
 	}
-	if current.tab == "shell" {
-		shellStyle, shellLabel = activeStyle, "› SSH · "
-	}
-	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, 10, 1, 1)
-	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(16, w-cx-10), 1, 1)
-	if current.shell != nil {
-		add("shells", current.management.paint(shellStyle, shellLabel+safe(current.shell.label())), cx+26, 1, max(0, cw-26), 1, 2)
+	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, min(10, cw), 1, 1)
+	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(9, cw-10), 1, 1)
+	if len(current.shells) > 0 && cw > 19 {
+		available := cw - 19
+		tabWidth := max(5, min(12, available/len(current.shells)))
+		count := max(1, available/tabWidth)
+		x := cx + 19
+		if count < len(current.shells) && available >= 9 {
+			add("previous-shell", current.management.paint(accent, "‹"), x, 1, 2, 1, 2)
+			add("next-shell", current.management.paint(accent, "›"), cx+cw-2, 1, 2, 1, 2)
+			x += 2
+			available -= 4
+			count = max(1, available/tabWidth)
+		}
+		selected := 0
+		for i, tab := range current.shells {
+			if tab == current.shell {
+				selected = i
+			}
+		}
+		start := min((selected/count)*count, max(0, len(current.shells)-count))
+		for i := start; i < min(len(current.shells), start+count); i++ {
+			tab := current.shells[i]
+			text := "#" + tab.id
+			if tabWidth >= 11 {
+				text = "Shell " + text
+			}
+			style, marker := secondary, "  "
+			if current.tab == "shell" && current.shell == tab {
+				style, marker = activeStyle, "› "
+			}
+			add(fmt.Sprintf("shell-tab:%d", i), current.management.paint(style, marker+text), x+(i-start)*tabWidth, 1, min(tabWidth, available), 1, 2)
+		}
 	}
 	management := current.management
 	management.help = false
@@ -1246,38 +1288,18 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		add("workspaces", "", 0, 0, width, h, z-1)
 		add("separator", current.management.paint(separatorStyle, strings.Repeat("│\n", h)), width-1, 0, 1, h, z+1)
 		width -= 3
-		midpoint := max(4, h/2)
-		add("workspaces", current.management.paint(heading, label("workspaces", "WORKSPACES")), 1, 1, width, max(1, midpoint-1), z)
-		rows := max(1, midpoint-5)
-		start := min(m.navOffset, max(0, len(m.paths)-1))
-		end := min(len(m.paths), start+rows)
-		for i := start; i < end; i++ {
-			workspace := m.workspaces[m.paths[i]]
-			line := " " + current.statusDot(workspace.connectionState("")) + " " + current.management.paint(accent, safe(filepath.Base(m.paths[i])))
-			line = ansi.Truncate(line, width, "…")
-			if current.focus == "workspaces" && i == m.navIndex {
-				line = selectedRow(line, width, m.noColor)
-			}
-			add(fmt.Sprintf("workspace:%d", i), line, 1, 3+i-start, width, 1, z+1)
-		}
-
-		add("new", current.management.paint(heading, label("new", "[New]")), 1, midpoint, width/2, 1, z+1)
-		add("menu", lipgloss.PlaceHorizontal(width-width/2, lipgloss.Right, current.management.paint(heading, label("menu", "[Menu]"))), 1+width/2, midpoint, width-width/2, 1, z+1)
-		rows = max(1, (h-midpoint-6)/3)
+		add("workspaces", current.management.paint(heading, label("workspaces", "WORKSPACES")), 1, 1, width, max(1, h-5), z)
 		entries := m.shellEntries()
-		start = min(current.shellOffset, max(0, len(entries)-1))
-		end = min(len(entries), start+rows)
-		text := current.management.paint(heading, label("shells", "SHELLS")) + "\n" + current.management.paint(secondary, "Frontend-local")
-		add("shells", text, 1, midpoint+2, width, max(1, h-midpoint-3), z)
+		start := min(m.navOffset, max(0, len(entries)-m.sidebarRows()))
+		end := min(len(entries), start+m.sidebarRows())
 		for i := start; i < end; i++ {
 			entry := entries[i]
 			path := m.paths[entry.workspace]
 			workspace := m.workspaces[path]
-			y := midpoint + 5 + (i-start)*3
 			line := " " + current.statusDot(workspace.connectionState("")) + " " + current.management.paint(accent, safe(filepath.Base(path)))
-			add(fmt.Sprintf("shell:%d", i), ansi.Truncate(line, width, "…"), 1, y, width, 1, z+1)
-			line = "   " + current.management.paint(secondary, "No shells")
+			id := fmt.Sprintf("workspace:%d", entry.workspace)
 			if tab := entry.tab; tab != nil {
+				id = fmt.Sprintf("shell:%d", i)
 				state := tab.state()
 				if state == "running" {
 					state = workspace.connectionState(tab.connection)
@@ -1285,14 +1307,13 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				line = "   " + workspace.statusDot(state) + " " + current.management.paint(accent, "#"+tab.id) + " " + current.management.paint(secondary, safe(tab.connection))
 			}
 			line = ansi.Truncate(line, width, "…")
-			if current.focus == "shells" && i == current.shellOffset {
+			if (current.focus == "workspaces" && i == m.navIndex) || (entry.tab != nil && m.active == path && current.tab == "shell" && current.shell == entry.tab) {
 				line = selectedRow(line, width, m.noColor)
 			}
-			add(fmt.Sprintf("shell:%d", i), line, 1, y+1, width, 1, z+1)
+			add(id, line, 1, 3+i-start, width, 1, z+1)
 		}
-		if end-start < len(entries) {
-			add("shells", fmt.Sprintf("%d–%d/%d", start+1, end, len(entries)), 1, midpoint+4+(end-start)*3, width, 1, z+1)
-		}
+		add("new", current.management.paint(heading, label("new", "[New]")), 1, h-3, width/2, 1, z+1)
+		add("menu", lipgloss.PlaceHorizontal(width-width/2, lipgloss.Right, current.management.paint(heading, label("menu", "[Menu]"))), 1+width/2, h-3, width-width/2, 1, z+1)
 	}
 	if left > 0 {
 		sidebar(left, 2)
