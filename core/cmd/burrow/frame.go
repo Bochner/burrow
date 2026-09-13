@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/timer"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
@@ -28,6 +29,7 @@ var openNavigation = key.NewBinding(key.WithKeys("alt+w"))
 const freshFor = 8 * time.Second
 
 type workspaceView struct {
+	downloadTimer         timer.Model
 	fileViews             []*ui
 	file                  *ui
 	shells                []*cliTab
@@ -45,6 +47,8 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
+	downloadPlan                     *connection.DownloadPlan
+	downloadMode                     *fileMode
 	contextMenu                      *resourceMenu
 	invalidGeometry                  bool
 	initialShell                     string
@@ -130,7 +134,7 @@ func (m *frame) Init() tea.Cmd {
 	if m.demo {
 		return nil
 	}
-	return tea.Batch(m.dispatch(m.active, m.current().activeUI().Init()), m.check(m.active), m.tick())
+	return tea.Batch(m.dispatch(m.active, m.current().activeUI().Init()), m.dispatch(m.active, refreshDownloads(m.active)), m.check(m.active), m.tick())
 }
 func (m *frame) tick() tea.Cmd {
 	return m.dispatch(m.active, tea.Tick(time.Second, func(t time.Time) tea.Msg { return frameTick(t) }))
@@ -278,6 +282,33 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	switch v := msg.(type) {
 	case tea.KeyPressMsg:
 		u = w.activeUI()
+		if u.files != nil && key.Matches(v, enter) && !u.busy {
+			args, err := connection.Split(u.input.Value())
+			if err == nil && len(args) > 0 {
+				if args[0] == "get" || args[0] == "mget" {
+					return m.reviewDownload(u, args)
+				}
+				if args[0] == "downloads" && len(args) == 1 {
+					u.files.downloadView = true
+					u.files.historyView = false
+					u.input.Reset()
+					u.output = ""
+					u.outputOffset = 0
+					return m.dispatch(path, refreshDownloads(path))
+				}
+				if args[0] == "download-cancel" && len(args) == 2 {
+					mode := u.files
+					u.output = "Cancellation requested; waiting for cleanup acknowledgement"
+					u.input.Reset()
+					return m.dispatch(path, func() tea.Msg {
+						ctx, stop := context.WithTimeout(context.Background(), 30*time.Second)
+						defer stop()
+						d, err := connection.Execute(ctx, path, args)
+						return downloadStarted{mode, d, err}
+					})
+				}
+			}
+		}
 		if u.files == nil && key.Matches(v, enter) && !u.busy {
 			args, err := connection.Split(u.input.Value())
 			if err == nil && len(args) == 2 && args[0] == "scp" {
@@ -444,6 +475,28 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 		switch result := v.message.(type) {
+		case downloadReviewReady:
+			return m, m.acceptDownloadReview(path, result)
+		case downloadsReady:
+			return m, m.acceptDownloads(path, result)
+		case timer.TickMsg:
+			w := m.workspaces[path]
+			var cmd tea.Cmd
+			w.downloadTimer, cmd = w.downloadTimer.Update(result)
+			return m, m.dispatch(path, cmd)
+		case timer.TimeoutMsg:
+			if result.ID != m.workspaces[path].downloadTimer.ID() {
+				return m, nil
+			}
+			return m, m.dispatch(path, refreshDownloads(path))
+		case downloadStarted:
+			if u := m.workspaces[path].fileUI(result.mode); u != nil {
+				u.output = "Download state updated; files retained independently of this view"
+				if result.err != nil {
+					u.output = "REFUSED: " + safe(result.err.Error())
+				}
+			}
+			return m, m.dispatch(path, refreshDownloads(path))
 		case shellRequested:
 			if path != m.active {
 				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("shell cancelled after workspace switch")})
@@ -553,7 +606,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if _, ok := m.workspaces[destination]; !ok {
 				m.paths = append(m.paths, destination)
 				m.workspaces[destination] = &workspaceView{management: newUI(result.info, m.noColor), focus: "prompt"}
-				init = m.dispatch(destination, m.workspaces[destination].management.Init())
+				init = m.dispatch(destination, tea.Batch(m.workspaces[destination].management.Init(), refreshDownloads(destination)))
 			}
 			m.resize()
 			// Esc may dismiss a pending launch, but its completion never steals selection.
@@ -1241,7 +1294,14 @@ func (m *frame) metadata() string {
 		details = "\nPrevious connection creation unavailable; reconnect explicitly"
 	}
 	files, bytes := "Unavailable", "Unavailable"
-	transferNote := "Transfers not implemented"
+	transferNote := "Completed downloads · workspace scope"
+	if w.management.downloadObserved && w.management.downloadError == "" {
+		files = fmt.Sprint(w.management.downloads.Files)
+		bytes = fmt.Sprintf("%d B", w.management.downloads.Bytes)
+	}
+	if w.management.downloadError != "" {
+		transferNote = "Download records unverified"
+	}
 	if m.demo {
 		files, bytes = "12", "48.6 MiB"
 		transferNote = "Sample downloads"
@@ -1610,11 +1670,11 @@ func (m *frame) compositor() *lipgloss.Compositor {
 						break
 					}
 					plain := ansi.Strip(line)
-					for _, label := range []string{"Proceed", "Cancel", "Trust host", "Reject", "Quit", "Keep working", "Keep running", "Close connections"} {
+					for _, label := range []string{"Proceed", "Download", "Cancel", "Trust host", "Reject", "Quit", "Keep working", "Keep running", "Close connections"} {
 						if at := strings.Index(plain, label+"]"); at >= 0 {
 							start := ansi.StringWidth(plain[:at])
 							id := "confirm-reject"
-							if label == "Proceed" || label == "Trust host" || label == "Quit" || label == "Keep running" {
+							if label == "Proceed" || label == "Download" || label == "Trust host" || label == "Quit" || label == "Keep running" {
 								id = "confirm-accept"
 							}
 							layers = append(layers, lipgloss.NewLayer(solid(ansi.Cut(line, start, start+len(label)), len(label), 1, popupColor, m.noColor)).ID(id).X(x+3+start).Y(y+2+row).Z(5))

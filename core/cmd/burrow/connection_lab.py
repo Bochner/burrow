@@ -181,6 +181,13 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             load_checks(burrow, w, container, command, options, binary, env, screen_check)
         if args.files_check:
             burrow(w, "close", "gateway", "--yes")
+            retained = burrow(w, "downloads")
+            os.kill(first["ownerPID"], signal.SIGKILL)
+            durable = burrow(w, "downloads")
+            assert durable["files"] == retained["files"] > 0
+            assert durable["bytes"] == retained["bytes"]
+            assert {d["id"] for d in durable["records"]} == {d["id"] for d in retained["records"]}
+            print("PASS durable download outcomes/totals after retained owner loss", flush=True)
             raise SystemExit(0)
         if not smoke and not args.proxy_check and not args.shell_check and not args.forward_check:
             forward_evidence.append(reverse_checks(binary, env, screen_check, burrow, w, first, options, container, command))
@@ -727,6 +734,7 @@ launch:
         # Module loss must not adopt any remaining reservation after relaunch.
         burrow(w, "connect", "ownerloss", "127.0.0.1", "tester", *plain)
         lost = wait(lambda: state_is(w, "ownerloss", "connected"))
+        retained_downloads = burrow(w, "downloads")
         os.kill(lost["ownerPID"], signal.SIGKILL)
         def ended(pid):
             try:
@@ -736,6 +744,10 @@ launch:
         wait(lambda: ended(lost["masterPID"]))
         reported = burrow(w, "inspect", "ownerloss")
         assert reported["state"] == "lost" and reported["socket"] == lost["socket"]
+        durable_downloads = burrow(w, "downloads")
+        assert durable_downloads["files"] == retained_downloads["files"] > 0
+        assert durable_downloads["bytes"] == retained_downloads["bytes"]
+        assert {d["id"] for d in durable_downloads["records"]} == {d["id"] for d in retained_downloads["records"]}
         assert burrow(w, "--offline", "status")["pid"] == info["pid"]
         burrow(w, "connect", "ownerloss", "127.0.0.1", "tester", *plain, ok=False)
         burrow(w, "close", "ownerloss", "--yes", ok=False)

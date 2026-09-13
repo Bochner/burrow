@@ -52,7 +52,9 @@ func decodeManagerRequest(raw string) (managerRequest, error) {
 }
 
 type manager struct {
-	mu sync.Mutex
+	downloadMu sync.Mutex
+	downloads  map[string]*downloadWork
+	mu         sync.Mutex
 	managerIdentity
 	dir         *os.File
 	closed      bool
@@ -104,7 +106,7 @@ func (m *manager) Close(string) error {
 }
 
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
+	return []hovel.PayloadCommand{{Name: "download-review", ReadOnly: true}, {Name: "downloads", ReadOnly: true}, {Name: "download-cancel"}, {Name: "download", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
 }
 
 func (m *manager) inventory() ([]State, error) {
@@ -137,6 +139,14 @@ func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 	}
 	if req.Command == "files" {
 		return m.filesCommand(req)
+	}
+	if req.Command == "download-review" || req.Command == "downloads" || req.Command == "download-cancel" {
+		return m.downloadCommand(req)
+	}
+	if req.Command == "download" && len(req.Args) == 3 {
+		d, err := m.startDownload(req.Args[0], req.Args[1], req.Args[2])
+		b, _ := json.Marshal(d)
+		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, err
 	}
 	if req.Command == "forward" && len(req.Args) == 3 {
 		t, e := m.forward(req.Args[0], req.Args[1], req.Args[2])
@@ -287,6 +297,21 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 		return hovel.Result{}, fmt.Errorf("manager action excludes legacy connection and profile commands")
 	}
 	switch ctx.InputString("action", "") {
+	case "download":
+		raw := ctx.InputString("request", "")
+		r, err := decodeDownload(raw)
+		if err != nil || r.Plan.Workspace != w || r.Plan.Owner.Session != ctx.InputString("session", "") || r.Plan.Owner.Generation != ctx.InputString("generation", "") || digest(raw) != ctx.InputString("review", "") {
+			return hovel.Result{}, fmt.Errorf("changed download request refused")
+		}
+		result, err := ownerCommand(c, w, r.Plan.Owner.Session, "download", []string{raw, digest(raw), ctx.RunID})
+		if err != nil {
+			return hovel.Result{}, err
+		}
+		var d Download
+		if json.Unmarshal([]byte(result.Stdout), &d) != nil || d.ID != r.ID || d.RunID != ctx.RunID {
+			return hovel.Result{}, fmt.Errorf("download correlation refused")
+		}
+		return hovel.Ok(nil, hovel.WithSummary(result.Stdout)), nil
 	case "forward":
 		raw := ctx.InputString("request", "")
 		r, err := decodeForward(raw)

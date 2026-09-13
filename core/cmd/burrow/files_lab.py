@@ -9,16 +9,17 @@ import os
 import pty
 import select
 import signal
+import resource
 import struct
 import subprocess
 import termios
 
 
-def file_ui(binary, env, decoder, workspace, name="gateway", slow=None):
+def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfers=False):
     def cli(*args):
         p = subprocess.run([binary, "--workspace", str(workspace), *args], env=env, capture_output=True, check=True)
         return json.loads(p.stdout)
-    if not slow:
+    if not slow and not transfers:
         cli("profile", "create", "edit-fixture", "example.test", "tester", "--port", "22")
     outer, slave = pty.openpty()
     before = termios.tcgetattr(slave)
@@ -45,6 +46,55 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None):
         os.write(outer, ("scp " + name + "\r").encode())
         wait("FILE MODE")
         wait("LISTING /config")
+        if transfers:
+            target=Path(workspace)/"burrow-files/downloads/ui-destination/large.bin"
+            target.parent.mkdir()
+            target.write_bytes(b"original survives cancellation")
+            os.write(outer,b"get /tmp/burrow-download-check/large.bin ui-destination/\r")
+            wait("Download these files?")
+            wait("OVERWRITE")
+            os.write(outer,b"\t\r")  # Review defaults to Cancel; explicitly choose Download.
+            wait("Overall")
+            wait("RUNNING")
+            records=cli("downloads")["records"]
+            transfer=next(d for d in reversed(records) if d["files"][0]["destination"]==str(target))
+            os.write(outer,b"\x1bOP")
+            wait("FILE BROWSING")
+            os.write(outer,b"\x1b")
+            wait("FILE BROWSING",present=False)
+            os.write(outer,b"ls /tmp/burrow-download-check\r")
+            wait("large.bin")
+            os.write(outer,b"\x1bb")
+            wait("SAVED CONNECTIONS")
+            os.write(outer,("shell "+name+"\r").encode())
+            wait("local / not recorded")
+            before_transfer=cli("downloads",transfer["id"])
+            os.write(outer,b"printf '%s%s\\n' DOWNLOAD_ SHELL_LIVE\r")
+            wait("DOWNLOAD_SHELL_LIVE")
+            deadline=time.monotonic()+5
+            while True:
+                after=cli("downloads",transfer["id"])
+                if after["bytes"]>before_transfer["bytes"]:
+                    break
+                assert time.monotonic()<deadline, after
+                time.sleep(.1)
+            cancelled=cli("download-cancel",transfer["id"])
+            assert cancelled["state"]=="cancelled",cancelled
+            assert target.read_bytes()==b"original survives cancellation"
+            partial=Path(cancelled["files"][0]["partial"])
+            assert partial.is_file() and 0<partial.stat().st_size<64*1024*1024,cancelled
+            size=partial.stat().st_size
+            time.sleep(.2)
+            assert partial.stat().st_size==size,"cancel acknowledgement preceded cleanup"
+            os.write(outer,b"exit\r")
+            wait("SAVED CONNECTIONS")
+            os.write(outer,b"quit\r")
+            wait("Keep running")
+            os.write(outer,b"\r")
+            assert frontend.wait(timeout=10)==0
+            assert termios.tcgetattr(slave)==before
+            print("PASS real copy continues through help/listing/shell; acknowledged cancel preserves original and labelled partial",flush=True)
+            return
         if slow:
             slow()
             # Entry listing starts the owner's one-second discovery throttle.
@@ -139,11 +189,21 @@ case "$SSH_ORIGINAL_COMMAND" in
     printf 'sftp\\n' >> /tmp/burrow-file-sessions
     [ ! -e /tmp/burrow-file-nosftp ] || exit 126
     if [ -e /tmp/burrow-file-delay ]; then sleep 4; fi
+    if [ -e /tmp/burrow-file-throttle ]; then
+      /usr/lib/ssh/sftp-server -e -l DEBUG3 2>> /tmp/burrow-file-requests |
+        (stats=$(mktemp); while :; do
+          dd bs=32768 count=1 2>"$stats" || break
+          grep -q '^0+0 records in' "$stats" && break
+          sleep 0.02
+        done; rm "$stats")
+      exit
+    fi
     exec /usr/lib/ssh/sftp-server -e -l DEBUG3 2>> /tmp/burrow-file-requests
     ;;
   *)
     printf 'exec\\n' >> /tmp/burrow-file-sessions
     [ ! -e /tmp/burrow-file-noexec ] || exit 126
+    [ -n "$SSH_ORIGINAL_COMMAND" ] || exec /bin/sh
     exec /bin/sh -c "$SSH_ORIGINAL_COMMAND"
     ;;
 esac
@@ -188,6 +248,12 @@ esac
             time.sleep(1.2)
             assert counts() == burst, "idle discovery issued remote work"
             assert first["entries"]
+            command("docker","exec",container,"truncate","-s","64M","/tmp/burrow-download-check/large.bin")
+            command("docker","exec",container,"chown","tester","/tmp/burrow-download-check/large.bin")
+            command("docker","exec",container,"touch","/tmp/burrow-file-throttle")
+            file_ui(binary,env,decoder,workspace,"file-observer",transfers=True)
+            download_failures(burrow,workspace,container,command,options)
+            command("docker","exec",container,"rm","/tmp/burrow-file-throttle")
             command("docker","exec",container,"touch","/tmp/burrow-file-noexec")
             command("docker","exec",container,"chown","12345:23456",base+"/old.txt")
             reduced=browse("ls",base)
@@ -246,3 +312,180 @@ def file_checks(burrow, workspace, state, container, command):
     assert len(json.dumps(bounded).encode()) < 1 << 20
     assert burrow(workspace,"inspect","gateway")["masterPID"] == state["masterPID"]
     print("PASS real same-master SFTP metadata, navigation, denied paths and symlink tree",flush=True)
+    download_checks(burrow, workspace, state, container, command)
+
+
+def download_checks(burrow, workspace, state, container, command):
+    """Exercise the public reviewed command seam and observe actual file bytes."""
+    base = "/tmp/burrow-download-check"
+    command("docker", "exec", container, "mkdir", "-p", base)
+    command("docker", "exec", container, "sh", "-c",
+            "printf 'download fixture\\n' > /tmp/burrow-download-check/one.txt; "
+            ": > /tmp/burrow-download-check/empty.txt; "
+            "chown -R tester /tmp/burrow-download-check")
+    root = Path(workspace) / "burrow-files/downloads"
+    review = burrow(workspace, "scp", "gateway", "get", base + "/one.txt")
+    assert review["files"][0]["destination"] == str(root / "one.txt"), review
+    assert review["files"][0]["size"] == 17, review
+    assert not (root / "one.txt").exists(), "review wrote a destination"
+    started = burrow(workspace, "scp", "gateway", "get", base + "/one.txt",
+                     "--review", review["digest"], "--yes")
+    deadline = time.monotonic() + 20
+    while True:
+        result = burrow(workspace, "downloads", started["id"])
+        if result["state"] != "running":
+            break
+        assert time.monotonic() < deadline, result
+        time.sleep(.1)
+    assert result["state"] == "complete", result
+    assert (root / "one.txt").read_bytes() == b"download fixture\n"
+    assert result["files"][0]["bytes"] == 17, result
+    assert burrow(workspace, "inspect", "gateway")["masterPID"] == state["masterPID"]
+    print("PASS reviewed same-master download, exact bytes and retrievable completion", flush=True)
+    def finish(started):
+        deadline = time.monotonic() + 20
+        while True:
+            result = burrow(workspace, "downloads", started["id"])
+            if result["state"] != "running":
+                return result
+            assert time.monotonic() < deadline, result
+            time.sleep(.1)
+    def approved(*args):
+        plan = burrow(workspace, "scp", "gateway", *args)
+        return finish(burrow(workspace, "scp", "gateway", *args, "--review", plan["digest"], "--yes"))
+    batch = approved("mget", base + "/*.txt", "batch")
+    assert batch["state"] == "complete" and len(batch["files"]) == 2, batch
+    assert (root / "batch/one.txt").read_bytes() == b"download fixture\n"
+    assert (root / "batch/empty.txt").read_bytes() == b""
+    before = burrow(workspace, "downloads")
+    assert before["files"] == 3 and before["bytes"] == 34, before
+    assert burrow(workspace, "downloads")["files"] == 3, "observation duplicated totals"
+    old = root / "replace.txt"
+    old.write_bytes(b"original")
+    plan = burrow(workspace, "scp", "gateway", "get", base + "/one.txt", "replace.txt")
+    assert plan["files"][0]["existing"], plan
+    failure = burrow(workspace, "scp", "gateway", "get", base + "/one.txt", "replace.txt", "--yes", ok=False)
+    assert "review" in failure and old.read_bytes() == b"original", failure
+    old.write_bytes(b"changed since review")
+    burrow(workspace, "scp", "gateway", "get", base + "/one.txt", "replace.txt", "--review", plan["digest"], "--yes", ok=False)
+    assert old.read_bytes() == b"changed since review"
+    outside = Path(workspace) / "outside"
+    outside.mkdir()
+    (root / "escape").symlink_to(outside, target_is_directory=True)
+    for destination in ("../outside/a", str(outside / "a"), "escape/a"):
+        burrow(workspace, "scp", "gateway", "get", base + "/one.txt", destination, ok=False)
+    assert not list(outside.iterdir())
+    no_match = burrow(workspace,"scp","gateway","mget",base+"/*.absent")
+    assert no_match["files"] == [], no_match
+    unusual = base + "/α 'quoted file'.dat"
+    command("docker", "exec", container, "cp", base + "/one.txt", unusual)
+    command("docker", "exec", container, "ln", "-s", unusual, base + "/link.dat")
+    for source in (unusual, base + "/link.dat"):
+        copied = approved("get", source)
+        assert copied["state"] == "complete", copied
+        assert Path(copied["files"][0]["destination"]).read_bytes() == b"download fixture\n"
+    args = ("get", base + "/one.txt", "changed-source.txt")
+    plan = burrow(workspace, "scp", "gateway", *args)
+    command("docker", "exec", container, "truncate", "-s", "18", base + "/one.txt")
+    burrow(workspace, "scp", "gateway", *args, "--review", plan["digest"], "--yes", ok=False)
+    assert not (root / "changed-source.txt").exists()
+    args = ("mget", base + "/*.txt", "changed-discovery")
+    plan = burrow(workspace, "scp", "gateway", *args)
+    command("docker", "exec", container, "touch", base + "/new.txt")
+    burrow(workspace, "scp", "gateway", *args, "--review", plan["digest"], "--yes", ok=False)
+    assert not (root / "changed-discovery").exists()
+    args = ("get", base + "/one.txt", "changed-root.txt")
+    plan = burrow(workspace, "scp", "gateway", *args)
+    alternate = Path(workspace) / "alternate-downloads"
+    burrow(workspace, "local", "download", str(alternate))
+    burrow(workspace, "scp", "gateway", *args, "--review", plan["digest"], "--yes", ok=False)
+    assert not list(alternate.iterdir())
+    burrow(workspace, "local", "download", str(root))
+    print("PASS sequential batch/empty files, no-write review, overwrite binding, containment and deduplicated totals", flush=True)
+    print("PASS actual Unicode/quoted/symlink copies and changed source/discovery/root refusal", flush=True)
+
+
+def download_failures(burrow, workspace, container, command, options):
+    root=Path(workspace)/"burrow-files/downloads"
+    remote="/tmp/burrow-download-check/large.bin"
+    def start(name,source,destination,op="get"):
+        p=burrow(workspace,"scp",name,op,source,destination)
+        return burrow(workspace,"scp",name,op,source,destination,"--review",p["digest"],"--yes")
+    def observe(d,predicate,timeout=40):
+        deadline=time.monotonic()+timeout
+        while time.monotonic()<deadline:
+            value=burrow(workspace,"downloads",d["id"])
+            if predicate(value):return value
+            time.sleep(.1)
+        raise AssertionError(value)
+    target=root/"stalled.bin"
+    target.write_bytes(b"keep original")
+    d=start("file-observer",remote,"stalled.bin")
+    observe(d,lambda v:v["bytes"]>0)
+    command("docker","exec",container,"sh","-c","pkill -STOP -f '^/usr/lib/ssh/sftp-server'")
+    try:
+        time.sleep(1.3)
+        burrow(workspace,"downloads",d["id"])
+        time.sleep(1.3)
+        stalled=burrow(workspace,"downloads",d["id"])
+        assert stalled["state"]=="running" and stalled["rate"]==0 and stalled["eta"] is None,stalled
+        cancelled=burrow(workspace,"download-cancel",d["id"])
+        assert cancelled["state"]=="cancelled" and target.read_bytes()==b"keep original",cancelled
+    finally:
+        command("docker","exec",container,"sh","-c","pkill -CONT -f '^/usr/lib/ssh/sftp-server' || true")
+    owner=burrow(workspace,"inspect","file-observer")["ownerPID"]
+    limit=resource.prlimit(owner,resource.RLIMIT_FSIZE)
+    target=root/"write-failure.bin"
+    target.write_bytes(b"preserve on write failure")
+    try:
+        resource.prlimit(owner,resource.RLIMIT_FSIZE,(4096,limit[1]))
+        failed=observe(start("file-observer",remote,"write-failure.bin"),lambda v:v["state"]!="running")
+        assert failed["state"]=="failed" and 0<failed["bytes"]<=4096,failed
+        assert target.read_bytes()==b"preserve on write failure"
+    finally:
+        resource.prlimit(owner,resource.RLIMIT_FSIZE,limit)
+    growing="/tmp/burrow-download-check/growing.bin"
+    command("docker","exec",container,"truncate","-s","4M",growing)
+    command("docker","exec",container,"chown","tester",growing)
+    target=root/"growing.bin";target.write_bytes(b"original")
+    d=start("file-observer",growing,target.name)
+    observe(d,lambda v:v["bytes"]>0)
+    command("docker","exec",container,"truncate","-s","64M",growing)
+    failed=observe(d,lambda v:v["state"]!="running")
+    assert failed["state"]=="failed" and failed["bytes"]<=4*1024*1024,failed
+    assert target.read_bytes()==b"original"
+    base="/tmp/burrow-download-mixed"
+    command("docker","exec",container,"sh","-c",
+            "mkdir /tmp/burrow-download-mixed; truncate -s 4M /tmp/burrow-download-mixed/a.bin; "
+            "printf denied > /tmp/burrow-download-mixed/b.bin; printf final > /tmp/burrow-download-mixed/c.bin; "
+            "chown -R tester /tmp/burrow-download-mixed")
+    mixed=start("file-observer",base+"/*.bin","mixed","mget")
+    command("docker","exec",container,"chmod","000",base+"/b.bin")
+    mixed=observe(mixed,lambda v:v["state"]!="running")
+    assert mixed["state"]=="partial" and [f["state"] for f in mixed["files"]]==["complete","failed","complete"],mixed
+    assert (root/"mixed/a.bin").read_bytes()==bytes(4*1024*1024)
+    assert (root/"mixed/c.bin").read_bytes()==b"final"
+    untouched=(root/"mixed/a.bin").stat().st_mtime_ns
+    command("docker","exec",container,"chmod","600",base+"/b.bin")
+    retry=observe(start("file-observer",base+"/b.bin","mixed/b.bin"),lambda v:v["state"]!="running")
+    assert retry["state"]=="complete" and (root/"mixed/b.bin").read_bytes()==b"denied",retry
+    assert (root/"mixed/a.bin").stat().st_mtime_ns==untouched
+    for name,loss in (("download-close",False),("download-loss",True)):
+        burrow(workspace,"connect",name,"127.0.0.1","tester",*options)
+        deadline=time.monotonic()+10
+        while True:
+            state=burrow(workspace,"inspect",name)
+            if state["state"]=="connected":break
+            assert time.monotonic()<deadline,state
+            time.sleep(.1)
+        target=root/(name+".bin");target.write_bytes(b"original")
+        transfer=start(name,remote,target.name)
+        observe(transfer,lambda v:v["bytes"]>0)
+        if loss:os.kill(state["masterPID"],signal.SIGKILL)
+        else:burrow(workspace,"close",name,"--yes")
+        ended=observe(transfer,lambda v:v["state"]!="running")
+        assert ended["state"] in ("failed","cancelled") and target.read_bytes()==b"original",ended
+        assert Path(ended["files"][0]["partial"]).is_file()
+        if loss:burrow(workspace,"close",name,"--yes")
+        assert burrow(workspace,"inspect","gateway")["state"]=="connected"
+    print("PASS stalled rate/unknown ETA, real write failure, mixed batch, selected restart retry, transfer close/loss and sibling retention",flush=True)

@@ -285,6 +285,9 @@ func (m ui) semanticText(text string) string {
 			if label == "Endpoint" || label == "Jump" || label == "Listen" || label == "Destination" || label == "Remote listener" || label == "Local destination" || label == "Local listener" || label == "Remote destination" {
 				styled = m.endpoint(value)
 			}
+			if label == "Destination" && strings.HasPrefix(value, "/") {
+				styled = m.paint(secondary, value)
+			}
 			if label == "SOCKS proxy" {
 				if protocol, endpoint, ok := strings.Cut(value, " · "); ok {
 					styled = m.paint(infoStyle, protocol) + m.paint(secondary, " · ") + m.endpoint(endpoint)
@@ -437,9 +440,9 @@ func fieldStyle(header string) lipgloss.Style {
 		return infoStyle
 	case "TERM", "TYPE", "PERMISSIONS":
 		return keywordStyle
-	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED":
+	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
 		return numberStyle
-	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL":
+	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "SOURCE":
 		return secondary
 	case "ERROR":
 		return errorStyle

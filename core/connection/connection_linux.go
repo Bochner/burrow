@@ -174,27 +174,29 @@ func (f *sshFailure) detail() string {
 }
 
 type owner struct {
-	fileMu        sync.Mutex
-	fileListings  map[string]fileCache
-	fileAccounts  map[string]accountName
-	fileNext      time.Time
-	fileRequest   string
-	fileCancel    context.CancelFunc
-	fileCancelled map[string]time.Time
-	tunnels       map[string]Tunnel
-	manager       *manager
-	prepared      []byte
-	profile       Profile
-	mu            sync.Mutex
-	config        Config
-	dir           *os.File
-	state         State
-	master        *exec.Cmd
-	socket        os.FileInfo
-	configFile    os.FileInfo
-	done          chan struct{}
-	cancel        context.CancelFunc
-	closed        bool
+	downloads       map[string]*downloadWork
+	downloadClosing bool
+	fileMu          sync.Mutex
+	fileListings    map[string]fileCache
+	fileAccounts    map[string]accountName
+	fileNext        time.Time
+	fileRequest     string
+	fileCancel      context.CancelFunc
+	fileCancelled   map[string]time.Time
+	tunnels         map[string]Tunnel
+	manager         *manager
+	prepared        []byte
+	profile         Profile
+	mu              sync.Mutex
+	config          Config
+	dir             *os.File
+	state           State
+	master          *exec.Cmd
+	socket          os.FileInfo
+	configFile      os.FileInfo
+	done            chan struct{}
+	cancel          context.CancelFunc
+	closed          bool
 }
 
 func (s *owner) milestone(message string) { s.manager.milestone(message) }
@@ -401,6 +403,10 @@ func (s *owner) Close(reason string) error {
 		return fmt.Errorf("unidentified master socket preserved; investigate manually")
 	}
 	if s.cancel != nil {
+		s.downloadClosing = true
+		for _, work := range s.downloads {
+			work.cancel()
+		}
 		if s.fileCancel != nil {
 			s.fileCancel()
 		}
@@ -409,6 +415,13 @@ func (s *owner) Close(reason string) error {
 		close(s.done)
 	}
 	s.mu.Unlock()
+	for _, work := range s.downloads {
+		select {
+		case <-work.done:
+		case <-time.After(15 * time.Second):
+			return fmt.Errorf("transfer cleanup unconfirmed; inspect downloads")
+		}
+	}
 	select {
 	case <-s.done:
 	case <-time.After(5 * time.Second):

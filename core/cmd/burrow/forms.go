@@ -317,6 +317,8 @@ func (m *frame) dismissForm() {
 	}
 	m.form = nil
 	m.details = nil
+	m.downloadPlan = nil
+	m.downloadMode = nil
 	m.inputEpoch++
 	m.modal = ""
 	if m.attempt != nil {
@@ -390,8 +392,12 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		return m.reviewCommand(args)
 	case "review":
 		if !completed.GetBool("approved") {
+			m.downloadPlan = nil
 			m.dismissForm()
 			return nil
+		}
+		if m.downloadPlan != nil {
+			return m.submitDownload()
 		}
 		args := append(append([]string{}, m.commandArgs...), "--yes")
 		m.commandArgs = nil

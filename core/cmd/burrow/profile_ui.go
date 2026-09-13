@@ -137,7 +137,13 @@ func refreshProfiles(workspace string) tea.Cmd {
 }
 func (m ui) suggestions() []string {
 	if m.files != nil {
-		return []string{"ls ", "cd ", "tree ", "pwd", "local", "local download ", "local upload ", "lcd ", "lcd upload ", "lls ", "lls upload ", "history", "back", "help", "quit"}
+		values := []string{"get ", "mget ", "downloads", "download-cancel ", "ls ", "cd ", "tree ", "pwd", "local", "local download ", "local upload ", "lcd ", "lcd upload ", "lls ", "lls upload ", "history", "back", "help", "quit"}
+		for _, d := range m.downloads.Records {
+			if d.State == "running" {
+				values = append(values, "download-cancel "+d.ID)
+			}
+		}
+		return values
 	}
 	line := m.input.Value()
 	values := connection.CommandSuggestions(line, m.connections)

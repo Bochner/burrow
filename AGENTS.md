@@ -10,6 +10,7 @@ specification. `core/prototype_*` contains bounded proofs, not a production SSH 
 
 ## Development conventions
 
+- Never add an agent as a commit co-author.
 - Follow the Hovel conventions recorded in `docs/research/hovel-integration.md`.
   All build, test, format, lint, and package workflows must enter through Aspect
   CLI. Do not invoke Bazel, gofmt, or a second task runner directly. Put new

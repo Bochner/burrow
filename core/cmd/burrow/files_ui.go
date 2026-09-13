@@ -15,6 +15,16 @@ import (
 )
 
 const fileHelp = `# FILE BROWSING
+get REMOTE [LOCAL]\tReview file, size and effective destination before downloading
+mget PATTERN [LOCAL_DIR]\tReview all nonrecursive regular-file matches; sequential copies
+downloads\tReturn to per-file outcomes and measured overall/current-file progress
+download-cancel ID\tRequest cancellation and wait for acknowledged cleanup
+Downloads continue during browsing, help, shell attachment and frontend detach.
+Overwrite is explicit in review; old files survive failed replacement.
+Labelled partials remain after failure/cancel; working files are not registered evidence.
+Retry a selected failed file with get SOURCE DESTINATION; copying restarts from zero.
+Rates are byte measurements averaged over intervals; ETA uses the overall average.
+Unknown totals or insufficient/stalled measurements show unknown ETA.
 ls [PATH] / cd [PATH] / pwd\tList oldest first, navigate, or show the remote directory
 tree [PATH]\tExplicit recursive scan; directory links are shown, never traversed
 Tab / Shift+Tab\tCycle quoted path completions; discovery is cached and throttled
@@ -39,12 +49,13 @@ Reduced metadata is labelled when account names are unavailable; numeric IDs rem
 Automatic discovery does not poll, scan recursively, or run find commands.
 Explicit tree is capped at 3000 entries and 30 seconds; incomplete scans are labelled.
 Large responses are refused explicitly: narrow the directory rather than assume completeness.
-No get, put or mget yet; transfers are separate milestone tickets.
+put remains in the upload ticket.
 F1 / Esc\tClose help
 `
 
 // Navigation is frontend state; roots and transport identity remain workspace-owned.
 type fileMode struct {
+	downloadView             bool
 	saved                    ui
 	state                    connection.State
 	roots                    connection.FileRoots
@@ -150,6 +161,11 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 	if len(args) == 0 {
 		return nil
 	}
+	if len(args) == 2 && args[0] == "help" && (args[1] == "get" || args[1] == "mget") {
+		m.input.Reset()
+		m.help = true
+		return nil
+	}
 	if len(args) == 1 {
 		switch args[0] {
 		case "back", "exit":
@@ -173,6 +189,7 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 		return nil
 	}
 	op, area := args[0], "download"
+	f.downloadView = false
 	var query connection.FileQuery
 	local := op == "local" || op == "lcd" || op == "lls"
 	if local {
@@ -201,7 +218,7 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 		}
 	} else {
 		if len(args) > 2 || (op != "ls" && op != "tree" && op != "cd" && op != "pwd") {
-			m.output = "REFUSED: use ls, tree, cd, pwd, local, lcd, lls or back; transfers follow in #54–#56"
+			m.output = "REFUSED: use get, mget, downloads, ls, tree, cd, pwd, local, lcd, lls or back"
 			return nil
 		}
 		p := f.remote
@@ -358,7 +375,11 @@ func (m ui) fileCompletionContext() (args []string, side, dir, prefix string, di
 			side = args[1]
 			at = 2
 		}
-	} else if op != "ls" && op != "cd" && op != "tree" {
+	} else if (op == "get" || op == "mget") && len(args) == 3 {
+		side = "download"
+		at = 2
+		dirs = op == "mget"
+	} else if op != "ls" && op != "cd" && op != "tree" && op != "get" && op != "mget" {
 		return nil, "", "", "", false
 	}
 	if len(args) != at+1 {
@@ -539,6 +560,8 @@ func (m ui) fileContent(w int) string {
 		for _, line := range m.history[min(m.outputOffset, len(m.history)):] {
 			b.WriteString(m.syntax(safe(line), false) + "\n")
 		}
+	} else if f.downloadView {
+		b.WriteString(m.downloadContent(w))
 	} else if f.tree != nil {
 		b.WriteString(m.paint(heading, "TREE ") + m.paint(secondary, safe(f.tree.Path)) + "\n")
 		if f.tree.Incomplete {

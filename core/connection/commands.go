@@ -32,7 +32,16 @@ tree never traverses directory links. Hidden files are included except . and ...
 Listings are oldest-first; numeric owner/group fallback is clearly labelled.
 Tree scans stop at 3000 entries or 30 seconds and label partial results.
 Completion is cached and throttled; no idle scans or recursive prefetch.
-Transfers (get/put/mget) follow in #54-56; browsing does not authenticate.
+scp NAME get REMOTE [LOCAL]          Review one download and actual destination
+scp NAME mget PATTERN [LOCAL_DIR]     Review nonrecursive regular-file matches
+Repeat with --review DIGEST --yes to approve the unchanged recap, including overwrite.
+downloads [ID]                      Retained outcomes and workspace download totals
+download-cancel ID                  Cancel and wait for transfer cleanup acknowledgement
+Downloads continue during shell use, browsing, help and frontend detach.
+Existing destinations survive failed replacement; labelled partials are retained.
+Rate is measured bytes/sec (interval average); ETA uses overall average or is unknown.
+Retry selected failures with get using their recorded source/destination; restart, no resume.
+Working downloads are not automatically registered Hovel evidence. put follows in #55.
 
 profiles                            List saved entries and selected collection
 profile create NAME HOST USER [options] Save settings without connecting
@@ -258,12 +267,25 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "downloads", "download-cancel":
+		if len(args) > 2 || (args[0] == "download-cancel" && len(args) != 2) {
+			return fmt.Errorf("expected downloads [ID] or download-cancel ID")
+		}
+		return nil
 	case "files-history":
 		if len(args) != 1 {
 			return fmt.Errorf("expected files-history")
 		}
 		return nil
 	case "scp":
+		if len(args) > 2 && (args[2] == "get" || args[2] == "mget") {
+			_, _, _, _, err := downloadArgs(args)
+			if err != nil {
+				return err
+			}
+			_, err = launch.ConnectionPath(workspace, args[1])
+			return err
+		}
 		_, err := fileArgs(args)
 		if err != nil {
 			return err
@@ -465,9 +487,14 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 		return execute(ctx, w, expanded, promptSocket)
 	}
 	switch args[0] {
+	case "downloads", "download-cancel":
+		return executeDownloads(ctx, w, args)
 	case "files-history":
 		return FileHistory(ctx, w)
 	case "scp":
+		if len(args) > 2 && (args[2] == "get" || args[2] == "mget") {
+			return executeDownload(ctx, w, args)
+		}
 		query, _ := fileArgs(args)
 		state, err := selected(ctx, w, args[1])
 		if err != nil {

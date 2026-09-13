@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -76,6 +77,10 @@ func connectionTimer() tea.Cmd {
 }
 
 type ui struct {
+	downloads                     connection.Downloads
+	downloadObserved              bool
+	downloadError                 string
+	downloadBar                   progress.Model
 	files                         *fileMode
 	tunnels                       []connection.Tunnel
 	tunnelError                   string
@@ -117,7 +122,7 @@ func newUI(info launch.Info, noColor bool) ui {
 	input.KeyMap.PrevSuggestion = previous
 	input.CharLimit = 2048
 	input.Focus()
-	m := ui{info: info, input: input, noColor: noColor, tunnelError: "UNVERIFIED · loading forwarding inventory", output: "Verified daemon · quit reviews connections: keep or close."}
+	m := ui{downloadBar: newDownloadBar(), info: info, input: input, noColor: noColor, tunnelError: "UNVERIFIED · loading forwarding inventory", output: "Verified daemon · quit reviews connections: keep or close."}
 	m.input.SetSuggestions(m.suggestions())
 	return m
 }

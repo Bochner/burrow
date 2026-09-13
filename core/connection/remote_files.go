@@ -233,26 +233,11 @@ func (s *owner) browse(ctx context.Context, q FileQuery) (any, error) {
 	s.fileRequest = q.ID
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); s.fileCancel = nil; s.fileRequest = ""; s.mu.Unlock() }()
-	process := fileSSH(operation, state, "-s", "unused", "sftp")
-	input, err := process.StdinPipe()
+	client, closeClient, err := openFileClient(operation, state)
 	if err != nil {
 		return nil, err
 	}
-	output, err := process.StdoutPipe()
-	if err != nil {
-		input.Close()
-		return nil, err
-	}
-	if err = process.Start(); err != nil {
-		input.Close()
-		return nil, err
-	}
-	defer func() { input.Close(); process.Process.Kill(); process.Wait() }()
-	client, err := sftp.NewClientPipe(output, input)
-	if err != nil {
-		return nil, fmt.Errorf("SFTP subsystem unavailable; no new authentication attempted")
-	}
-	defer client.Close()
+	defer closeClient()
 	remote := key
 	if key == "~" || strings.HasPrefix(key, "~/") {
 		home, e := client.RealPath(".")

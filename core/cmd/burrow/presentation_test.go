@@ -22,6 +22,112 @@ import (
 	"github.com/charmbracelet/x/vt"
 )
 
+func TestDownloadReviewAndProgress(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/download-ui"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	s := connection.State{Name: "gateway", State: "connected", Generation: "generation", Creation: "creation"}
+	m.updateManagement(m.active, connectionList{states: []connection.State{s}})
+	m.openFileTab("gateway")
+	u := m.current().file
+	u.busy = false
+	u.files.remote = "/remote"
+	u.files.download = "/tmp/download-ui/burrow-files/downloads"
+	u.input.SetValue("get 'α file.txt'")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal != "review" {
+		t.Fatal("get did not open download review", m.modal, u.output)
+	}
+	plan := connection.DownloadPlan{Owner: s, Files: []connection.DownloadFile{{Source: "/remote/α file.txt", Destination: "/downloads/α file.txt", Size: 100, Existing: "reviewed", State: "pending"}}}
+	deliver := func(msg tea.Msg) {
+		t.Helper()
+		cmd := m.dispatch(m.active, func() tea.Msg { return msg })
+		frameEvent(m, cmd())
+	}
+	deliver(downloadReviewReady{m.inputEpoch, plan, nil})
+	if !strings.Contains(m.reviewText, "OVERWRITE") || !strings.Contains(m.reviewText, "/downloads/α file.txt") {
+		t.Fatal("review lost effective destination or overwrite", m.reviewText)
+	}
+	m.noColor, m.current().management.noColor, u.noColor = false, false, false
+	screen := capturePresentation(t, m, "download-review-color")
+	assertTextRole(t, screen, m.dialogBounds(), "/downloads/α file.txt", subtextColor)
+	assertTextRole(t, screen, m.dialogBounds(), "100 bytes", "#fab387")
+	m.noColor, m.current().management.noColor, u.noColor = true, true, true
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		capturePresentation(t, m, fmt.Sprintf("download-review-%dx%d", size.X, size.Y))
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.downloadPlan != nil {
+		t.Fatal("cancelled review retained executable plan")
+	}
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	u.fileCommand([]string{"history"})
+	u.input.SetValue("downloads")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if u.files.historyView || !u.files.downloadView {
+		t.Fatal("history hid downloads")
+	}
+	for _, op := range []string{"get", "mget"} {
+		u.fileCommand([]string{"help", op})
+		if !u.help {
+			t.Fatal("missing contextual help", op)
+		}
+		u.help = false
+	}
+	u.input.SetValue("mget '*.txt' sub")
+	_, side, _, _, dirs := u.fileCompletionContext()
+	if side != "download" || !dirs {
+		t.Fatal("batch destination needs local directory completion")
+	}
+	u.input.Reset()
+	u.files.downloadView = true
+	file := plan.Files[0]
+	file.State = "failed"
+	file.Bytes = 25
+	file.Partial = "/downloads/.burrow-partial-check"
+	file.Detail = "cancelled replacement"
+	d := connection.Download{ID: "download-check", Plan: plan, Files: []connection.DownloadFile{file}, State: "partial", Bytes: 25, Elapsed: 2, AverageRate: 12.5}
+	deliver(downloadsReady{connection.Downloads{Records: []connection.Download{d}}, nil})
+	text := ansi.Strip(m.View().Content)
+	for _, part := range []string{"PARTIAL", "25 bytes", "2s elapsed", "Unknown", "interval avg"} {
+		if !strings.Contains(text, part) {
+			t.Fatal("missing measured presentation", part, text)
+		}
+	}
+	if strings.Contains(m.View().Content, "\x1b[") {
+		t.Fatal("NO_COLOR leaked ANSI")
+	}
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		capturePresentation(t, m, fmt.Sprintf("download-partial-%dx%d", size.X, size.Y))
+	}
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.noColor, m.current().management.noColor, u.noColor = false, false, false
+	screen = capturePresentation(t, m, "download-partial-color")
+	assertTextRole(t, screen, image.Rect(0, 0, 160, 40), "PARTIAL", "#f38ba8")
+	assertTextRole(t, screen, image.Rect(0, 0, 160, 40), "25 bytes", "#fab387")
+	u.input.SetValue("get file")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	deliver(downloadReviewReady{m.inputEpoch, plan, nil})
+	button := image.Pt(-1, -1)
+	compositor := m.compositor()
+	for y := 0; y < m.height; y++ {
+		for x := 0; x < m.width; x++ {
+			if compositor.Hit(x, y).ID() == "confirm-accept" {
+				button = image.Pt(x, y)
+			}
+		}
+	}
+	if button.X < 0 {
+		t.Fatal("download has no mouse approval target")
+	}
+	frameEvent(m, tea.MouseClickMsg{X: button.X, Y: button.Y, Button: tea.MouseLeft})
+	if m.downloadPlan != nil || m.modal != "" {
+		t.Fatal("mouse approval did not submit review")
+	}
+}
+
 func TestProfileEditorValidation(t *testing.T) {
 	dir := t.TempDir()
 	profile := connection.Profile{Name: "gateway", Host: "example.test", User: "tester", Port: 22}
