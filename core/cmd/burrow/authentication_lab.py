@@ -63,15 +63,24 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                 answers = [*answers, ("Save profile as", b"\r" if save else b"\x1b")]
             for needle, answer in answers:
                 deadline = time.monotonic() + 20
+                secret_prompt = needle.startswith(("SSH password", "SSH key passphrase"))
+                echoed = False
                 while True:
                     data=read()
                     screen=subprocess.run([screen_check,str(size[1]),str(size[0])],input=data,capture_output=True,check=True).stdout
                     if needle.encode() in screen and (needle!=previous or needle.encode() in data[offset:]):
-                        break
-                    assert time.monotonic() < deadline and p.poll() is None, ("missing prompt", needle, bytes(output))
+                        if not secret_prompt or not termios.tcgetattr(slave)[3] & termios.ECHO:
+                            break
+                        # A finished secret form repeats its title while the CLI
+                        # restores terminal modes; the next form re-establishes
+                        # no-echo before rendering. Wait for that rendering.
+                        echoed = True
+                        offset = len(output)
+                    assert time.monotonic() < deadline and p.poll() is None, \
+                        ("secret prompt published with echo enabled" if echoed else "missing prompt", needle, bytes(output))
                 offset = len(output)
                 previous = needle
-                if needle.startswith(("SSH password", "SSH key passphrase")):
+                if secret_prompt:
                     assert not termios.tcgetattr(slave)[3] & termios.ECHO, "secret prompt published with echo enabled"
                 no_leaks(output)
                 if observe:

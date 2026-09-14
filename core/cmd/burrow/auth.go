@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"github.com/Bochner/burrow/core/connection"
 	"github.com/charmbracelet/x/term"
@@ -113,6 +114,11 @@ func runCLIForm(ctx context.Context, tty *os.File, f *huh.Form) error {
 		return e
 	}
 	defer term.Restore(tty.Fd(), state)
+	// ctx already ends the form on SIGINT/SIGTERM. Bubble Tea's own handler
+	// would race it: after the context stops the event loop, its unbuffered
+	// QuitMsg send never completes and Program.Run never returns.
+	// WithProgramOptions replaces Huh's defaults, so it precedes input/output.
+	f.WithProgramOptions(tea.WithoutSignalHandler())
 	if e = f.WithInput(tty).WithOutput(tty).RunWithContext(ctx); e != nil {
 		return fmt.Errorf("connection cancelled or timed out")
 	}
