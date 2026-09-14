@@ -58,6 +58,13 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfer
             wait("RUNNING")
             records=cli("downloads")["records"]
             transfer=next(d for d in reversed(records) if d["files"][0]["destination"]==str(target))
+            os.write(outer,b"\x1b")
+            wait("Overall",present=False)
+            wait("LISTING /config")
+            os.write(outer,b"downloads\r")
+            wait("Overall")
+            os.write(outer,b"\x1b")
+            wait("Overall",present=False)
             os.write(outer,b"\x1bOP")
             wait("FILE BROWSING")
             os.write(outer,b"\x1b")

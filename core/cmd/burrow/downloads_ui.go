@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/timer"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/Bochner/burrow/core/connection"
 	"github.com/charmbracelet/x/ansi"
@@ -94,26 +95,85 @@ func (m *frame) acceptDownloadReview(w string, v downloadReviewReady) tea.Cmd {
 		return nil
 	}
 	m.downloadPlan = &v.plan
-	var b strings.Builder
-	b.WriteString("Download review\nConnection: " + safe(v.plan.Owner.Name) + "\n\n")
+	m.modalOffset = 0
+	return m.setForm("review", "Download recap", confirmForm("Download these files?", "", "Download", "Cancel"))
+}
+
+func downloadSize(n int64) string {
+	if n < 0 {
+		return "Unknown"
+	}
+	if n < 1024 {
+		return fmt.Sprintf("%d B", n)
+	}
+	value := float64(n)
+	for _, unit := range []string{"KiB", "MiB", "GiB", "TiB", "PiB", "EiB"} {
+		value /= 1024
+		if value < 1024 {
+			return fmt.Sprintf("%.1f %s", value, unit)
+		}
+	}
+	return fmt.Sprintf("%d B", n)
+}
+
+func (m *frame) downloadRecap(width int) string {
+	u := m.current().management
+	p := m.downloadPlan
+	rows := make([][]string, 0, len(p.Files))
+	overwrites, unknown := false, false
 	var total int64
-	for _, f := range v.plan.Files {
-		b.WriteString("Source: " + safe(f.Source) + "\nDestination: " + safe(f.Destination) + "\n")
+	for _, f := range p.Files {
+		overwrites = overwrites || f.Existing != ""
+	}
+	for _, f := range p.Files {
+		name := path.Base(f.Source)
+		if target := filepath.Base(f.Destination); target != name {
+			name += " → " + target
+		}
+		row := []string{safe(name), downloadSize(f.Size)}
+		if overwrites {
+			mark := "—"
+			if f.Existing != "" {
+				mark = "Replace"
+			}
+			row = append(row, mark)
+		}
+		rows = append(rows, row)
 		if f.Size < 0 {
-			b.WriteString("Size: Unknown\n")
+			unknown = true
 		} else {
-			fmt.Fprintf(&b, "Size: %d bytes\n", f.Size)
 			total += f.Size
 		}
-		if f.Existing != "" {
-			b.WriteString("OVERWRITE: replace existing file only after successful copy\n")
-		}
-		b.WriteByte('\n')
 	}
-	fmt.Fprintf(&b, "Files: %d\nKnown total: %d bytes\nWorking files; not registered evidence.\nFailures/cancellation retain labelled partials.", len(v.plan.Files), total)
-	m.reviewText = b.String()
-	m.modalOffset = 0
-	return m.setForm("review", "Review every file · ↑↓ / PgUp/PgDn scroll", confirmForm("Download these files?", "", "Download", "Cancel"))
+	headers := []string{"NAME", "SIZE"}
+	if overwrites {
+		headers = append(headers, "OVERWRITE")
+	}
+	size := downloadSize(total)
+	if unknown {
+		size += " + unknown"
+	}
+	label := "files"
+	if len(p.Files) == 1 {
+		label = "file"
+	}
+	return centered(u.paint(numberStyle, fmt.Sprintf("%d %s · %s total", len(p.Files), label, size)), width) + "\n\n" + u.dataTable("", headers, rows, width)
+}
+
+func (m *frame) openDownloads() tea.Cmd {
+	m.modal, m.modalOffset = "downloads", 0
+	return m.dispatch(m.active, refreshDownloads(m.active))
+}
+
+func (m *frame) downloadsViewport() viewport.Model {
+	b := m.dialogBounds()
+	return scrollBody(m.current().activeUI().downloadContent(b.Dx()-6), b.Dx()-6, b.Dy()-8, m.modalOffset)
+}
+
+func (m *frame) scrollDownloads(delta int) {
+	v := m.downloadsViewport()
+	v.SetYOffset(v.YOffset() + delta)
+	m.modalOffset = v.YOffset()
 }
 
 func (m *frame) submitDownload() tea.Cmd {
@@ -121,11 +181,9 @@ func (m *frame) submitDownload() tea.Cmd {
 	m.downloadPlan = nil
 	m.dismissForm()
 	if u := m.current().fileUI(mode); u != nil {
-		u.files.downloadView = true
-		u.files.historyView = false
-		u.outputOffset = 0
 		u.output = "Starting approved download…"
 	}
+	m.modal, m.modalOffset = "downloads", 0
 	return m.dispatch(w, func() tea.Msg {
 		ctx, stop := context.WithTimeout(context.Background(), time.Minute)
 		defer stop()
@@ -161,7 +219,6 @@ func (m *frame) acceptDownloads(w string, v downloadsReady) tea.Cmd {
 
 func (m ui) downloadContent(w int) string {
 	var b strings.Builder
-	b.WriteString(m.paint(heading, "DOWNLOADS") + "\n")
 	if m.downloads.Warning != "" {
 		b.WriteString(m.paint(warningStyle, safe(m.downloads.Warning)) + "\n")
 	}
@@ -202,7 +259,7 @@ func (m ui) downloadContent(w int) string {
 			}
 		}
 		bar := m.downloadBar
-		bar.SetWidth(max(1, min(w-2, 60)))
+		bar.SetWidth(max(1, min(w-16, 60)))
 		fraction := 0.0
 		if total > 0 {
 			fraction = float64(d.Bytes) / float64(total)
@@ -230,7 +287,7 @@ func (m ui) downloadContent(w int) string {
 			} else if f.State == "failed" || f.State == "cancelled" {
 				style = errorStyle
 			}
-			b.WriteString(m.paint(style, strings.ToUpper(f.State)) + " " + m.paint(secondary, safe(f.Source)) + " → " + m.paint(secondary, safe(f.Destination)) + "\n")
+			b.WriteString(m.paint(style, strings.ToUpper(f.State)) + " " + m.paint(accent, safe(path.Base(f.Source))) + "\n")
 			if f.State == "running" {
 				fraction := 0.0
 				if f.Size > 0 {
@@ -247,7 +304,7 @@ func (m ui) downloadContent(w int) string {
 				expected = fmt.Sprint(f.Size)
 			}
 			b.WriteString(m.paint(numberStyle, fmt.Sprintf("%d copied / %s expected bytes", f.Bytes, expected)) + "\n")
-			if f.Partial != "" {
+			if f.Partial != "" && f.State != "running" && f.State != "pending" {
 				b.WriteString(m.paint(secondary, "Partial (if created): "+safe(f.Partial)) + "\n")
 			}
 			if f.Detail != "" {
@@ -260,11 +317,9 @@ func (m ui) downloadContent(w int) string {
 		b.WriteByte('\n')
 	}
 	if count == 0 {
-		b.WriteString(m.paint(secondary, "No downloads for this connection creation") + "\n")
+		b.WriteString(m.paint(secondary, "No downloads yet") + "\n")
 	}
-	b.WriteString(m.paint(secondary, "download-cancel ID · downloads · ls · Alt+B management · F1 help"))
-	lines := strings.Split(b.String(), "\n")
-	return strings.Join(lines[min(m.outputOffset, len(lines)):], "\n")
+	return b.String()
 }
 
 func newDownloadBar() progress.Model {

@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
@@ -64,11 +65,15 @@ func publicPrompt(p connection.Prompt) string {
 	}
 	return strings.Join(lines, "\n")
 }
-func promptForm(p connection.Prompt) *huh.Form {
+func promptForm(p connection.Prompt, visible bool) *huh.Form {
 	if !p.Secret {
 		return confirmForm("Verify host key", publicPrompt(p), "Trust host", "Reject")
 	}
-	return newForm(huh.NewGroup(huh.NewInput().Key("answer").Title(publicPrompt(p)).EchoMode(huh.EchoModeNone).CharLimit(4096)))
+	input := huh.NewInput().Key("answer").Title(publicPrompt(p)).EchoMode(huh.EchoModeNone).CharLimit(4096)
+	if visible {
+		input.EchoMode(huh.EchoModeNormal).Description("Visible while typing · not saved").Placeholder("Enter password or passphrase")
+	}
+	return newForm(huh.NewGroup(input)).WithShowHelp(!visible)
 }
 func promptAnswer(f *huh.Form, secret bool) []byte {
 	if secret {
@@ -270,9 +275,10 @@ func (m *frame) startAuthentication(args []string) tea.Cmd {
 	m.attempt = a
 	m.form = nil
 	m.modal = "auth"
-	m.formTitle = "Connecting · Esc / Ctrl+C cancels"
+	m.question = nil
+	m.authSpinner = spinner.New(spinner.WithSpinner(spinner.Dot))
 	args = append([]string{}, args...)
-	return tea.Batch(waitQuestion(a), func() tea.Msg {
+	return tea.Batch(m.authSpinner.Tick, waitQuestion(a), func() tea.Msg {
 		defer close(a.done)
 		result, e := connection.ExecutePrompt(ctx, path, args, func(ctx context.Context, p connection.Prompt) ([]byte, error) {
 			q := authQuestion{p, make(chan []byte)}
@@ -301,7 +307,11 @@ func (m *frame) setForm(modal, title string, f *huh.Form) tea.Cmd {
 func (m *frame) sizeForm() {
 	if m.form != nil {
 		r := m.dialogBounds()
-		m.form.WithWidth(max(1, r.Dx()-6)).WithHeight(max(1, r.Dy()-9))
+		width := max(1, r.Dx()-6)
+		if m.modal == "auth" && m.question != nil && m.question.prompt.Secret {
+			width = min(48, width)
+		}
+		m.form.WithWidth(width).WithHeight(max(1, r.Dy()-9))
 	}
 }
 func (m *frame) dismissForm() {
@@ -427,7 +437,7 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		answer := promptAnswer(completed, m.question.prompt.Secret)
 		q, a := m.question, m.attempt
 		m.question = nil
-		return tea.Batch(waitQuestion(a), func() tea.Msg {
+		return tea.Batch(m.authSpinner.Tick, waitQuestion(a), func() tea.Msg {
 			select {
 			case q.answer <- answer: // Copy belongs to the private transport until it returns.
 			case <-a.ctx.Done():
@@ -578,15 +588,35 @@ func canonicalWorkspace(s string) error {
 	return nil
 }
 func (m *frame) formText() string {
+	if m.modal == "auth" {
+		bounds := m.dialogBounds()
+		width := max(1, bounds.Dx()-6)
+		u := &m.current().management
+		if m.question == nil {
+			return lipgloss.Place(width, max(1, bounds.Dy()-4), lipgloss.Center, lipgloss.Center, u.paint(warningStyle, m.authSpinner.View()+" Connecting…"))
+		}
+		if m.question.prompt.Secret && m.form != nil {
+			lines := strings.Split(m.form.View(), "\n")
+			for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
+				lines = lines[:len(lines)-1]
+			}
+			body := lipgloss.JoinVertical(lipgloss.Center, u.paint(accent, m.formTitle), "", strings.Join(lines, "\n"))
+			return lipgloss.Place(width, max(1, bounds.Dy()-6), lipgloss.Center, lipgloss.Center, body)
+		}
+	}
 	text := centered(m.current().management.paint(accent, m.formTitle), m.dialogBounds().Dx()-6)
 	if m.modal == "quit" {
 		bounds := m.dialogBounds()
 		v := scrollBody(m.quitSummary(), bounds.Dx()-6, max(1, bounds.Dy()-14), m.modalOffset)
 		text += "\n\n" + v.View()
 	}
-	if m.modal == "review" && m.reviewText != "" {
+	if m.modal == "review" && (m.reviewText != "" || m.downloadPlan != nil) {
 		bounds := m.dialogBounds()
-		v := scrollBody(m.current().management.semanticText(m.reviewText), bounds.Dx()-6, max(1, bounds.Dy()-14), m.modalOffset)
+		body := m.current().management.semanticText(m.reviewText)
+		if m.downloadPlan != nil {
+			body = m.downloadRecap(bounds.Dx() - 6)
+		}
+		v := scrollBody(body, bounds.Dx()-6, max(1, bounds.Dy()-14), m.modalOffset)
 		text += "\n\n" + v.View()
 	}
 	if m.form != nil {

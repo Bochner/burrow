@@ -119,7 +119,7 @@ func runCLIForm(ctx context.Context, tty *os.File, f *huh.Form) error {
 	return nil
 }
 func readPrompt(ctx context.Context, tty *os.File, p connection.Prompt) ([]byte, error) {
-	f := promptForm(p)
+	f := promptForm(p, false)
 	if e := runCLIForm(ctx, tty, f); e != nil {
 		return nil, e
 	}

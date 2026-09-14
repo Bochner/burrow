@@ -22,6 +22,96 @@ import (
 	"github.com/charmbracelet/x/vt"
 )
 
+func TestAuthenticationPopup(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/auth-popup"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		if m.startAuthentication([]string{"connect", "gateway", "example.test", "tester", "--yes"}) == nil {
+			t.Fatal("authentication did not start commands")
+		}
+		defer m.attempt.cancel()
+		before := m.authSpinner.View()
+		_, tick := frameEvent(m, m.authSpinner.Tick())
+		if tick == nil || m.authSpinner.View() == before {
+			t.Fatal("Charm spinner did not animate")
+		}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("auth-connecting-%dx%d-%t", size.X, size.Y, plain))
+			bounds := m.dialogBounds()
+			for row, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+				if strings.Contains(line, "Connecting…") && absInt(row-(bounds.Min.Y+bounds.Dy()/2)) > 1 {
+					t.Fatal("connecting label is not vertically centered")
+				}
+			}
+			if !strings.Contains(ansi.Strip(m.formText()), ansi.Strip(m.authSpinner.View())+" Connecting…") {
+				t.Fatal("spinner missing to left of connecting label")
+			}
+			if !plain {
+				assertTextRole(t, screen, bounds.Inset(1), "Connecting…", "#f9e2af")
+			}
+		}
+		for _, prompt := range []string{"SSH password for tester@example.test:", "SSH key passphrase:"} {
+			q := authQuestion{prompt: connection.Prompt{Text: prompt, Secret: true}, answer: make(chan []byte)}
+			frameEvent(m, authQuestionReady{m.attempt, q})
+			if _, cmd := frameEvent(m, m.authSpinner.Tick()); cmd != nil {
+				t.Fatal("spinner kept ticking during password entry")
+			}
+			for _, value := range []string{"", "synthetic-é password"} {
+				frameEvent(m, tea.PasteMsg{Content: value})
+				for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+					frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+					capturePresentation(t, m, fmt.Sprintf("auth-entry-%dx%d-%t-%d-%d", size.X, size.Y, plain, len(prompt), len(value)))
+					view := ansi.Strip(m.View().Content)
+					if !strings.Contains(view, prompt) || !strings.Contains(view, value) || !strings.Contains(view, "Enter submit") {
+						t.Fatal("credential field or controls hidden")
+					}
+					if value != "" {
+						bounds := m.dialogBounds()
+						for row, line := range strings.Split(view, "\n") {
+							if strings.Contains(line, value) && absInt(row-(bounds.Min.Y+bounds.Dy()/2)) > 1 {
+								t.Fatal("password entry is not near dialog center")
+							}
+						}
+					}
+					if plain && m.View().Cursor == nil {
+						t.Fatal("NO_COLOR input lost caret")
+					}
+				}
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			if m.form != nil || m.question != nil || strings.Contains(m.View().Content, "synthetic-é password") || !strings.Contains(m.View().Content, "Connecting…") {
+				t.Fatal("submitted credential remained on screen")
+			}
+			if _, cmd := frameEvent(m, m.authSpinner.Tick()); cmd == nil {
+				t.Fatal("spinner failed to resume after submission")
+			}
+		}
+		q := authQuestion{prompt: connection.Prompt{Text: "SSH password:", Secret: true}, answer: make(chan []byte)}
+		frameEvent(m, authQuestionReady{m.attempt, q})
+		frameEvent(m, tea.PasteMsg{Content: "cancelled-secret"})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		if m.attempt.ctx.Err() == nil || m.modal != "" || strings.Contains(m.View().Content, "cancelled-secret") {
+			t.Fatal("Escape did not cancel connection")
+		}
+		frameEvent(m, authQuestionReady{m.attempt, q})
+		if m.modal != "" {
+			t.Fatal("late prompt reopened cancelled connection")
+		}
+		if _, cmd := frameEvent(m, m.authSpinner.Tick()); cmd != nil {
+			t.Fatal("dismissed spinner kept ticking")
+		}
+	}
+	f := promptForm(connection.Prompt{Text: "SSH password:", Secret: true}, false)
+	f.WithWidth(60)
+	f.GetFocusedField().Focus()
+	f.Update(tea.PasteMsg{Content: "synthetic-cli-secret"})
+	if strings.Contains(f.View(), "synthetic-cli-secret") || f.GetFocusedField().GetValue() != "synthetic-cli-secret" {
+		t.Fatal("CLI prompt visibility changed")
+	}
+}
+
 func TestDownloadReviewAndProgress(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/download-ui"}, true, launch.Options{})
 	defer m.terminals.close()
@@ -45,13 +135,20 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 		frameEvent(m, cmd())
 	}
 	deliver(downloadReviewReady{m.inputEpoch, plan, nil})
-	if !strings.Contains(m.reviewText, "OVERWRITE") || !strings.Contains(m.reviewText, "/downloads/α file.txt") {
-		t.Fatal("review lost effective destination or overwrite", m.reviewText)
+	recap := ansi.Strip(m.downloadRecap(70))
+	for _, part := range []string{"α file.txt", "100 B", "1 file", "OVERWRITE", "Replace"} {
+		if !strings.Contains(recap, part) {
+			t.Fatal("missing compact recap", part, recap)
+		}
+	}
+	if strings.Contains(recap, "/downloads/") || strings.Contains(recap, "Source:") {
+		t.Fatal("recap repeats known paths", recap)
 	}
 	m.noColor, m.current().management.noColor, u.noColor = false, false, false
 	screen := capturePresentation(t, m, "download-review-color")
-	assertTextRole(t, screen, m.dialogBounds(), "/downloads/α file.txt", subtextColor)
-	assertTextRole(t, screen, m.dialogBounds(), "100 bytes", "#fab387")
+	assertTextRole(t, screen, m.dialogBounds(), "α file.txt", lavenderColor)
+	assertTextRole(t, screen, m.dialogBounds(), "100 B", "#fab387")
+	assertTextRole(t, screen, m.dialogBounds(), "Replace", "#f9e2af")
 	m.noColor, m.current().management.noColor, u.noColor = true, true, true
 	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
 		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
@@ -63,10 +160,11 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 	}
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 	u.fileCommand([]string{"history"})
+	u.outputOffset = 3
 	u.input.SetValue("downloads")
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if u.files.historyView || !u.files.downloadView {
-		t.Fatal("history hid downloads")
+	if !u.files.historyView || m.modal != "downloads" || u.outputOffset != 3 {
+		t.Fatal("popup changed underlying history")
 	}
 	for _, op := range []string{"get", "mget"} {
 		u.fileCommand([]string{"help", op})
@@ -81,7 +179,6 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 		t.Fatal("batch destination needs local directory completion")
 	}
 	u.input.Reset()
-	u.files.downloadView = true
 	file := plan.Files[0]
 	file.State = "failed"
 	file.Bytes = 25
@@ -100,6 +197,10 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 	}
 	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
 		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		pw, ph := helpSize(size.X, size.Y)
+		if b := m.dialogBounds(); b.Dx() != pw || b.Dy() != ph {
+			t.Fatal("progress popup differs from help size", b)
+		}
 		capturePresentation(t, m, fmt.Sprintf("download-partial-%dx%d", size.X, size.Y))
 	}
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
@@ -107,6 +208,22 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 	screen = capturePresentation(t, m, "download-partial-color")
 	assertTextRole(t, screen, image.Rect(0, 0, 160, 40), "PARTIAL", "#f38ba8")
 	assertTextRole(t, screen, image.Rect(0, 0, 160, 40), "25 bytes", "#fab387")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.modal != "" || !u.files.historyView || u.outputOffset != 3 {
+		t.Fatal("Escape failed to restore underlying view")
+	}
+	u.input.SetValue("draft preserved")
+	deliver(downloadsReady{connection.Downloads{Records: []connection.Download{d}}, nil})
+	deliver(downloadStarted{mode: u.files})
+	if m.modal != "" || u.input.Value() != "draft preserved" {
+		t.Fatal("late update reopened popup or replaced draft")
+	}
+	u.input.SetValue("downloads")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal != "downloads" || !strings.Contains(m.View().Content, "PARTIAL") {
+		t.Fatal("downloads did not reopen retained progress")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	u.input.SetValue("get file")
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	deliver(downloadReviewReady{m.inputEpoch, plan, nil})
@@ -123,8 +240,69 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 		t.Fatal("download has no mouse approval target")
 	}
 	frameEvent(m, tea.MouseClickMsg{X: button.X, Y: button.Y, Button: tea.MouseLeft})
-	if m.downloadPlan != nil || m.modal != "" {
+	if m.downloadPlan != nil || m.modal != "downloads" {
 		t.Fatal("mouse approval did not submit review")
+	}
+	deliver(downloadStarted{mode: u.files, err: fmt.Errorf("source changed")})
+	if m.modal != "" || !strings.Contains(m.View().Content, "REFUSED: source changed") {
+		t.Fatal("start failure hidden behind progress popup")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	frameEvent(m, tea.KeyPressMsg{Code: 'b', Mod: tea.ModAlt})
+	m.current().management.input.SetValue("downloads")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal != "downloads" {
+		t.Fatal("management downloads did not open popup")
+	}
+}
+
+func TestDownloadPopupRecapAndScroll(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/download-popup"}, false, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.downloadPlan = &connection.DownloadPlan{Files: []connection.DownloadFile{
+		{Source: "/remote/first.txt", Destination: "/local/renamed.txt", Size: 1024},
+		{Source: "/remote/second.txt", Destination: "/local/second.txt", Size: -1},
+	}}
+	m.setForm("review", "Download recap", confirmForm("Download these files?", "", "Download", "Cancel"))
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		capturePresentation(t, m, fmt.Sprintf("download-batch-recap-%dx%d", size.X, size.Y))
+		if !strings.Contains(ansi.Strip(m.View().Content), "Download these files?") {
+			t.Fatal("batch confirmation clipped")
+		}
+	}
+	text := ansi.Strip(m.downloadRecap(70))
+	for _, part := range []string{"2 files", "1.0 KiB + unknown total", "first.txt → renamed.txt", "Unknown"} {
+		if !strings.Contains(text, part) {
+			t.Fatal("missing batch recap field", part, text)
+		}
+	}
+	if strings.Contains(text, "OVERWRITE") {
+		t.Fatal("unnecessary overwrite column")
+	}
+	m.dismissForm()
+	m.openDownloads()
+	u := &m.current().management
+	u.downloadObserved = true
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		capturePresentation(t, m, fmt.Sprintf("download-empty-popup-%dx%d", size.X, size.Y))
+	}
+	for i := 0; i < 12; i++ {
+		u.downloads.Records = append(u.downloads.Records, connection.Download{ID: fmt.Sprintf("transfer-%02d", i), State: "complete"})
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+	if !strings.Contains(m.downloadsViewport().View(), "transfer-00") {
+		t.Fatal("End did not reveal old outcomes")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyHome})
+	if m.modalOffset != 0 || !strings.Contains(m.downloadsViewport().View(), "transfer-11") {
+		t.Fatal("Home did not return to newest transfer")
+	}
+	frameEvent(m, tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelDown})
+	if m.modalOffset == 0 {
+		t.Fatal("popup wheel did not scroll")
 	}
 }
 

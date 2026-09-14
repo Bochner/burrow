@@ -17,7 +17,7 @@ import (
 const fileHelp = `# FILE BROWSING
 get REMOTE [LOCAL]\tReview file, size and effective destination before downloading
 mget PATTERN [LOCAL_DIR]\tReview all nonrecursive regular-file matches; sequential copies
-downloads\tReturn to per-file outcomes and measured overall/current-file progress
+downloads\tOpen the progress popup; Esc closes it without cancelling copies
 download-cancel ID\tRequest cancellation and wait for acknowledged cleanup
 Downloads continue during browsing, help, shell attachment and frontend detach.
 Overwrite is explicit in review; old files survive failed replacement.
@@ -55,7 +55,6 @@ F1 / Esc\tClose help
 
 // Navigation is frontend state; roots and transport identity remain workspace-owned.
 type fileMode struct {
-	downloadView             bool
 	saved                    ui
 	state                    connection.State
 	roots                    connection.FileRoots
@@ -189,7 +188,6 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 		return nil
 	}
 	op, area := args[0], "download"
-	f.downloadView = false
 	var query connection.FileQuery
 	local := op == "local" || op == "lcd" || op == "lls"
 	if local {
@@ -560,8 +558,6 @@ func (m ui) fileContent(w int) string {
 		for _, line := range m.history[min(m.outputOffset, len(m.history)):] {
 			b.WriteString(m.syntax(safe(line), false) + "\n")
 		}
-	} else if f.downloadView {
-		b.WriteString(m.downloadContent(w))
 	} else if f.tree != nil {
 		b.WriteString(m.paint(heading, "TREE ") + m.paint(secondary, safe(f.tree.Path)) + "\n")
 		if f.tree.Incomplete {

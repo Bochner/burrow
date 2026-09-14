@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/timer"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
@@ -80,6 +81,7 @@ type frame struct {
 	saveName                         string
 	saveCollection                   connection.Collection
 	attempt                          *authAttempt
+	authSpinner                      spinner.Model
 	question                         *authQuestion
 	savedForm                        *huh.Form
 	savedTitle                       string
@@ -282,19 +284,18 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	switch v := msg.(type) {
 	case tea.KeyPressMsg:
 		u = w.activeUI()
+		if key.Matches(v, enter) && !u.busy {
+			args, err := connection.Split(u.input.Value())
+			if err == nil && len(args) == 1 && args[0] == "downloads" {
+				u.input.Reset()
+				return m.openDownloads()
+			}
+		}
 		if u.files != nil && key.Matches(v, enter) && !u.busy {
 			args, err := connection.Split(u.input.Value())
 			if err == nil && len(args) > 0 {
 				if args[0] == "get" || args[0] == "mget" {
 					return m.reviewDownload(u, args)
-				}
-				if args[0] == "downloads" && len(args) == 1 {
-					u.files.downloadView = true
-					u.files.historyView = false
-					u.input.Reset()
-					u.output = ""
-					u.outputOffset = 0
-					return m.dispatch(path, refreshDownloads(path))
 				}
 				if args[0] == "download-cancel" && len(args) == 2 {
 					mode := u.files
@@ -428,6 +429,13 @@ func (m *frame) selectFileTab(u *ui) {
 }
 func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case spinner.TickMsg:
+		if m.attempt == nil || m.modal != "auth" || m.question != nil {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.authSpinner, cmd = m.authSpinner.Update(v)
+		return m, cmd
 	case formMessage:
 		if v.path != m.active || v.epoch != m.inputEpoch {
 			return m, nil
@@ -444,7 +452,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.question = &v.question
-		return m, m.setForm("auth", "SSH authentication", promptForm(v.question.prompt))
+		return m, m.setForm("auth", "SSH authentication", promptForm(v.question.prompt, true))
 	case authFinished:
 		if m.attempt != v.attempt {
 			return m, nil
@@ -494,6 +502,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				u.output = "Download state updated; files retained independently of this view"
 				if result.err != nil {
 					u.output = "REFUSED: " + safe(result.err.Error())
+					u.outputOffset = 0
+					if path == m.active && m.modal == "downloads" && m.current().activeUI() == u {
+						m.dismissForm()
+					}
 				}
 			}
 			return m, m.dispatch(path, refreshDownloads(path))
@@ -697,6 +709,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.modal == "quit" || m.modal == "review" {
 				m.modalOffset = max(0, m.modalOffset+delta)
+				return m, nil
+			}
+			if m.modal == "downloads" {
+				m.scrollDownloads(delta)
 				return m, nil
 			}
 			if m.current().activeUI().help {
@@ -1181,6 +1197,25 @@ func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
 		m.dismissForm()
 		return nil
 	}
+	if m.modal == "downloads" {
+		view := m.downloadsViewport()
+		switch {
+		case key.Matches(v, previous):
+			m.scrollDownloads(-1)
+		case key.Matches(v, next):
+			m.scrollDownloads(1)
+		case key.Matches(v, pageUp):
+			m.scrollDownloads(-view.Height())
+		case key.Matches(v, pageDown):
+			m.scrollDownloads(view.Height())
+		case key.Matches(v, helpHome):
+			m.modalOffset = 0
+		case key.Matches(v, helpEnd):
+			view.GotoBottom()
+			m.modalOffset = view.YOffset()
+		}
+		return nil
+	}
 	switch m.modal {
 	case "new", "menu", "context", "connect", "review", "auth", "quit", "browse", "profile-menu", "profile-save":
 		if m.modal == "new" {
@@ -1653,6 +1688,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			case "metadata":
 				v := scrollBody(m.metadata(), bw, ph-6, m.modalOffset)
 				text = v.View()
+			case "downloads":
+				v := m.downloadsViewport()
+				text = centered(current.management.paint(accent, "Downloads"), bw) + "\n\n" + v.View()
 			}
 			popup := dialogStyle.Width(pw).Height(ph).Render(fit(text, bw, ph-4))
 			layers = append(layers, lipgloss.NewLayer(solid(popup, pw, ph, popupColor, m.noColor)).ID("modal").X(x).Y(y).Z(3))
@@ -1692,11 +1730,20 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				}
 			}
 			hint := "[Esc close]"
+			if m.modal == "auth" {
+				hint = "Esc / Ctrl+C cancel connection"
+				if m.question != nil {
+					hint = "Enter submit · " + hint
+				}
+			}
 			if m.modal == "quit" {
 				hint = "↑↓ scroll connections · Esc cancel"
 			}
-			if m.modal == "review" && m.reviewText != "" {
+			if m.modal == "review" && (m.reviewText != "" || m.downloadPlan != nil) {
 				hint = "↑↓ / PgUp/PgDn scroll recap · Esc cancel"
+			}
+			if m.modal == "downloads" {
+				hint = "Esc close · ↑↓ / PgUp/PgDn scroll · downloads reopens"
 			}
 			if m.modal == "menu" {
 				hint = "↑↓ select · Enter run · Esc close"
@@ -1718,6 +1765,9 @@ func (m *frame) dialogBounds() image.Rectangle {
 		return image.Rect(x, y, x+width, y+height)
 	}
 	pw, ph := min(76, m.width-4), min(18, m.height-4)
+	if m.modal == "downloads" {
+		pw, ph = helpSize(m.width, m.height)
+	}
 	if m.modal == "new" {
 		ph = min(22, m.height-4)
 	}
@@ -1729,6 +1779,9 @@ func (m *frame) dialogBounds() image.Rectangle {
 		// gets the available terminal width before wrapping is necessary.
 		pw = min(max(76, lipgloss.Width(m.reviewText)+6), m.width-4)
 		ph = min(max(18, lipgloss.Height(ansi.Wrap(m.reviewText, max(1, pw-6), ""))+14), m.height-4)
+		if m.downloadPlan != nil {
+			pw, ph = min(76, m.width-4), min(len(m.downloadPlan.Files)+18, min(28, m.height-4))
+		}
 	}
 	if m.modal == "connect" {
 		pw, ph = min(96, m.width-4), min(34, m.height-4)

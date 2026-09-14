@@ -590,17 +590,20 @@ launch:
             os.write(outer,b"\t\r")
             wait(lambda: screen_contains(b'"closed"'))
             assert all(s["name"] != "terminal" for s in burrow(w, "connections"))
-            # Secret entry is exercised from the real management command, with
-            # no secret in command/history text or the complete terminal stream.
+            # The owner requested visible entry in the fullscreen popup only.
+            # Submission removes it; command/history and persisted state stay clean.
             ui_command = shlex.join(["connect", "terminal-secret", "127.0.0.1", "tester", "--port", str(port), "--yes"])
             os.write(outer, ui_command.encode() + b"\r")
+            wait(lambda: screen_contains("Connecting…".encode()))
             wait(lambda: screen_contains(b"SSH password"))
             assert screen_contains(b"WORKSPACES"), "authentication lost management backdrop"
             assert b"\x1b[?1049l" not in output, "authentication released alternate screen"
-            os.write(outer, auth_secret.encode() + b"\r")
+            os.write(outer, auth_secret.encode())
+            wait(lambda: screen_contains(auth_secret[-16:].encode()))
+            os.write(outer, b"\r")
             wait(lambda: screen_contains(b'"terminal-secret"'))
             assert burrow(w, "inspect", "terminal-secret")["state"] == "connected"
-            assert auth_secret.encode() not in output
+            assert not screen_contains(auth_secret[-16:].encode()), "submitted password remained visible"
             wait(lambda: screen_contains(b"Save profile as"))
             os.write(outer,b"\x1b")
             wait(lambda: not screen_contains(b"Save profile as"))
@@ -612,7 +615,10 @@ launch:
             os.write(outer, b"\x03")
             wait(lambda: screen_contains(b"attempt closed"))
             assert not (w / "burrow/terminal-cancel").exists()
-            assert auth_secret.encode() not in output
+            assert not screen_contains(auth_secret[-16:].encode()), "password leaked into later view"
+            for path in w.rglob("*"):
+                if path.is_file():
+                    assert auth_secret.encode() not in path.read_bytes(), "TUI password persisted in workspace"
             # Bare connect is optional guided entry in the same production frame.
             os.write(outer,b"connect\r")
             for label,value in [(b"Host / IP",b"127.0.0.1"),(b"SSH port",str(port).encode()),

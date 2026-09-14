@@ -434,7 +434,7 @@ func fieldStyle(header string) lipgloss.Style {
 		return hostStyle
 	case "USER", "USERNAME", "OWNER", "GROUP":
 		return successStyle
-	case "PORT", "LOCAL PORT":
+	case "PORT", "LOCAL PORT", "OVERWRITE":
 		return warningStyle
 	case "KEY", "AGENT", "SHELL", "PROXY", "SOCKS PROXY":
 		return infoStyle
