@@ -137,10 +137,10 @@ func refreshProfiles(workspace string) tea.Cmd {
 }
 func (m ui) suggestions() []string {
 	if m.files != nil {
-		values := []string{"get ", "mget ", "downloads", "download-cancel ", "ls ", "cd ", "tree ", "pwd", "local", "local download ", "local upload ", "lcd ", "lcd upload ", "lls ", "lls upload ", "history", "back", "help", "quit"}
+		values := []string{"get ", "mget ", "put ", "transfers", "transfer-cancel ", "downloads", "download-cancel ", "ls ", "cd ", "tree ", "pwd", "local", "local download ", "local upload ", "lcd ", "lcd upload ", "lls ", "lls upload ", "history", "back", "help", "quit"}
 		for _, d := range m.downloads.Records {
 			if d.State == "running" {
-				values = append(values, "download-cancel "+d.ID)
+				values = append(values, "transfer-cancel "+d.ID)
 			}
 		}
 		return values

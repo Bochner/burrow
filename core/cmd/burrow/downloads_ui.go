@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"path"
 	"path/filepath"
 	"strings"
@@ -42,21 +43,35 @@ func refreshDownloads(w string) tea.Cmd {
 
 func (m *frame) reviewDownload(u *ui, args []string) tea.Cmd {
 	if len(args) < 2 || len(args) > 3 {
-		u.output = "REFUSED: get REMOTE [LOCAL] · mget PATTERN [LOCAL_DIR]"
+		u.output = "REFUSED: get REMOTE [LOCAL] · mget PATTERN [LOCAL_DIR] · put LOCAL [REMOTE]"
 		return nil
 	}
 	f := u.files
-	remote := args[1]
-	if !path.IsAbs(remote) && !strings.HasPrefix(remote, "~") {
-		remote = f.remote + "/" + remote
-	}
-	local := f.download + "/"
-	if len(args) == 3 {
-		local = args[2]
-		if !filepath.IsAbs(local) {
-			local = filepath.Join(f.download, local)
-			if strings.HasSuffix(args[2], "/") {
-				local += "/"
+	operation, remote, local := args[0], args[1], f.download+"/"
+	if operation == "put" {
+		source := remote
+		if !filepath.IsAbs(source) {
+			source = filepath.Join(f.upload, source)
+		}
+		destination := path.Join(f.remote, path.Base(source))
+		if len(args) == 3 {
+			destination = args[2]
+			if !path.IsAbs(destination) && !strings.HasPrefix(destination, "~") {
+				destination = path.Join(f.remote, destination)
+			}
+		}
+		remote, local = source, destination
+	} else {
+		if !path.IsAbs(remote) && !strings.HasPrefix(remote, "~") {
+			remote = f.remote + "/" + remote
+		}
+		if len(args) == 3 {
+			local = args[2]
+			if !filepath.IsAbs(local) {
+				local = filepath.Join(f.download, local)
+				if strings.HasSuffix(args[2], "/") {
+					local += "/"
+				}
 			}
 		}
 	}
@@ -65,9 +80,9 @@ func (m *frame) reviewDownload(u *ui, args []string) tea.Cmd {
 	m.downloadMode = f
 	m.reviewText = ""
 	m.inputEpoch++
-	epoch, w, state, operation := m.inputEpoch, m.active, f.state, args[0]
+	epoch, w, state := m.inputEpoch, m.active, f.state
 	m.modal = "review"
-	m.formTitle = "Resolving download files and destination…"
+	m.formTitle = "Resolving transfer source and destination…"
 	u.input.Reset()
 	return m.dispatch(w, func() tea.Msg {
 		ctx, stop := context.WithTimeout(context.Background(), 25*time.Second)
@@ -96,7 +111,20 @@ func (m *frame) acceptDownloadReview(w string, v downloadReviewReady) tea.Cmd {
 	}
 	m.downloadPlan = &v.plan
 	m.modalOffset = 0
-	return m.setForm("review", "Download recap", confirmForm("Download these files?", "", "Download", "Cancel"))
+	count, noun := len(v.plan.Files), "files"
+	if count == 1 {
+		noun = "file"
+	}
+	destination := v.plan.Files[0].Destination
+	if count > 1 {
+		destination = filepath.Dir(destination)
+	}
+	title, action := "Download recap", "Download"
+	if v.plan.Operation == "put" {
+		title, action = "Upload recap", "Upload"
+	}
+	question := fmt.Sprintf("%s %d %s to %s?", action, count, noun, safe(destination))
+	return m.setForm("review", title, confirmForm(question, "", action, "Cancel"))
 }
 
 func downloadSize(n int64) string {
@@ -116,6 +144,20 @@ func downloadSize(n int64) string {
 	return fmt.Sprintf("%d B", n)
 }
 
+func downloadTotalSize(n int64) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d B", n)
+	}
+	value := float64(n)
+	for _, unit := range []string{"KB", "MB", "GB", "TB", "PB", "EB"} {
+		value /= 1000
+		if value < 1000 {
+			return fmt.Sprintf("%.1f %s", value, unit)
+		}
+	}
+	return fmt.Sprintf("%d B", n)
+}
+
 func (m *frame) downloadRecap(width int) string {
 	u := m.current().management
 	p := m.downloadPlan
@@ -127,10 +169,14 @@ func (m *frame) downloadRecap(width int) string {
 	}
 	for _, f := range p.Files {
 		name := path.Base(f.Source)
-		if target := filepath.Base(f.Destination); target != name {
+		row := []string{safe(name)}
+		if p.Operation == "put" {
+			row = append(row, safe(f.Destination))
+		} else if target := filepath.Base(f.Destination); target != name {
 			name += " → " + target
+			row[0] = safe(name)
 		}
-		row := []string{safe(name), downloadSize(f.Size)}
+		row = append(row, downloadSize(f.Size))
 		if overwrites {
 			mark := "—"
 			if f.Existing != "" {
@@ -146,6 +192,9 @@ func (m *frame) downloadRecap(width int) string {
 		}
 	}
 	headers := []string{"NAME", "SIZE"}
+	if p.Operation == "put" {
+		headers = []string{"NAME", "DESTINATION PATH", "SIZE"}
+	}
 	if overwrites {
 		headers = append(headers, "OVERWRITE")
 	}
@@ -181,7 +230,7 @@ func (m *frame) submitDownload() tea.Cmd {
 	m.downloadPlan = nil
 	m.dismissForm()
 	if u := m.current().fileUI(mode); u != nil {
-		u.output = "Starting approved download…"
+		u.output = "Starting approved transfer…"
 	}
 	m.modal, m.modalOffset = "downloads", 0
 	return m.dispatch(w, func() tea.Msg {
@@ -224,7 +273,7 @@ func (m ui) downloadContent(w int) string {
 	}
 	if m.files != nil && m.downloadObserved && m.downloadError == "" {
 		total := m.downloads.Connections[m.files.state.Creation]
-		b.WriteString(m.paint(numberStyle, fmt.Sprintf("Connection totals: %d completed files · %d bytes", total.Files, total.Bytes)) + "\n")
+		b.WriteString(m.paint(numberStyle, fmt.Sprintf("Connection totals: %d completed files · %s", total.Files, downloadTotalSize(total.Bytes))) + "\n")
 	}
 	if m.downloadError != "" {
 		b.WriteString(m.paint(errorStyle, m.downloadError) + "\nRates and outcomes below are last observed.\n")
@@ -247,63 +296,31 @@ func (m ui) downloadContent(w int) string {
 		}
 		b.WriteString(m.paint(accent, safe(d.ID)) + " · " + m.paint(stateStyle, strings.ToUpper(d.State)) + "\n")
 		var total int64
-		complete := 0
 		for _, f := range d.Files {
 			if f.Size < 0 {
 				total = -1
 			} else if total >= 0 {
 				total += f.Size
 			}
-			if f.State == "complete" {
-				complete++
-			}
 		}
-		bar := m.downloadBar
-		bar.SetWidth(max(1, min(w-16, 60)))
-		fraction := 0.0
-		if total > 0 {
-			fraction = float64(d.Bytes) / float64(total)
-		} else if d.State == "complete" {
-			fraction = 1
-		}
-		view := bar.ViewAs(fraction)
-		if m.noColor {
-			view = ansi.Strip(view)
-		}
-		b.WriteString(m.paint(secondary, "Overall ") + view + "\n")
+		b.WriteString(m.transferRow(w, "Overall progress", transferFraction(d.Bytes, total, d.State), transferAmount(d.Bytes, total), transferRate(d.AverageRate), transferClock(d.Elapsed)) + "\n")
 		eta := "Unknown"
-		if d.ETA != nil && m.downloadError == "" {
-			eta = (time.Duration(*d.ETA * float64(time.Second))).Round(time.Second).String()
+		if d.State == "complete" {
+			eta = "0:00:00"
+		} else if d.ETA != nil && m.downloadError == "" {
+			eta = transferClock(*d.ETA)
 		}
-		b.WriteString(m.paint(numberStyle, fmt.Sprintf("%d/%d files · %d bytes · %s elapsed", complete, len(d.Files), d.Bytes, (time.Duration(d.Elapsed*float64(time.Second))).Round(time.Millisecond))) + "\n")
-		if m.downloadError == "" {
-			b.WriteString(m.paint(numberStyle, fmt.Sprintf("%.0f B/s interval avg · %.0f B/s overall avg", d.Rate, d.AverageRate)) + "\n")
-		}
-		b.WriteString(m.paint(secondary, "ETA (overall average): "+eta) + "\n")
+		b.WriteString(m.paint(secondary, fmt.Sprintf("%*s", w, "ETA "+eta+" · overall average")) + "\n")
 		for _, f := range d.Files {
-			style := warningStyle
-			if f.State == "complete" {
-				style = successStyle
-			} else if f.State == "failed" || f.State == "cancelled" {
-				style = errorStyle
+			action := "Downloading "
+			if d.Plan.Operation == "put" {
+				action = "Uploading "
 			}
-			b.WriteString(m.paint(style, strings.ToUpper(f.State)) + " " + m.paint(accent, safe(path.Base(f.Source))) + "\n")
-			if f.State == "running" {
-				fraction := 0.0
-				if f.Size > 0 {
-					fraction = float64(f.Bytes) / float64(f.Size)
-				}
-				view := bar.ViewAs(fraction)
-				if m.noColor {
-					view = ansi.Strip(view)
-				}
-				b.WriteString("Current " + view + "\n")
+			rate, clock := f.AverageRate, transferClock(f.Elapsed)
+			if f.Started.IsZero() {
+				clock = "—"
 			}
-			expected := "Unknown"
-			if f.Size >= 0 {
-				expected = fmt.Sprint(f.Size)
-			}
-			b.WriteString(m.paint(numberStyle, fmt.Sprintf("%d copied / %s expected bytes", f.Bytes, expected)) + "\n")
+			b.WriteString(m.transferRow(w, action+safe(path.Base(f.Source)), transferFraction(f.Bytes, f.Size, f.State), transferAmount(f.Bytes, f.Size), transferRate(rate), clock) + "\n")
 			if f.Partial != "" && f.State != "running" && f.State != "pending" {
 				b.WriteString(m.paint(secondary, "Partial (if created): "+safe(f.Partial)) + "\n")
 			}
@@ -317,11 +334,89 @@ func (m ui) downloadContent(w int) string {
 		b.WriteByte('\n')
 	}
 	if count == 0 {
-		b.WriteString(m.paint(secondary, "No downloads yet") + "\n")
+		b.WriteString(m.paint(secondary, "No transfers yet") + "\n")
 	}
 	return b.String()
 }
 
+func transferFraction(copied, total int64, state string) float64 {
+	if total > 0 {
+		return min(1, float64(copied)/float64(total))
+	}
+	if state == "complete" {
+		return 1
+	}
+	return 0
+}
+
+func transferAmount(copied, total int64) string {
+	if total < 0 {
+		return downloadTotalSize(copied) + "/?"
+	}
+	unit, divisor := "B", float64(1)
+	for _, next := range []string{"KB", "MB", "GB", "TB", "PB", "EB"} {
+		if float64(total)/divisor < 1000 {
+			break
+		}
+		unit, divisor = next, divisor*1000
+	}
+	if divisor == 1 {
+		return fmt.Sprintf("%d/%d %s", copied, total, unit)
+	}
+	return fmt.Sprintf("%.1f/%.1f %s", float64(copied)/divisor, float64(total)/divisor, unit)
+}
+
+func transferRate(rate float64) string {
+	if rate <= 0 {
+		return "?"
+	}
+	return downloadTotalSize(int64(rate)) + "/s"
+}
+
+func transferClock(seconds float64) string {
+	total := int64(seconds + .5)
+	return fmt.Sprintf("%d:%02d:%02d", total/3600, total/60%60, total%60)
+}
+
+func transferCell(value string, width int) string {
+	value = ansi.Truncate(value, width, "…")
+	return value + strings.Repeat(" ", max(0, width-ansi.StringWidth(value)))
+}
+
+func (m ui) transferRow(width int, label string, fraction float64, amount, rate, elapsed string) string {
+	stats := fmt.Sprintf("%6.1f%%  %17s  %10s  %8s", fraction*100, amount, rate, elapsed)
+	labelWidth := min(36, max(18, width/3))
+	barWidth := width - labelWidth - ansi.StringWidth(stats) - 2
+	bar := m.downloadBar
+	if barWidth < 8 {
+		barWidth = max(8, width-ansi.StringWidth(stats)-1)
+		labelWidth = width
+	}
+	bar.SetWidth(barWidth)
+	view := bar.ViewAs(fraction)
+	if m.noColor {
+		view = ansi.Strip(view)
+	}
+	row := transferCell(label, labelWidth) + " " + view + " " + m.paint(numberStyle, stats)
+	if labelWidth == width {
+		row = transferCell(label, labelWidth) + "\n" + view + " " + m.paint(numberStyle, stats)
+	}
+	return row
+}
+
 func newDownloadBar() progress.Model {
-	return progress.New(progress.WithColors(warningStyle.GetForeground()), progress.WithWidth(40))
+	return progress.New(
+		progress.WithColorFunc(func(total, _ float64) color.Color {
+			if total < .5 {
+				return errorStyle.GetForeground()
+			}
+			if total < 1 {
+				return warningStyle.GetForeground()
+			}
+			return successStyle.GetForeground()
+		}),
+		progress.WithFillCharacters('━', '─'),
+		progress.WithoutPercentage(),
+		progress.WithWidth(40),
+	)
 }

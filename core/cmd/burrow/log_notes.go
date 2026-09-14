@@ -76,7 +76,7 @@ func operationNote(action, status, target string, payload []byte) (note, title s
 	}
 	// Individual file checkpoints do not belong in the notes. Keep final batch
 	// outcomes, including mixed failures and cancellation, below.
-	if strings.HasPrefix(action, "get file ") || strings.HasPrefix(action, "mget file ") {
+	if strings.HasPrefix(action, "get file ") || strings.HasPrefix(action, "mget file ") || strings.HasPrefix(action, "put file ") {
 		return "", title, nil
 	}
 	if fields["plan"] != nil && fields["files"] != nil {

@@ -37,17 +37,21 @@ type DownloadPlan struct {
 }
 
 type DownloadFile struct {
-	Completed   time.Time `json:"completed,omitzero"`
-	Source      string    `json:"source"`
-	Destination string    `json:"destination"`
-	Relative    string    `json:"relative"`
-	Size        int64     `json:"size"` // -1 means unknown, never an empty file.
-	Modified    time.Time `json:"modified"`
-	Existing    string    `json:"existing"`
-	Bytes       int64     `json:"bytes"`
-	State       string    `json:"state"`
-	Partial     string    `json:"partial,omitempty"`
-	Detail      string    `json:"detail,omitempty"`
+	Started        time.Time `json:"started,omitzero"`
+	Completed      time.Time `json:"completed,omitzero"`
+	Source         string    `json:"source"`
+	SourceIdentity string    `json:"sourceIdentity,omitempty"`
+	Destination    string    `json:"destination"`
+	Relative       string    `json:"relative"`
+	Size           int64     `json:"size"` // -1 means unknown, never an empty file.
+	Modified       time.Time `json:"modified"`
+	Existing       string    `json:"existing"`
+	Bytes          int64     `json:"bytes"`
+	Elapsed        float64   `json:"elapsed"`
+	AverageRate    float64   `json:"averageRate"`
+	State          string    `json:"state"`
+	Partial        string    `json:"partial,omitempty"`
+	Detail         string    `json:"detail,omitempty"`
 }
 
 type Download struct {
@@ -152,6 +156,52 @@ func downloadDestination(root *os.Root, base, target string) (string, string, er
 	return rel, localIdentity(info, false), nil
 }
 
+func remoteIdentity(info os.FileInfo) string {
+	return fmt.Sprintf("%d:%d:%d", info.Mode(), info.Size(), info.ModTime().UnixNano())
+}
+
+func remoteDestination(client *sftp.Client, source, target string) (string, string, error) {
+	if target == "" {
+		target = path.Base(source)
+	}
+	if strings.HasPrefix(target, "~") {
+		if target != "~" && !strings.HasPrefix(target, "~/") {
+			return "", "", fmt.Errorf("use ~ or ~/PATH for the connected account")
+		}
+		home, err := client.RealPath(".")
+		if err != nil {
+			return "", "", err
+		}
+		target = home + strings.TrimPrefix(target, "~")
+	}
+	if !path.IsAbs(target) {
+		cwd, err := client.RealPath(".")
+		if err != nil {
+			return "", "", err
+		}
+		target = path.Join(cwd, target)
+	}
+	if info, err := client.Lstat(target); err == nil && info.IsDir() {
+		target = path.Join(target, path.Base(source))
+	}
+	dir, err := client.RealPath(path.Dir(target))
+	if err != nil {
+		return "", "", fmt.Errorf("remote destination directory unavailable: %w", err)
+	}
+	target = path.Join(dir, path.Base(target))
+	info, err := client.Lstat(target)
+	if os.IsNotExist(err) {
+		return target, "", nil
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("remote destination unavailable: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", "", fmt.Errorf("remote destination must be a regular file")
+	}
+	return target, remoteIdentity(info), nil
+}
+
 func openFileClient(ctx context.Context, state State) (*sftp.Client, func(), error) {
 	process := fileSSH(ctx, state, "-s", "unused", "sftp")
 	in, err := process.StdinPipe()
@@ -184,11 +234,11 @@ func ReviewDownloads(ctx context.Context, w string, s State, operation, remote, 
 		Plan  DownloadPlan `json:"plan"`
 		Error string       `json:"error"`
 	}
-	if operation != "get" && operation != "mget" {
-		return result.Plan, fmt.Errorf("expected get or mget")
+	if operation != "get" && operation != "mget" && operation != "put" {
+		return result.Plan, fmt.Errorf("expected get, mget or put")
 	}
 	if s.Generation == "" || s.Creation == "" || s.State != "connected" {
-		return result.Plan, fmt.Errorf("download requires the selected live connection")
+		return result.Plan, fmt.Errorf("transfer requires the selected live connection")
 	}
 	err := managerControl(ctx, w, managerIdentity{Session: s.Session, Generation: s.Generation}, "download-review", []string{s.Creation, operation, remote, local}, &result)
 	if err == nil && result.Error != "" {
@@ -210,6 +260,9 @@ func (s *owner) reviewDownloads(ctx context.Context, operation, remote, local st
 }
 
 func (s *owner) planDownloads(ctx context.Context, operation, remote, local string) (DownloadPlan, error) {
+	if operation == "put" {
+		return s.planUpload(ctx, remote, local)
+	}
 	p := DownloadPlan{Workspace: s.config.Workspace, Operation: operation, Pattern: remote, Local: local, Files: []DownloadFile{}}
 	if len(remote) == 0 || len(remote) > 4096 || len(local) > 4096 || strings.ContainsRune(remote+local, 0) {
 		return p, fmt.Errorf("invalid download path")
@@ -342,6 +395,66 @@ func (s *owner) planDownloads(ctx context.Context, operation, remote, local stri
 	return p, nil
 }
 
+func (s *owner) planUpload(ctx context.Context, local, remote string) (DownloadPlan, error) {
+	p := DownloadPlan{Workspace: s.config.Workspace, Operation: "put", Pattern: local, Local: remote, Files: []DownloadFile{}}
+	if local == "" || len(local) > 4096 || len(remote) > 4096 || strings.ContainsRune(local+remote, 0) {
+		return p, fmt.Errorf("invalid upload path")
+	}
+	s.mu.Lock()
+	if s.closed || s.downloadClosing || s.state.State != "connected" {
+		s.mu.Unlock()
+		return p, fmt.Errorf("upload connection unavailable; reconnect explicitly")
+	}
+	err := s.checkMaster()
+	p.Owner = s.state
+	s.mu.Unlock()
+	if err != nil {
+		return p, err
+	}
+	p.Owner.Proxy = Tunnel{}
+	p.Owner.TunnelCount, p.Owner.TunnelRevision = 0, 0
+	roots, err := TransferRoots(ctx, p.Workspace)
+	if err != nil {
+		return p, err
+	}
+	p.Root = roots.Upload
+	root, err := launch.FileRoot(p.Root, false)
+	if err != nil {
+		return p, err
+	}
+	defer root.Close()
+	info, err := root.Stat(".")
+	if err != nil {
+		return p, err
+	}
+	p.RootIdentity = localIdentity(info, true)
+	rel, err := containedLocal(p.Root, local)
+	if err != nil {
+		return p, err
+	}
+	source, err := root.Open(rel)
+	if err != nil {
+		return p, fmt.Errorf("upload source unavailable; place intended files in %s: %w", p.Root, err)
+	}
+	defer source.Close()
+	info, err = source.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return p, fmt.Errorf("upload source must be a regular file inside %s", p.Root)
+	}
+	client, closeClient, err := openFileClient(ctx, p.Owner)
+	if err != nil {
+		return p, err
+	}
+	defer closeClient()
+	destination, existing, err := remoteDestination(client, rel, remote)
+	if err != nil {
+		return p, err
+	}
+	p.Files = append(p.Files, DownloadFile{Source: filepath.Join(p.Root, rel), SourceIdentity: localIdentity(info, false), Destination: destination, Relative: rel, Size: info.Size(), Modified: info.ModTime(), Existing: existing, State: "pending"})
+	p.Digest = p.hash()
+	return p, nil
+}
+
 func StartDownloads(ctx context.Context, p DownloadPlan) (Download, error) {
 	var result Download
 	if p.Digest != p.hash() || len(p.Files) == 0 {
@@ -372,8 +485,8 @@ func (m *manager) downloadCommand(req hovel.PayloadCommandRequest) (result hovel
 	var value any
 	switch req.Command {
 	case "download-review":
-		if len(req.Args) != 5 || (req.Args[2] != "get" && req.Args[2] != "mget") {
-			return result, fmt.Errorf("expected qualified download review")
+		if len(req.Args) != 5 || (req.Args[2] != "get" && req.Args[2] != "mget" && req.Args[2] != "put") {
+			return result, fmt.Errorf("expected qualified transfer review")
 		}
 		m.mu.Lock()
 		s := m.connections[req.Args[1]]
@@ -433,7 +546,14 @@ func (work *downloadWork) snapshot() Download {
 	}
 	d.Bytes = 0
 	var total int64
-	for _, f := range d.Files {
+	for i := range d.Files {
+		f := &d.Files[i]
+		if f.State == "running" && !f.Started.IsZero() {
+			f.Elapsed = time.Since(f.Started).Seconds()
+		}
+		if f.Elapsed > 0 {
+			f.AverageRate = float64(f.Bytes) / f.Elapsed
+		}
 		d.Bytes += f.Bytes
 		if f.Size < 0 {
 			total = -1
@@ -571,6 +691,9 @@ func DownloadHistory(ctx context.Context, w string) (Downloads, error) {
 		}
 		result.Records = append(result.Records, d)
 		for _, f := range d.Files {
+			if d.Plan.Operation == "put" {
+				continue
+			}
 			if f.State == "complete" {
 				result.Files++
 				result.Bytes += f.Bytes
@@ -590,8 +713,8 @@ func decodeDownload(raw string) (downloadRequest, error) {
 	var r downloadRequest
 	d := json.NewDecoder(strings.NewReader(raw))
 	d.DisallowUnknownFields()
-	if d.Decode(&r) != nil || d.Decode(new(any)) != io.EOF || len(r.ID) != 26 || strings.ContainsAny(r.ID, "/\\.") || len(r.Plan.Files) == 0 || len(r.Plan.Files) > 1000 || r.Plan.Digest != r.Plan.hash() || (r.Plan.Operation != "get" && r.Plan.Operation != "mget") {
-		return r, fmt.Errorf("invalid immutable download request")
+	if d.Decode(&r) != nil || d.Decode(new(any)) != io.EOF || len(r.ID) != 26 || strings.ContainsAny(r.ID, "/\\.") || len(r.Plan.Files) == 0 || len(r.Plan.Files) > 1000 || r.Plan.Digest != r.Plan.hash() || (r.Plan.Operation != "get" && r.Plan.Operation != "mget" && r.Plan.Operation != "put") {
+		return r, fmt.Errorf("invalid immutable transfer request")
 	}
 	for _, c := range r.ID {
 		if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9') {
@@ -599,7 +722,13 @@ func decodeDownload(raw string) (downloadRequest, error) {
 		}
 	}
 	for _, f := range r.Plan.Files {
-		if !path.IsAbs(f.Source) || strings.ContainsRune(f.Source, 0) || !filepath.IsLocal(f.Relative) || f.Destination != filepath.Join(r.Plan.Root, f.Relative) || f.State != "pending" || f.Bytes != 0 || f.Partial != "" || f.Detail != "" || !f.Completed.IsZero() {
+		pathsValid := path.IsAbs(f.Source) && filepath.IsLocal(f.Relative)
+		if r.Plan.Operation == "put" {
+			pathsValid = filepath.IsAbs(f.Source) && f.Source == filepath.Join(r.Plan.Root, f.Relative) && f.SourceIdentity != "" && path.IsAbs(f.Destination)
+		} else {
+			pathsValid = pathsValid && f.SourceIdentity == "" && f.Destination == filepath.Join(r.Plan.Root, f.Relative)
+		}
+		if !pathsValid || strings.ContainsRune(f.Source+f.Destination, 0) || f.State != "pending" || f.Bytes != 0 || f.Elapsed != 0 || f.AverageRate != 0 || f.Partial != "" || f.Detail != "" || !f.Started.IsZero() || !f.Completed.IsZero() {
 			return r, fmt.Errorf("invalid reviewed file")
 		}
 	}
@@ -624,7 +753,11 @@ func (m *manager) startDownload(raw, review, runID string) (Download, error) {
 	work.value = Download{ID: r.ID, RunID: runID, Plan: p, Files: slices.Clone(p.Files), State: "running", Started: time.Now().UTC()}
 	for i := range work.value.Files {
 		f := &work.value.Files[i]
-		f.Partial = filepath.Join(filepath.Dir(f.Destination), fmt.Sprintf(".burrow-partial-%s-%d", r.ID, i))
+		if p.Operation == "put" {
+			f.Partial = path.Join(path.Dir(f.Destination), fmt.Sprintf(".burrow-partial-%s-%d", r.ID, i))
+		} else {
+			f.Partial = filepath.Join(filepath.Dir(f.Destination), fmt.Sprintf(".burrow-partial-%s-%d", r.ID, i))
+		}
 	}
 	admission, stop := context.WithTimeout(ctx, 10*time.Second)
 	defer stop()
@@ -652,11 +785,14 @@ func (m *manager) startDownload(raw, review, runID string) (Download, error) {
 		if d.State != "running" {
 			continue
 		}
+		if (d.Plan.Operation == "put") != (p.Operation == "put") {
+			continue
+		}
 		for _, f := range d.Files {
 			for _, planned := range p.Files {
 				if f.Destination == planned.Destination {
 					cancel()
-					return Download{}, fmt.Errorf("destination already has an active download")
+					return Download{}, fmt.Errorf("destination already has an active transfer")
 				}
 			}
 		}
@@ -673,7 +809,7 @@ func (m *manager) startDownload(raw, review, runID string) (Download, error) {
 	}
 	if err := recordDownload(admission, m.Workspace, work.value); err != nil {
 		cancel()
-		return Download{}, fmt.Errorf("cannot retain download outcome; nothing copied: %w", err)
+		return Download{}, fmt.Errorf("cannot retain transfer outcome; nothing copied: %w", err)
 	}
 	m.downloads[r.ID] = work
 	if s.downloads == nil {
@@ -693,8 +829,12 @@ func (p DownloadPlan) openRoot(ctx context.Context) (*os.Root, error) {
 	if err != nil {
 		return nil, err
 	}
-	if roots.Download != p.Root {
-		return nil, fmt.Errorf("download root changed after review; review again")
+	effective := roots.Download
+	if p.Operation == "put" {
+		effective = roots.Upload
+	}
+	if effective != p.Root {
+		return nil, fmt.Errorf("transfer root changed after review; review again")
 	}
 	root, err := launch.FileRoot(p.Root, false)
 	if err != nil {
@@ -703,38 +843,60 @@ func (p DownloadPlan) openRoot(ctx context.Context) (*os.Root, error) {
 	info, err := root.Stat(".")
 	if err != nil || localIdentity(info, true) != p.RootIdentity {
 		root.Close()
-		return nil, fmt.Errorf("download root replaced after review")
+		return nil, fmt.Errorf("transfer root replaced after review")
 	}
 	return root, nil
 }
 
 func (s *owner) copyDownloads(ctx context.Context, work *downloadWork) {
-	for i := range work.value.Files {
-		err := s.copyDownload(ctx, work, i)
-		work.mu.Lock()
-		f := &work.value.Files[i]
-		if err != nil {
-			f.State, f.Detail = "failed", err.Error()
-			if ctx.Err() != nil {
-				f.State, f.Detail = "cancelled", "copy cancelled; labelled partial retained if created"
+	if work.value.Plan.Operation == "mget" {
+		s.copyBatchDownloads(ctx, work)
+	} else {
+		for i := range work.value.Files {
+			var err error
+			if work.value.Plan.Operation == "put" {
+				err = s.copyUpload(ctx, work, i)
+			} else {
+				err = s.copyDownload(ctx, work, i)
 			}
-		} else {
-			f.State = "complete"
-			f.Partial = ""
-		}
-		f.Completed = time.Now().UTC()
-		work.mu.Unlock()
-		// Retain each outcome before attempting the next file.
-		persist, stop := context.WithTimeout(context.Background(), 10*time.Second)
-		err = recordDownloadFile(persist, s.config.Workspace, work.snapshot(), i)
-		stop()
-		if err != nil {
-			work.mu.Lock()
-			work.value.Detail = "outcome persistence failed; inspect working files: " + err.Error()
-			work.mu.Unlock()
-			work.cancel()
+			s.finishDownloadFile(ctx, work, i, err)
 		}
 	}
+	s.finishDownloads(ctx, work)
+}
+
+func (s *owner) finishDownloadFile(ctx context.Context, work *downloadWork, i int, err error) {
+	work.mu.Lock()
+	f := &work.value.Files[i]
+	if err != nil {
+		f.State, f.Detail = "failed", err.Error()
+		if ctx.Err() != nil {
+			f.State, f.Detail = "cancelled", "copy cancelled; labelled partial retained if created"
+		}
+	} else {
+		f.State = "complete"
+		f.Partial = ""
+	}
+	f.Completed = time.Now().UTC()
+	if !f.Started.IsZero() {
+		f.Elapsed = f.Completed.Sub(f.Started).Seconds()
+		if f.Elapsed > 0 {
+			f.AverageRate = float64(f.Bytes) / f.Elapsed
+		}
+	}
+	work.mu.Unlock()
+	persist, stop := context.WithTimeout(context.Background(), 10*time.Second)
+	err = recordDownloadFile(persist, s.config.Workspace, work.snapshot(), i)
+	stop()
+	if err != nil {
+		work.mu.Lock()
+		work.value.Detail = "outcome persistence failed; inspect working files: " + err.Error()
+		work.mu.Unlock()
+		work.cancel()
+	}
+}
+
+func (s *owner) finishDownloads(ctx context.Context, work *downloadWork) {
 	work.mu.Lock()
 	work.value.State = "complete"
 	complete := 0
@@ -774,19 +936,64 @@ func (s *owner) copyDownload(ctx context.Context, work *downloadWork, index int)
 		return err
 	}
 	work.mu.Lock()
+	plan := work.value.Plan
+	work.mu.Unlock()
+	client, closeClient, err := openFileClient(ctx, plan.Owner)
+	if err != nil {
+		return err
+	}
+	defer closeClient()
+	return s.copyDownloadWithClient(ctx, work, index, client)
+}
+
+func (s *owner) copyBatchDownloads(ctx context.Context, work *downloadWork) {
+	work.mu.Lock()
+	plan, count := work.value.Plan, len(work.value.Files)
+	work.mu.Unlock()
+	client, closeClient, err := openFileClient(ctx, plan.Owner)
+	if err != nil {
+		for i := range count {
+			s.finishDownloadFile(ctx, work, i, err)
+		}
+		return
+	}
+	defer closeClient()
+	type result struct {
+		index int
+		err   error
+	}
+	jobs, results := make(chan int, count), make(chan result, count)
+	for range min(4, count) {
+		go func() {
+			for i := range jobs {
+				results <- result{i, s.copyDownloadWithClient(ctx, work, i, client)}
+			}
+		}()
+	}
+	for i := range count {
+		jobs <- i
+	}
+	close(jobs)
+	for range count {
+		result := <-results
+		s.finishDownloadFile(ctx, work, result.index, result.err)
+	}
+}
+
+func (s *owner) copyDownloadWithClient(ctx context.Context, work *downloadWork, index int, client *sftp.Client) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	work.mu.Lock()
 	plan, f := work.value.Plan, work.value.Files[index]
 	work.value.Files[index].State = "running"
+	work.value.Files[index].Started = time.Now().UTC()
 	work.mu.Unlock()
 	root, err := plan.openRoot(ctx)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	client, closeClient, err := openFileClient(ctx, plan.Owner)
-	if err != nil {
-		return err
-	}
-	defer closeClient()
 	canonical, err := client.RealPath(f.Source)
 	if err != nil || canonical != f.Source {
 		return fmt.Errorf("source changed or unavailable after review")
@@ -906,9 +1113,135 @@ func (s *owner) copyDownload(ctx context.Context, work *downloadWork, index int)
 	return nil
 }
 
+func (s *owner) copyUpload(ctx context.Context, work *downloadWork, index int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	work.mu.Lock()
+	plan, f := work.value.Plan, work.value.Files[index]
+	work.value.Files[index].State = "running"
+	work.value.Files[index].Started = time.Now().UTC()
+	work.mu.Unlock()
+	root, err := plan.openRoot(ctx)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	source, err := root.Open(f.Relative)
+	if err != nil {
+		return fmt.Errorf("upload source cannot be opened inside %s: %w", plan.Root, err)
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil || !info.Mode().IsRegular() || localIdentity(info, false) != f.SourceIdentity {
+		return fmt.Errorf("upload source changed after review; review again")
+	}
+	client, closeClient, err := openFileClient(ctx, plan.Owner)
+	if err != nil {
+		return err
+	}
+	defer closeClient()
+	checkDirectory := func() error {
+		directory := path.Dir(f.Destination)
+		resolved, err := client.RealPath(directory)
+		if err != nil || resolved != directory {
+			return fmt.Errorf("remote destination directory changed after review; original preserved")
+		}
+		return nil
+	}
+	check := func() error {
+		st, e := client.Lstat(f.Destination)
+		if f.Existing == "" && os.IsNotExist(e) {
+			return nil
+		}
+		if e != nil || !st.Mode().IsRegular() || f.Existing == "" || remoteIdentity(st) != f.Existing {
+			return fmt.Errorf("remote destination changed after review; original preserved")
+		}
+		return nil
+	}
+	if err := checkDirectory(); err != nil {
+		return err
+	}
+	if err := check(); err != nil {
+		return err
+	}
+	destination, err := client.OpenFile(f.Partial, os.O_CREATE|os.O_EXCL|os.O_WRONLY)
+	if err != nil {
+		return fmt.Errorf("cannot create labelled remote partial: %w", err)
+	}
+	defer destination.Close()
+	if err := destination.Chmod(0600); err != nil {
+		return fmt.Errorf("cannot protect labelled remote partial: %w", err)
+	}
+	buf := make([]byte, 128<<10)
+	var copied int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, readErr := source.Read(buf)
+		if n > 0 {
+			if int64(n) > f.Size-copied {
+				return fmt.Errorf("upload source exceeds reviewed size; labelled partial retained")
+			}
+			written, writeErr := destination.Write(buf[:n])
+			copied += int64(written)
+			work.mu.Lock()
+			work.value.Files[index].Bytes += int64(written)
+			work.mu.Unlock()
+			if writeErr != nil {
+				return fmt.Errorf("remote partial write failed: %w", writeErr)
+			}
+			if written != n {
+				return io.ErrShortWrite
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return fmt.Errorf("upload failed; labelled partial retained: %w", readErr)
+		}
+	}
+	info, err = source.Stat()
+	if err != nil || localIdentity(info, false) != f.SourceIdentity || copied != f.Size {
+		return fmt.Errorf("upload source changed during copy; labelled partial retained")
+	}
+	if err := destination.Sync(); err != nil {
+		return fmt.Errorf("remote partial durability unverified: %w", err)
+	}
+	if err := destination.Close(); err != nil {
+		return err
+	}
+	partial, err := client.Stat(f.Partial)
+	if err != nil || !partial.Mode().IsRegular() || partial.Size() != copied {
+		return fmt.Errorf("uploaded bytes could not be verified; labelled partial retained")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := checkDirectory(); err != nil {
+		return err
+	}
+	if err := check(); err != nil {
+		return err
+	}
+	if f.Existing == "" {
+		if err = client.Link(f.Partial, f.Destination); err == nil {
+			err = client.Remove(f.Partial)
+		}
+	} else {
+		err = client.PosixRename(f.Partial, f.Destination)
+	}
+	if err != nil {
+		return fmt.Errorf("remote publication failed; inspect destination and labelled partial: %w", err)
+	}
+	return nil
+}
+
 func downloadArgs(args []string) (remote, local, review string, yes bool, err error) {
 	if len(args) < 4 {
-		err = fmt.Errorf("expected scp NAME get REMOTE [LOCAL] or scp NAME mget PATTERN [LOCAL_DIR]")
+		err = fmt.Errorf("expected scp NAME get REMOTE [LOCAL], mget PATTERN [LOCAL_DIR], or put LOCAL [REMOTE]")
 		return
 	}
 	var positional []string
@@ -928,7 +1261,7 @@ func downloadArgs(args []string) (remote, local, review string, yes bool, err er
 		}
 	}
 	if len(positional) < 1 || len(positional) > 2 {
-		err = fmt.Errorf("expected remote path/pattern and optional local destination")
+		err = fmt.Errorf("expected source and optional destination")
 		return
 	}
 	remote = positional[0]
@@ -936,7 +1269,7 @@ func downloadArgs(args []string) (remote, local, review string, yes bool, err er
 		local = positional[1]
 	}
 	if remote == "" || strings.ContainsRune(remote+local, 0) || len(remote) > 4096 || len(local) > 4096 {
-		err = fmt.Errorf("invalid download path")
+		err = fmt.Errorf("invalid transfer path")
 	}
 	return
 }
@@ -969,11 +1302,17 @@ func executeDownloads(ctx context.Context, w string, args []string) (any, error)
 		return nil, err
 	}
 	if len(args) == 1 {
+		if args[0] == "downloads" {
+			history.Records = slices.DeleteFunc(history.Records, func(d Download) bool { return d.Plan.Operation == "put" })
+		}
 		return history, nil
 	}
 	for _, d := range history.Records {
 		if d.ID == args[1] {
-			if args[0] == "downloads" {
+			if args[0] == "downloads" && d.Plan.Operation == "put" {
+				return nil, fmt.Errorf("upload ID; use transfers")
+			}
+			if args[0] == "downloads" || args[0] == "transfers" {
 				return d, nil
 			}
 			var out struct {
@@ -987,5 +1326,5 @@ func executeDownloads(ctx context.Context, w string, args []string) (any, error)
 			return out.Download, err
 		}
 	}
-	return nil, fmt.Errorf("download ID not found")
+	return nil, fmt.Errorf("transfer ID not found")
 }

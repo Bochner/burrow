@@ -16,10 +16,11 @@ import (
 
 const fileHelp = `# FILE BROWSING
 get REMOTE [LOCAL]\tReview file, size and effective destination before downloading
-mget PATTERN [LOCAL_DIR]\tReview all nonrecursive regular-file matches; sequential copies
-downloads\tOpen the progress popup; Esc closes it without cancelling copies
-download-cancel ID\tRequest cancellation and wait for acknowledged cleanup
-Downloads continue during browsing, help, shell attachment and frontend detach.
+mget PATTERN [LOCAL_DIR]\tReview matches; copy up to four concurrently over one SFTP stream
+put LOCAL [REMOTE]\tReview one file from the upload area and its remote destination
+transfers\tOpen the shared progress popup; Esc closes it without cancelling copies
+transfer-cancel ID\tRequest cancellation and wait for acknowledged cleanup
+Transfers continue during browsing, help, shell attachment and frontend detach.
 logs / Ctrl+N opens saved operation logs; Ctrl+N or :q returns to this file context.
 Overwrite is explicit in review; old files survive failed replacement.
 Labelled partials remain after failure/cancel; working files are not registered evidence.
@@ -50,7 +51,6 @@ Reduced metadata is labelled when account names are unavailable; numeric IDs rem
 Automatic discovery does not poll, scan recursively, or run find commands.
 Explicit tree is capped at 3000 entries and 30 seconds; incomplete scans are labelled.
 Large responses are refused explicitly: narrow the directory rather than assume completeness.
-put remains in the upload ticket.
 F1 / Esc\tClose help
 `
 
@@ -161,7 +161,7 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 	if len(args) == 0 {
 		return nil
 	}
-	if len(args) == 2 && args[0] == "help" && (args[1] == "get" || args[1] == "mget") {
+	if len(args) == 2 && args[0] == "help" && (args[1] == "get" || args[1] == "mget" || args[1] == "put") {
 		m.input.Reset()
 		m.help = true
 		return nil
@@ -220,7 +220,7 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 		}
 	} else {
 		if len(args) > 2 || (op != "ls" && op != "tree" && op != "cd" && op != "pwd") {
-			m.output = "REFUSED: use get, mget, downloads, ls, tree, cd, pwd, local, lcd, lls or back"
+			m.output = "REFUSED: use get, mget, put, transfers, ls, tree, cd, pwd, local, lcd, lls or back"
 			return nil
 		}
 		p := f.remote
@@ -381,6 +381,12 @@ func (m ui) fileCompletionContext() (args []string, side, dir, prefix string, di
 		side = "download"
 		at = 2
 		dirs = op == "mget"
+	} else if op == "put" {
+		if len(args) == 2 {
+			side = "upload"
+		} else {
+			at = 2
+		}
 	} else if op != "ls" && op != "cd" && op != "tree" && op != "get" && op != "mget" {
 		return nil, "", "", "", false
 	}

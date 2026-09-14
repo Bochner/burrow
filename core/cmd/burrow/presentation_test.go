@@ -115,6 +115,23 @@ func TestAuthenticationPopup(t *testing.T) {
 }
 
 func TestDownloadReviewAndProgress(t *testing.T) {
+	bar := newDownloadBar()
+	bar.SetWidth(12)
+	for _, check := range []struct {
+		percent float64
+		color   string
+	}{{.25, "#f38ba8"}, {.75, "#f9e2af"}, {1, "#a6e3a1"}} {
+		screen := vt.NewEmulator(12, 1)
+		screen.Write([]byte(bar.ViewAs(check.percent)))
+		if !colorMatches(screen.CellAt(0, 0).Style.Fg, lipgloss.Color(check.color)) {
+			t.Fatalf("progress %.0f%% did not use %s", check.percent*100, check.color)
+		}
+		screen.Close()
+	}
+	plainBar := ansi.Strip(bar.ViewAs(.5))
+	if !strings.Contains(plainBar, "━") || strings.ContainsAny(plainBar, "█▌░") {
+		t.Fatal("progress bar is not a continuous line", plainBar)
+	}
 	m := newFrame(launch.Info{Workspace: "/tmp/download-ui"}, true, launch.Options{})
 	defer m.terminals.close()
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
@@ -137,6 +154,9 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 		frameEvent(m, cmd())
 	}
 	deliver(downloadReviewReady{m.inputEpoch, plan, nil})
+	if text := ansi.Strip(m.View().Content); !strings.Contains(text, "Download 1 file to /downloads/α file.txt?") {
+		t.Fatal("download approval omits resolved destination", text)
+	}
 	recap := ansi.Strip(m.downloadRecap(70))
 	for _, part := range []string{"α file.txt", "100 B", "1 file", "OVERWRITE", "Replace"} {
 		if !strings.Contains(recap, part) {
@@ -146,6 +166,13 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 	if strings.Contains(recap, "/downloads/") || strings.Contains(recap, "Source:") {
 		t.Fatal("recap repeats known paths", recap)
 	}
+	plan.Operation = "put"
+	m.downloadPlan = &plan
+	if recap := ansi.Strip(m.downloadRecap(70)); !strings.Contains(recap, "/downloads/α file.txt") {
+		t.Fatal("upload recap omits full remote destination", recap)
+	}
+	plan.Operation = "get"
+	m.downloadPlan = &plan
 	m.noColor, m.current().management.noColor, u.noColor = false, false, false
 	screen := capturePresentation(t, m, "download-review-color")
 	assertTextRole(t, screen, m.dialogBounds(), "α file.txt", lavenderColor)
@@ -168,7 +195,7 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 	if !u.files.historyView || m.modal != "downloads" || u.outputOffset != 3 {
 		t.Fatal("popup changed underlying history")
 	}
-	for _, op := range []string{"get", "mget"} {
+	for _, op := range []string{"get", "mget", "put"} {
 		u.fileCommand([]string{"help", op})
 		if !u.help {
 			t.Fatal("missing contextual help", op)
@@ -180,16 +207,27 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 	if side != "download" || !dirs {
 		t.Fatal("batch destination needs local directory completion")
 	}
+	u.input.SetValue("put 'α file.txt'")
+	_, side, _, _, dirs = u.fileCompletionContext()
+	if side != "upload" || dirs {
+		t.Fatal("put source needs upload-area file completion")
+	}
+	u.input.SetValue("put 'α file.txt' remote")
+	_, side, _, _, _ = u.fileCompletionContext()
+	if side != "remote" {
+		t.Fatal("put destination needs remote completion")
+	}
 	u.input.Reset()
 	file := plan.Files[0]
 	file.State = "failed"
 	file.Bytes = 25
 	file.Partial = "/downloads/.burrow-partial-check"
 	file.Detail = "cancelled replacement"
-	d := connection.Download{ID: "download-check", Plan: plan, Files: []connection.DownloadFile{file}, State: "partial", Bytes: 25, Elapsed: 2, AverageRate: 12.5}
+	eta := 3.0
+	d := connection.Download{ID: "download-check", Plan: plan, Files: []connection.DownloadFile{file}, State: "partial", Bytes: 25, Elapsed: 2, AverageRate: 12.5, ETA: &eta}
 	deliver(downloadsReady{connection.Downloads{Records: []connection.Download{d}}, nil})
 	text := ansi.Strip(m.View().Content)
-	for _, part := range []string{"PARTIAL", "25 bytes", "2s elapsed", "Unknown", "interval avg"} {
+	for _, part := range []string{"PARTIAL", "Overall progress", "Downloading α file.txt", "25/100 B", "0:00:02", "ETA 0:00:03"} {
 		if !strings.Contains(text, part) {
 			t.Fatal("missing measured presentation", part, text)
 		}
@@ -209,7 +247,7 @@ func TestDownloadReviewAndProgress(t *testing.T) {
 	m.noColor, m.current().management.noColor, u.noColor = false, false, false
 	screen = capturePresentation(t, m, "download-partial-color")
 	assertTextRole(t, screen, image.Rect(0, 0, 160, 40), "PARTIAL", "#f38ba8")
-	assertTextRole(t, screen, image.Rect(0, 0, 160, 40), "25 bytes", "#fab387")
+	assertTextRole(t, screen, image.Rect(0, 0, 160, 40), "25/100 B", "#fab387")
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.modal != "" || !u.files.historyView || u.outputOffset != 3 {
 		t.Fatal("Escape failed to restore underlying view")
@@ -1676,7 +1714,7 @@ func TestTableAndMetadataRoles(t *testing.T) {
 	m.current().selected = ""
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 	screen := capturePresentation(t, m, "160x40-semantic-tables")
-	expect := map[string]string{"production": "#b4befe", "10.20.0.10": "#f5c2e7", "operator": "#a6e3a1", "2222": "#f9e2af", "id_ed25519": "#94e2d5", "48.6 MiB": "#fab387"}
+	expect := map[string]string{"production": "#b4befe", "10.20.0.10": "#f5c2e7", "operator": "#a6e3a1", "2222": "#f9e2af", "id_ed25519": "#94e2d5", "48.6 MB": "#fab387"}
 	for value, hex := range expect {
 		found := false
 		for y := 0; y < m.height; y++ {
@@ -1701,8 +1739,14 @@ func TestTableAndMetadataRoles(t *testing.T) {
 	}
 	live := newFrame(launch.Info{Workspace: "/tmp/live"}, true, launch.Options{})
 	live.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
-	if !strings.Contains(live.metadata(), "Files: Unavailable") || strings.Contains(live.metadata(), "Files: 0") {
+	if !strings.Contains(live.metadata(), "Completed files: Unavailable") || strings.Contains(live.metadata(), "Completed files: 0") {
 		t.Fatal("unavailable downloads misreported")
+	}
+	live.current().management.downloadObserved = true
+	live.current().management.downloads.Files = 7
+	live.current().management.downloads.Bytes = 1_200_000_000
+	if metadata := live.metadata(); !strings.Contains(metadata, "Completed files: 7") || !strings.Contains(metadata, "Downloaded: 1.2 GB") {
+		t.Fatal("workspace download totals are not explicit or human-readable", metadata)
 	}
 	live.current().management.connectionObserved = true
 	if !strings.Contains(live.metadata(), "DISCONNECTED") {

@@ -51,7 +51,7 @@ func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
 		if err != nil {
 			return hovel.Result{}, err
 		}
-		if len(args) == 0 || (args[0] != "downloads" && args[0] != "download-cancel" && args[0] != "profile" && args[0] != "profiles" && args[0] != "history" && args[0] != "scp" && args[0] != "local" && args[0] != "lcd" && args[0] != "lls" && args[0] != "files-history") || (args[0] == "profile" && len(args) > 1 && args[1] == "connect") {
+		if len(args) == 0 || (args[0] != "downloads" && args[0] != "download-cancel" && args[0] != "transfers" && args[0] != "transfer-cancel" && args[0] != "profile" && args[0] != "profiles" && args[0] != "history" && args[0] != "scp" && args[0] != "local" && args[0] != "lcd" && args[0] != "lls" && args[0] != "files-history") || (args[0] == "profile" && len(args) > 1 && args[1] == "connect") {
 			return hovel.Result{}, fmt.Errorf("expected saved-profile or file-browsing command; authenticate explicitly through the reviewed connect adapter")
 		}
 		result, err := Execute(c, info.Workspace, args)
@@ -59,7 +59,7 @@ func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
 			return hovel.Result{}, err
 		}
 		ctx.Log.Info("workspace command completed")
-		if args[0] == "downloads" || args[0] == "download-cancel" || args[0] == "scp" || args[0] == "local" || args[0] == "lcd" || args[0] == "lls" || args[0] == "files-history" {
+		if args[0] == "downloads" || args[0] == "download-cancel" || args[0] == "transfers" || args[0] == "transfer-cancel" || args[0] == "scp" || args[0] == "local" || args[0] == "lcd" || args[0] == "lls" || args[0] == "files-history" {
 			encoded, err := json.Marshal(result)
 			if err != nil {
 				return hovel.Result{}, err

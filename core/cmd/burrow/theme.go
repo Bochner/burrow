@@ -442,7 +442,7 @@ func fieldStyle(header string) lipgloss.Style {
 		return keywordStyle
 	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
 		return numberStyle
-	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "SOURCE":
+	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "SOURCE", "DESTINATION PATH":
 		return secondary
 	case "ERROR":
 		return errorStyle

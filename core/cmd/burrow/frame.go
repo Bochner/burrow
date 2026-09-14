@@ -287,7 +287,7 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 		u = w.activeUI()
 		if key.Matches(v, enter) && !u.busy {
 			args, err := connection.Split(u.input.Value())
-			if err == nil && len(args) == 1 && args[0] == "downloads" {
+			if err == nil && len(args) == 1 && (args[0] == "downloads" || args[0] == "transfers") {
 				u.input.Reset()
 				return m.openDownloads()
 			}
@@ -295,10 +295,10 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 		if u.files != nil && key.Matches(v, enter) && !u.busy {
 			args, err := connection.Split(u.input.Value())
 			if err == nil && len(args) > 0 {
-				if args[0] == "get" || args[0] == "mget" {
+				if args[0] == "get" || args[0] == "mget" || args[0] == "put" {
 					return m.reviewDownload(u, args)
 				}
-				if args[0] == "download-cancel" && len(args) == 2 {
+				if (args[0] == "download-cancel" || args[0] == "transfer-cancel") && len(args) == 2 {
 					mode := u.files
 					u.output = "Cancellation requested; waiting for cleanup acknowledgement"
 					u.input.Reset()
@@ -1345,13 +1345,13 @@ func (m *frame) metadata() string {
 	transferNote := "Completed downloads · workspace scope"
 	if w.management.downloadObserved && w.management.downloadError == "" {
 		files = fmt.Sprint(w.management.downloads.Files)
-		bytes = fmt.Sprintf("%d B", w.management.downloads.Bytes)
+		bytes = downloadTotalSize(w.management.downloads.Bytes)
 	}
 	if w.management.downloadError != "" {
 		transferNote = "Download records unverified"
 	}
 	if m.demo {
-		files, bytes = "12", "48.6 MiB"
+		files, bytes = "12", "48.6 MB"
 		transferNote = "Sample downloads"
 	}
 	count := fmt.Sprint(connected)
@@ -1359,7 +1359,7 @@ func (m *frame) metadata() string {
 		count = "Unknown"
 	}
 	text := section("SELECTED CONNECTION") + "\n" + u.paint(connectionColor.Bold(true), connectionState) + "\n" + selected + "\n" + field("Active in workspace", count, numberStyle) + "\n\n" +
-		section("WORKSPACE DOWNLOADS") + "\n" + field("Files", files, numberStyle) + "\n" + field("Total size", bytes, numberStyle) + "\n" + u.paint(secondary, transferNote) + "\n\n" +
+		section("WORKSPACE DOWNLOADS") + "\n" + field("Completed files", files, numberStyle) + "\n" + field("Downloaded", bytes, numberStyle) + "\n" + u.paint(secondary, transferNote) + "\n\n" +
 		section("HOVEL DAEMON") + "\n"
 	if m.demo {
 		return text + u.paint(warningStyle, "DEMO · no daemon") + details
@@ -1709,7 +1709,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				text = v.View()
 			case "downloads":
 				v := m.downloadsViewport()
-				text = centered(current.management.paint(accent, "Downloads"), bw) + "\n\n" + v.View()
+				text = centered(current.management.paint(accent, "Transfers"), bw) + "\n\n" + v.View()
 			}
 			popup := dialogStyle.Width(pw).Height(ph).Render(fit(text, bw, ph-4))
 			layers = append(layers, lipgloss.NewLayer(solid(popup, pw, ph, popupColor, m.noColor)).ID("modal").X(x).Y(y).Z(3))
@@ -1762,7 +1762,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				hint = "↑↓ / PgUp/PgDn scroll recap · Esc cancel"
 			}
 			if m.modal == "downloads" {
-				hint = "Esc close · ↑↓ / PgUp/PgDn scroll · downloads reopens"
+				hint = "Esc close · ↑↓ / PgUp/PgDn scroll · transfers reopens"
 			}
 			if m.modal == "menu" {
 				hint = "↑↓ select · Enter run · Esc close"

@@ -43,14 +43,17 @@ Tree scans stop at 3000 entries or 30 seconds and label partial results.
 Completion is cached and throttled; no idle scans or recursive prefetch.
 scp NAME get REMOTE [LOCAL]          Review one download and actual destination
 scp NAME mget PATTERN [LOCAL_DIR]     Review nonrecursive regular-file matches
+scp NAME put LOCAL [REMOTE]           Review one contained upload and actual destination
 Repeat with --review DIGEST --yes to approve the unchanged recap, including overwrite.
 downloads [ID]                      Retained outcomes and workspace download totals
 download-cancel ID                  Cancel and wait for transfer cleanup acknowledgement
-Downloads continue during shell use, browsing, help and frontend detach.
+transfers [ID]                      Retained download and upload outcomes
+transfer-cancel ID                  Cancel either transfer direction and wait for cleanup
+Transfers continue during shell use, browsing, help and frontend detach.
 Existing destinations survive failed replacement; labelled partials are retained.
 Rate is measured bytes/sec (interval average); ETA uses overall average or is unknown.
-Retry selected failures with get using their recorded source/destination; restart, no resume.
-Working downloads are not automatically registered Hovel evidence. put follows in #55.
+Retry selected failures with get or put using their recorded source/destination; restart, no resume.
+Working transfers are not automatically registered Hovel evidence.
 
 profiles                            List saved entries and selected collection
 profile create NAME HOST USER [options] Save settings without connecting
@@ -276,9 +279,9 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
-	case "downloads", "download-cancel":
-		if len(args) > 2 || (args[0] == "download-cancel" && len(args) != 2) {
-			return fmt.Errorf("expected downloads [ID] or download-cancel ID")
+	case "downloads", "download-cancel", "transfers", "transfer-cancel":
+		if len(args) > 2 || ((args[0] == "download-cancel" || args[0] == "transfer-cancel") && len(args) != 2) {
+			return fmt.Errorf("expected downloads/transfers [ID] or download-cancel/transfer-cancel ID")
 		}
 		return nil
 	case "logs", "files-history":
@@ -287,7 +290,7 @@ func ValidateCommand(workspace string, args []string) error {
 		}
 		return nil
 	case "scp":
-		if len(args) > 2 && (args[2] == "get" || args[2] == "mget") {
+		if len(args) > 2 && (args[2] == "get" || args[2] == "mget" || args[2] == "put") {
 			_, _, _, _, err := downloadArgs(args)
 			if err != nil {
 				return err
@@ -527,12 +530,12 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		return execute(ctx, w, expanded, promptSocket)
 	}
 	switch args[0] {
-	case "downloads", "download-cancel":
+	case "downloads", "download-cancel", "transfers", "transfer-cancel":
 		return executeDownloads(ctx, w, args)
 	case "files-history":
 		return FileHistory(ctx, w)
 	case "scp":
-		if len(args) > 2 && (args[2] == "get" || args[2] == "mget") {
+		if len(args) > 2 && (args[2] == "get" || args[2] == "mget" || args[2] == "put") {
 			return executeDownload(ctx, w, args)
 		}
 		query, _ := fileArgs(args)
