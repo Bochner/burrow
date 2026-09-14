@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -93,16 +94,24 @@ func (m *manager) Close(string) error {
 	if e := launch.VerifyReservation(c, m.Workspace, m.dir); e != nil {
 		return e
 	}
+	var failures error
 	for _, s := range m.connections {
-		if e := s.Close("manager ended"); e != nil {
-			return e
+		failures = errors.Join(failures, s.Close("manager ended"))
+	}
+	// Preserve the manager reservation if any child remains unclosed.
+	for _, s := range m.connections {
+		s.mu.Lock()
+		closed := s.closed
+		s.mu.Unlock()
+		if !closed {
+			return failures
 		}
 	}
 	if e := os.Remove(m.dir.Name()); e != nil {
-		return e
+		return errors.Join(failures, e)
 	}
 	m.closed = true
-	return m.dir.Close()
+	return errors.Join(failures, m.dir.Close())
 }
 
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
@@ -128,7 +137,7 @@ func (m *manager) inventory() ([]State, error) {
 	return states, nil
 }
 
-func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
+func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
 	if len(req.Config) > 0 || req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported manager inputs")
 	}
@@ -214,10 +223,12 @@ func (m *manager) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 			if !slices.Equal(current, expected) {
 				return hovel.PayloadCommandResult{}, fmt.Errorf("inventory changed; review quit again")
 			}
+			var failures error
 			for _, s := range expected {
-				if e := m.connections[s.Creation].Close("reviewed quit"); e != nil {
-					return hovel.PayloadCommandResult{}, e
-				}
+				failures = errors.Join(failures, m.connections[s.Creation].Close("reviewed quit"))
+			}
+			if failures != nil {
+				return hovel.PayloadCommandResult{}, failures
 			}
 			value = map[string]string{"state": "closed"}
 		default:
@@ -269,7 +280,11 @@ func (m *manager) connect(raw, review, runID string) (State, error) {
 	}
 	m.connections[r.ID] = s
 	initial := s.state
-	s.Open()
+	if e = s.Open(); e != nil {
+		s.state.State = "lost"
+		s.state.Detail = e.Error()
+		return s.state, e
+	}
 	m.milestone("approved connection dispatched")
 	return initial, nil
 }

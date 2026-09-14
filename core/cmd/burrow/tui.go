@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -162,9 +163,9 @@ func (m *ui) cycleCompletion(backward bool) {
 	m.input.ShowSuggestions = true
 }
 
-func terminal(m *frame, noColor bool) error {
+func terminal(m *frame, noColor bool) (failure error) {
 	defer m.stopAuthentication()
-	defer m.terminals.close()
+	defer func() { m.terminals.close(); failure = errors.Join(failure, m.terminals.auditErr) }()
 	defer func() {
 		for _, w := range m.workspaces {
 			for _, u := range w.fileViews {
@@ -377,6 +378,9 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.historyIndex = len(m.history)
 			m.input.Reset()
 			switch command {
+			case "logs":
+				m.input.Reset()
+				return m, func() tea.Msg { return logsRequested{} }
 			case "help":
 				m.help = true
 				m.helpOffset = 0
@@ -655,6 +659,8 @@ Ctrl+Shift+V	Paste using your terminal's paste shortcut
 # CONNECTIONS & SHELLS
 connect	Open the guided connection form
 connect NAME HOST USER	Connect directly; review first, then authenticate privately
+logs / Ctrl+N	Open workspace log in Vim; Ctrl+N or :q returns; reopen refreshes
+Ctrl+N in SSH/Hovel/Vim	Burrow shortcut, not forwarded to the embedded program
 shell NAME / resume ID	Open a shell / return to an existing frontend-local shell
 Ctrl+] / Alt+1–9	Return from SSH to management / select a shell
 Alt+←/→	Cycle shells without closing them

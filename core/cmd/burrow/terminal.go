@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"slices"
@@ -33,10 +34,11 @@ var restartTerminal = key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+
 // Serializes launch registration against shutdown, including commands Bubble
 // Tea has not started yet. Closing waits for every child that actually started.
 type terminalLifetime struct {
-	context context.Context
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	jobs    sync.WaitGroup
+	context  context.Context
+	cancel   context.CancelFunc
+	mu       sync.Mutex
+	jobs     sync.WaitGroup
+	auditErr error
 }
 
 func (l *terminalLifetime) begin() bool {
@@ -48,6 +50,14 @@ func (l *terminalLifetime) begin() bool {
 	l.jobs.Add(1)
 	return true
 }
+func (l *terminalLifetime) recordAuditError(err error) {
+	if err != nil {
+		l.mu.Lock()
+		l.auditErr = errors.Join(l.auditErr, err)
+		l.mu.Unlock()
+	}
+}
+
 func (l *terminalLifetime) close() {
 	l.mu.Lock()
 	l.cancel()
@@ -56,6 +66,8 @@ func (l *terminalLifetime) close() {
 }
 
 type cliTab struct {
+	logs       *logView
+	auditDone  chan error
 	editor     *profileEdit
 	id         string
 	connection string
@@ -122,6 +134,9 @@ func (w *workspaceView) removeShell(tab *cliTab) {
 	}
 }
 func (tab *cliTab) label() string {
+	if tab.logs != nil {
+		return "Logs"
+	}
 	if tab.editor != nil {
 		return "Edit " + tab.editor.profile.Name
 	}
@@ -219,7 +234,7 @@ func (m *frame) openShell(name string) tea.Cmd {
 		w.management.output = invalidTerminalGeometry
 		return nil
 	}
-	tab := &cliTab{id: strconv.Itoa(len(w.shells) + 1), pending: true, connection: name}
+	tab := &cliTab{id: strconv.Itoa(len(w.shells) + 1), pending: true, connection: name, auditDone: make(chan error, 1)}
 	w.management.output = "Opening local SSH shell (" + tab.label() + ")…"
 	w.management.outputOffset = 0
 	w.shells = append(w.shells, tab)
@@ -231,15 +246,30 @@ func (m *frame) openShell(name string) tea.Cmd {
 		}
 		ctx, cancel := context.WithTimeout(lifetime.context, 10*time.Second)
 		defer cancel()
+		audit, err := launch.BeginAudit(path, "shell "+name, name, map[string]string{"scope": "lifecycle only; interactive bytes not recorded", "frontendShell": tab.id})
+		if err != nil {
+			lifetime.jobs.Done()
+			return cliOpened{tab: tab, err: err}
+		}
 		cmd, err := connection.ShellCommand(ctx, path, name)
 		var host *ptyhost.Host
 		if err == nil {
 			host, err = ptyhost.StartWithScrollback(lifetime.context, cmd, bounds.Dx(), bounds.Dy(), 1000)
 		}
 		if err != nil {
+			err = audit.Finish(nil, err)
 			lifetime.jobs.Done()
 		} else {
-			go func() { defer lifetime.jobs.Done(); <-host.Done() }()
+			if logErr := audit.Record("opened", map[string]string{"connection": name}); logErr != nil {
+				lifetime.recordAuditError(logErr)
+			}
+			go func() {
+				defer lifetime.jobs.Done()
+				<-host.Done()
+				logErr := audit.Record("ended", map[string]string{"connection": name, "exit": fmt.Sprint(host.Snapshot().Err), "scope": "lifecycle only"})
+				lifetime.recordAuditError(logErr)
+				tab.auditDone <- logErr
+			}()
 		}
 		return cliOpened{tab, host, err}
 	})
@@ -296,7 +326,7 @@ func (m *frame) closeShellTab(tab *cliTab) tea.Cmd {
 		return nil
 	}
 	w.management.busy = false
-	if w.shell == tab && w.tab == "shell" {
+	if tab.logs == nil && w.shell == tab && w.tab == "shell" {
 		w.tab, w.focus = "", "prompt"
 	}
 	w.management.output = "Closing local SSH shell…"
@@ -305,7 +335,22 @@ func (m *frame) closeShellTab(tab *cliTab) tea.Cmd {
 		return nil
 	}
 	tab.pending = true
-	return m.dispatch(path, func() tea.Msg { tab.host.Close(); return cliClosed{tab} })
+	lifetime := m.terminals
+	return m.dispatch(path, func() tea.Msg {
+		if !lifetime.begin() {
+			return nil
+		}
+		defer lifetime.jobs.Done()
+		if tab.logs == nil {
+			a, err := launch.BeginAudit(path, "shell-close "+tab.connection, tab.connection, map[string]string{"frontendShell": tab.id})
+			tab.host.Close()
+			logErr := a.Record("closed", map[string]string{"scope": "frontend shell only; connection retained"})
+			lifetime.recordAuditError(errors.Join(err, logErr))
+		} else {
+			tab.host.Close()
+		}
+		return cliClosed{tab}
+	})
 }
 
 func (m *frame) terminalBounds() image.Rectangle {
@@ -376,7 +421,13 @@ func (m *frame) readCLI(path string, tab *cliTab) tea.Cmd {
 		case <-timer.C:
 		case <-m.terminals.context.Done():
 		}
-		return cliScreen{tab, tab.host.Snapshot()}
+		screen := tab.host.Snapshot()
+		if screen.Exited && tab.auditDone != nil {
+			if err := <-tab.auditDone; err != nil {
+				screen.Err = errors.Join(screen.Err, err)
+			}
+		}
+		return cliScreen{tab, screen}
 	})
 }
 func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
@@ -396,7 +447,11 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 				v.tab.error += "; draft retained at " + safe(v.tab.editor.directory)
 			}
 			if v.tab.connection != "" {
-				w.removeShell(v.tab)
+				if v.tab.logs != nil {
+					w.restoreLogs(v.tab)
+				} else {
+					w.removeShell(v.tab)
+				}
 				w.management.output = v.tab.error
 			}
 			return nil
@@ -423,6 +478,10 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 		} // Explicit close reports after reaping.
 		v.tab.screen = v.screen
 		if v.tab.connection != "" && v.screen.Exited {
+			if v.tab.logs != nil {
+				w.restoreLogs(v.tab)
+				return nil
+			}
 			if v.tab.editor != nil {
 				v.tab.pending = true
 				return m.dispatch(path, finishProfileEditor(path, v.tab))
@@ -445,6 +504,10 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 		}
 	case cliClosed:
 		if slices.Contains(w.shells, v.tab) {
+			if v.tab.logs != nil {
+				w.restoreLogs(v.tab)
+				return nil
+			}
 			w.removeShell(v.tab)
 			w.management.output = "Local SSH shell closed (" + v.tab.label() + "); connection retained."
 		}

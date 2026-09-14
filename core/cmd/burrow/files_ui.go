@@ -20,6 +20,7 @@ mget PATTERN [LOCAL_DIR]\tReview all nonrecursive regular-file matches; sequenti
 downloads\tOpen the progress popup; Esc closes it without cancelling copies
 download-cancel ID\tRequest cancellation and wait for acknowledged cleanup
 Downloads continue during browsing, help, shell attachment and frontend detach.
+logs / Ctrl+N opens saved operation logs; Ctrl+N or :q returns to this file context.
 Overwrite is explicit in review; old files survive failed replacement.
 Labelled partials remain after failure/cancel; working files are not registered evidence.
 Retry a selected failed file with get SOURCE DESTINATION; copying restarts from zero.
@@ -167,6 +168,9 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 	}
 	if len(args) == 1 {
 		switch args[0] {
+		case "logs":
+			m.input.Reset()
+			return func() tea.Msg { return logsRequested{} }
 		case "back", "exit":
 			return m.leaveFiles()
 		case "help":

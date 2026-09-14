@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
+	ptyhost "github.com/Bochner/burrow/core/terminal"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
@@ -1873,5 +1875,164 @@ func TestSaveOfferWaitsForWorkspaceAndDialog(t *testing.T) {
 	m.showSaveOffer()
 	if m.modal != "profile-save" || m.saveName != "nas" || len(m.current().saveOffers) != 0 {
 		t.Fatal("pending save offer was not presented")
+	}
+}
+
+func TestLogViewerRestoresContext(t *testing.T) {
+	for _, tabName := range []string{"", "files", "shell", "hovel"} {
+		m := newFrame(launch.Info{Workspace: "/tmp/log-context"}, true, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		w := m.current()
+		original := &cliTab{connection: "gateway", id: "1"}
+		w.shells = []*cliTab{original}
+		w.shell = original
+		w.tab, w.focus = tabName, "prompt"
+		if tabName == "shell" || tabName == "hovel" {
+			w.focus = "terminal"
+		}
+		w.management.input.SetValue("unfinished command")
+		focus := w.focus
+		_, cmd := frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+		if cmd == nil || w.shell.logs == nil || w.tab != "shell" {
+			t.Fatal("Ctrl+N did not open logs", tabName)
+		}
+		viewer := w.shell
+		viewer.pending = false
+		// Exercise normal terminal exit through the same event path as :q.
+		m.terminalResult(m.active, cliScreen{viewer, ptyhost.Snapshot{Exited: true}})
+		if w.tab != tabName || w.focus != focus || w.shell != original || w.management.input.Value() != "unfinished command" {
+			t.Fatal("viewer lost previous context", tabName, w.tab, w.focus)
+		}
+		if strings.Contains(logVimrc(true), "highlight") || strings.Contains(logVimrc(true), "syntax match") {
+			t.Fatal("NO_COLOR syntax enabled")
+		}
+		if !strings.Contains(logVimrc(false), "highlight burrowTimestamp guifg="+baseColor+" guibg="+blueColor) {
+			t.Fatal("timestamp contrast missing")
+		}
+	}
+}
+
+func TestLogVimRenderedColors(t *testing.T) {
+	vim, err := exec.LookPath("vim")
+	if err != nil {
+		t.Fatal("Vim required for log presentation check", err)
+	}
+	const log = `2026-09-13T14:00:00-04:00 -- mget /data/*
+  Target: gateway (tester@192.0.2.10:2222)
+  COMPLETE · 2/2 files · 1.0 KiB · 2s elapsed
+  Files: 2 completed · 0 failed · 0 cancelled
+  Saved: /downloads/data
+`
+	for _, plain := range []bool{false, true} {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "vimrc"), []byte(logVimrc(plain)), 0600)
+		os.WriteFile(filepath.Join(dir, "operations.log"), []byte(log+strings.Repeat("Scrolling line\n", 100)), 0600)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		cmd := exec.Command(vim, "-N", "-M", "-u", filepath.Join(dir, "vimrc"), "-i", "NONE", "-n", "--", filepath.Join(dir, "operations.log"))
+		host, err := ptyhost.StartWithScrollback(ctx, cmd, 160, 40, 0)
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		var snap ptyhost.Snapshot
+		for {
+			snap = host.Snapshot()
+			if strings.Contains(ansi.Strip(snap.Screen), "Burrow logs snapshot") {
+				break
+			}
+			if time.Now().After(deadline) {
+				host.Close()
+				cancel()
+				t.Fatal("Vim did not render", snap.Screen)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		screen := vt.NewEmulator(160, 40)
+		screen.Write([]byte(strings.ReplaceAll(snap.Screen, "\n", "\r\n")))
+		for text, want := range map[string]string{"gateway": "#b4befe", "tester": "#a6e3a1", "192.0.2.10": "#f5c2e7", "2222": "#f9e2af", "COMPLETE": "#a6e3a1", "failed": "#f38ba8", "/downloads/data": "#a6adc8"} {
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, 1, 160, 6), text, want)
+			}
+		}
+		if !strings.Contains(screen.String(), "2026-09-13T14:00:00-04:00 -- mget /data/*") {
+			t.Fatal("log text changed")
+		}
+		cell := screen.CellAt(4, 0)
+		if !plain && !colorMatches(cell.Style.Bg, lipgloss.Color(blueColor)) {
+			t.Fatal("timestamp background missing", cell.Style.Bg, snap.Screen)
+		}
+		if plain && cell.Style.Bg != nil {
+			t.Fatal("NO_COLOR timestamp background")
+		}
+		// Wheel input must reach Vim, not the host's empty alternate-screen history.
+		if err := host.Send(uv.MouseWheelEvent{X: 20, Y: 10, Button: uv.MouseWheelDown}); err != nil {
+			t.Fatal(err)
+		}
+		deadline = time.Now().Add(3 * time.Second)
+		for strings.Contains(ansi.Strip(host.Snapshot().Screen), "2026-09-13T14:00:00") {
+			if time.Now().After(deadline) {
+				t.Fatal("mouse wheel did not scroll Vim")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		for _, size := range []image.Point{{200, 50}, {120, 30}, {80, 24}} {
+			if err := host.Send(size); err != nil {
+				t.Fatal(err)
+			}
+		}
+		host.Close()
+		cancel()
+		screen.Close()
+	}
+}
+
+func TestLogNotesSummarizeOperations(t *testing.T) {
+	var records strings.Builder
+	record := func(action, status, payload string) {
+		fmt.Fprintf(&records, "2026-09-13T14:00:00-04:00 -- %s\n  Target: gateway\n  Status: %s\n  Result:\n    %s\nEnd record\n\n", action, status, payload)
+	}
+	record("get file /one", "complete", `{"source":"/one","state":"complete"}`)
+	record("mget", "running", `{"state":"running"}`)
+	record("inspect reverse listeners", "completed", `[]`)
+	record("mget /data/*", "complete", `{"plan":{"operation":"mget","pattern":"/data/*","owner":{"name":"gateway","user":"tester","host":"example.test"}},"files":[{"state":"complete","destination":"/downloads/one"},{"state":"failed","destination":"/downloads/two"},{"state":"cancelled","destination":"/downloads/three"}],"state":"cancelled","bytes":1024,"elapsed":2,"detail":"one transfer failed"}`)
+	record("scp gateway tree /data", "completed", `{"result":{"path":"/data","entries":[{}],"incomplete":true,"errors":["permission denied"]}}`)
+	record("shell gateway", "opened", `{"state":"opened"}`)
+	var notes strings.Builder
+	if err := writeLogNotes(strings.NewReader(records.String()), &notes, "/workspace"); err != nil {
+		t.Fatal(err)
+	}
+	got := notes.String()
+	for _, want := range []string{"mget /data/*", "1/3 files", "1 completed · 1 failed · 1 cancelled", "Destination: /downloads", "INCOMPLETE · 1 entries", "permission denied", "OPENED"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %s", want, got)
+		}
+	}
+	for _, unwanted := range []string{`"state"`, "get file", "inspect reverse", "RUNNING", "End record"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("backend detail %q leaked into notes: %s", unwanted, got)
+		}
+	}
+	if strings.Count(got, " -- mget") != 1 {
+		t.Fatal("batch summary repeated", got)
+	}
+	if err := writeLogNotes(strings.NewReader("2026-09-13T14:00:00Z -- incomplete\n"), &strings.Builder{}, "/workspace"); err == nil {
+		t.Fatal("partial record accepted")
+	}
+}
+
+func TestLogNoteFailedDownload(t *testing.T) {
+	note, _, err := operationNote("get /one", "failed", "gateway", []byte(`{"plan":{"operation":"get","pattern":"/one"},"files":[{"state":"failed","destination":"/downloads/one","partial":"/downloads/one.partial","detail":"disk full"}],"state":"failed"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Destination: /downloads/one", "Partial: /downloads/one.partial", "disk full"} {
+		if !strings.Contains(note, want) {
+			t.Fatal(note)
+		}
+	}
+	if strings.Contains(note, "Saved:") {
+		t.Fatal("failed destination claimed saved", note)
 	}
 }

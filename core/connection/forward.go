@@ -103,7 +103,16 @@ func (s *owner) forwardControl(command string, t Tunnel) error {
 // Observe the remote kernel, not the requested SSH options. The authenticated
 // server must allow shell commands and readable Linux socket tables. No helper
 // is staged. Filter by the validated port remotely; discard all raw output.
-func (s *owner) reverseListeners(listen string) ([]string, error) {
+func (s *owner) reverseListeners(listen string) (value []string, failure error) {
+	a, err := launch.BeginAudit(s.config.Workspace, "inspect reverse listeners "+listen, targetLabel(s.state), nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { failure = a.Finish(value, failure) }()
+	return s.readReverseListeners(listen)
+}
+
+func (s *owner) readReverseListeners(listen string) ([]string, error) {
 	_, port, err := net.SplitHostPort(listen)
 	n, parseErr := strconv.Atoi(port)
 	if err != nil || parseErr != nil || n < 1 || n > 65535 {

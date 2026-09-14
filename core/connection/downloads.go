@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -24,6 +25,9 @@ import (
 // DownloadPlan freezes the effective paths and observed metadata before approval.
 // Working files never become registered evidence implicitly.
 type DownloadPlan struct {
+	Operation    string         `json:"operation"`
+	Pattern      string         `json:"pattern"`
+	Local        string         `json:"local"`
 	Workspace    string         `json:"workspace"`
 	Owner        State          `json:"owner"`
 	Root         string         `json:"root"`
@@ -33,6 +37,7 @@ type DownloadPlan struct {
 }
 
 type DownloadFile struct {
+	Completed   time.Time `json:"completed,omitzero"`
 	Source      string    `json:"source"`
 	Destination string    `json:"destination"`
 	Relative    string    `json:"relative"`
@@ -46,18 +51,22 @@ type DownloadFile struct {
 }
 
 type Download struct {
-	ID          string         `json:"id"`
-	RunID       string         `json:"runID"`
-	Plan        DownloadPlan   `json:"plan"`
-	Files       []DownloadFile `json:"files"`
-	State       string         `json:"state"`
-	Started     time.Time      `json:"started"`
-	Elapsed     float64        `json:"elapsed"`
-	Bytes       int64          `json:"bytes"`
-	Rate        float64        `json:"rate"` // bytes/sec averaged over the last measurement interval
-	AverageRate float64        `json:"averageRate"`
-	ETA         *float64       `json:"eta"` // nil when unknown, stalled, or not enough measurements
-	Detail      string         `json:"detail,omitempty"`
+	Completed      time.Time      `json:"completed,omitzero"`
+	CompletedFiles int            `json:"completedFiles"`
+	FailedFiles    int            `json:"failedFiles"`
+	CancelledFiles int            `json:"cancelledFiles"`
+	ID             string         `json:"id"`
+	RunID          string         `json:"runID"`
+	Plan           DownloadPlan   `json:"plan"`
+	Files          []DownloadFile `json:"files"`
+	State          string         `json:"state"`
+	Started        time.Time      `json:"started"`
+	Elapsed        float64        `json:"elapsed"`
+	Bytes          int64          `json:"bytes"`
+	Rate           float64        `json:"rate"` // bytes/sec averaged over the last measurement interval
+	AverageRate    float64        `json:"averageRate"`
+	ETA            *float64       `json:"eta"` // nil when unknown, stalled, or not enough measurements
+	Detail         string         `json:"detail,omitempty"`
 }
 
 type Downloads struct {
@@ -188,8 +197,20 @@ func ReviewDownloads(ctx context.Context, w string, s State, operation, remote, 
 	return result.Plan, err
 }
 
-func (s *owner) reviewDownloads(ctx context.Context, operation, remote, local string) (DownloadPlan, error) {
-	p := DownloadPlan{Workspace: s.config.Workspace, Files: []DownloadFile{}}
+func (s *owner) reviewDownloads(ctx context.Context, operation, remote, local string) (value DownloadPlan, failure error) {
+	s.mu.Lock()
+	state := s.state
+	s.mu.Unlock()
+	a, err := launch.BeginAudit(s.config.Workspace, "review "+operation+" "+remote+" "+local, targetLabel(state), map[string]string{"operation": operation, "source": remote, "destination": local})
+	if err != nil {
+		return value, err
+	}
+	defer func() { failure = a.Finish(value, failure) }()
+	return s.planDownloads(ctx, operation, remote, local)
+}
+
+func (s *owner) planDownloads(ctx context.Context, operation, remote, local string) (DownloadPlan, error) {
+	p := DownloadPlan{Workspace: s.config.Workspace, Operation: operation, Pattern: remote, Local: local, Files: []DownloadFile{}}
 	if len(remote) == 0 || len(remote) > 4096 || len(local) > 4096 || strings.ContainsRune(remote+local, 0) {
 		return p, fmt.Errorf("invalid download path")
 	}
@@ -440,7 +461,14 @@ func (work *downloadWork) snapshot() Download {
 	return d
 }
 
-func recordDownload(ctx context.Context, w string, d Download) error {
+func recordDownload(ctx context.Context, w string, d Download) (failure error) {
+	a := launch.Audit{Workspace: w, Action: d.Plan.Operation + " " + d.Plan.Pattern + " " + d.Plan.Local, Target: targetLabel(d.Plan.Owner), ID: d.ID}
+	auditErr := a.Record(d.State, d)
+	if auditErr != nil {
+		d.Detail += "; " + auditErr.Error()
+	}
+	defer func() { failure = errors.Join(failure, auditErr) }()
+
 	for _, call := range []struct {
 		method string
 		input  any
@@ -461,7 +489,11 @@ func recordDownload(ctx context.Context, w string, d Download) error {
 	return launch.Call(ctx, w, "AppendLog", map[string]any{"Operation": "burrow", "Chain": "downloads", "Entries": []map[string]any{{"Time": time.Now().UTC(), "Kind": "event", "Level": "info", "Source": "burrow-download", "Message": string(b)}}}, &ignored)
 }
 
-func recordDownloadFile(ctx context.Context, w string, d Download, index int) error {
+func recordDownloadFile(ctx context.Context, w string, d Download, index int) (failure error) {
+	a := launch.Audit{Workspace: w, Action: d.Plan.Operation + " file " + d.Files[index].Source, Target: targetLabel(d.Plan.Owner), ID: d.ID}
+	auditErr := a.Record(d.Files[index].State, d.Files[index])
+	defer func() { failure = errors.Join(failure, auditErr) }()
+
 	b, err := json.Marshal(struct {
 		ID    string       `json:"id"`
 		Index int          `json:"index"`
@@ -558,7 +590,7 @@ func decodeDownload(raw string) (downloadRequest, error) {
 	var r downloadRequest
 	d := json.NewDecoder(strings.NewReader(raw))
 	d.DisallowUnknownFields()
-	if d.Decode(&r) != nil || d.Decode(new(any)) != io.EOF || len(r.ID) != 26 || strings.ContainsAny(r.ID, "/\\.") || len(r.Plan.Files) == 0 || len(r.Plan.Files) > 1000 || r.Plan.Digest != r.Plan.hash() {
+	if d.Decode(&r) != nil || d.Decode(new(any)) != io.EOF || len(r.ID) != 26 || strings.ContainsAny(r.ID, "/\\.") || len(r.Plan.Files) == 0 || len(r.Plan.Files) > 1000 || r.Plan.Digest != r.Plan.hash() || (r.Plan.Operation != "get" && r.Plan.Operation != "mget") {
 		return r, fmt.Errorf("invalid immutable download request")
 	}
 	for _, c := range r.ID {
@@ -567,7 +599,7 @@ func decodeDownload(raw string) (downloadRequest, error) {
 		}
 	}
 	for _, f := range r.Plan.Files {
-		if !path.IsAbs(f.Source) || strings.ContainsRune(f.Source, 0) || !filepath.IsLocal(f.Relative) || f.Destination != filepath.Join(r.Plan.Root, f.Relative) || f.State != "pending" || f.Bytes != 0 || f.Partial != "" || f.Detail != "" {
+		if !path.IsAbs(f.Source) || strings.ContainsRune(f.Source, 0) || !filepath.IsLocal(f.Relative) || f.Destination != filepath.Join(r.Plan.Root, f.Relative) || f.State != "pending" || f.Bytes != 0 || f.Partial != "" || f.Detail != "" || !f.Completed.IsZero() {
 			return r, fmt.Errorf("invalid reviewed file")
 		}
 	}
@@ -690,6 +722,7 @@ func (s *owner) copyDownloads(ctx context.Context, work *downloadWork) {
 			f.State = "complete"
 			f.Partial = ""
 		}
+		f.Completed = time.Now().UTC()
 		work.mu.Unlock()
 		// Retain each outcome before attempting the next file.
 		persist, stop := context.WithTimeout(context.Background(), 10*time.Second)
@@ -708,6 +741,11 @@ func (s *owner) copyDownloads(ctx context.Context, work *downloadWork) {
 	for _, f := range work.value.Files {
 		if f.State == "complete" {
 			complete++
+			work.value.CompletedFiles++
+		} else if f.State == "cancelled" {
+			work.value.CancelledFiles++
+		} else {
+			work.value.FailedFiles++
 		}
 	}
 	if complete != len(work.value.Files) {
@@ -719,6 +757,7 @@ func (s *owner) copyDownloads(ctx context.Context, work *downloadWork) {
 			work.value.State = "partial"
 		}
 	}
+	work.value.Completed = time.Now().UTC()
 	work.value.Elapsed = time.Since(work.start).Seconds()
 	work.mu.Unlock()
 	persist, stop := context.WithTimeout(context.Background(), 10*time.Second)

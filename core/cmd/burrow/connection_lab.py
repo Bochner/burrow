@@ -22,7 +22,7 @@ import termios
 import time
 
 from core.cmd.burrow.authentication_lab import authentication_matrix
-from core.cmd.burrow.manager_lab import manager_checks
+from core.cmd.burrow.manager_lab import manager_checks, audit_cleanup_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
@@ -180,6 +180,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             file_ui(binary, env, screen_check, w)
             load_checks(burrow, w, container, command, options, binary, env, screen_check)
         if args.files_check:
+            audit_cleanup_checks(burrow, root, options, daemons)
             burrow(w, "close", "gateway", "--yes")
             retained = burrow(w, "downloads")
             os.kill(first["ownerPID"], signal.SIGKILL)
@@ -330,6 +331,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         if args.proxy_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
+        audit_cleanup_checks(burrow, root, options, daemons)
         manager_checks(binary,w,root,env,port,key,first,burrow,wait)
         # Both production capabilities use the one public identity.
         assert catalog() == ["burrow@0.1.0"]

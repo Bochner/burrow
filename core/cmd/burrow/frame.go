@@ -53,6 +53,7 @@ type frame struct {
 	contextMenu                      *resourceMenu
 	invalidGeometry                  bool
 	initialShell                     string
+	initialLogs                      bool
 	terminals                        *terminalLifetime
 	quitReview                       quitSnapshot
 	quitClosing                      bool
@@ -509,6 +510,11 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, m.dispatch(path, refreshDownloads(path))
+		case logsRequested:
+			if path == m.active {
+				return m, m.openLogs()
+			}
+			return m, nil
 		case shellRequested:
 			if path != m.active {
 				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("shell cancelled after workspace switch")})
@@ -650,6 +656,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = max(1, v.Height)
 		m.resize()
 		m.sizeForm()
+		if m.initialLogs {
+			m.initialLogs = false
+			return m, m.openLogs()
+		}
 		if m.initialShell != "" {
 			name := m.initialShell
 			m.initialShell = ""
@@ -824,6 +834,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.modal != "" {
 			return m, m.modalKey(v)
+		}
+		if key.Matches(v, toggleLogs) {
+			return m, m.openLogs()
 		}
 		if key.Matches(v, showBurrow) {
 			return m, m.activate("burrow")
@@ -1480,6 +1493,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			if i < len(current.shells) {
 				tab := current.shells[i]
 				id, text, active = fmt.Sprintf("shell-tab:%d", i), "Shell #"+tab.id, current.tab == "shell" && current.shell == tab
+				if tab.logs != nil {
+					text = "Logs"
+				}
 				if tab.editor != nil {
 					text = tab.label()
 				}
@@ -1566,6 +1582,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			status = "CLI: running · " + safe(m.active)
 			if tab.connection != "" {
 				status = "SSH: " + safe(tab.label()) + " · local / not recorded"
+				if tab.logs != nil {
+					status = "Logs · read-only snapshot · Ctrl+N / :q returns"
+				}
 				statusStyle = accent
 			}
 			if tab.editor != nil {

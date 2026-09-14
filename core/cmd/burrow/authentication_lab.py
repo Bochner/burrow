@@ -137,6 +137,11 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
     terminal(["connect", "bad-password", *base], [("SSH password", b"wrong\r")] * 3, success=False)
     for name in ("cancel-key", "bad-password", "signal-cancel"):
         assert not (workspace / "burrow" / name).exists(), "failed authentication left a reservation"
+    records=(workspace/"burrow-logs/operations.log").read_text()
+    for name in ("password", "passphrase", "cancel-key", "bad-password", "signal-cancel"):
+        assert "connect "+name in records, "authentication operation missing from log"
+    assert "Status: completed" in records and "Status: failed" in records and "Status: cancelled" in records
+    no_leaks()  # Includes the persisted operation log and actual authentication canary.
     if auth_only:
         return secret, encrypted
 

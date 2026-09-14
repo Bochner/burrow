@@ -3,6 +3,7 @@ package connection
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -17,7 +18,15 @@ import (
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
-const Help = `scp NAME [ls|tree|cd|pwd|complete] [PATH] Browse an existing live master (JSON)
+const Help = `logs / Ctrl+N                      Open workspace log in embedded read-only Vim
+Ctrl+N or :q returns to the previous context. Reopening refreshes the snapshot.
+Ctrl+N is reserved in management, file mode and embedded SSH/Hovel/editor tabs.
+Logs persist Burrow operations and shell lifecycle, not interactive shell I/O.
+Attempts without terminal results mean unknown outcomes; review is not execution.
+New target work requires logging; cleanup still runs if logging fails and reports it.
+Logs: WORKSPACE/burrow-logs/operations.log (private). No automatic retention/rotation.
+Authentication secrets are excluded; remote output may contain customer-sensitive data.
+scp NAME [ls|tree|cd|pwd|complete] [PATH] Browse an existing live master (JSON)
 In the TUI, scp [NAME] enters file mode; back restores management.
 local [download|upload] PATH         Persist an absolute workspace root (local PATH: download)
 local                               Show effective upload and download roots
@@ -272,7 +281,7 @@ func ValidateCommand(workspace string, args []string) error {
 			return fmt.Errorf("expected downloads [ID] or download-cancel ID")
 		}
 		return nil
-	case "files-history":
+	case "logs", "files-history":
 		if len(args) != 1 {
 			return fmt.Errorf("expected files-history")
 		}
@@ -475,7 +484,38 @@ func Execute(ctx context.Context, w string, args []string) (any, error) {
 	return execute(ctx, w, args, "")
 }
 
-func execute(ctx context.Context, w string, args []string, promptSocket string) (any, error) {
+func execute(ctx context.Context, w string, args []string, promptSocket string) (value any, failure error) {
+	if err := ValidateCommand(w, args); err != nil {
+		return nil, err
+	}
+	if args[0] == "connect" || args[0] == "reconnect" {
+		_, approved, _ := Parse(w, args[1:])
+		if !approved {
+			return executeOperation(ctx, w, args, promptSocket)
+		}
+	}
+	// Capture submitted identity and full safe frontend result, including reviews
+	// and pre-dispatch refusals. Owner records carry asynchronous actual outcomes.
+	switch args[0] {
+	case "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
+		a, err := launch.BeginAudit(w, commandIdentity(args), "submitted request; see owner result", nil)
+		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove")
+		if err != nil && !cleanup {
+			return nil, err
+		}
+		defer func() {
+			status := "returned; see result state (review is not execution)"
+			if failure != nil {
+				status = "failed or refused; see owner records for execution outcome"
+			}
+			logErr := a.Record(status, map[string]any{"result": value, "error": fmt.Sprint(failure)})
+			failure = errors.Join(failure, err, logErr)
+		}()
+	}
+	return executeOperation(ctx, w, args, promptSocket)
+}
+
+func executeOperation(ctx context.Context, w string, args []string, promptSocket string) (value any, failure error) {
 	if e := ValidateCommand(w, args); e != nil {
 		return nil, e
 	}
@@ -560,6 +600,11 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	if c.Prompt && promptSocket == "" {
 		return nil, fmt.Errorf("--prompt requires a private interactive frontend; secrets cannot be supplied as command inputs")
 	}
+	a, auditErr := launch.BeginAudit(w, commandIdentity(args), c.User+"@"+c.Host, nil)
+	if auditErr != nil {
+		return nil, auditErr
+	}
+	defer func() { failure = a.Finish(value, failure) }()
 	c.PromptSocket = promptSocket
 	if args[0] == "reconnect" {
 		s, e := selected(ctx, w, c.Name)

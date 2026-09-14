@@ -46,6 +46,26 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfer
         os.write(outer, ("scp " + name + "\r").encode())
         wait("FILE MODE")
         wait("LISTING /config")
+        if not slow and not transfers:
+            log_path = Path(workspace)/"burrow-logs/operations.log"
+            before_log = log_path.read_bytes()
+            os.write(outer, b"unfinished draft")
+            os.write(outer, b"\x0e")
+            wait("Burrow logs snapshot")
+            os.write(outer, b"gg")
+            wait("Workspace:")
+            os.write(outer, b":w!\r")
+            wait("Writing is disabled")  # -M clears 'write', even :w! cannot write.
+            os.write(outer, b"\x0e")
+            wait("FILE MODE")
+            wait("unfinished draft")
+            os.write(outer, b"\x15")
+            os.write(outer, b"logs\r")
+            wait("Burrow logs snapshot")
+            os.write(outer, b":q\r")
+            wait("FILE MODE")
+            assert log_path.read_bytes().startswith(before_log), "viewer overwrote log"
+            print("PASS log Vim open/toggle/reopen/normal exit restores file draft; live log preserved", flush=True)
         if transfers:
             target=Path(workspace)/"burrow-files/downloads/ui-destination/large.bin"
             target.parent.mkdir()
@@ -87,6 +107,9 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfer
                 time.sleep(.1)
             cancelled=cli("download-cancel",transfer["id"])
             assert cancelled["state"]=="cancelled",cancelled
+            records=(Path(workspace)/"burrow-logs/operations.log").read_text()
+            assert cancelled["completed"] in records and cancelled["files"][0]["partial"] in records
+            assert "DOWNLOAD_SHELL_LIVE" not in records, "interactive shell bytes were recorded"
             assert target.read_bytes()==b"original survives cancellation"
             partial=Path(cancelled["files"][0]["partial"])
             assert partial.is_file() and 0<partial.stat().st_size<64*1024*1024,cancelled
@@ -366,6 +389,27 @@ def download_checks(burrow, workspace, state, container, command):
     assert (root / "batch/empty.txt").read_bytes() == b""
     before = burrow(workspace, "downloads")
     assert before["files"] == 3 and before["bytes"] == 34, before
+    log_path = Path(workspace)/"burrow-logs/operations.log"
+    deadline = time.monotonic()+5
+    while True:
+        log = log_path.read_text()
+        if '"completedFiles": 2' in log:
+            break
+        assert time.monotonic()<deadline, "detached batch completion missing"
+        time.sleep(.05)
+    for completed in (result, batch):
+        assert completed["id"] in log and completed["completed"] in log
+        for file in completed["files"]:
+            assert file["source"] in log and file["destination"] in log and file["completed"] in log
+    assert "download fixture" not in log, "download contents duplicated into log"
+    assert "\x1b" not in log
+    assert log_path.stat().st_mode & 0o777 == 0o600
+    # New target work refuses unsafe logging before issuing the SFTP query.
+    log_path.chmod(0o400)
+    failure = burrow(workspace,"scp","gateway","ls",base,ok=False)
+    assert "audit incomplete" in failure, failure
+    log_path.chmod(0o600)
+    print("PASS durable single/batch full outcomes after CLI detach; private log and unavailable-storage refusal", flush=True)
     assert burrow(workspace, "downloads")["files"] == 3, "observation duplicated totals"
     old = root / "replace.txt"
     old.write_bytes(b"original")
@@ -445,9 +489,12 @@ def download_failures(burrow, workspace, container, command, options):
     target=root/"write-failure.bin"
     target.write_bytes(b"preserve on write failure")
     try:
+        transfer=start("file-observer",remote,"write-failure.bin")
+        observe(transfer,lambda v:v["bytes"]>0)
         resource.prlimit(owner,resource.RLIMIT_FSIZE,(4096,limit[1]))
-        failed=observe(start("file-observer",remote,"write-failure.bin"),lambda v:v["state"]!="running")
-        assert failed["state"]=="failed" and 0<failed["bytes"]<=4096,failed
+        failed=observe(transfer,lambda v:v["state"]!="running")
+        assert failed["state"] in ("failed","cancelled") and failed["files"][0]["state"]=="failed" and failed["bytes"]>0,failed
+        assert "persistence failed" in failed.get("detail", ""), failed
         assert target.read_bytes()==b"preserve on write failure"
     finally:
         resource.prlimit(owner,resource.RLIMIT_FSIZE,limit)
@@ -472,6 +519,15 @@ def download_failures(burrow, workspace, container, command, options):
     assert mixed["state"]=="partial" and [f["state"] for f in mixed["files"]]==["complete","failed","complete"],mixed
     assert (root/"mixed/a.bin").read_bytes()==bytes(4*1024*1024)
     assert (root/"mixed/c.bin").read_bytes()==b"final"
+    log_path=Path(workspace)/"burrow-logs/operations.log"
+    deadline=time.monotonic()+5
+    while mixed["completed"] not in log_path.read_text():
+        assert time.monotonic()<deadline, "mixed completion not logged"
+        time.sleep(.05)
+    records=log_path.read_text()
+    for f in mixed["files"]:
+        assert f["completed"] in records and f["destination"] in records and f["state"] in records
+    assert '"completedFiles": 2' in records and '"failedFiles": 1' in records
     untouched=(root/"mixed/a.bin").stat().st_mtime_ns
     command("docker","exec",container,"chmod","600",base+"/b.bin")
     retry=observe(start("file-observer",base+"/b.bin","mixed/b.bin"),lambda v:v["state"]!="running")

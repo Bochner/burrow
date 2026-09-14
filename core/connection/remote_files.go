@@ -182,7 +182,19 @@ func (m *manager) filesCommand(req hovel.PayloadCommandRequest) (result hovel.Pa
 	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(raw)}, err
 }
 
-func (s *owner) browse(ctx context.Context, q FileQuery) (any, error) {
+func (s *owner) browse(ctx context.Context, q FileQuery) (value any, failure error) {
+	s.mu.Lock()
+	state := s.state
+	s.mu.Unlock()
+	a, err := launch.BeginAudit(s.config.Workspace, "scp "+state.Name+" "+q.Operation+" "+q.Path, targetLabel(state), q)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { failure = a.Finish(value, failure) }()
+	return s.browseFiles(ctx, q)
+}
+
+func (s *owner) browseFiles(ctx context.Context, q FileQuery) (any, error) {
 	// TryLock coalesces speculative requests rather than queueing remote work.
 	if q.Operation == "complete" {
 		if !s.fileMu.TryLock() {

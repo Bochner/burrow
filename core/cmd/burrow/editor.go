@@ -101,7 +101,7 @@ func prepareProfileEditor(edit *profileEdit, plain bool) (*exec.Cmd, error) {
 
 func profileVimrc(plain bool) string {
 	var b strings.Builder
-	b.WriteString("set nocompatible nomodeline noexrc noloadplugins\nlet &runtimepath=$VIMRUNTIME\nset packpath=\nset number expandtab shiftwidth=2 softtabstop=2 tabstop=2\nset backspace=indent,eol,start hidden\nset noswapfile nobackup nowritebackup noundofile\nset conceallevel=0\nlet g:vim_json_conceal=0\nfiletype plugin indent on\nset background=dark\n")
+	b.WriteString("set nocompatible nomodeline noexrc noloadplugins\nlet &runtimepath=$VIMRUNTIME\nset packpath=\nset number expandtab shiftwidth=2 softtabstop=2 tabstop=2\nset backspace=indent,eol,start hidden\nset noswapfile nobackup nowritebackup noundofile\nset mouse=a ttymouse=sgr scrolloff=3 sidescrolloff=3\nset conceallevel=0\nlet g:vim_json_conceal=0\nfiletype plugin indent on\nset background=dark\n")
 	if plain {
 		b.WriteString("syntax off\n")
 		return b.String()
