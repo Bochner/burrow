@@ -298,9 +298,14 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"meta")
             read_until(b"Metadata")
             os.write(master, b"\r")
-            read_until(b"SELECTED CONNECTION")
+            # The sidebar always shows SELECTED CONNECTION; only the popup's
+            # dismiss hint proves the Metadata popup is open before Escape.
+            read_until(b"[Esc close]")
             os.write(master, b"\x1b")
-            time.sleep(.2)
+            # A lone Escape is parsed 50ms after arrival; wait for the dismissal
+            # to render (the popup covered this output line) before the next Alt
+            # sequence so the bytes cannot merge.
+            read_until(b"Verified daemon", absent=b"[Esc close]")
             # Real New form launches through the shared verified Open operation.
             created = root / "data" / "burrow" / "workspaces" / "nav-created"
             os.write(master, b"\x1bn")  # Alt+N
@@ -321,7 +326,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\x1b[<0;3;21M\x1b[<0;3;21m")
             read_until(b"Workspace name")
             os.write(master, b"\x1b")
-            time.sleep(.2)
+            read_until(b"SAVED CONNECTIONS", absent=b"Workspace name")
             os.write(master, b"\x1bw")
             read_until(b"[Esc close]")
             os.write(master, b"\x1b[B\r")
@@ -333,7 +338,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"sta\x1bOP")  # draft, F1
             read_until(b"Burrow Help")
             os.write(master, b"\x1b")
-            time.sleep(.3)
+            read_until(b"SAVED CONNECTIONS", absent=b"Burrow Help")
             os.write(master, b"\t")
             read_until(b"status")
             os.write(master, b"\r")
@@ -382,7 +387,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             read_until(b"Type to filter")
             assert b"\x1b[1 q" in output, "native blinking block cursor was not requested"
             os.write(master, b"\x1b")
-            time.sleep(.2)
+            read_until(b"SAVED CONNECTIONS", absent=b"Type to filter")
             # A failed refresh must invalidate the visible daemon identity.
             os.kill(info["pid"], signal.SIGTERM)
             processes.remove(info["pid"])
