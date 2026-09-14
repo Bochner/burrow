@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -76,6 +78,11 @@ func connectionTimer() tea.Cmd {
 }
 
 type ui struct {
+	downloads                     connection.Downloads
+	downloadObserved              bool
+	downloadError                 string
+	downloadBar                   progress.Model
+	files                         *fileMode
 	tunnels                       []connection.Tunnel
 	tunnelError                   string
 	tunnelOffset                  int
@@ -116,7 +123,7 @@ func newUI(info launch.Info, noColor bool) ui {
 	input.KeyMap.PrevSuggestion = previous
 	input.CharLimit = 2048
 	input.Focus()
-	m := ui{info: info, input: input, noColor: noColor, tunnelError: "UNVERIFIED · loading forwarding inventory", output: "Verified daemon · quit reviews connections: keep or close."}
+	m := ui{downloadBar: newDownloadBar(), info: info, input: input, noColor: noColor, tunnelError: "UNVERIFIED · loading forwarding inventory", output: "Verified daemon · quit reviews connections: keep or close."}
 	m.input.SetSuggestions(m.suggestions())
 	return m
 }
@@ -124,6 +131,9 @@ func newUI(info launch.Info, noColor bool) ui {
 func (m ui) completionOptions() ([]string, int) {
 	if len(m.completionValues) > 0 && m.input.Value() == m.completionValue {
 		return m.completionValues, m.completionIndex
+	}
+	if m.files != nil {
+		return m.files.matches, 0
 	}
 	return m.input.MatchedSuggestions(), m.input.CurrentSuggestionIndex()
 }
@@ -153,9 +163,18 @@ func (m *ui) cycleCompletion(backward bool) {
 	m.input.ShowSuggestions = true
 }
 
-func terminal(m *frame, noColor bool) error {
+func terminal(m *frame, noColor bool) (failure error) {
 	defer m.stopAuthentication()
-	defer m.terminals.close()
+	defer func() { m.terminals.close(); failure = errors.Join(failure, m.terminals.auditErr) }()
+	defer func() {
+		for _, w := range m.workspaces {
+			for _, u := range w.fileViews {
+				if cmd := u.cancelFiles(); cmd != nil {
+					cmd()
+				}
+			}
+		}
+	}()
 	opts := []tea.ProgramOption{}
 	// Aspect captures stdout; keep rendering on the actual controlling terminal.
 	if !term.IsTerminal(os.Stdout.Fd()) {
@@ -177,6 +196,15 @@ func (m ui) Init() tea.Cmd {
 }
 func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case fileResult:
+		m.acceptFiles(v)
+		return m, nil
+	case fileDiscoveryTick:
+		cmd := m.discoverFiles(v)
+		return m, cmd
+	case fileDiscovery:
+		cmd := m.acceptDiscovery(v)
+		return m, cmd
 	case tunnelList:
 		if v.err != nil {
 			m.tunnelError = "UNVERIFIED · forwarding inventory unavailable"
@@ -200,7 +228,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !found {
 				m.selectedProfile = ""
 			}
-			if !m.profileHistoryLoaded {
+			if !m.profileHistoryLoaded && m.files == nil {
 				m.history = append(v.history, m.history...)
 				m.historyIndex = len(m.history)
 				m.profileHistoryLoaded = true
@@ -252,7 +280,8 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.SetValue(m.input.Value() + safe(v.Content))
 		m.input.CursorEnd()
 		m.input.SetSuggestions(m.suggestions())
-		return m, nil
+		cmd := m.scheduleFileCompletion()
+		return m, cmd
 	case tea.KeyPressMsg:
 		if m.help {
 			m.updateHelp(v, m.width, m.height)
@@ -260,7 +289,8 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if key.Matches(v, completionNext, completionPrevious) {
 			m.cycleCompletion(key.Matches(v, completionPrevious))
-			return m, nil
+			cmd := m.scheduleFileCompletion()
+			return m, cmd
 		}
 		if len(m.completionValues) > 0 && key.Matches(v, previous, next) {
 			m.cycleCompletion(key.Matches(v, previous))
@@ -287,6 +317,15 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.outputOffset++
 			return m, nil
 		case key.Matches(v, quit):
+			if m.files != nil {
+				var cmd tea.Cmd
+				if m.busy {
+					cmd = m.cancelFiles()
+				} else {
+					cmd = m.leaveFiles()
+				}
+				return m, cmd
+			}
 			m.quitting = true
 			return m, nil
 		case key.Matches(v, help):
@@ -313,6 +352,15 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(v, enter):
 			command := strings.TrimSpace(m.input.Value())
+			if m.files != nil {
+				args, e := connection.Split(command)
+				if e != nil {
+					m.output = "REFUSED: " + safe(e.Error())
+					return m, nil
+				}
+				cmd := m.fileCommand(args)
+				return m, cmd
+			}
 			if m.demo && command != "help" && command != "quit" {
 				m.output = "Sample data only · commands are disabled in preview."
 				return m, nil
@@ -330,6 +378,9 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.historyIndex = len(m.history)
 			m.input.Reset()
 			switch command {
+			case "logs":
+				m.input.Reset()
+				return m, func() tea.Msg { return logsRequested{} }
 			case "help":
 				m.help = true
 				m.helpOffset = 0
@@ -340,6 +391,16 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return statusRequested{} }
 			default:
 				args, e := connection.Split(command)
+				if e == nil && len(args) > 0 && args[0] == "scp" && len(args) <= 2 {
+					if len(args) == 1 {
+						m.input.SetValue("scp ")
+						m.input.SetSuggestions(m.suggestions())
+						m.output = "Select a live connection with Tab, then Enter"
+						return m, nil
+					}
+					cmd := m.openFiles(args[1])
+					return m, cmd
+				}
 				wizard := len(args) == 1 && args[0] == "connect"
 				if e == nil && !wizard {
 					e = connection.ValidateCommand(m.info.Workspace, args)
@@ -378,6 +439,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := msg.(tea.KeyPressMsg); ok {
 		m.input.ShowSuggestions = true
 		m.input.SetSuggestions(m.suggestions())
+		cmd = tea.Batch(cmd, m.scheduleFileCompletion())
 	}
 	return m, cmd
 }
@@ -499,7 +561,7 @@ func (m ui) dataTable(title string, headers []string, rows [][]string, w int) st
 					style = warningStyle
 				}
 			}
-			if row >= 0 && rows[row][col] == "—" {
+			if row >= 0 && (rows[row][col] == "—" || rows[row][col] == "Unavailable" || rows[row][col] == "Unknown") {
 				style = secondary
 			}
 			return style.Padding(0, 1).Align(lipgloss.Center)
@@ -520,12 +582,20 @@ func (m ui) View() tea.View {
 	outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
 	start := min(m.outputOffset, len(outputLines)-1)
 	content += "\n\n" + m.paint(heading, "COMMAND OUTPUT") + "\n" + strings.Join(outputLines[start:], "\n")
+	if m.files != nil {
+		content = m.fileContent(bodyW)
+	}
 	b.WriteString(fit(content, w, max(0, h-3)))
 	footer := "F1 help · Tab completion · Ctrl+C quit"
 	if m.busy {
 		footer = "Working… prompt remains editable · close NAME cancels a connection"
 	}
-	b.WriteString("\n" + m.paint(secondary, footer) + "\n" + m.paint(accent, "╭─ workspace › management") + "\n" + m.input.View())
+	prompt := "╭─ workspace › management"
+	if m.files != nil {
+		prompt = "╭─ scp › " + safe(m.files.state.Name) + " › " + safe(m.files.remote)
+		footer = "F1 help · Tab completion · back management · Ctrl+C cancel/back"
+	}
+	b.WriteString("\n" + m.paint(secondary, footer) + "\n" + m.paint(accent, prompt) + "\n" + m.input.View())
 	base := fit(b.String(), w, h)
 	if !m.help && m.input.Value() != "" && m.input.ShowSuggestions {
 		matches, selected := m.completionOptions()
@@ -574,6 +644,9 @@ func (m ui) View() tea.View {
 }
 
 func (m ui) helpText() string {
+	if m.files != nil {
+		return strings.ReplaceAll(fileHelp, "\\t", "\t")
+	}
 	return `# NAVIGATION
 F6 / Shift+F6	Move focus between panels; arrows select, Enter opens
 Ctrl+P	Open the searchable action menu
@@ -586,6 +659,8 @@ Ctrl+Shift+V	Paste using your terminal's paste shortcut
 # CONNECTIONS & SHELLS
 connect	Open the guided connection form
 connect NAME HOST USER	Connect directly; review first, then authenticate privately
+logs / Ctrl+N	Open workspace log in Vim; Ctrl+N or :q returns; reopen refreshes
+Ctrl+N in SSH/Hovel/Vim	Burrow shortcut, not forwarded to the embedded program
 shell NAME / resume ID	Open a shell / return to an existing frontend-local shell
 Ctrl+] / Alt+1–9	Return from SSH to management / select a shell
 Alt+←/→	Cycle shells without closing them

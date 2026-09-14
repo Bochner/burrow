@@ -22,20 +22,23 @@ import termios
 import time
 
 from core.cmd.burrow.authentication_lab import authentication_matrix
-from core.cmd.burrow.manager_lab import manager_checks
+from core.cmd.burrow.manager_lab import manager_checks, audit_cleanup_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
+from core.cmd.burrow.files_lab import file_checks, load_checks, file_ui
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=6, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
+parser.add_argument("--files-check", action="store_true", help="check real SFTP browsing only")
 parser.add_argument("--forward-check", action="store_true", help="check real local forwarding only")
 parser.add_argument("--reverse-check", action="store_true", help="check real reverse forwarding only")
 parser.add_argument("--proxy-check", action="store_true", help="check real connection-owned SOCKS traffic and cleanup")
 parser.add_argument("--measure", action="store_true", help="record production phase samples and separate process traces")
 parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
+parser.add_argument("--auth-check", action="store_true", help="check private prompts, cancellation and rejected passwords only")
 args = parser.parse_args()
 smoke = args.smoke
 binary, wheel, image_file, screen_check, legacy_binary, vim_apk = [str(Path(p).resolve()) for p in args.paths]
@@ -57,7 +60,7 @@ signal.alarm(1200 if args.measure else 600)
 def command(*args, env=None, ok=True):
     p = subprocess.run(list(map(str, args)), env=env, capture_output=True, text=True, timeout=60)
     assert (p.returncode == 0) == ok, (args[:3], p.stdout, p.stderr)
-    return p.stdout
+    return p.stdout if ok else p.stdout + p.stderr
 
 def wait(check):
     deadline = time.monotonic() + 20
@@ -133,10 +136,10 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         def state_is(w, name, expected):
             s = burrow(w, "inspect", name)
             return s if s["state"] == expected else None
-        if args.prompt_check:
+        if args.prompt_check or args.auth_check:
             burrow(w,"connect","gateway","127.0.0.1","tester",*options)
             wait(lambda:state_is(w,"gateway","connected"))
-            authentication_matrix(binary,w,root,env,container,port,key,fingerprint,burrow,wait,screen_check,prompt_only=True)
+            authentication_matrix(binary,w,root,env,container,port,key,fingerprint,burrow,wait,screen_check,prompt_only=args.prompt_check,auth_only=args.auth_check)
             raise SystemExit(0)
         # Owner-approved LazySSH policy authenticates without host-key approval.
         plain = ["--key", str(key), "--port", str(port), "--yes"]
@@ -172,6 +175,21 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if args.files_check or not (smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check):
+            file_checks(burrow, w, first, container, command)
+            file_ui(binary, env, screen_check, w)
+            load_checks(burrow, w, container, command, options, binary, env, screen_check)
+        if args.files_check:
+            audit_cleanup_checks(burrow, root, options, daemons)
+            burrow(w, "close", "gateway", "--yes")
+            retained = burrow(w, "downloads")
+            os.kill(first["ownerPID"], signal.SIGKILL)
+            durable = burrow(w, "downloads")
+            assert durable["files"] == retained["files"] > 0
+            assert durable["bytes"] == retained["bytes"]
+            assert {d["id"] for d in durable["records"]} == {d["id"] for d in retained["records"]}
+            print("PASS durable download outcomes/totals after retained owner loss", flush=True)
+            raise SystemExit(0)
         if not smoke and not args.proxy_check and not args.shell_check and not args.forward_check:
             forward_evidence.append(reverse_checks(binary, env, screen_check, burrow, w, first, options, container, command))
         if args.reverse_check:
@@ -313,6 +331,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         if args.proxy_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
+        audit_cleanup_checks(burrow, root, options, daemons)
         manager_checks(binary,w,root,env,port,key,first,burrow,wait)
         # Both production capabilities use the one public identity.
         assert catalog() == ["burrow@0.1.0"]
@@ -573,17 +592,20 @@ launch:
             os.write(outer,b"\t\r")
             wait(lambda: screen_contains(b'"closed"'))
             assert all(s["name"] != "terminal" for s in burrow(w, "connections"))
-            # Secret entry is exercised from the real management command, with
-            # no secret in command/history text or the complete terminal stream.
+            # The owner requested visible entry in the fullscreen popup only.
+            # Submission removes it; command/history and persisted state stay clean.
             ui_command = shlex.join(["connect", "terminal-secret", "127.0.0.1", "tester", "--port", str(port), "--yes"])
             os.write(outer, ui_command.encode() + b"\r")
+            wait(lambda: screen_contains("Connecting…".encode()))
             wait(lambda: screen_contains(b"SSH password"))
             assert screen_contains(b"WORKSPACES"), "authentication lost management backdrop"
             assert b"\x1b[?1049l" not in output, "authentication released alternate screen"
-            os.write(outer, auth_secret.encode() + b"\r")
+            os.write(outer, auth_secret.encode())
+            wait(lambda: screen_contains(auth_secret[-16:].encode()))
+            os.write(outer, b"\r")
             wait(lambda: screen_contains(b'"terminal-secret"'))
             assert burrow(w, "inspect", "terminal-secret")["state"] == "connected"
-            assert auth_secret.encode() not in output
+            assert not screen_contains(auth_secret[-16:].encode()), "submitted password remained visible"
             wait(lambda: screen_contains(b"Save profile as"))
             os.write(outer,b"\x1b")
             wait(lambda: not screen_contains(b"Save profile as"))
@@ -595,7 +617,10 @@ launch:
             os.write(outer, b"\x03")
             wait(lambda: screen_contains(b"attempt closed"))
             assert not (w / "burrow/terminal-cancel").exists()
-            assert auth_secret.encode() not in output
+            assert not screen_contains(auth_secret[-16:].encode()), "password leaked into later view"
+            for path in w.rglob("*"):
+                if path.is_file():
+                    assert auth_secret.encode() not in path.read_bytes(), "TUI password persisted in workspace"
             # Bare connect is optional guided entry in the same production frame.
             os.write(outer,b"connect\r")
             for label,value in [(b"Host / IP",b"127.0.0.1"),(b"SSH port",str(port).encode()),
@@ -717,6 +742,7 @@ launch:
         # Module loss must not adopt any remaining reservation after relaunch.
         burrow(w, "connect", "ownerloss", "127.0.0.1", "tester", *plain)
         lost = wait(lambda: state_is(w, "ownerloss", "connected"))
+        retained_downloads = burrow(w, "downloads")
         os.kill(lost["ownerPID"], signal.SIGKILL)
         def ended(pid):
             try:
@@ -726,6 +752,10 @@ launch:
         wait(lambda: ended(lost["masterPID"]))
         reported = burrow(w, "inspect", "ownerloss")
         assert reported["state"] == "lost" and reported["socket"] == lost["socket"]
+        durable_downloads = burrow(w, "downloads")
+        assert durable_downloads["files"] == retained_downloads["files"] > 0
+        assert durable_downloads["bytes"] == retained_downloads["bytes"]
+        assert {d["id"] for d in durable_downloads["records"]} == {d["id"] for d in retained_downloads["records"]}
         assert burrow(w, "--offline", "status")["pid"] == info["pid"]
         burrow(w, "connect", "ownerloss", "127.0.0.1", "tester", *plain, ok=False)
         burrow(w, "close", "ownerloss", "--yes", ok=False)

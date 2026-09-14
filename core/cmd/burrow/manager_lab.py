@@ -57,6 +57,31 @@ def manager_checks(binary, w, root, env, port, key, first, burrow, wait):
             queued.kill()
             queued.wait()
         os.close(dispatch_lock)
+    # Fail the owner's log admission after the frontend has saved its attempt.
+    # The workspace dispatch lock holds the confirmed adapter before owner Open.
+    dispatch_lock = os.open(w / "burrow", os.O_RDONLY | os.O_DIRECTORY)
+    fcntl.flock(dispatch_lock, fcntl.LOCK_EX)
+    rejected = subprocess.Popen([binary, "--workspace", str(w), "connect", "audit-refused", *base, "--yes"],
+                                env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    audit = w / "burrow-logs/operations.log"
+    try:
+        trace = Path(env["BURROW_PHASE_TRACE"])
+        wait(lambda: sum(f'"pid":{rejected.pid},"phase":"call:SetChainConfig"' in line
+                         for line in trace.read_text().splitlines()) == 7)
+        audit.chmod(0o400)
+        os.close(dispatch_lock)
+        dispatch_lock = None
+        rejected.communicate(timeout=20)
+        state = burrow(w, "inspect", "audit-refused")
+        assert state["state"] == "lost" and "audit incomplete" in state["detail"], state
+        assert state["masterPID"] == 0, state
+        burrow(w, "close", "audit-refused", "--yes", ok=False)
+        assert not (w / "burrow/audit-refused").exists()
+        assert rpc("identity")[0] == 200, "failed-open cleanup killed the manager"
+    finally:
+        audit.chmod(0o600)
+        if dispatch_lock is not None: os.close(dispatch_lock)
+        if rejected.poll() is None: rejected.kill(); rejected.wait()
     # Independent processes submit distinct immutable request chains.
     processes = [subprocess.Popen([binary, "--workspace", str(w), "connect", name, *base, "--yes"],
                                   env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -123,3 +148,36 @@ def manager_checks(binary, w, root, env, port, key, first, burrow, wait):
     assert rpc("connect", [raw, hashlib.sha256(raw.encode()).hexdigest(), "refusal-check"])[0] != 200
     assert not (w / "burrow/changed-adapter").exists()
     print("PASS production concurrent frontends, exact preview binding, stale controls and changed request refusal", flush=True)
+
+
+def audit_cleanup_checks(burrow, root, options, daemons):
+    w = root / "audit-cleanup"
+    daemons.append(burrow(w, "--offline", "status")["pid"])
+    states = []
+    for name in ("cleanup-a", "cleanup-b"):
+        burrow(w, "connect", name, "127.0.0.1", "tester", *options)
+        deadline = time.monotonic()+15
+        while True:
+            state = burrow(w, "inspect", name)
+            if state["state"] == "connected": states.append(state); break
+            assert time.monotonic()<deadline, state
+            time.sleep(.1)
+    states = burrow(w, "connections")
+    log = w / "burrow-logs/operations.log"
+    log.chmod(0o400)
+    try:
+        conn = http.client.HTTPConnection("localhost", timeout=30)
+        conn.sock = socket.socket(socket.AF_UNIX)
+        conn.sock.settimeout(30)
+        conn.sock.connect(str(w / "hoveld.sock"))
+        conn.request("POST", "/hovel.daemon.v1.DaemonService/RunSessionCommand",
+                     json.dumps({"SessionID":states[0]["session"], "Request":{"command":"close-reviewed", "args":[states[0]["generation"],json.dumps(states)]}}),
+                     {"Content-Type":"application/json"})
+        response=conn.getresponse(); response.read(); conn.close()
+        assert response.status != 200, "missing cleanup audit warning"
+        for state in states:
+            assert not Path(state["socket"]).parent.exists(), "logging failure stranded a sibling"
+        assert burrow(w,"connections") == []
+    finally:
+        log.chmod(0o600)
+    print("PASS unavailable audit still closes all reviewed connections and reports incomplete logging",flush=True)

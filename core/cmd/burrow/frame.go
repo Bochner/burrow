@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"image"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/timer"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
@@ -27,6 +30,9 @@ var openNavigation = key.NewBinding(key.WithKeys("alt+w"))
 const freshFor = 8 * time.Second
 
 type workspaceView struct {
+	downloadTimer         timer.Model
+	fileViews             []*ui
+	file                  *ui
 	shells                []*cliTab
 	shell                 *cliTab
 	cli                   *cliTab
@@ -42,8 +48,12 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
+	downloadPlan                     *connection.DownloadPlan
+	downloadMode                     *fileMode
+	contextMenu                      *resourceMenu
 	invalidGeometry                  bool
 	initialShell                     string
+	initialLogs                      bool
 	terminals                        *terminalLifetime
 	quitReview                       quitSnapshot
 	quitClosing                      bool
@@ -72,6 +82,7 @@ type frame struct {
 	saveName                         string
 	saveCollection                   connection.Collection
 	attempt                          *authAttempt
+	authSpinner                      spinner.Model
 	question                         *authQuestion
 	savedForm                        *huh.Form
 	savedTitle                       string
@@ -126,7 +137,7 @@ func (m *frame) Init() tea.Cmd {
 	if m.demo {
 		return nil
 	}
-	return tea.Batch(m.dispatch(m.active, m.current().management.Init()), m.check(m.active), m.tick())
+	return tea.Batch(m.dispatch(m.active, m.current().activeUI().Init()), m.dispatch(m.active, refreshDownloads(m.active)), m.check(m.active), m.tick())
 }
 func (m *frame) tick() tea.Cmd {
 	return m.dispatch(m.active, tea.Tick(time.Second, func(t time.Time) tea.Msg { return frameTick(t) }))
@@ -172,6 +183,10 @@ func (m *frame) resize() {
 		w.management.width = max(1, m.width-left-right-4)
 		w.management.height = max(1, m.height-4)
 		w.management.input.SetWidth(max(1, w.management.width-4))
+		for _, u := range w.fileViews {
+			u.width, u.height = w.management.width, w.management.height
+			u.input.SetWidth(max(1, u.width-4))
+		}
 		for _, tab := range w.terminals() {
 			if tab != nil && tab.host != nil {
 				r := m.terminalBounds()
@@ -266,30 +281,162 @@ func (m *frame) submitWorkspace() tea.Cmd {
 }
 func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	w := m.workspaces[path]
+	u := &w.management
+	switch v := msg.(type) {
+	case tea.KeyPressMsg:
+		u = w.activeUI()
+		if key.Matches(v, enter) && !u.busy {
+			args, err := connection.Split(u.input.Value())
+			if err == nil && len(args) == 1 && (args[0] == "downloads" || args[0] == "transfers") {
+				u.input.Reset()
+				return m.openDownloads()
+			}
+		}
+		if u.files != nil && key.Matches(v, enter) && !u.busy {
+			args, err := connection.Split(u.input.Value())
+			if err == nil && len(args) > 0 {
+				if args[0] == "get" || args[0] == "mget" || args[0] == "put" {
+					return m.reviewDownload(u, args)
+				}
+				if (args[0] == "download-cancel" || args[0] == "transfer-cancel") && len(args) == 2 {
+					mode := u.files
+					u.output = "Cancellation requested; waiting for cleanup acknowledgement"
+					u.input.Reset()
+					return m.dispatch(path, func() tea.Msg {
+						ctx, stop := context.WithTimeout(context.Background(), 30*time.Second)
+						defer stop()
+						d, err := connection.Execute(ctx, path, args)
+						return downloadStarted{mode, d, err}
+					})
+				}
+			}
+		}
+		if u.files == nil && key.Matches(v, enter) && !u.busy {
+			args, err := connection.Split(u.input.Value())
+			if err == nil && len(args) == 2 && args[0] == "scp" {
+				return m.openFileTab(args[1])
+			}
+		}
+	case tea.PasteMsg:
+		u = w.activeUI()
+	case fileResult:
+		u = w.fileUI(v.mode)
+	case fileDiscovery:
+		u = w.fileUI(v.mode)
+	case fileDiscoveryTick:
+		u = w.fileUI(v.mode)
+		// Background tabs retain observations, but never initiate discovery.
+		if u != w.activeUI() {
+			return nil
+		}
+	}
+	if u == nil {
+		return nil
+	}
 	w.management.shellIDs = nil
 	for _, tab := range w.shells {
 		w.management.shellIDs = append(w.management.shellIDs, tab.id)
 	}
-	model, cmd := w.management.Update(msg)
-	w.management = model.(ui)
+	model, cmd := u.Update(msg)
+	*u = model.(ui)
+	if u != &w.management && u.files == nil {
+		w.fileViews = slices.DeleteFunc(w.fileViews, func(v *ui) bool { return v == u })
+		if w.file == u {
+			w.file, w.tab, w.focus = nil, "", "prompt"
+		}
+	}
 	if args := w.management.shellControl; len(args) > 0 {
 		w.management.shellControl = nil
 		// Resolve positional shell numbers in the submitting event, before an
 		// asynchronous background exit can renumber a different shell into place.
 		return m.shellControl(args)
 	}
-	if w.management.quitting {
-		w.management.quitting = false
+	if u.quitting {
+		u.quitting = false
 		return m.openQuit()
 	}
-	if w.management.help {
-		v := w.management.helpViewport(m.width, m.height)
-		w.management.helpOffset = v.YOffset()
+	if u.help {
+		v := u.helpViewport(m.width, m.height)
+		u.helpOffset = v.YOffset()
+	}
+	for _, files := range w.fileViews {
+		files.connections, files.tunnels = w.management.connections, w.management.tunnels
+		files.connectionError, files.info = w.management.connectionError, w.management.info
 	}
 	return m.dispatch(path, cmd)
 }
+
+func (w *workspaceView) activeUI() *ui {
+	if w.tab == "files" && w.file != nil {
+		return w.file
+	}
+	return &w.management
+}
+
+func (w *workspaceView) fileUI(mode *fileMode) *ui {
+	for _, u := range w.fileViews {
+		if u.files == mode {
+			return u
+		}
+	}
+	return nil
+}
+
+func (m *frame) openFileTab(name string) tea.Cmd {
+	w := m.current()
+	var observed connection.State
+	for _, s := range w.management.connections {
+		if s.Name == name && s.State == "connected" {
+			observed = s
+			break
+		}
+	}
+	if observed.Name == "" || w.management.connectionError != "" {
+		w.management.output = "REFUSED: select a verified live connection; reconnect explicitly"
+		return nil
+	}
+	for _, u := range w.fileViews {
+		if u.files.state.Name == name && u.files.state.Creation == observed.Creation && u.files.state.Generation == observed.Generation {
+			m.selectFileTab(u)
+			w.management.input.Reset()
+			return nil
+		}
+	}
+	u := newUI(w.management.info, m.noColor)
+	u.connections, u.tunnels, u.connectionError = w.management.connections, w.management.tunnels, w.management.connectionError
+	u.width, u.height = w.management.width, w.management.height
+	u.input.SetWidth(max(1, u.width-4))
+	cmd := u.openFiles(name)
+	if u.files == nil {
+		w.management.output = u.output
+		return nil
+	}
+	w.management.input.Reset()
+	w.fileViews = append(w.fileViews, &u)
+	m.selectFileTab(&u)
+	return m.dispatch(m.active, cmd)
+}
+
+func (m *frame) selectFileTab(u *ui) {
+	w := m.current()
+	w.file, w.tab, w.focus = u, "files", "prompt"
+	m.selection = nil
+	for i, entry := range m.shellEntries() {
+		if entry.files == u {
+			m.revealShell(i)
+			break
+		}
+	}
+}
 func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case spinner.TickMsg:
+		if m.attempt == nil || m.modal != "auth" || m.question != nil {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.authSpinner, cmd = m.authSpinner.Update(v)
+		return m, cmd
 	case formMessage:
 		if v.path != m.active || v.epoch != m.inputEpoch {
 			return m, nil
@@ -306,7 +453,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.question = &v.question
-		return m, m.setForm("auth", "SSH authentication", promptForm(v.question.prompt))
+		return m, m.setForm("auth", "SSH authentication", promptForm(v.question.prompt, true))
 	case authFinished:
 		if m.attempt != v.attempt {
 			return m, nil
@@ -337,6 +484,37 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 		switch result := v.message.(type) {
+		case downloadReviewReady:
+			return m, m.acceptDownloadReview(path, result)
+		case downloadsReady:
+			return m, m.acceptDownloads(path, result)
+		case timer.TickMsg:
+			w := m.workspaces[path]
+			var cmd tea.Cmd
+			w.downloadTimer, cmd = w.downloadTimer.Update(result)
+			return m, m.dispatch(path, cmd)
+		case timer.TimeoutMsg:
+			if result.ID != m.workspaces[path].downloadTimer.ID() {
+				return m, nil
+			}
+			return m, m.dispatch(path, refreshDownloads(path))
+		case downloadStarted:
+			if u := m.workspaces[path].fileUI(result.mode); u != nil {
+				u.output = "Download state updated; files retained independently of this view"
+				if result.err != nil {
+					u.output = "REFUSED: " + safe(result.err.Error())
+					u.outputOffset = 0
+					if path == m.active && m.modal == "downloads" && m.current().activeUI() == u {
+						m.dismissForm()
+					}
+				}
+			}
+			return m, m.dispatch(path, refreshDownloads(path))
+		case logsRequested:
+			if path == m.active {
+				return m, m.openLogs()
+			}
+			return m, nil
 		case shellRequested:
 			if path != m.active {
 				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("shell cancelled after workspace switch")})
@@ -379,6 +557,20 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.setForm("review", "Review exact target · ↑↓ / PgUp/PgDn scroll", confirmForm("Proceed?", "", "Proceed", "Cancel"))
 		case cliOpened, cliScreen, cliClosed:
 			return m, m.terminalResult(path, result)
+		case profileEditorOpened:
+			result.opened.tab.editor = result.edit
+			return m, m.terminalResult(path, result.opened)
+		case profileEditorFinished:
+			w := m.workspaces[path]
+			if !w.ownsTerminal(result.tab) {
+				return m, nil
+			}
+			w.removeShell(result.tab)
+			cmd := m.updateManagement(path, connectionResult{result.result, result.err})
+			if result.err == nil {
+				w.management.output = result.notice
+			}
+			return m, cmd
 		case tea.QuitMsg:
 			return m, tea.Quit
 		case frameTick:
@@ -432,7 +624,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if _, ok := m.workspaces[destination]; !ok {
 				m.paths = append(m.paths, destination)
 				m.workspaces[destination] = &workspaceView{management: newUI(result.info, m.noColor), focus: "prompt"}
-				init = m.dispatch(destination, m.workspaces[destination].management.Init())
+				init = m.dispatch(destination, tea.Batch(m.workspaces[destination].management.Init(), refreshDownloads(destination)))
 			}
 			m.resize()
 			// Esc may dismiss a pending launch, but its completion never steals selection.
@@ -464,6 +656,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = max(1, v.Height)
 		m.resize()
 		m.sizeForm()
+		if m.initialLogs {
+			m.initialLogs = false
+			return m, m.openLogs()
+		}
 		if m.initialShell != "" {
 			name := m.initialShell
 			m.initialShell = ""
@@ -476,7 +672,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for path := range m.workspaces {
 			m.updateManagement(path, v)
 		}
-		m.noColor = m.current().management.noColor
+		m.noColor = m.current().activeUI().noColor
 		return m, nil
 	case tea.MouseMsg:
 		if m.tooSmall() {
@@ -489,7 +685,16 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mouseDisabled {
 			return m, nil
 		}
-		if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft && m.modal == "" && !m.current().management.help {
+		if click, ok := v.(tea.MouseClickMsg); ok {
+			if m.modal == "context" && !image.Pt(click.X, click.Y).In(m.dialogBounds()) {
+				m.dismissForm()
+				return m, nil
+			}
+			if click.Button == tea.MouseRight && m.modal == "" && !m.current().activeUI().help {
+				return m, m.openResourceMenu(hit.ID(), image.Pt(click.X, click.Y))
+			}
+		}
+		if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft && m.modal == "" && !m.current().activeUI().help {
 			copying := m.hasSelection() && image.Pt(mouse.X, mouse.Y).In(m.copyBounds())
 			if !copying && hit.ID() != "saved" && !strings.HasPrefix(hit.ID(), "profile:") && !strings.HasPrefix(hit.ID(), "resource:") {
 				m.clearRows()
@@ -498,7 +703,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.selectionMouse(v, hit.ID()); handled {
 			return m, cmd
 		}
-		if hit.ID() == "terminal" && m.modal == "" && !m.current().management.help {
+		if hit.ID() == "terminal" && m.modal == "" && !m.current().activeUI().help {
 			if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
 				m.current().focus = "terminal"
 			}
@@ -516,14 +721,18 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.modalOffset = max(0, m.modalOffset+delta)
 				return m, nil
 			}
-			if m.current().management.help {
-				u := &m.current().management
+			if m.modal == "downloads" {
+				m.scrollDownloads(delta)
+				return m, nil
+			}
+			if m.current().activeUI().help {
+				u := m.current().activeUI()
 				u.helpOffset = max(0, u.helpOffset+delta)
 				v := u.helpViewport(m.width, m.height)
 				u.helpOffset = v.YOffset()
 				return m, nil
 			}
-			if m.modal == "menu" {
+			if m.modal == "menu" || m.modal == "context" {
 				code := tea.KeyDown
 				if delta < 0 {
 					code = tea.KeyUp
@@ -543,25 +752,25 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.shellOffset = max(0, min(max(0, len(m.shellEntries())-m.shellRows()), m.shellOffset+delta))
 			}
 			if strings.HasPrefix(hit.ID(), "profile:") || hit.ID() == "saved" {
-				u := &m.current().management
+				u := m.current().activeUI()
 				u.profileOffset = max(0, min(max(0, len(u.profiles.Profiles)-u.profileRows()), u.profileOffset+delta))
 			}
 			if strings.HasPrefix(hit.ID(), "resource:") {
-				u := &m.current().management
+				u := m.current().activeUI()
 				u.connectionOffset = max(0, min(max(0, len(u.connections)-u.connectionRows()), u.connectionOffset+delta))
 			}
 			if hit.ID() == "center" {
-				m.current().management.outputOffset = max(0, m.current().management.outputOffset+delta)
+				m.current().activeUI().outputOffset = max(0, m.current().activeUI().outputOffset+delta)
 			}
 			return m, nil
 		}
 		if click, ok := msg.(tea.MouseClickMsg); !ok || click.Button != tea.MouseLeft {
 			return m, nil
 		}
-		if m.current().management.help {
+		if m.current().activeUI().help {
 			switch hit.ID() {
 			case "dismiss":
-				m.current().management.help = false
+				m.current().activeUI().help = false
 			}
 			return m, nil
 		}
@@ -573,7 +782,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.PasteMsg:
 		m.selection = nil
-		if m.tooSmall() || m.current().management.help {
+		if m.tooSmall() || m.current().activeUI().help {
 			return m, nil
 		}
 		if m.terminalFocused() {
@@ -583,7 +792,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.form != nil {
 			return m, m.updateForm(tea.PasteMsg{Content: safe(v.Content)})
 		}
-		if m.modal != "" || m.current().focus != "prompt" || m.current().tab != "" {
+		if m.modal != "" || m.current().focus != "prompt" || (m.current().tab != "" && m.current().tab != "files") {
 			return m, nil
 		}
 	case tea.KeyPressMsg:
@@ -619,12 +828,15 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.current().management.help {
-			m.current().management.updateHelp(v, m.width, m.height)
+		if m.current().activeUI().help {
+			m.current().activeUI().updateHelp(v, m.width, m.height)
 			return m, nil
 		}
 		if m.modal != "" {
 			return m, m.modalKey(v)
+		}
+		if key.Matches(v, toggleLogs) {
+			return m, m.openLogs()
 		}
 		if key.Matches(v, showBurrow) {
 			return m, m.activate("burrow")
@@ -666,11 +878,17 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.openNew()
 		case key.Matches(v, openMenu):
 			return m, m.openPalette()
+		case key.Matches(v, resourceActions):
+			left, _ := m.columns()
+			return m, m.openResourceMenu("", image.Pt(left+2, 4))
 		case key.Matches(v, openNavigation):
 			m.modal = "navigation"
 			return m, nil
 		case key.Matches(v, focusNext):
 			names := []string{"prompt", "workspaces", "new", "menu", "shells", "tabs", "resources", "saved"}
+			if m.current().activeUI().files != nil {
+				names = names[:6]
+			}
 			for i, name := range names {
 				if name == m.current().focus {
 					delta := 1
@@ -706,6 +924,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.activate(fmt.Sprintf("shell:%d", m.shellIndex))
 				}
 			case "tabs":
+				if key.Matches(v, enter) && w.tab == "files" {
+					w.focus = "prompt"
+					return m, nil
+				}
 				if key.Matches(v, enter) && w.tab == "hovel" {
 					return m, m.openCLI()
 				}
@@ -755,7 +977,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if w.tab != "" {
+		if w.tab != "" && w.tab != "files" {
 			if key.Matches(v, escape) {
 				w.tab = ""
 			}
@@ -816,7 +1038,7 @@ func (m *frame) activate(id string) tea.Cmd {
 		if m.modal == "new" && id == "submit" {
 			return m.submitWorkspace()
 		}
-		if m.modal == "menu" && strings.HasPrefix(id, "action:") {
+		if (m.modal == "menu" || m.modal == "context") && strings.HasPrefix(id, "action:") {
 			i, _ := strconv.Atoi(strings.TrimPrefix(id, "action:"))
 			m.menu.Value(&i)
 			return m.updateForm(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -833,7 +1055,7 @@ func (m *frame) activate(id string) tea.Cmd {
 	if strings.HasPrefix(id, "profile:") {
 		m.clearRows()
 		i, err := strconv.Atoi(strings.TrimPrefix(id, "profile:"))
-		u := &m.current().management
+		u := m.current().activeUI()
 		if err == nil && i >= 0 && i < len(u.profiles.Profiles) {
 			u.selectedProfile = u.profiles.Profiles[i].Name
 			m.current().focus = "saved"
@@ -843,7 +1065,7 @@ func (m *frame) activate(id string) tea.Cmd {
 	if strings.HasPrefix(id, "resource:") {
 		m.clearRows()
 		i, err := strconv.Atoi(strings.TrimPrefix(id, "resource:"))
-		rows := m.current().management.connections
+		rows := m.current().activeUI().connections
 		if err == nil && i >= 0 && i < len(rows) {
 			m.current().selected = rows[i].Name
 			m.current().focus = "resources"
@@ -864,6 +1086,9 @@ func (m *frame) activate(id string) tea.Cmd {
 			if entry.tab != nil {
 				m.resumeShell(entry.tab)
 			}
+			if entry.files != nil {
+				m.selectFileTab(entry.files)
+			}
 			return cmd
 		}
 		return nil
@@ -875,10 +1100,25 @@ func (m *frame) activate(id string) tea.Cmd {
 		}
 		return nil
 	}
+	if strings.HasPrefix(id, "file-tab:") {
+		i, err := strconv.Atoi(strings.TrimPrefix(id, "file-tab:"))
+		if err == nil && i >= 0 && i < len(m.current().fileViews) {
+			m.selectFileTab(m.current().fileViews[i])
+		}
+		return nil
+	}
 	switch id {
 	case "previous-shell":
+		if len(m.current().fileViews) > 0 {
+			m.cycleTab(-1)
+			return nil
+		}
 		m.cycleShell(-1)
 	case "next-shell":
+		if len(m.current().fileViews) > 0 {
+			m.cycleTab(1)
+			return nil
+		}
 		m.cycleShell(1)
 	case "saved":
 		return m.profileMenu()
@@ -942,7 +1182,7 @@ func (m *frame) menuAction(i int) tea.Cmd {
 	case 2:
 		return m.openNew()
 	case 3:
-		m.current().management.help = true
+		m.current().activeUI().help = true
 	case 4:
 		return m.openQuit()
 	case 5:
@@ -970,8 +1210,27 @@ func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
 		m.dismissForm()
 		return nil
 	}
+	if m.modal == "downloads" {
+		view := m.downloadsViewport()
+		switch {
+		case key.Matches(v, previous):
+			m.scrollDownloads(-1)
+		case key.Matches(v, next):
+			m.scrollDownloads(1)
+		case key.Matches(v, pageUp):
+			m.scrollDownloads(-view.Height())
+		case key.Matches(v, pageDown):
+			m.scrollDownloads(view.Height())
+		case key.Matches(v, helpHome):
+			m.modalOffset = 0
+		case key.Matches(v, helpEnd):
+			view.GotoBottom()
+			m.modalOffset = view.YOffset()
+		}
+		return nil
+	}
 	switch m.modal {
-	case "new", "menu", "connect", "review", "auth", "quit", "browse", "profile-menu", "profile-save":
+	case "new", "menu", "context", "connect", "review", "auth", "quit", "browse", "profile-menu", "profile-save":
 		if m.modal == "new" {
 			if m.launchPending {
 				return nil
@@ -1025,7 +1284,7 @@ func (m *frame) scrollMetadata(delta int) {
 }
 func (m *frame) metadata() string {
 	w := m.current()
-	u := w.management
+	u := *w.activeUI()
 	field := func(label, value string, style lipgloss.Style) string {
 		if value == "Unavailable" || value == "Unknown" || value == "Never" {
 			style = secondary
@@ -1051,9 +1310,13 @@ func (m *frame) metadata() string {
 		connectionColor = successStyle
 	}
 	selected := field("Selection", "None", secondary)
+	selectedName := w.selected
+	if u.files != nil {
+		selectedName = u.files.state.Name
+	}
 	details := ""
 	for _, row := range u.connections {
-		if row.Name != w.selected {
+		if row.Name != selectedName {
 			continue
 		}
 		connectionState = strings.ToUpper(safe(row.State))
@@ -1073,10 +1336,22 @@ func (m *frame) metadata() string {
 		connectionState = "UNVERIFIED"
 		connectionColor = warningStyle
 	}
+	if u.files != nil && u.fileState() == "unavailable" {
+		connectionState, connectionColor = "UNAVAILABLE", errorStyle
+		selected = field("Name", safe(u.files.state.Name), accent)
+		details = "\nPrevious connection creation unavailable; reconnect explicitly"
+	}
 	files, bytes := "Unavailable", "Unavailable"
-	transferNote := "Transfers not implemented"
+	transferNote := "Completed downloads · workspace scope"
+	if w.management.downloadObserved && w.management.downloadError == "" {
+		files = fmt.Sprint(w.management.downloads.Files)
+		bytes = downloadTotalSize(w.management.downloads.Bytes)
+	}
+	if w.management.downloadError != "" {
+		transferNote = "Download records unverified"
+	}
 	if m.demo {
-		files, bytes = "12", "48.6 MiB"
+		files, bytes = "12", "48.6 MB"
 		transferNote = "Sample downloads"
 	}
 	count := fmt.Sprint(connected)
@@ -1084,7 +1359,7 @@ func (m *frame) metadata() string {
 		count = "Unknown"
 	}
 	text := section("SELECTED CONNECTION") + "\n" + u.paint(connectionColor.Bold(true), connectionState) + "\n" + selected + "\n" + field("Active in workspace", count, numberStyle) + "\n\n" +
-		section("WORKSPACE DOWNLOADS") + "\n" + field("Files", files, numberStyle) + "\n" + field("Total size", bytes, numberStyle) + "\n" + u.paint(secondary, transferNote) + "\n\n" +
+		section("WORKSPACE DOWNLOADS") + "\n" + field("Completed files", files, numberStyle) + "\n" + field("Downloaded", bytes, numberStyle) + "\n" + u.paint(secondary, transferNote) + "\n\n" +
 		section("HOVEL DAEMON") + "\n"
 	if m.demo {
 		return text + u.paint(warningStyle, "DEMO · no daemon") + details
@@ -1197,39 +1472,46 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	}
 	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, min(10, cw), 1, 1)
 	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(9, cw-10), 1, 1)
-	if len(current.shells) > 0 && cw > 19 {
-		available := cw - 19
-		tabWidth := max(5, min(12, available/len(current.shells)))
+	totalTabs := len(current.shells) + len(current.fileViews)
+	if totalTabs > 0 && cw > 19 {
+		available, x := cw-19, cx+19
+		tabWidth := max(5, min(18, available/totalTabs))
 		count := max(1, available/tabWidth)
-		x := cx + 19
-		if count < len(current.shells) && available >= 9 {
+		if count < totalTabs && available >= 9 {
 			add("previous-shell", current.management.paint(accent, "‹"), x, 1, 2, 1, 2)
 			add("next-shell", current.management.paint(accent, "›"), cx+cw-2, 1, 2, 1, 2)
-			x += 2
-			available -= 4
+			x, available = x+2, available-4
 			count = max(1, available/tabWidth)
 		}
-		selected := 0
-		for i, tab := range current.shells {
-			if tab == current.shell {
-				selected = i
-			}
+		selected := max(0, slices.Index(current.shells, current.shell))
+		if current.tab == "files" {
+			selected = len(current.shells) + slices.Index(current.fileViews, current.file)
 		}
-		start := min((selected/count)*count, max(0, len(current.shells)-count))
-		for i := start; i < min(len(current.shells), start+count); i++ {
-			tab := current.shells[i]
-			text := "#" + tab.id
-			if tabWidth >= 11 {
-				text = "Shell " + text
+		start := min((selected/count)*count, max(0, totalTabs-count))
+		for i := start; i < min(totalTabs, start+count); i++ {
+			id, text, active := "", "", false
+			if i < len(current.shells) {
+				tab := current.shells[i]
+				id, text, active = fmt.Sprintf("shell-tab:%d", i), "Shell #"+tab.id, current.tab == "shell" && current.shell == tab
+				if tab.logs != nil {
+					text = "Logs"
+				}
+				if tab.editor != nil {
+					text = tab.label()
+				}
+			} else {
+				j := i - len(current.shells)
+				u := current.fileViews[j]
+				id, text, active = fmt.Sprintf("file-tab:%d", j), "Files "+safe(u.files.state.Name), current.tab == "files" && current.file == u
 			}
 			style, marker := secondary, "  "
-			if current.tab == "shell" && current.shell == tab {
+			if active {
 				style, marker = activeStyle, "› "
 			}
-			add(fmt.Sprintf("shell-tab:%d", i), current.management.paint(style, marker+text), x+(i-start)*tabWidth, 1, min(tabWidth, available), 1, 2)
+			add(id, current.management.paint(style, ansi.Truncate(marker+text, min(tabWidth, available), "…")), x+(i-start)*tabWidth, 1, min(tabWidth, available), 1, 2)
 		}
 	}
-	management := current.management
+	management := *current.activeUI()
 	management.help = false
 	management.quitting = false
 	center := management.View().Content
@@ -1239,6 +1521,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	savedLine := -1
 	profileStart := min(management.profileOffset, max(0, len(management.profiles.Profiles)-management.profileRows()))
 	for y, line := range strings.Split(center, "\n") {
+		if management.files != nil {
+			break
+		}
 		plain := ansi.Strip(line)
 		if strings.Contains(plain, "SAVED CONNECTIONS") {
 			savedLine = 0
@@ -1264,6 +1549,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	activeLine := -1
 	start := min(management.connectionOffset, max(0, len(management.connections)-management.connectionRows()))
 	for y, line := range strings.Split(center, "\n") {
+		if management.files != nil {
+			break
+		}
 		plain := ansi.Strip(line)
 		if strings.Contains(plain, "ACTIVE SSH CONNECTIONS") && management.connectionError == "" {
 			activeLine = 0
@@ -1285,7 +1573,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		add(fmt.Sprintf("resource:%d", i), line, cx, y+3, cw, 1, 2)
 	}
 
-	if current.tab != "" {
+	if current.tab == "hovel" || current.tab == "shell" {
 		text := "Select Hovel or press Enter to start the CLI."
 		status := "CLI: not started"
 		statusStyle := secondary
@@ -1294,12 +1582,21 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			status = "CLI: running · " + safe(m.active)
 			if tab.connection != "" {
 				status = "SSH: " + safe(tab.label()) + " · local / not recorded"
+				if tab.logs != nil {
+					status = "Logs · read-only snapshot · Ctrl+N / :q returns"
+				}
 				statusStyle = accent
+			}
+			if tab.editor != nil {
+				status = "Vim · " + safe(tab.editor.profile.Name) + " · :wq save · :q! discard · Ctrl+] background"
 			}
 			if tab.pending {
 				status = "Hovel · opening / closing…"
 				if tab.connection != "" {
 					status = "SSH · opening / closing…"
+				}
+				if tab.editor != nil {
+					status = "Vim · opening / validating saved edit…"
 				}
 				statusStyle = warningStyle
 			}
@@ -1325,7 +1622,11 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			add("restart-cli", current.management.paint(activeStyle, "[Restart CLI]"), cx, h-3, min(13, cw), 1, 4)
 		}
 	}
-	add("footer", current.management.paint(secondary, "Management · focus: "+current.focus), cx, h-4, cw, 1, 2)
+	footer := "Management · focus: " + current.focus
+	if management.files != nil {
+		footer = "File mode · Ctrl+C cancel/back · F1 help · PgUp/PgDn scroll"
+	}
+	add("footer", current.management.paint(secondary, footer), cx, h-4, cw, 1, 2)
 	if right > 0 {
 		add("metadata", "", w-right, 0, right, h, 0)
 		metadataY := brandHeight + 4
@@ -1364,9 +1665,15 @@ func (m *frame) compositor() *lipgloss.Compositor {
 					state = workspace.connectionState(tab.connection)
 				}
 				line = "   " + workspace.statusDot(state) + " " + current.management.paint(accent, "#"+tab.id) + " " + current.management.paint(secondary, safe(tab.connection))
+				if tab.editor != nil {
+					line = "   " + workspace.statusDot(tab.state()) + " " + current.management.paint(infoStyle, safe(tab.label()))
+				}
+			}
+			if u := entry.files; u != nil {
+				line = "   " + workspace.statusDot(u.fileState()) + " " + current.management.paint(infoStyle, "Files ") + current.management.paint(secondary, safe(u.files.state.Name))
 			}
 			line = ansi.Truncate(line, width, "…")
-			if (current.focus == "shells" && i == m.shellIndex) || (entry.tab != nil && m.active == path && current.tab == "shell" && current.shell == entry.tab) {
+			if (current.focus == "shells" && i == m.shellIndex) || (entry.tab != nil && m.active == path && current.tab == "shell" && current.shell == entry.tab) || (entry.files != nil && m.active == path && current.tab == "files" && current.file == entry.files) {
 				line = selectedRow(line, width, m.noColor)
 			}
 			add(id, line, 1, mid+4+i-start, width, 1, z+1)
@@ -1395,11 +1702,14 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			bw := pw - 6
 			text := ""
 			switch m.modal {
-			case "new", "menu", "connect", "review", "auth", "quit", "browse", "profile-menu", "profile-save":
+			case "new", "menu", "context", "connect", "review", "auth", "quit", "browse", "profile-menu", "profile-save":
 				text = m.formText()
 			case "metadata":
 				v := scrollBody(m.metadata(), bw, ph-6, m.modalOffset)
 				text = v.View()
+			case "downloads":
+				v := m.downloadsViewport()
+				text = centered(current.management.paint(accent, "Transfers"), bw) + "\n\n" + v.View()
 			}
 			popup := dialogStyle.Width(pw).Height(ph).Render(fit(text, bw, ph-4))
 			layers = append(layers, lipgloss.NewLayer(solid(popup, pw, ph, popupColor, m.noColor)).ID("modal").X(x).Y(y).Z(3))
@@ -1417,11 +1727,11 @@ func (m *frame) compositor() *lipgloss.Compositor {
 						break
 					}
 					plain := ansi.Strip(line)
-					for _, label := range []string{"Proceed", "Cancel", "Trust host", "Reject", "Quit", "Keep working", "Keep running", "Close connections"} {
+					for _, label := range []string{"Proceed", "Download", "Cancel", "Trust host", "Reject", "Quit", "Keep working", "Keep running", "Close connections"} {
 						if at := strings.Index(plain, label+"]"); at >= 0 {
 							start := ansi.StringWidth(plain[:at])
 							id := "confirm-reject"
-							if label == "Proceed" || label == "Trust host" || label == "Quit" || label == "Keep running" {
+							if label == "Proceed" || label == "Download" || label == "Trust host" || label == "Quit" || label == "Keep running" {
 								id = "confirm-accept"
 							}
 							layers = append(layers, lipgloss.NewLayer(solid(ansi.Cut(line, start, start+len(label)), len(label), 1, popupColor, m.noColor)).ID(id).X(x+3+start).Y(y+2+row).Z(5))
@@ -1439,11 +1749,20 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				}
 			}
 			hint := "[Esc close]"
+			if m.modal == "auth" {
+				hint = "Esc / Ctrl+C cancel connection"
+				if m.question != nil {
+					hint = "Enter submit · " + hint
+				}
+			}
 			if m.modal == "quit" {
 				hint = "↑↓ scroll connections · Esc cancel"
 			}
-			if m.modal == "review" && m.reviewText != "" {
+			if m.modal == "review" && (m.reviewText != "" || m.downloadPlan != nil) {
 				hint = "↑↓ / PgUp/PgDn scroll recap · Esc cancel"
+			}
+			if m.modal == "downloads" {
+				hint = "Esc close · ↑↓ / PgUp/PgDn scroll · transfers reopens"
 			}
 			if m.modal == "menu" {
 				hint = "↑↓ select · Enter run · Esc close"
@@ -1453,13 +1772,21 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			control("dismiss", hint, y+ph-3)
 		}
 	}
-	if current.management.help {
-		return current.management.overlay(lipgloss.NewCompositor(layers...).Render(), w, h)
+	if current.activeUI().help {
+		return current.activeUI().overlay(lipgloss.NewCompositor(layers...).Render(), w, h)
 	}
 	return lipgloss.NewCompositor(layers...)
 }
 func (m *frame) dialogBounds() image.Rectangle {
+	if m.modal == "context" && m.contextMenu != nil {
+		width, height := min(44, m.width-2), min(12, m.height-2)
+		x, y := max(0, min(m.contextMenu.at.X, m.width-width)), max(0, min(m.contextMenu.at.Y, m.height-height))
+		return image.Rect(x, y, x+width, y+height)
+	}
 	pw, ph := min(76, m.width-4), min(18, m.height-4)
+	if m.modal == "downloads" {
+		pw, ph = helpSize(m.width, m.height)
+	}
 	if m.modal == "new" {
 		ph = min(22, m.height-4)
 	}
@@ -1471,6 +1798,9 @@ func (m *frame) dialogBounds() image.Rectangle {
 		// gets the available terminal width before wrapping is necessary.
 		pw = min(max(76, lipgloss.Width(m.reviewText)+6), m.width-4)
 		ph = min(max(18, lipgloss.Height(ansi.Wrap(m.reviewText, max(1, pw-6), ""))+14), m.height-4)
+		if m.downloadPlan != nil {
+			pw, ph = min(76, m.width-4), min(len(m.downloadPlan.Files)+18, min(28, m.height-4))
+		}
 	}
 	if m.modal == "connect" {
 		pw, ph = min(96, m.width-4), min(34, m.height-4)
@@ -1515,7 +1845,7 @@ func (m *frame) View() tea.View {
 	if m.terminalFocused() && m.current().activeTerminal() != nil && m.current().activeTerminal().screen.MouseMotion && !m.mouseDisabled {
 		v.MouseMode = tea.MouseModeAllMotion
 	}
-	if !m.current().management.help && !m.hasSelection() {
+	if !m.current().activeUI().help && !m.hasSelection() {
 		x, y := 0, 0
 		switch m.modal {
 
@@ -1528,8 +1858,8 @@ func (m *frame) View() tea.View {
 					x, y = r.Min.X, r.Min.Y
 				}
 			}
-			if m.current().focus == "prompt" && m.current().tab == "" {
-				v.Cursor = m.current().management.input.Cursor()
+			if m.current().focus == "prompt" && (m.current().tab == "" || m.current().tab == "files") {
+				v.Cursor = m.current().activeUI().input.Cursor()
 				left, _ := m.columns()
 				x, y = left+2, m.height-2
 			}
@@ -1542,7 +1872,7 @@ func (m *frame) View() tea.View {
 			}
 		}
 	}
-	if m.noColor && m.form != nil && !m.current().management.help {
+	if m.noColor && m.form != nil && !m.current().activeUI().help {
 		// Huh exposes its caret as a reverse-video cell, not a public Cursor().
 		// Recover that exact cell before NO_COLOR stripping; reuse the compositor's
 		// native cell parser rather than duplicating textinput's editing offsets.

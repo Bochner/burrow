@@ -63,6 +63,17 @@ func directory(path string, create, private bool) (*os.File, error) {
 	return os.NewFile(uintptr(fd), path), nil
 }
 
+// FileRoot pins a verified private directory for traversal-resistant file access.
+// Opening through our descriptor preserves the directory inspected above.
+func FileRoot(path string, create bool) (*os.Root, error) {
+	dir, err := directory(path, create, true)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	return os.OpenRoot(fmt.Sprintf("/proc/self/fd/%d", dir.Fd()))
+}
+
 func openRegular(path string, mode os.FileMode, limit int64) (*os.File, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {

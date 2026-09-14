@@ -13,7 +13,7 @@ import termios
 import time
 
 
-def authentication_matrix(binary, workspace, root, env, container, port, key, fingerprint, burrow, wait, screen_check, prompt_only=False):
+def authentication_matrix(binary, workspace, root, env, container, port, key, fingerprint, burrow, wait, screen_check, prompt_only=False, auth_only=False):
     secret = "synthetic-auth-" + os.urandom(16).hex()
     encrypted = root / "auth-key"
     subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", secret, "-f", str(encrypted)], check=True, capture_output=True)
@@ -137,6 +137,13 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
     terminal(["connect", "bad-password", *base], [("SSH password", b"wrong\r")] * 3, success=False)
     for name in ("cancel-key", "bad-password", "signal-cancel"):
         assert not (workspace / "burrow" / name).exists(), "failed authentication left a reservation"
+    records=(workspace/"burrow-logs/operations.log").read_text()
+    for name in ("password", "passphrase", "cancel-key", "bad-password", "signal-cancel"):
+        assert "connect "+name in records, "authentication operation missing from log"
+    assert "Status: completed" in records and "Status: failed" in records and "Status: cancelled" in records
+    no_leaks()  # Includes the persisted operation log and actual authentication canary.
+    if auth_only:
+        return secret, encrypted
 
     # The target is reachable from the container only at port 2222. Both the
     # jump's published port and target's private port must verify host keys.

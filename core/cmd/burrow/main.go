@@ -139,7 +139,7 @@ func run(args []string) error {
 				return e
 			}
 		}
-		if command == "shell" && !term.IsTerminal(os.Stdin.Fd()) {
+		if (command == "shell" || command == "logs") && !term.IsTerminal(os.Stdin.Fd()) {
 			return fmt.Errorf("shell requires terminal input; use inspect NAME for JSON")
 		}
 		defer launch.Phase("cli:" + command)()
@@ -155,6 +155,11 @@ func run(args []string) error {
 			if _, e := connection.Execute(ctx, o.Workspace, []string{"profile", "load", loadPath}); e != nil {
 				return e
 			}
+		}
+		if command == "logs" {
+			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
+			m.initialLogs = true
+			return terminal(m, m.noColor)
 		}
 		if command == "shell" {
 			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
@@ -239,6 +244,9 @@ func openWorkspace(ctx context.Context, options launch.Options) (launch.Info, er
 	info, err := launch.Open(ctx, options)
 	if err == nil {
 		err = connection.EnsureProfiles(ctx, options.Workspace)
+	}
+	if err == nil {
+		err = connection.EnsureFileRoots(ctx, options.Workspace)
 	}
 	if err == nil {
 		err = launch.RegisterModule(ctx, options.Workspace, "burrow@0.1.0", connection.Manifest)

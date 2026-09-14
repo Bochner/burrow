@@ -2,23 +2,633 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"image"
 	"image/color"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
+	ptyhost "github.com/Bochner/burrow/core/terminal"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 )
+
+func TestAuthenticationPopup(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/auth-popup"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		if m.startAuthentication([]string{"connect", "gateway", "example.test", "tester", "--yes"}) == nil {
+			t.Fatal("authentication did not start commands")
+		}
+		defer m.attempt.cancel()
+		before := m.authSpinner.View()
+		_, tick := frameEvent(m, m.authSpinner.Tick())
+		if tick == nil || m.authSpinner.View() == before {
+			t.Fatal("Charm spinner did not animate")
+		}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("auth-connecting-%dx%d-%t", size.X, size.Y, plain))
+			bounds := m.dialogBounds()
+			for row, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+				if strings.Contains(line, "Connecting…") && absInt(row-(bounds.Min.Y+bounds.Dy()/2)) > 1 {
+					t.Fatal("connecting label is not vertically centered")
+				}
+			}
+			if !strings.Contains(ansi.Strip(m.formText()), ansi.Strip(m.authSpinner.View())+" Connecting…") {
+				t.Fatal("spinner missing to left of connecting label")
+			}
+			if !plain {
+				assertTextRole(t, screen, bounds.Inset(1), "Connecting…", "#f9e2af")
+			}
+		}
+		for _, prompt := range []string{"SSH password for tester@example.test:", "SSH key passphrase:"} {
+			q := authQuestion{prompt: connection.Prompt{Text: prompt, Secret: true}, answer: make(chan []byte)}
+			frameEvent(m, authQuestionReady{m.attempt, q})
+			if _, cmd := frameEvent(m, m.authSpinner.Tick()); cmd != nil {
+				t.Fatal("spinner kept ticking during password entry")
+			}
+			for _, value := range []string{"", "synthetic-é password"} {
+				frameEvent(m, tea.PasteMsg{Content: value})
+				for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+					frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+					capturePresentation(t, m, fmt.Sprintf("auth-entry-%dx%d-%t-%d-%d", size.X, size.Y, plain, len(prompt), len(value)))
+					view := ansi.Strip(m.View().Content)
+					if !strings.Contains(view, prompt) || !strings.Contains(view, value) || !strings.Contains(view, "Enter submit") {
+						t.Fatal("credential field or controls hidden")
+					}
+					if value != "" {
+						bounds := m.dialogBounds()
+						for row, line := range strings.Split(view, "\n") {
+							if strings.Contains(line, value) && absInt(row-(bounds.Min.Y+bounds.Dy()/2)) > 1 {
+								t.Fatal("password entry is not near dialog center")
+							}
+						}
+					}
+					if plain && m.View().Cursor == nil {
+						t.Fatal("NO_COLOR input lost caret")
+					}
+				}
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			if m.form != nil || m.question != nil || strings.Contains(m.View().Content, "synthetic-é password") || !strings.Contains(m.View().Content, "Connecting…") {
+				t.Fatal("submitted credential remained on screen")
+			}
+			if _, cmd := frameEvent(m, m.authSpinner.Tick()); cmd == nil {
+				t.Fatal("spinner failed to resume after submission")
+			}
+		}
+		q := authQuestion{prompt: connection.Prompt{Text: "SSH password:", Secret: true}, answer: make(chan []byte)}
+		frameEvent(m, authQuestionReady{m.attempt, q})
+		frameEvent(m, tea.PasteMsg{Content: "cancelled-secret"})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		if m.attempt.ctx.Err() == nil || m.modal != "" || strings.Contains(m.View().Content, "cancelled-secret") {
+			t.Fatal("Escape did not cancel connection")
+		}
+		frameEvent(m, authQuestionReady{m.attempt, q})
+		if m.modal != "" {
+			t.Fatal("late prompt reopened cancelled connection")
+		}
+		if _, cmd := frameEvent(m, m.authSpinner.Tick()); cmd != nil {
+			t.Fatal("dismissed spinner kept ticking")
+		}
+	}
+	f := promptForm(connection.Prompt{Text: "SSH password:", Secret: true}, false)
+	f.WithWidth(60)
+	f.GetFocusedField().Focus()
+	f.Update(tea.PasteMsg{Content: "synthetic-cli-secret"})
+	if strings.Contains(f.View(), "synthetic-cli-secret") || f.GetFocusedField().GetValue() != "synthetic-cli-secret" {
+		t.Fatal("CLI prompt visibility changed")
+	}
+}
+
+func TestDownloadReviewAndProgress(t *testing.T) {
+	bar := newDownloadBar()
+	bar.SetWidth(12)
+	for _, check := range []struct {
+		percent float64
+		color   string
+	}{{.25, "#f38ba8"}, {.75, "#f9e2af"}, {1, "#a6e3a1"}} {
+		screen := vt.NewEmulator(12, 1)
+		screen.Write([]byte(bar.ViewAs(check.percent)))
+		if !colorMatches(screen.CellAt(0, 0).Style.Fg, lipgloss.Color(check.color)) {
+			t.Fatalf("progress %.0f%% did not use %s", check.percent*100, check.color)
+		}
+		screen.Close()
+	}
+	plainBar := ansi.Strip(bar.ViewAs(.5))
+	if !strings.Contains(plainBar, "━") || strings.ContainsAny(plainBar, "█▌░") {
+		t.Fatal("progress bar is not a continuous line", plainBar)
+	}
+	m := newFrame(launch.Info{Workspace: "/tmp/download-ui"}, true, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	s := connection.State{Name: "gateway", State: "connected", Generation: "generation", Creation: "creation"}
+	m.updateManagement(m.active, connectionList{states: []connection.State{s}})
+	m.openFileTab("gateway")
+	u := m.current().file
+	u.busy = false
+	u.files.remote = "/remote"
+	u.files.download = "/tmp/download-ui/burrow-files/downloads"
+	u.input.SetValue("get 'α file.txt'")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal != "review" {
+		t.Fatal("get did not open download review", m.modal, u.output)
+	}
+	plan := connection.DownloadPlan{Owner: s, Files: []connection.DownloadFile{{Source: "/remote/α file.txt", Destination: "/downloads/α file.txt", Size: 100, Existing: "reviewed", State: "pending"}}}
+	deliver := func(msg tea.Msg) {
+		t.Helper()
+		cmd := m.dispatch(m.active, func() tea.Msg { return msg })
+		frameEvent(m, cmd())
+	}
+	deliver(downloadReviewReady{m.inputEpoch, plan, nil})
+	if text := ansi.Strip(m.View().Content); !strings.Contains(text, "Download 1 file to /downloads/α file.txt?") {
+		t.Fatal("download approval omits resolved destination", text)
+	}
+	recap := ansi.Strip(m.downloadRecap(70))
+	for _, part := range []string{"α file.txt", "100 B", "1 file", "OVERWRITE", "Replace"} {
+		if !strings.Contains(recap, part) {
+			t.Fatal("missing compact recap", part, recap)
+		}
+	}
+	if strings.Contains(recap, "/downloads/") || strings.Contains(recap, "Source:") {
+		t.Fatal("recap repeats known paths", recap)
+	}
+	plan.Operation = "put"
+	m.downloadPlan = &plan
+	if recap := ansi.Strip(m.downloadRecap(70)); !strings.Contains(recap, "/downloads/α file.txt") {
+		t.Fatal("upload recap omits full remote destination", recap)
+	}
+	plan.Operation = "get"
+	m.downloadPlan = &plan
+	m.noColor, m.current().management.noColor, u.noColor = false, false, false
+	screen := capturePresentation(t, m, "download-review-color")
+	assertTextRole(t, screen, m.dialogBounds(), "α file.txt", lavenderColor)
+	assertTextRole(t, screen, m.dialogBounds(), "100 B", "#fab387")
+	assertTextRole(t, screen, m.dialogBounds(), "Replace", "#f9e2af")
+	m.noColor, m.current().management.noColor, u.noColor = true, true, true
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		capturePresentation(t, m, fmt.Sprintf("download-review-%dx%d", size.X, size.Y))
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.downloadPlan != nil {
+		t.Fatal("cancelled review retained executable plan")
+	}
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	u.fileCommand([]string{"history"})
+	u.outputOffset = 3
+	u.input.SetValue("downloads")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !u.files.historyView || m.modal != "downloads" || u.outputOffset != 3 {
+		t.Fatal("popup changed underlying history")
+	}
+	for _, op := range []string{"get", "mget", "put"} {
+		u.fileCommand([]string{"help", op})
+		if !u.help {
+			t.Fatal("missing contextual help", op)
+		}
+		u.help = false
+	}
+	u.input.SetValue("mget '*.txt' sub")
+	_, side, _, _, dirs := u.fileCompletionContext()
+	if side != "download" || !dirs {
+		t.Fatal("batch destination needs local directory completion")
+	}
+	u.input.SetValue("put 'α file.txt'")
+	_, side, _, _, dirs = u.fileCompletionContext()
+	if side != "upload" || dirs {
+		t.Fatal("put source needs upload-area file completion")
+	}
+	u.input.SetValue("put 'α file.txt' remote")
+	_, side, _, _, _ = u.fileCompletionContext()
+	if side != "remote" {
+		t.Fatal("put destination needs remote completion")
+	}
+	u.input.Reset()
+	file := plan.Files[0]
+	file.State = "failed"
+	file.Bytes = 25
+	file.Partial = "/downloads/.burrow-partial-check"
+	file.Detail = "cancelled replacement"
+	eta := 3.0
+	d := connection.Download{ID: "download-check", Plan: plan, Files: []connection.DownloadFile{file}, State: "partial", Bytes: 25, Elapsed: 2, AverageRate: 12.5, ETA: &eta}
+	deliver(downloadsReady{connection.Downloads{Records: []connection.Download{d}}, nil})
+	text := ansi.Strip(m.View().Content)
+	for _, part := range []string{"PARTIAL", "Overall progress", "Downloading α file.txt", "25/100 B", "0:00:02", "ETA 0:00:03"} {
+		if !strings.Contains(text, part) {
+			t.Fatal("missing measured presentation", part, text)
+		}
+	}
+	if strings.Contains(m.View().Content, "\x1b[") {
+		t.Fatal("NO_COLOR leaked ANSI")
+	}
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		pw, ph := helpSize(size.X, size.Y)
+		if b := m.dialogBounds(); b.Dx() != pw || b.Dy() != ph {
+			t.Fatal("progress popup differs from help size", b)
+		}
+		capturePresentation(t, m, fmt.Sprintf("download-partial-%dx%d", size.X, size.Y))
+	}
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.noColor, m.current().management.noColor, u.noColor = false, false, false
+	screen = capturePresentation(t, m, "download-partial-color")
+	assertTextRole(t, screen, image.Rect(0, 0, 160, 40), "PARTIAL", "#f38ba8")
+	assertTextRole(t, screen, image.Rect(0, 0, 160, 40), "25/100 B", "#fab387")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.modal != "" || !u.files.historyView || u.outputOffset != 3 {
+		t.Fatal("Escape failed to restore underlying view")
+	}
+	u.input.SetValue("draft preserved")
+	deliver(downloadsReady{connection.Downloads{Records: []connection.Download{d}}, nil})
+	deliver(downloadStarted{mode: u.files})
+	if m.modal != "" || u.input.Value() != "draft preserved" {
+		t.Fatal("late update reopened popup or replaced draft")
+	}
+	u.input.SetValue("downloads")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal != "downloads" || !strings.Contains(m.View().Content, "PARTIAL") {
+		t.Fatal("downloads did not reopen retained progress")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	u.input.SetValue("get file")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	deliver(downloadReviewReady{m.inputEpoch, plan, nil})
+	button := image.Pt(-1, -1)
+	compositor := m.compositor()
+	for y := 0; y < m.height; y++ {
+		for x := 0; x < m.width; x++ {
+			if compositor.Hit(x, y).ID() == "confirm-accept" {
+				button = image.Pt(x, y)
+			}
+		}
+	}
+	if button.X < 0 {
+		t.Fatal("download has no mouse approval target")
+	}
+	frameEvent(m, tea.MouseClickMsg{X: button.X, Y: button.Y, Button: tea.MouseLeft})
+	if m.downloadPlan != nil || m.modal != "downloads" {
+		t.Fatal("mouse approval did not submit review")
+	}
+	deliver(downloadStarted{mode: u.files, err: fmt.Errorf("source changed")})
+	if m.modal != "" || !strings.Contains(m.View().Content, "REFUSED: source changed") {
+		t.Fatal("start failure hidden behind progress popup")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	frameEvent(m, tea.KeyPressMsg{Code: 'b', Mod: tea.ModAlt})
+	m.current().management.input.SetValue("downloads")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal != "downloads" {
+		t.Fatal("management downloads did not open popup")
+	}
+}
+
+func TestDownloadPopupRecapAndScroll(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/download-popup"}, false, launch.Options{})
+	defer m.terminals.close()
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.downloadPlan = &connection.DownloadPlan{Files: []connection.DownloadFile{
+		{Source: "/remote/first.txt", Destination: "/local/renamed.txt", Size: 1024},
+		{Source: "/remote/second.txt", Destination: "/local/second.txt", Size: -1},
+	}}
+	m.setForm("review", "Download recap", confirmForm("Download these files?", "", "Download", "Cancel"))
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		capturePresentation(t, m, fmt.Sprintf("download-batch-recap-%dx%d", size.X, size.Y))
+		if !strings.Contains(ansi.Strip(m.View().Content), "Download these files?") {
+			t.Fatal("batch confirmation clipped")
+		}
+	}
+	text := ansi.Strip(m.downloadRecap(70))
+	for _, part := range []string{"2 files", "1.0 KiB + unknown total", "first.txt → renamed.txt", "Unknown"} {
+		if !strings.Contains(text, part) {
+			t.Fatal("missing batch recap field", part, text)
+		}
+	}
+	if strings.Contains(text, "OVERWRITE") {
+		t.Fatal("unnecessary overwrite column")
+	}
+	m.dismissForm()
+	m.openDownloads()
+	u := &m.current().management
+	u.downloadObserved = true
+	for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+		frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+		capturePresentation(t, m, fmt.Sprintf("download-empty-popup-%dx%d", size.X, size.Y))
+	}
+	for i := 0; i < 12; i++ {
+		u.downloads.Records = append(u.downloads.Records, connection.Download{ID: fmt.Sprintf("transfer-%02d", i), State: "complete"})
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+	if !strings.Contains(m.downloadsViewport().View(), "transfer-00") {
+		t.Fatal("End did not reveal old outcomes")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyHome})
+	if m.modalOffset != 0 || !strings.Contains(m.downloadsViewport().View(), "transfer-11") {
+		t.Fatal("Home did not return to newest transfer")
+	}
+	frameEvent(m, tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelDown})
+	if m.modalOffset == 0 {
+		t.Fatal("popup wheel did not scroll")
+	}
+}
+
+func TestProfileEditorValidation(t *testing.T) {
+	dir := t.TempDir()
+	profile := connection.Profile{Name: "gateway", Host: "example.test", User: "tester", Port: 22}
+	original, _ := json.Marshal(profile)
+	edit := &profileEdit{profile: profile, collection: connection.Collection{Path: "/tmp/profiles.json", Revision: strings.Repeat("a", 64)}, directory: dir, original: original}
+	write := func(data []byte) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "connection.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(original)
+	if args, err := editedProfileArgs("/tmp/edit-workspace", edit); err != nil || args != nil {
+		t.Fatal(args, err)
+	}
+	profile.Port = 2222
+	changed, _ := json.Marshal(profile)
+	write(changed)
+	args, err := editedProfileArgs("/tmp/edit-workspace", edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := connection.CommandLine(args)
+	for _, part := range []string{"profile edit gateway", "--port 2222", "--revision " + strings.Repeat("a", 64), "--collection /tmp/profiles.json", "--yes"} {
+		if !strings.Contains(line, part) {
+			t.Fatal(line)
+		}
+	}
+	for _, data := range []string{`{}`, `{"name":"other"}`, `{"name":"gateway","password":"secret"}`, `{"name":"gateway","host":"example.test","user":"tester","port":70000}`, string(changed) + ` {}`, strings.Repeat("x", 65537)} {
+		write([]byte(data))
+		if _, err := editedProfileArgs("/tmp/edit-workspace", edit); err == nil {
+			t.Fatal("accepted invalid edit")
+		}
+		if _, err := os.Stat(filepath.Join(dir, "connection.json")); err != nil {
+			t.Fatal("failed edit was lost")
+		}
+	}
+	for _, want := range []string{"nomodeline", "noexrc", "noloadplugins", "noswapfile", "noundofile", "conceallevel=0", "highlight jsonKeyword", "highlight jsonString"} {
+		if !strings.Contains(profileVimrc(false), want) {
+			t.Fatal("missing Vim policy", want)
+		}
+	}
+	if strings.Contains(profileVimrc(true), "guifg") || !strings.Contains(profileVimrc(true), "syntax off") {
+		t.Fatal("Vim NO_COLOR policy")
+	}
+}
+
+func TestFilePermissionAndTypeColors(t *testing.T) {
+	mode := "-rwxr-Sr-t"
+	for _, plain := range []bool{false, true} {
+		u := ui{noColor: plain}
+		s := vt.NewEmulator(40, 2)
+		defer s.Close()
+		s.Write([]byte(u.filePermissions(mode)))
+		if !strings.Contains(s.String(), mode) {
+			t.Fatal("permission text changed", s.String())
+		}
+		if !plain {
+			for i, want := range []string{"#a6e3a1", "#f9e2af", "#f38ba8", "#a6e3a1", "#f9e2af", subtextColor, "#cba6f7", "#f9e2af", subtextColor, "#cba6f7"} {
+				if !colorMatches(s.CellAt(i, 0).Style.Fg, lipgloss.Color(want)) {
+					t.Fatalf("permission %d lost its role", i)
+				}
+			}
+		}
+		for _, entry := range []connection.FileEntry{{Name: "folder", Permissions: "drwxr-xr-x", Directory: true}, {Name: "run", Permissions: "-rwxr-xr-x"}, {Name: "alias", Permissions: "lrwxrwxrwx", Link: "folder"}, {Name: "broken", Permissions: "lrwxrwxrwx", Link: "missing", Error: "broken link"}, {Name: "pipe", Permissions: "prw-------"}, {Name: "socket", Permissions: "srw-------"}, {Name: "device", Permissions: "crw-------"}} {
+			text := u.fileName(entry)
+			if !strings.Contains(ansi.Strip(text), entry.Name) {
+				t.Fatal(text)
+			}
+			if plain && strings.Contains(text, "\x1b") {
+				t.Fatal("color leaked into NO_COLOR")
+			}
+			if !plain {
+				v := vt.NewEmulator(60, 1)
+				v.Write([]byte(text))
+				if !colorMatches(v.CellAt(0, 0).Style.Fg, fileKindStyle(entry).GetForeground()) {
+					t.Fatal("file kind color lost", entry.Name)
+				}
+				v.Close()
+			}
+		}
+	}
+}
+
+func TestFileCompletionAndRetainedMetadata(t *testing.T) {
+	u := newUI(launch.Info{Workspace: "/tmp/file-completion"}, true)
+	u.files = &fileMode{remote: "/home/tester", cache: map[string]fileObservation{}, listing: connection.FileListing{Notice: "Reduced metadata: numeric IDs"}}
+	for _, test := range []struct{ line, dir, prefix string }{
+		{"cd 'sub ", "/home/tester", "sub "},
+		{"cd \"sub ", "/home/tester", "sub "},
+		{"cd sub\\ ", "/home/tester", "sub "},
+		{"cd ", "/home/tester", ""},
+		{"cd link/../", "/home/tester/link/../", ""},
+	} {
+		u.input.SetValue(test.line)
+		_, side, dir, prefix, _ := u.fileCompletionContext()
+		if side != "remote" || dir != test.dir || prefix != test.prefix {
+			t.Fatalf("%q: %q %q %q", test.line, side, dir, prefix)
+		}
+	}
+	for _, output := range []string{"Local upload directory: /tmp/upload", "Workspace roots verified", "Completion unavailable: denied"} {
+		u.output = output
+		if !strings.Contains(u.fileContent(100), u.files.listing.Notice) {
+			t.Fatal("retained listing lost reduced-metadata warning")
+		}
+	}
+	u.noColor = false
+	screen := vt.NewEmulator(100, 4)
+	defer screen.Close()
+	screen.Write([]byte(u.dataTable("", []string{"OWNER", "GROUP", "SIZE", "MODIFIED"}, [][]string{{"Unavailable", "Unavailable", "Unavailable", "Unavailable"}}, 100)))
+	for x := 0; x < 100; x++ {
+		cell := screen.CellAt(x, 2)
+		if cell != nil && cell.Content != "" && strings.Contains("Unavailable", cell.Content) && !colorMatches(cell.Style.Fg, secondary.GetForeground()) {
+			t.Fatal("unavailable metadata lost subtext role")
+		}
+	}
+}
+
+func TestFileTabsAndContextMenus(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/file-tabs"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		a := connection.State{Name: "gateway", State: "connected", Generation: "g", Creation: "a"}
+		b := a
+		b.Name = "second"
+		b.Creation = "b"
+		m.updateManagement(m.active, connectionList{states: []connection.State{a, b}})
+		m.current().management.profiles = connection.Collection{Path: "/tmp/profiles.json", Revision: "rev", Profiles: []connection.Profile{{Name: "saved", Host: "example.test", User: "tester"}}}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			m.openResourceMenu("profile:0", image.Pt(size.X-1, size.Y-1))
+			if !m.dialogBounds().In(image.Rect(0, 0, size.X, size.Y)) {
+				t.Fatal("menu escaped terminal")
+			}
+			capturePresentation(t, m, fmt.Sprintf("context-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "Edit in Vim") {
+				t.Fatal("missing editor action")
+			}
+			frameEvent(m, tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft})
+			if m.modal != "" {
+				t.Fatal("outside click did not dismiss menu")
+			}
+			m.openResourceMenu("resource:0", image.Pt(size.X-1, size.Y-1))
+			capturePresentation(t, m, fmt.Sprintf("connection-context-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "Enter Shell") {
+				t.Fatal("missing shell action")
+			}
+			m.dismissForm()
+		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		// Find the actual row hit target, then take the real right-click route.
+		found := false
+		for y := 3; y < 35 && !found; y++ {
+			for x := 28; x < 126; x++ {
+				if m.compositor().Hit(x, y).ID() == "resource:0" {
+					frameEvent(m, tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseRight})
+					found = true
+					break
+				}
+			}
+		}
+		if !found || m.modal != "context" {
+			t.Fatal("right-click menu did not open")
+		}
+		if cmd := m.resourceAction(1); cmd == nil || m.current().tab != "shell" || m.current().shell.connection != a.Name {
+			t.Fatal("shell action did not use selected connection")
+		}
+		m.current().removeShell(m.current().shell)
+		m.activate("burrow")
+		m.openResourceMenu("resource:0", image.Pt(30, 10))
+		m.current().management.connectionError = "unverified"
+		if cmd := m.resourceAction(1); cmd != nil || len(m.current().shells) != 0 {
+			t.Fatal("shell action accepted unverified observation")
+		}
+		m.current().management.connectionError = ""
+		m.openResourceMenu("resource:0", image.Pt(30, 10))
+		m.resourceAction(0)
+		first := m.current().file
+		if first == nil || m.current().tab != "files" {
+			t.Fatal("menu did not open file tab")
+		}
+		defer first.files.cancel()
+		first.input.SetValue("cd draft")
+		m.activate("burrow")
+		m.updateManagement(m.active, fileResult{mode: first.files, sequence: first.files.sequence, operation: "cd", value: connection.FileListing{Path: "/home/gateway"}})
+		if m.current().tab != "" || first.files.remote != "/home/gateway" {
+			t.Fatal("background result stole tab or was lost")
+		}
+		m.openFileTab("second")
+		second := m.current().file
+		defer second.files.cancel()
+		m.activate("burrow")
+		if cmd := m.openFileTab("gateway"); cmd != nil {
+			t.Fatal("reopening tab must not rediscover")
+		}
+		if m.current().file != first || first.input.Value() != "cd draft" || len(m.current().fileViews) != 2 {
+			t.Fatal("tab state not retained")
+		}
+		m.activate("file-tab:1")
+		if m.current().file != second {
+			t.Fatal("file tab click selected wrong view")
+		}
+		second.busy = false
+		frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+		if len(m.current().fileViews) != 1 || m.current().tab != "" {
+			t.Fatal("back did not close only selected file tab")
+		}
+		a.Creation = "replacement"
+		m.updateManagement(m.active, connectionList{states: []connection.State{a}})
+		m.selectFileTab(first)
+		if first.fileState() != "unavailable" || !strings.Contains(ansi.Strip(m.metadata()), "UNAVAILABLE") {
+			t.Fatal("old file view borrowed replacement connection health")
+		}
+		m.current().shells = append(m.current().shells, &cliTab{editor: &profileEdit{profile: connection.Profile{Name: "draft"}}})
+		if !strings.Contains(ansi.Strip(m.quitSummary()), "quitting loses unsaved edits") {
+			t.Fatal("quit review omitted unsaved editor warning")
+		}
+	}
+}
+
+func TestFilePresentation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/files"}, plain, launch.Options{})
+			t.Cleanup(m.terminals.close)
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			state := connection.State{Name: "gateway", Host: "example.test", User: "tester", State: "connected", Creation: "creation", Generation: "generation"}
+			m.updateManagement(m.active, connectionList{states: []connection.State{state}})
+			frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			f := m.current().activeUI().files
+			if f == nil {
+				t.Fatal("scp did not enter file mode")
+			}
+			if f.cancel != nil {
+				f.cancel()
+			}
+			roots := connection.FileRoots{Version: 1, Upload: "/tmp/files/uploads", Download: "/tmp/files/downloads"}
+			m.updateManagement(m.active, fileResult{mode: f, sequence: f.sequence, operation: "cd", roots: roots, value: connection.FileListing{Path: "/home/tester", Entries: []connection.FileEntry{}}})
+			prefix := fmt.Sprintf("files-%dx%d-%t", size.X, size.Y, plain)
+			screen := capturePresentation(t, m, prefix+"-empty")
+			if !strings.Contains(screen.String(), "No entries") {
+				t.Fatal(screen.String())
+			}
+			listing := connection.FileListing{Path: "/home/tester", Entries: []connection.FileEntry{{Name: "α.txt", Path: "/home/tester/α.txt", Permissions: "-rw-r--r--", Owner: "tester", Group: "staff", Size: 1234, Modified: time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)}, {Name: "linked", Link: "sub dir", Permissions: "lrwxrwxrwx", Owner: "tester", Group: "staff", Directory: true}, {Name: "bad\x1b]52;c;x\a", Error: "broken link"}}}
+			m.updateManagement(m.active, fileResult{mode: f, sequence: f.sequence, operation: "ls", roots: roots, value: listing})
+			screen = capturePresentation(t, m, prefix+"-listing")
+			if strings.Contains(m.View().Content, "\x1b]52;") {
+				t.Fatal("remote filename escaped into terminal control")
+			}
+			if size.X >= 160 {
+				for _, want := range []string{"PERMISSIONS", "OWNER", "GROUP", "SIZE", "MODIFIED", "NAME", "α.txt", "linked → sub dir"} {
+					if !strings.Contains(screen.String(), want) {
+						t.Fatal("missing", want, screen.String())
+					}
+				}
+				if !plain {
+					left, right := m.columns()
+					bounds := image.Rect(left+2, 3, m.width-right-2, m.height-4)
+					assertTextRole(t, screen, bounds, "linked", "#94e2d5")
+					assertTextRole(t, screen, bounds, "1234", "#fab387")
+					assertTextRole(t, screen, bounds, "staff", "#a6e3a1")
+				}
+			}
+			frameEvent(m, tea.PasteMsg{Content: "cd draft"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+			capturePresentation(t, m, prefix+"-help")
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			if m.current().activeUI().input.Value() != "cd draft" {
+				t.Fatal("help lost draft")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+			m.updateManagement(m.active, fileResult{mode: f, sequence: f.sequence, operation: "ls", roots: roots, value: listing})
+			if m.current().activeUI().files != nil {
+				t.Fatal("late result reopened file mode")
+			}
+			if !strings.Contains(m.View().Content, "SAVED CONNECTION") {
+				t.Fatal("management not restored")
+			}
+		}
+	}
+}
 
 // Export the actual ANSI view through the existing pinned VT cell model. These
 // artifacts reveal backgrounds and selected controls that text-only checks miss.
@@ -1104,7 +1714,7 @@ func TestTableAndMetadataRoles(t *testing.T) {
 	m.current().selected = ""
 	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 	screen := capturePresentation(t, m, "160x40-semantic-tables")
-	expect := map[string]string{"production": "#b4befe", "10.20.0.10": "#f5c2e7", "operator": "#a6e3a1", "2222": "#f9e2af", "id_ed25519": "#94e2d5", "48.6 MiB": "#fab387"}
+	expect := map[string]string{"production": "#b4befe", "10.20.0.10": "#f5c2e7", "operator": "#a6e3a1", "2222": "#f9e2af", "id_ed25519": "#94e2d5", "48.6 MB": "#fab387"}
 	for value, hex := range expect {
 		found := false
 		for y := 0; y < m.height; y++ {
@@ -1129,8 +1739,14 @@ func TestTableAndMetadataRoles(t *testing.T) {
 	}
 	live := newFrame(launch.Info{Workspace: "/tmp/live"}, true, launch.Options{})
 	live.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
-	if !strings.Contains(live.metadata(), "Files: Unavailable") || strings.Contains(live.metadata(), "Files: 0") {
+	if !strings.Contains(live.metadata(), "Completed files: Unavailable") || strings.Contains(live.metadata(), "Completed files: 0") {
 		t.Fatal("unavailable downloads misreported")
+	}
+	live.current().management.downloadObserved = true
+	live.current().management.downloads.Files = 7
+	live.current().management.downloads.Bytes = 1_200_000_000
+	if metadata := live.metadata(); !strings.Contains(metadata, "Completed files: 7") || !strings.Contains(metadata, "Downloaded: 1.2 GB") {
+		t.Fatal("workspace download totals are not explicit or human-readable", metadata)
 	}
 	live.current().management.connectionObserved = true
 	if !strings.Contains(live.metadata(), "DISCONNECTED") {
@@ -1303,5 +1919,164 @@ func TestSaveOfferWaitsForWorkspaceAndDialog(t *testing.T) {
 	m.showSaveOffer()
 	if m.modal != "profile-save" || m.saveName != "nas" || len(m.current().saveOffers) != 0 {
 		t.Fatal("pending save offer was not presented")
+	}
+}
+
+func TestLogViewerRestoresContext(t *testing.T) {
+	for _, tabName := range []string{"", "files", "shell", "hovel"} {
+		m := newFrame(launch.Info{Workspace: "/tmp/log-context"}, true, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		w := m.current()
+		original := &cliTab{connection: "gateway", id: "1"}
+		w.shells = []*cliTab{original}
+		w.shell = original
+		w.tab, w.focus = tabName, "prompt"
+		if tabName == "shell" || tabName == "hovel" {
+			w.focus = "terminal"
+		}
+		w.management.input.SetValue("unfinished command")
+		focus := w.focus
+		_, cmd := frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+		if cmd == nil || w.shell.logs == nil || w.tab != "shell" {
+			t.Fatal("Ctrl+N did not open logs", tabName)
+		}
+		viewer := w.shell
+		viewer.pending = false
+		// Exercise normal terminal exit through the same event path as :q.
+		m.terminalResult(m.active, cliScreen{viewer, ptyhost.Snapshot{Exited: true}})
+		if w.tab != tabName || w.focus != focus || w.shell != original || w.management.input.Value() != "unfinished command" {
+			t.Fatal("viewer lost previous context", tabName, w.tab, w.focus)
+		}
+		if strings.Contains(logVimrc(true), "highlight") || strings.Contains(logVimrc(true), "syntax match") {
+			t.Fatal("NO_COLOR syntax enabled")
+		}
+		if !strings.Contains(logVimrc(false), "highlight burrowTimestamp guifg="+baseColor+" guibg="+blueColor) {
+			t.Fatal("timestamp contrast missing")
+		}
+	}
+}
+
+func TestLogVimRenderedColors(t *testing.T) {
+	vim, err := exec.LookPath("vim")
+	if err != nil {
+		t.Fatal("Vim required for log presentation check", err)
+	}
+	const log = `2026-09-13T14:00:00-04:00 -- mget /data/*
+  Target: gateway (tester@192.0.2.10:2222)
+  COMPLETE · 2/2 files · 1.0 KiB · 2s elapsed
+  Files: 2 completed · 0 failed · 0 cancelled
+  Saved: /downloads/data
+`
+	for _, plain := range []bool{false, true} {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "vimrc"), []byte(logVimrc(plain)), 0600)
+		os.WriteFile(filepath.Join(dir, "operations.log"), []byte(log+strings.Repeat("Scrolling line\n", 100)), 0600)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		cmd := exec.Command(vim, "-N", "-M", "-u", filepath.Join(dir, "vimrc"), "-i", "NONE", "-n", "--", filepath.Join(dir, "operations.log"))
+		host, err := ptyhost.StartWithScrollback(ctx, cmd, 160, 40, 0)
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		var snap ptyhost.Snapshot
+		for {
+			snap = host.Snapshot()
+			if strings.Contains(ansi.Strip(snap.Screen), "Burrow logs snapshot") {
+				break
+			}
+			if time.Now().After(deadline) {
+				host.Close()
+				cancel()
+				t.Fatal("Vim did not render", snap.Screen)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		screen := vt.NewEmulator(160, 40)
+		screen.Write([]byte(strings.ReplaceAll(snap.Screen, "\n", "\r\n")))
+		for text, want := range map[string]string{"gateway": "#b4befe", "tester": "#a6e3a1", "192.0.2.10": "#f5c2e7", "2222": "#f9e2af", "COMPLETE": "#a6e3a1", "failed": "#f38ba8", "/downloads/data": "#a6adc8"} {
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, 1, 160, 6), text, want)
+			}
+		}
+		if !strings.Contains(screen.String(), "2026-09-13T14:00:00-04:00 -- mget /data/*") {
+			t.Fatal("log text changed")
+		}
+		cell := screen.CellAt(4, 0)
+		if !plain && !colorMatches(cell.Style.Bg, lipgloss.Color(blueColor)) {
+			t.Fatal("timestamp background missing", cell.Style.Bg, snap.Screen)
+		}
+		if plain && cell.Style.Bg != nil {
+			t.Fatal("NO_COLOR timestamp background")
+		}
+		// Wheel input must reach Vim, not the host's empty alternate-screen history.
+		if err := host.Send(uv.MouseWheelEvent{X: 20, Y: 10, Button: uv.MouseWheelDown}); err != nil {
+			t.Fatal(err)
+		}
+		deadline = time.Now().Add(3 * time.Second)
+		for strings.Contains(ansi.Strip(host.Snapshot().Screen), "2026-09-13T14:00:00") {
+			if time.Now().After(deadline) {
+				t.Fatal("mouse wheel did not scroll Vim")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		for _, size := range []image.Point{{200, 50}, {120, 30}, {80, 24}} {
+			if err := host.Send(size); err != nil {
+				t.Fatal(err)
+			}
+		}
+		host.Close()
+		cancel()
+		screen.Close()
+	}
+}
+
+func TestLogNotesSummarizeOperations(t *testing.T) {
+	var records strings.Builder
+	record := func(action, status, payload string) {
+		fmt.Fprintf(&records, "2026-09-13T14:00:00-04:00 -- %s\n  Target: gateway\n  Status: %s\n  Result:\n    %s\nEnd record\n\n", action, status, payload)
+	}
+	record("get file /one", "complete", `{"source":"/one","state":"complete"}`)
+	record("mget", "running", `{"state":"running"}`)
+	record("inspect reverse listeners", "completed", `[]`)
+	record("mget /data/*", "complete", `{"plan":{"operation":"mget","pattern":"/data/*","owner":{"name":"gateway","user":"tester","host":"example.test"}},"files":[{"state":"complete","destination":"/downloads/one"},{"state":"failed","destination":"/downloads/two"},{"state":"cancelled","destination":"/downloads/three"}],"state":"cancelled","bytes":1024,"elapsed":2,"detail":"one transfer failed"}`)
+	record("scp gateway tree /data", "completed", `{"result":{"path":"/data","entries":[{}],"incomplete":true,"errors":["permission denied"]}}`)
+	record("shell gateway", "opened", `{"state":"opened"}`)
+	var notes strings.Builder
+	if err := writeLogNotes(strings.NewReader(records.String()), &notes, "/workspace"); err != nil {
+		t.Fatal(err)
+	}
+	got := notes.String()
+	for _, want := range []string{"mget /data/*", "1/3 files", "1 completed · 1 failed · 1 cancelled", "Destination: /downloads", "INCOMPLETE · 1 entries", "permission denied", "OPENED"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %s", want, got)
+		}
+	}
+	for _, unwanted := range []string{`"state"`, "get file", "inspect reverse", "RUNNING", "End record"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("backend detail %q leaked into notes: %s", unwanted, got)
+		}
+	}
+	if strings.Count(got, " -- mget") != 1 {
+		t.Fatal("batch summary repeated", got)
+	}
+	if err := writeLogNotes(strings.NewReader("2026-09-13T14:00:00Z -- incomplete\n"), &strings.Builder{}, "/workspace"); err == nil {
+		t.Fatal("partial record accepted")
+	}
+}
+
+func TestLogNoteFailedDownload(t *testing.T) {
+	note, _, err := operationNote("get /one", "failed", "gateway", []byte(`{"plan":{"operation":"get","pattern":"/one"},"files":[{"state":"failed","destination":"/downloads/one","partial":"/downloads/one.partial","detail":"disk full"}],"state":"failed"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Destination: /downloads/one", "Partial: /downloads/one.partial", "disk full"} {
+		if !strings.Contains(note, want) {
+			t.Fatal(note)
+		}
+	}
+	if strings.Contains(note, "Saved:") {
+		t.Fatal("failed destination claimed saved", note)
 	}
 }

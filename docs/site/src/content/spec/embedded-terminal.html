@@ -18,4 +18,5 @@ aspect test //core/cmd/burrow:terminal_test
 aspect burrow-check
 aspect burrow run -- --workspace /absolute/private/workspace --offline</code></pre>
 <p>The declared checks cover terminal input, output, alternate screens, cursor replies, geometry, process cleanup, persistent frame controls and the real pinned CLI in isolated workspaces. The CLI acceptance uses the harmless Burrow workspace-inspection module through Hovel's own review and confirmation flow. These checks do not establish SSH-shell parity. The owner accepted the issue #68 walkthrough on 2026-09-12, including the follow-up workspace shortcuts, clickable CLI restart, separate daemon status and shaded Burrow sidebar wordmark. The resize limitation above remains explicit; acceptance does not imply reflow support.</p>
+<p>See <a href="logs.html">Operation logs</a> for workspace-specific Burrow operation results and the Ctrl+N Vim viewer. Interactive terminal bytes are not recorded.</p>
 </article>

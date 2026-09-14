@@ -174,24 +174,41 @@ func (f *sshFailure) detail() string {
 }
 
 type owner struct {
-	tunnels    map[string]Tunnel
-	manager    *manager
-	prepared   []byte
-	profile    Profile
-	mu         sync.Mutex
-	config     Config
-	dir        *os.File
-	state      State
-	master     *exec.Cmd
-	socket     os.FileInfo
-	configFile os.FileInfo
-	done       chan struct{}
-	cancel     context.CancelFunc
-	closed     bool
+	audit          launch.Audit
+	auditConnected bool
+
+	downloads       map[string]*downloadWork
+	downloadClosing bool
+	fileMu          sync.Mutex
+	fileListings    map[string]fileCache
+	fileAccounts    map[string]accountName
+	fileNext        time.Time
+	fileRequest     string
+	fileCancel      context.CancelFunc
+	fileCancelled   map[string]time.Time
+	tunnels         map[string]Tunnel
+	manager         *manager
+	prepared        []byte
+	profile         Profile
+	mu              sync.Mutex
+	config          Config
+	dir             *os.File
+	state           State
+	master          *exec.Cmd
+	socket          os.FileInfo
+	configFile      os.FileInfo
+	done            chan struct{}
+	cancel          context.CancelFunc
+	closed          bool
 }
 
 func (s *owner) milestone(message string) { s.manager.milestone(message) }
 func (s *owner) Open() error {
+	a, err := launch.BeginAudit(s.config.Workspace, "connect "+s.state.Name, targetLabel(s.state), s.state)
+	if err != nil {
+		return err
+	}
+	s.audit = a
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	go s.connect(ctx)
@@ -199,6 +216,19 @@ func (s *owner) Open() error {
 }
 func (s *owner) connect(ctx context.Context) {
 	defer close(s.done)
+	defer func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		status := "failed"
+		if s.auditConnected {
+			status = "ended"
+		} else if ctx.Err() != nil {
+			status = "cancelled"
+		}
+		if err := s.audit.Record(status, s.state); err != nil {
+			s.state.Detail += "; " + err.Error()
+		}
+	}()
 	auth, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	s.mu.Lock()
@@ -288,6 +318,10 @@ func (s *owner) connect(ctx context.Context) {
 						s.state.SocketInode = st.Sys().(*syscall.Stat_t).Ino
 						s.state.Detail = "shell-free master"
 						s.milestone("connected")
+						s.auditConnected = true
+						if err := s.audit.Record("completed", s.state); err != nil {
+							s.state.Detail += "; " + err.Error()
+						}
 					}
 				}
 				if auth.Err() != nil {
@@ -375,7 +409,21 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 	b, e := json.Marshal(s.state)
 	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
 }
-func (s *owner) Close(reason string) error {
+func (s *owner) Close(reason string) (failure error) {
+	s.mu.Lock()
+	state := s.state
+	s.mu.Unlock()
+	a, auditErr := launch.BeginAudit(s.config.Workspace, "close "+state.Name, targetLabel(state), map[string]any{"reason": reason, "connection": state})
+	defer func() {
+		s.mu.Lock()
+		final := s.state
+		s.mu.Unlock()
+		failure = a.Finish(final, failure)
+		if auditErr != nil {
+			failure = fmt.Errorf("cleanup attempted; audit incomplete: %v; %w", failure, auditErr)
+		}
+	}()
+
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -394,11 +442,25 @@ func (s *owner) Close(reason string) error {
 		return fmt.Errorf("unidentified master socket preserved; investigate manually")
 	}
 	if s.cancel != nil {
+		s.downloadClosing = true
+		for _, work := range s.downloads {
+			work.cancel()
+		}
+		if s.fileCancel != nil {
+			s.fileCancel()
+		}
 		s.cancel()
 	} else {
 		close(s.done)
 	}
 	s.mu.Unlock()
+	for _, work := range s.downloads {
+		select {
+		case <-work.done:
+		case <-time.After(15 * time.Second):
+			return fmt.Errorf("transfer cleanup unconfirmed; inspect downloads")
+		}
+	}
 	select {
 	case <-s.done:
 	case <-time.After(5 * time.Second):

@@ -3,6 +3,7 @@ package connection
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -44,20 +45,29 @@ func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
 	}
 	if line := ctx.InputString("command", ""); line != "" {
 		if os.Getppid() != info.PID {
-			return hovel.Result{}, fmt.Errorf("profile commands must run in the verified workspace daemon")
+			return hovel.Result{}, fmt.Errorf("commands must run in the verified workspace daemon")
 		}
 		args, err := Split(line)
 		if err != nil {
 			return hovel.Result{}, err
 		}
-		if len(args) == 0 || (args[0] != "profile" && args[0] != "profiles" && args[0] != "history") || (len(args) > 1 && args[1] == "connect") {
-			return hovel.Result{}, fmt.Errorf("expected saved-profile management command; set connection JSON on the burrow module for authentication")
+		if len(args) == 0 || (args[0] != "downloads" && args[0] != "download-cancel" && args[0] != "transfers" && args[0] != "transfer-cancel" && args[0] != "profile" && args[0] != "profiles" && args[0] != "history" && args[0] != "scp" && args[0] != "local" && args[0] != "lcd" && args[0] != "lls" && args[0] != "files-history") || (args[0] == "profile" && len(args) > 1 && args[1] == "connect") {
+			return hovel.Result{}, fmt.Errorf("expected saved-profile or file-browsing command; authenticate explicitly through the reviewed connect adapter")
 		}
 		result, err := Execute(c, info.Workspace, args)
 		if err != nil {
 			return hovel.Result{}, err
 		}
-		ctx.Log.Info("saved-profile management completed")
+		ctx.Log.Info("workspace command completed")
+		if args[0] == "downloads" || args[0] == "download-cancel" || args[0] == "transfers" || args[0] == "transfer-cancel" || args[0] == "scp" || args[0] == "local" || args[0] == "lcd" || args[0] == "lls" || args[0] == "files-history" {
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				return hovel.Result{}, err
+			}
+			// Hovel's throw CLI exposes summary, not Result.Data. Keep the shared
+			// structured result accessible to chain consumers without extra state.
+			return hovel.Ok(map[string]any{"result": result}, hovel.WithSummary(string(encoded))), nil
+		}
 		return hovel.Ok(map[string]any{"result": result}), nil
 	}
 	ctx.Log.Info("verified Burrow workspace identity")

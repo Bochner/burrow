@@ -3,6 +3,7 @@ package connection
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -17,7 +18,44 @@ import (
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
-const Help = `profiles                            List saved entries and selected collection
+const Help = `logs / Ctrl+N                      Open workspace log in embedded read-only Vim
+Ctrl+N or :q returns to the previous context. Reopening refreshes the snapshot.
+Ctrl+N is reserved in management, file mode and embedded SSH/Hovel/editor tabs.
+Logs persist Burrow operations and shell lifecycle, not interactive shell I/O.
+Attempts without terminal results mean unknown outcomes; review is not execution.
+New target work requires logging; cleanup still runs if logging fails and reports it.
+Logs: WORKSPACE/burrow-logs/operations.log (private). No automatic retention/rotation.
+Authentication secrets are excluded; remote output may contain customer-sensitive data.
+scp NAME [ls|tree|cd|pwd|complete] [PATH] Browse an existing live master (JSON)
+In the TUI, scp [NAME] enters file mode; back restores management.
+local [download|upload] PATH         Persist an absolute workspace root (local PATH: download)
+local                               Show effective upload and download roots
+lcd [download|upload] PATH           Validate navigation inside a root
+lls [download|upload] [PATH]         List inside a root (default: download)
+files-history                       Retained file commands, separate from profile history
+CLI navigation is stateless: pass PATH on each call; TUI keeps per-mode directories.
+Defaults: WORKSPACE/burrow-files/{uploads,downloads}; config: burrow-files/config.json.
+Root changes never move/delete files. Invalid roots fail without fallback.
+Local links must resolve inside their root. Remote cd follows directory links;
+tree never traverses directory links. Hidden files are included except . and ...
+Listings are oldest-first; numeric owner/group fallback is clearly labelled.
+Tree scans stop at 3000 entries or 30 seconds and label partial results.
+Completion is cached and throttled; no idle scans or recursive prefetch.
+scp NAME get REMOTE [LOCAL]          Review one download and actual destination
+scp NAME mget PATTERN [LOCAL_DIR]     Review nonrecursive regular-file matches
+scp NAME put LOCAL [REMOTE]           Review one contained upload and actual destination
+Repeat with --review DIGEST --yes to approve the unchanged recap, including overwrite.
+downloads [ID]                      Retained outcomes and workspace download totals
+download-cancel ID                  Cancel and wait for transfer cleanup acknowledgement
+transfers [ID]                      Retained download and upload outcomes
+transfer-cancel ID                  Cancel either transfer direction and wait for cleanup
+Transfers continue during shell use, browsing, help and frontend detach.
+Existing destinations survive failed replacement; labelled partials are retained.
+Rate is measured bytes/sec (interval average); ETA uses overall average or is unknown.
+Retry selected failures with get or put using their recorded source/destination; restart, no resume.
+Working transfers are not automatically registered Hovel evidence.
+
+profiles                            List saved entries and selected collection
 profile create NAME HOST USER [options] Save settings without connecting
 profile select NAME                 Inspect saved settings only
 profile connect NAME [--as LIVE] [--yes] [--prompt] Connect a saved profile
@@ -241,6 +279,34 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "downloads", "download-cancel", "transfers", "transfer-cancel":
+		if len(args) > 2 || ((args[0] == "download-cancel" || args[0] == "transfer-cancel") && len(args) != 2) {
+			return fmt.Errorf("expected downloads/transfers [ID] or download-cancel/transfer-cancel ID")
+		}
+		return nil
+	case "logs", "files-history":
+		if len(args) != 1 {
+			return fmt.Errorf("expected files-history")
+		}
+		return nil
+	case "scp":
+		if len(args) > 2 && (args[2] == "get" || args[2] == "mget" || args[2] == "put") {
+			_, _, _, _, err := downloadArgs(args)
+			if err != nil {
+				return err
+			}
+			_, err = launch.ConnectionPath(workspace, args[1])
+			return err
+		}
+		_, err := fileArgs(args)
+		if err != nil {
+			return err
+		}
+		_, err = launch.ConnectionPath(workspace, args[1])
+		return err
+	case "local", "lcd", "lls":
+		_, _, err := localArgs(args)
+		return err
 	case "proxy":
 		_, err := proxyArgs(workspace, args)
 		return err
@@ -421,7 +487,38 @@ func Execute(ctx context.Context, w string, args []string) (any, error) {
 	return execute(ctx, w, args, "")
 }
 
-func execute(ctx context.Context, w string, args []string, promptSocket string) (any, error) {
+func execute(ctx context.Context, w string, args []string, promptSocket string) (value any, failure error) {
+	if err := ValidateCommand(w, args); err != nil {
+		return nil, err
+	}
+	if args[0] == "connect" || args[0] == "reconnect" {
+		_, approved, _ := Parse(w, args[1:])
+		if !approved {
+			return executeOperation(ctx, w, args, promptSocket)
+		}
+	}
+	// Capture submitted identity and full safe frontend result, including reviews
+	// and pre-dispatch refusals. Owner records carry asynchronous actual outcomes.
+	switch args[0] {
+	case "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
+		a, err := launch.BeginAudit(w, commandIdentity(args), "submitted request; see owner result", nil)
+		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove")
+		if err != nil && !cleanup {
+			return nil, err
+		}
+		defer func() {
+			status := "returned; see result state (review is not execution)"
+			if failure != nil {
+				status = "failed or refused; see owner records for execution outcome"
+			}
+			logErr := a.Record(status, map[string]any{"result": value, "error": fmt.Sprint(failure)})
+			failure = errors.Join(failure, err, logErr)
+		}()
+	}
+	return executeOperation(ctx, w, args, promptSocket)
+}
+
+func executeOperation(ctx context.Context, w string, args []string, promptSocket string) (value any, failure error) {
 	if e := ValidateCommand(w, args); e != nil {
 		return nil, e
 	}
@@ -433,6 +530,24 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 		return execute(ctx, w, expanded, promptSocket)
 	}
 	switch args[0] {
+	case "downloads", "download-cancel", "transfers", "transfer-cancel":
+		return executeDownloads(ctx, w, args)
+	case "files-history":
+		return FileHistory(ctx, w)
+	case "scp":
+		if len(args) > 2 && (args[2] == "get" || args[2] == "mget" || args[2] == "put") {
+			return executeDownload(ctx, w, args)
+		}
+		query, _ := fileArgs(args)
+		state, err := selected(ctx, w, args[1])
+		if err != nil {
+			return nil, err
+		}
+		value, err := Browse(ctx, w, state, query)
+		return fileCommandResult(ctx, w, args, value, err)
+	case "local", "lcd", "lls":
+		value, err := executeLocal(ctx, w, args)
+		return fileCommandResult(ctx, w, args, value, err)
 	case "proxy":
 		return executeProxy(ctx, w, args)
 	case "profile", "profiles", "history":
@@ -488,6 +603,11 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	if c.Prompt && promptSocket == "" {
 		return nil, fmt.Errorf("--prompt requires a private interactive frontend; secrets cannot be supplied as command inputs")
 	}
+	a, auditErr := launch.BeginAudit(w, commandIdentity(args), c.User+"@"+c.Host, nil)
+	if auditErr != nil {
+		return nil, auditErr
+	}
+	defer func() { failure = a.Finish(value, failure) }()
 	c.PromptSocket = promptSocket
 	if args[0] == "reconnect" {
 		s, e := selected(ctx, w, c.Name)

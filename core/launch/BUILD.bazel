@@ -1,7 +1,7 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "launch",
-    srcs = ["files_linux.go", "package.go", "daemon_linux.go", "operations_linux.go", "trace.go"],
+    srcs = ["audit.go", "files_linux.go", "package.go", "daemon_linux.go", "operations_linux.go", "trace.go"],
     importpath = "github.com/Bochner/burrow/core/launch",
     visibility = ["//visibility:public"],
     deps = ["@org_golang_x_sys//unix"],
@@ -20,4 +20,11 @@ go_test(
     args = ["-wheel", "$(location @hovel_linux_wheel//file)"],
     data = ["@hovel_linux_wheel//file"],
     tags = ["no-sandbox"],
+)
+
+go_test(
+ name = "audit_test",
+ srcs = ["audit_test.go"],
+ tags = ["no-sandbox"],
+ deps = [":launch"],
 )
