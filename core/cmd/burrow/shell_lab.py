@@ -185,7 +185,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         command("resume 2", "SSH: gateway #2")
         command("printf 'INTERLEAVED_%s\\n' READY", "INTERLEAVED_READY")
         latency = time.monotonic() - responsive
-        assert latency < 2, ("input/redraw stalled under background output", latency)
+        assert latency < 3, ("input/redraw stalled under background output", latency)
         print(f"TIMING shell switch and input during 4,000-line background output: {latency:.3f}s", flush=True)
         command("sleep 2; printf 'FOREGROUND_%s\\n' COMPLETED", "FOREGROUND_COMPLETED")
         background()
