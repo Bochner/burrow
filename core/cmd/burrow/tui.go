@@ -455,7 +455,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return shellRequested{args[1]} }
 				}
 				m.output = "Running reviewed command through Hovel…"
-				if args[0] == "run" && (args[1] == "now" || args[1] == "launch" || args[1] == "cancel" || args[1] == "collect" || args[1] == "close") {
+				if args[0] == "run" && (args[1] == "survey" || args[1] == "now" || args[1] == "launch" || args[1] == "cancel" || args[1] == "collect" || args[1] == "close") {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
 				if (args[0] == "proxy" && args[1] != "inspect") || args[0] == "tunc" || (args[0] == "tund" && len(args) == 2) || (args[0] == "tunnel" && (args[1] == "create" || (args[1] == "remove" && len(args) == 3))) || args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
@@ -722,6 +722,9 @@ reconnect NAME HOST USER	Explicitly replace a lost connection
 The connection form includes SSH keys, agents, jump hosts and a SOCKS proxy.
 
 # RETAINED COMMANDS
+reports / Menu → Reports	Browse saved reports; Enter opens, Esc returns without changing context
+report ID	Open one saved Markdown report; no execution or collection
+run survey NAME --os ubuntu	Review read-only Ubuntu probes, run and save a report
 run prepare NAME -- COMMAND [ARG...]	Prepare on an already connected SSH target; returns a run ID
 run prepare NAME -- ps -elf	Example: prepare a remote process listing without executing yet
 run now NAME -- ps -elf	Review once, launch, wait and collect; view output with Ctrl+L

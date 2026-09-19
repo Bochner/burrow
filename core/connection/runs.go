@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Bochner/burrow/core/launch"
+	"github.com/Bochner/burrow/core/reports"
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
@@ -84,6 +85,9 @@ type retainedRun struct {
 
 func parseRun(args []string) (runRequest, bool, string, error) {
 	r := runRequest{Budget: 256 << 20, Execution: "remote"}
+	if len(args) > 1 && args[1] == "survey" {
+		return parseSurvey(args)
+	}
 	if len(args) > 1 && args[1] == "follow" {
 		_, _, err := FollowArgs(args)
 		return r, false, "", err
@@ -198,10 +202,13 @@ func FollowArgs(args []string) (string, int64, error) {
 // RunWaits identifies commands that wait for remote completion and collection.
 // Frontends keep these tied to their lifetime, without a default wait deadline.
 func RunWaits(args []string) bool {
-	return len(args) >= 3 && args[0] == "run" && (args[1] == "now" || (args[1] == "launch" && slices.Contains(args[3:], "--collect")))
+	return len(args) >= 3 && args[0] == "run" && (args[1] == "now" || args[1] == "survey" || (args[1] == "launch" && slices.Contains(args[3:], "--collect")))
 }
 
 func validateRunRequest(r runRequest) error {
+	if r.Input.Survey != "" && (r.Execution != "remote" || len(r.Command) != 0) {
+		return fmt.Errorf("survey requires its built-in remote command set")
+	}
 	if r.Execution != "remote" && r.Execution != "local" {
 		return fmt.Errorf("execution must be remote or local")
 	}
@@ -277,7 +284,7 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 	if args[1] == "list" {
 		return Runs(ctx, w)
 	}
-	if args[1] == "prepare" || args[1] == "now" {
+	if args[1] == "prepare" || args[1] == "now" || args[1] == "survey" {
 		state, err := selected(ctx, w, req.Connection.Name)
 		if err != nil {
 			return nil, err
@@ -509,6 +516,14 @@ func runAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 			artifacts = append(artifacts, hovel.FileArtifact("run-"+id+"-"+name, "application/octet-stream", path))
 		}
 		state.Collection = "pending Hovel artifact persistence"
+		if state.Input.Survey != "" {
+			meta := reports.Metadata{Title: "Ubuntu host survey", Producer: "burrow survey ubuntu v1", Connection: state.Connection.Name, Host: state.Connection.Host, User: state.Connection.User, Port: state.Connection.Port, SourceRun: state.ID, Status: state.State, Exit: state.RemoteExit, Complete: state.OutputComplete, Detail: state.OutputError}
+			report, err := reports.Artifacts("survey-"+id, meta, result.Fields["stdoutPath"])
+			if err != nil {
+				return hovel.Result{}, err
+			}
+			artifacts = append(artifacts, report...)
+		}
 	case "close":
 		// All supported collect/close commands use the existing HovelDispatch
 		// workspace lock, held through artifact materialization. Do not remove

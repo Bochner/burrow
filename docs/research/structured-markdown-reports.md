@@ -8,6 +8,11 @@ sources below; no renderer integration or security behavior was executed.
 Repository baseline: local `mvp4` at
 `b662422590d8468e3a9531e1262439bf99c47be1`.
 
+Follow-up: after reviewing the recommendations, the owner approved Ubuntu only,
+using `run survey CONNECTION --os ubuntu` and a separate Reports view. The
+[implemented workflow](../site/src/content/spec/reports.html) records the resulting
+contract. The observations below describe the research baseline before implementation.
+
 ## Current scope
 
 The owner clarified during this research that the first survey should be a

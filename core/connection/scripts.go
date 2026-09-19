@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	_ "embed"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +26,7 @@ type RunFile struct {
 }
 
 type RunInput struct {
+	Survey      string  `json:"survey,omitempty"`
 	Mode        string  `json:"mode,omitempty"`
 	Interpreter string  `json:"interpreter,omitempty"`
 	Script      RunFile `json:"script"`
@@ -39,6 +41,9 @@ func (s Run) request() runRequest {
 }
 
 func (in RunInput) validate() error {
+	if in.Survey != "" && (in.Survey != "ubuntu" || in.Mode != "stream" || in.Interpreter != "/bin/sh" || in.Script.Path != "builtin:survey/ubuntu" || in.Stdin.Path != "" || in.Keep) {
+		return fmt.Errorf("invalid Ubuntu survey input")
+	}
 	if in.Timeout != "" {
 		d, err := time.ParseDuration(in.Timeout)
 		if err != nil || d <= 0 {
@@ -73,8 +78,11 @@ func (in RunInput) validate() error {
 
 func (in RunInput) review() string {
 	var text string
+	if in.Survey != "" {
+		text = "\nSurvey: Ubuntu v1 · read-only probes, five-second bound per check, no sudo or installation.\nReport: save Markdown and execution/capture metadata through Hovel; open with reports.\nChecks: date, /etc/os-release, hostname, uname, id, /proc/uptime, /proc/loadavg, /proc/meminfo, df, ip addresses/routes, ss listeners, systemctl failed services.\nMissing tools and failed checks stay visible; other Linux userlands are unverified."
+	}
 	if in.Script.Path != "" {
-		text = fmt.Sprintf("\nScript: %s\nMode: %s\nInterpreter: %s\nScript snapshot: %d bytes; SHA256 %s", in.Script.Path, in.Mode, in.Interpreter, in.Script.Bytes, in.Script.SHA256)
+		text += fmt.Sprintf("\nScript: %s\nMode: %s\nInterpreter: %s\nScript snapshot: %d bytes; SHA256 %s", in.Script.Path, in.Mode, in.Interpreter, in.Script.Bytes, in.Script.SHA256)
 		if in.Mode == "stream" {
 			text += "\nStandard input carries script source; no remote script file is created."
 		}
@@ -130,7 +138,23 @@ func (r *retainedRun) startTimeout() {
 	}()
 }
 
+//go:embed survey_ubuntu.sh
+var ubuntuSurvey string
+
 func (r *retainedRun) prepareInputs(ctx context.Context) error {
+	if r.record.Input.Survey == "ubuntu" {
+		f, err := r.root.OpenFile("script", os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+		if err != nil {
+			return err
+		}
+		r.inputs[0] = f
+		if _, err := io.WriteString(f, ubuntuSurvey); err != nil {
+			return err
+		}
+		r.record.Input.Script.Bytes = int64(len(ubuntuSurvey))
+		r.record.Input.Script.SHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(ubuntuSurvey)))
+		return f.Sync()
+	}
 	if r.record.Input.Script.Path == "" && r.record.Input.Stdin.Path == "" {
 		return nil
 	}

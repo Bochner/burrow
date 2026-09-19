@@ -31,12 +31,14 @@ from core.cmd.burrow.files_lab import file_checks, load_checks, file_ui
 from core.cmd.burrow.runs_lab import run_checks, run_ui
 from core.cmd.burrow.follow_lab import follow_checks
 from core.cmd.burrow.automation_lab import automation_checks
+from core.cmd.burrow.reports_lab import report_checks
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("paths", nargs=6, metavar="PATH")
+parser.add_argument("paths", nargs=7, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--runs-check", action="store_true", help="check retained remote command lifecycle only")
 parser.add_argument("--follow-check", action="store_true", help="check independent live output readers and viewers")
+parser.add_argument("--reports-check", action="store_true", help="check Ubuntu survey, artifacts and independent report reader")
 parser.add_argument("--scripts-check", action="store_true", help="check script inputs and staging through retained runs")
 parser.add_argument("--automation-check", action="store_true", help="check selected local tools and supported Hovel automation")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
@@ -49,7 +51,7 @@ parser.add_argument("--prompt-check", action="store_true", help="check private p
 parser.add_argument("--auth-check", action="store_true", help="check private prompts, cancellation and rejected passwords only")
 args = parser.parse_args()
 smoke = args.smoke
-binary, wheel, image_file, screen_check, legacy_binary, vim_apk = [str(Path(p).resolve()) for p in args.paths]
+binary, wheel, image_file, screen_check, legacy_binary, vim_apk, survey_script = [str(Path(p).resolve()) for p in args.paths]
 image = Path(image_file).read_text().strip()
 started = stage_started = time.monotonic()
 
@@ -187,6 +189,13 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if args.reports_check:
+            report_checks(burrow, w, first, hv, binary, env, screen_check, survey_script)
+            burrow(w, "close", "gateway", "--yes")
+            retained = burrow(w, "reports")
+            assert retained, "connection close lost reports"
+            assert burrow(w, "report", retained[0]["id"])["markdown"], "closed connection report unreadable"
+            raise SystemExit(0)
         if args.automation_check:
             automation_checks(burrow, w, first, hovel, env, hv, options)
             run_ui(binary, env, screen_check, burrow, w, first["name"], local=True)
@@ -203,6 +212,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         if not (smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check or args.files_check):
             burrow(w, "connect", "runs", "127.0.0.1", "tester", *options)
             run_owner = wait(lambda: state_is(w, "runs", "connected"))
+            report_checks(burrow, w, run_owner, hv, binary, env, screen_check, survey_script)
             automation_checks(burrow, w, run_owner, hovel, env, hv, options)
             run_ui(binary, env, screen_check, burrow, w, run_owner["name"], local=True)
             follow_checks(burrow, w, run_owner, container, command, hv, binary, env, screen_check)

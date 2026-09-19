@@ -1,0 +1,9 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "reports",
+    srcs = ["reports.go"],
+    importpath = "github.com/Bochner/burrow/core/reports",
+    visibility = ["//visibility:public"],
+    deps = ["//core/launch", "@hovel_sdk//:hovel"],
+)

@@ -51,6 +51,7 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
+	report                           *reportView
 	initialFollow                    []string
 	downloadPlan                     *connection.DownloadPlan
 	downloadMode                     *fileMode
@@ -301,6 +302,18 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 		}
 		if key.Matches(v, enter) && !u.busy {
 			args, err := connection.Split(u.input.Value())
+			if err == nil && len(args) > 0 && (args[0] == "reports" || args[0] == "report") {
+				if err := connection.ValidateCommand(path, args); err != nil {
+					u.output = "REFUSED: " + safe(err.Error())
+					return nil
+				}
+				u.input.Reset()
+				id := ""
+				if len(args) == 2 {
+					id = args[1]
+				}
+				return m.openReports(id)
+			}
 			if err == nil && len(args) == 1 && (args[0] == "downloads" || args[0] == "transfers") {
 				u.input.Reset()
 				return m.openDownloads()
@@ -511,6 +524,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case downloadReviewReady:
 			return m, m.acceptDownloadReview(path, result)
+		case reportsReady:
+			return m, m.acceptReports(path, result)
 		case downloadsReady:
 			return m, m.acceptDownloads(path, result)
 		case timer.TickMsg:
@@ -699,7 +714,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.initialShell = ""
 			return m, m.openShell(name)
 		}
-		return m, nil
+		return m, m.resizeReports()
 	case tea.ResumeMsg:
 		return m, tea.RequestWindowSize
 	case tea.ColorProfileMsg:
@@ -713,7 +728,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				u.sizeFollow()
 			}
 		}
-		return m, nil
+		return m, m.resizeReports()
 	case tea.MouseMsg:
 		if m.tooSmall() {
 			return m, nil
@@ -760,6 +775,13 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.modal == "quit" || m.modal == "review" {
 				m.modalOffset = max(0, m.modalOffset+delta)
 				return m, nil
+			}
+			if m.modal == "reports" {
+				code := tea.KeyDown
+				if delta < 0 {
+					code = tea.KeyUp
+				}
+				return m, m.reportsKey(tea.KeyPressMsg{Code: code})
 			}
 			if m.modal == "downloads" {
 				m.scrollDownloads(delta)
@@ -1044,7 +1066,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, m.updateManagement(m.active, msg)
 }
 
-var menuActions = []string{"Check daemon", "Metadata", "New workspace", "Keyboard help", "Quit", "Open Hovel CLI", "Close Hovel CLI", "Toggle mouse / text selection"}
+var menuActions = []string{"Check daemon", "Metadata", "New workspace", "Keyboard help", "Quit", "Open Hovel CLI", "Close Hovel CLI", "Toggle mouse / text selection", "Reports"}
 
 func (m *frame) clearRows() {
 	for _, w := range m.workspaces {
@@ -1257,10 +1279,15 @@ func (m *frame) menuAction(i int) tea.Cmd {
 		return m.closeCLI()
 	case 7:
 		m.mouseDisabled = !m.mouseDisabled
+	case 8:
+		return m.openReports("")
 	}
 	return nil
 }
 func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
+	if m.modal == "reports" {
+		return m.reportsKey(v)
+	}
 	if m.modal == "quit" && m.quitClosing {
 		return nil
 	}
@@ -1786,6 +1813,8 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			case "metadata":
 				v := scrollBody(m.metadata(), bw, ph-6, m.modalOffset)
 				text = v.View()
+			case "reports":
+				text = m.reportsContent()
 			case "downloads":
 				v := m.downloadsViewport()
 				text = centered(current.management.paint(accent, "Transfers"), bw) + "\n\n" + v.View()
@@ -1843,6 +1872,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			if m.modal == "downloads" {
 				hint = "Esc close · ↑↓ / PgUp/PgDn scroll · transfers reopens"
 			}
+			if m.modal == "reports" {
+				hint = "↑↓ / PgUp/PgDn scroll · Home/End · Enter open · r refresh · Esc back"
+			}
 			if m.modal == "menu" {
 				hint = "↑↓ select · Enter run · Esc close"
 			}
@@ -1863,7 +1895,7 @@ func (m *frame) dialogBounds() image.Rectangle {
 		return image.Rect(x, y, x+width, y+height)
 	}
 	pw, ph := min(76, m.width-4), min(18, m.height-4)
-	if m.modal == "downloads" {
+	if m.modal == "downloads" || m.modal == "reports" {
 		pw, ph = helpSize(m.width, m.height)
 	}
 	if m.modal == "new" {

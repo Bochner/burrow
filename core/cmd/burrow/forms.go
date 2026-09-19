@@ -329,6 +329,7 @@ func (m *frame) dismissForm() {
 	m.details = nil
 	m.downloadPlan = nil
 	m.downloadMode = nil
+	m.report = nil
 	m.inputEpoch++
 	m.modal = ""
 	if m.attempt != nil {
@@ -551,7 +552,7 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 			r.result = result
 			if details, ok := result.(map[string]string); ok {
 				r.review = details["review"]
-				if args[0] == "run" && args[1] == "now" && details["id"] != "" {
+				if args[0] == "run" && (args[1] == "now" || args[1] == "survey") && details["id"] != "" {
 					r.args = []string{"run", "launch", details["id"], "--collect"}
 				}
 				if details["digest"] != "" {

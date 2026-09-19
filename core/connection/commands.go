@@ -15,10 +15,23 @@ import (
 	"time"
 
 	"github.com/Bochner/burrow/core/launch"
+	"github.com/Bochner/burrow/core/reports"
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
-const Help = `run prepare CONNECTION [--budget BYTES] -- COMMAND [ARG...] Prepare without execution
+const Help = `run survey CONNECTION --os ubuntu [--yes] Review, run and save an Ubuntu Markdown report
+Survey uses a fixed read-only preset through /bin/sh, without sudo or installed helpers.
+Checks: OS/kernel, identity, uptime/load/memory, disks, addresses/routes, listening ports,
+and failed services. Each probe needs timeout (5 seconds); missing/failed checks are labelled.
+Other Linux systems are unverified; this is inventory, not a vulnerability assessment.
+Default survey bounds: 90 seconds and 1 MiB/stream; --timeout and --budget override them.
+reports                             Open saved Reports (CLI: JSON inventory)
+report ID                           Read a saved report (CLI: original Markdown plus metadata)
+Reports are separate from Ctrl+L output/activity; viewing never runs or collects anything.
+Markdown and versioned metadata use Hovel artifacts; they survive run/connection close.
+Readers verify private files and SHA256; Markdown display is limited to 1 MiB.
+
+run prepare CONNECTION [--budget BYTES] -- COMMAND [ARG...] Prepare without execution
 run now CONNECTION [--budget BYTES] [--yes] -- COMMAND [ARG...] Review, launch, wait and collect a fresh run
 run now CONNECTION --local [--yes] -- /absolute/TOOL [ARG...] Run locally with selected connection context
 run prepare CONNECTION --script PATH --mode stream|inline|stage --interpreter PATH -- [ARG...]
@@ -338,10 +351,20 @@ func ValidateCommand(workspace string, args []string) error {
 	switch args[0] {
 	case "run":
 		_, _, _, err := parseRun(args)
-		if err == nil && len(args) > 2 && (args[1] == "prepare" || args[1] == "now") {
+		if err == nil && len(args) > 2 && (args[1] == "prepare" || args[1] == "now" || args[1] == "survey") {
 			_, err = launch.ConnectionPath(workspace, args[2])
 		}
 		return err
+	case "reports":
+		if len(args) != 1 {
+			return fmt.Errorf("expected reports")
+		}
+		return nil
+	case "report":
+		if len(args) != 2 || args[1] == "" || len(args[1]) > 256 || strings.ContainsAny(args[1], "/\\\x00\r\n") {
+			return fmt.Errorf("expected report ID; use reports")
+		}
+		return nil
 	case "downloads", "download-cancel", "transfers", "transfer-cancel":
 		if len(args) > 2 || ((args[0] == "download-cancel" || args[0] == "transfer-cancel") && len(args) != 2) {
 			return fmt.Errorf("expected downloads/transfers [ID] or download-cancel/transfer-cancel ID")
@@ -610,6 +633,10 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 	switch args[0] {
 	case "run":
 		return executeRun(ctx, w, args)
+	case "reports":
+		return reports.List(ctx, w)
+	case "report":
+		return reports.Read(ctx, w, args[1])
 	case "downloads", "download-cancel", "transfers", "transfer-cancel":
 		return executeDownloads(ctx, w, args)
 	case "files-history":

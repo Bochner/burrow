@@ -15,5 +15,6 @@
 <pre data-lang="Burrow management"><code>run now gateway -- ps -elf
 run now gateway --script check.sh --mode stream --interpreter /bin/sh --</code></pre>
 <p>Review and confirm to execute and collect. Press <kbd>Ctrl+L</kbd> to read stdout, stderr and the outcome. The <a href="runs.html#tui-workflow">TUI walkthrough</a> and <a href="runs.html#script-inputs">worked script examples</a> explain where files belong, literal arguments, independent stdin, inline and staged modes, timeouts, keep and cleanup. <code>run list</code> and <code>run inspect ID</code> expose retained state after you leave the view.</p>
-<p>The <a href="https://github.com/Bochner/burrow/issues/1">SSH specification map</a> tracks remaining work. Existing LazySSH plugin compatibility, local scripts invoking Hovel, local tools using tunnels, and reports/chains remain separate integration questions. SMB and WinRM implementation remain outside this map.</p>
+<p>Use <code>run survey CONNECTION --os ubuntu</code> for a reviewed inventory survey and <code>reports</code> to read its saved Markdown in an independent view. See <a href="reports.html">Ubuntu surveys and reports</a>.</p>
+<p>The <a href="https://github.com/Bochner/burrow/issues/1">SSH specification map</a> tracks remaining work. Legacy LazySSH plugin compatibility and additional OS surveys remain outside the implemented command set. See <a href="automation.html">local tools and automation</a> for supported saved chains. SMB and WinRM implementation remain outside this map.</p>
 </article>
