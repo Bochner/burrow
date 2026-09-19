@@ -8,7 +8,7 @@ def _impl(ctx: TaskContext) -> int:
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/runs.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
-        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/cmd/burrow/files_ui.go", root + "/core/cmd/burrow/editor.go", root + "/core/cmd/burrow/logs.go", root + "/core/cmd/burrow/log_notes.go", root + "/core/cmd/burrow/downloads_ui.go"]).current_dir(root).spawn().wait()
+        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/cmd/burrow/files_ui.go", root + "/core/cmd/burrow/editor.go", root + "/core/cmd/burrow/logs.go", root + "/core/cmd/burrow/log_notes.go", root + "/core/cmd/burrow/collected_notes.go", root + "/core/cmd/burrow/downloads_ui.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/files.go", root + "/core/connection/remote_files.go", root + "/core/connection/downloads.go"]).current_dir(root).spawn().wait()

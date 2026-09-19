@@ -838,6 +838,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.Matches(v, toggleLogs) {
 			return m, m.openLogs()
 		}
+		if key.Matches(v, toggleCollected) {
+			return m, m.openLogView(true)
+		}
 		if key.Matches(v, showBurrow) {
 			return m, m.activate("burrow")
 		}
@@ -1494,7 +1497,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				tab := current.shells[i]
 				id, text, active = fmt.Sprintf("shell-tab:%d", i), "Shell #"+tab.id, current.tab == "shell" && current.shell == tab
 				if tab.logs != nil {
-					text = "Logs"
+					text = tab.label()
 				}
 				if tab.editor != nil {
 					text = tab.label()
@@ -1584,6 +1587,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				status = "SSH: " + safe(tab.label()) + " · local / not recorded"
 				if tab.logs != nil {
 					status = "Logs · read-only snapshot · Ctrl+N / :q returns"
+					if tab.logs.collected {
+						status = "Results · Tab switches · / searches · Ctrl+L / :qa returns"
+					}
 				}
 				statusStyle = accent
 			}

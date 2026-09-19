@@ -1996,36 +1996,38 @@ func TestSaveOfferWaitsForWorkspaceAndDialog(t *testing.T) {
 }
 
 func TestLogViewerRestoresContext(t *testing.T) {
-	for _, tabName := range []string{"", "files", "shell", "hovel"} {
-		m := newFrame(launch.Info{Workspace: "/tmp/log-context"}, true, launch.Options{})
-		defer m.terminals.close()
-		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
-		w := m.current()
-		original := &cliTab{connection: "gateway", id: "1"}
-		w.shells = []*cliTab{original}
-		w.shell = original
-		w.tab, w.focus = tabName, "prompt"
-		if tabName == "shell" || tabName == "hovel" {
-			w.focus = "terminal"
-		}
-		w.management.input.SetValue("unfinished command")
-		focus := w.focus
-		_, cmd := frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
-		if cmd == nil || w.shell.logs == nil || w.tab != "shell" {
-			t.Fatal("Ctrl+N did not open logs", tabName)
-		}
-		viewer := w.shell
-		viewer.pending = false
-		// Exercise normal terminal exit through the same event path as :q.
-		m.terminalResult(m.active, cliScreen{viewer, ptyhost.Snapshot{Exited: true}})
-		if w.tab != tabName || w.focus != focus || w.shell != original || w.management.input.Value() != "unfinished command" {
-			t.Fatal("viewer lost previous context", tabName, w.tab, w.focus)
-		}
-		if strings.Contains(logVimrc(true), "highlight") || strings.Contains(logVimrc(true), "syntax match") {
-			t.Fatal("NO_COLOR syntax enabled")
-		}
-		if !strings.Contains(logVimrc(false), "highlight burrowTimestamp guifg="+baseColor+" guibg="+blueColor) {
-			t.Fatal("timestamp contrast missing")
+	for _, shortcut := range []rune{'n', 'l'} {
+		for _, tabName := range []string{"", "files", "shell", "hovel"} {
+			m := newFrame(launch.Info{Workspace: "/tmp/log-context"}, true, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+			w := m.current()
+			original := &cliTab{connection: "gateway", id: "1"}
+			w.shells = []*cliTab{original}
+			w.shell = original
+			w.tab, w.focus = tabName, "prompt"
+			if tabName == "shell" || tabName == "hovel" {
+				w.focus = "terminal"
+			}
+			w.management.input.SetValue("unfinished command")
+			focus := w.focus
+			_, cmd := frameEvent(m, tea.KeyPressMsg{Code: shortcut, Mod: tea.ModCtrl})
+			if cmd == nil || w.shell.logs == nil || w.tab != "shell" {
+				t.Fatalf("Ctrl+%c did not open the viewer from %s", shortcut, tabName)
+			}
+			viewer := w.shell
+			viewer.pending = false
+			// Exercise normal terminal exit through the same event path as :q.
+			m.terminalResult(m.active, cliScreen{viewer, ptyhost.Snapshot{Exited: true}})
+			if w.tab != tabName || w.focus != focus || w.shell != original || w.management.input.Value() != "unfinished command" {
+				t.Fatal("viewer lost previous context", tabName, w.tab, w.focus)
+			}
+			if strings.Contains(logVimrc(true), "highlight") || strings.Contains(logVimrc(true), "syntax match") {
+				t.Fatal("NO_COLOR syntax enabled")
+			}
+			if !strings.Contains(logVimrc(false), "highlight burrowTimestamp guifg="+baseColor+" guibg="+blueColor) {
+				t.Fatal("timestamp contrast missing")
+			}
 		}
 	}
 }
@@ -2040,6 +2042,20 @@ func TestLogVimRenderedColors(t *testing.T) {
   COMPLETE · 2/2 files · 1.0 KiB · 2s elapsed
   Files: 2 completed · 0 failed · 0 cancelled
   Saved: /downloads/data
+
+2026-09-19T14:00:00Z -- collected command
+  Command: ps -elf
+  Outcome: SUCCEEDED (exit 0)
+  Capture: INCOMPLETE
+  Run: retained-1
+  Collection: collection-1
+  Cancellation: unconfirmed; master unavailable
+  Capture error: disk full
+STDOUT · 123 stored / 456 received bytes
+  File: /workspace/artifacts/output
+    UID PID COMMAND
+    root 1 init
+  PREVIEW TRUNCATED: first 123 of 456 saved bytes
 `
 	for _, plain := range []bool{false, true} {
 		dir := t.TempDir()
@@ -2068,9 +2084,13 @@ func TestLogVimRenderedColors(t *testing.T) {
 		}
 		screen := vt.NewEmulator(160, 40)
 		screen.Write([]byte(strings.ReplaceAll(snap.Screen, "\n", "\r\n")))
-		for text, want := range map[string]string{"gateway": "#b4befe", "tester": "#a6e3a1", "192.0.2.10": "#f5c2e7", "2222": "#f9e2af", "COMPLETE": "#a6e3a1", "failed": "#f38ba8", "/downloads/data": "#a6adc8"} {
+		for text, want := range map[string]string{"gateway": "#b4befe", "tester": "#a6e3a1", "192.0.2.10": "#f5c2e7", "2222": "#f9e2af", "COMPLETE": "#a6e3a1", "failed": "#f38ba8", "/downloads/data": "#a6adc8",
+			"ps -elf": blueColor, "-elf": blueColor, "SUCCEEDED": "#a6e3a1", "INCOMPLETE": "#f38ba8", "retained-1": lavenderColor, "collection-1": lavenderColor, "unconfirmed": "#f9e2af", "disk full": "#f38ba8", "STDOUT": blueColor, "123": "#fab387", "PREVIEW TRUNCATED": "#f9e2af", "/workspace/artifacts/output": "#a6adc8"} {
 			if !plain {
-				assertTextRole(t, screen, image.Rect(0, 1, 160, 6), text, want)
+				assertTextRole(t, screen, image.Rect(0, 1, 160, 21), text, want)
+			}
+			if !strings.Contains(screen.String(), text) {
+				t.Fatal("viewer text lost", text, plain)
 			}
 		}
 		if !strings.Contains(screen.String(), "2026-09-13T14:00:00-04:00 -- mget /data/*") {

@@ -697,6 +697,8 @@ connect	Open the guided connection form
 connect NAME HOST USER	Connect directly; review first, then authenticate privately
 logs / Ctrl+N	Open workspace log in Vim; Ctrl+N or :q returns; reopen refreshes
 Ctrl+N in SSH/Hovel/Vim	Burrow shortcut, not forwarded to the embedded program
+Ctrl+L	Open Collected output and Activity log tabs; Ctrl+L or :qa returns
+Tab / Shift+Tab in results	Switch tabs; / searches; reopen refreshes both snapshots
 shell NAME / resume ID	Open a shell / return to an existing frontend-local shell
 Ctrl+] / Alt+1–9	Return from SSH to management / select a shell
 Alt+←/→	Cycle shells without closing them

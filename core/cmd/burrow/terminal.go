@@ -135,7 +135,7 @@ func (w *workspaceView) removeShell(tab *cliTab) {
 }
 func (tab *cliTab) label() string {
 	if tab.logs != nil {
-		return "Logs"
+		return tab.connection
 	}
 	if tab.editor != nil {
 		return "Edit " + tab.editor.profile.Name

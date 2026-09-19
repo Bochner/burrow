@@ -257,6 +257,15 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
     import struct
     import termios
 
+    saved = burrow(workspace, "run", "prepare", connection, "--", "/bin/sh", "-c",
+                   "printf 'retained viewer output\\nremote\\033]52;c;untrusted\\007\\n'; printf 'viewer stderr\\n' >&2; exit 7")
+    burrow(workspace, "run", "launch", saved["id"], "--yes")
+    deadline = time.monotonic() + 15
+    while burrow(workspace, "run", "inspect", saved["id"])["state"] == "running":
+        assert time.monotonic() < deadline
+        time.sleep(.1)
+    burrow(workspace, "run", "collect", saved["id"], "--yes")
+    burrow(workspace, "run", "close", saved["id"], "--yes")
     prepared = burrow(workspace, "run", "prepare", connection, "--", "/bin/sh", "-c",
                       "printf 'remote\\033]52;c;untrusted\\007'; sleep 60")
     run_id = prepared["id"]
@@ -271,20 +280,49 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
     frontend = subprocess.Popen([binary, "--workspace", str(workspace), "tui"], env=env,
                                 stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
     output = bytearray()
+    dimensions = [160, 40]
 
     def wait(needle):
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             if select.select([outer], [], [], .05)[0]:
                 output.extend(os.read(outer, 65536))
-            screen = subprocess.run([decoder, "160", "40"], input=output, capture_output=True, check=True).stdout.decode()
+            screen = subprocess.run([decoder, *map(str, dimensions)], input=output, capture_output=True, check=True).stdout.decode()
             if needle in screen:
-                return
+                return screen
             assert frontend.poll() is None, screen
         raise AssertionError((needle, screen))
 
     try:
         wait(connection)
+        os.write(outer, b"unfinished-draft\x0c")
+        wait("Collected output")
+        wait("retained viewer output")
+        wait("FAILED (exit 7)")
+        for width, height in ((200, 50), (120, 30), (80, 24), (160, 40)):
+            while select.select([outer], [], [], .05)[0]:
+                output.extend(os.read(outer, 65536))
+            output.clear()
+            dimensions[:] = [width, height]
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
+            os.kill(frontend.pid, signal.SIGWINCH)
+            wait("Collected output")
+            os.write(outer, b"gg/^  Outcome:\r")
+            capture = wait("FAILED (exit 7)")
+            if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
+                Path(directory, f"results-collected-{width}x{height}.txt").write_text(capture)
+        os.write(outer, b"/remote\\\\u001b\r")
+        wait("remote\\u001b]52;c;untrusted\\u0007")
+        assert b"\x1b]52;c;untrusted" not in output, "collected output injected terminal control"
+        os.write(outer, b"/STDERR\r")
+        wait("viewer stderr")
+        os.write(outer, b"\t")
+        wait("Operator notes")
+        os.write(outer, b"\t")
+        wait("Collected output")
+        os.write(outer, b"\x0c")
+        wait("unfinished-draft")
+        os.write(outer, b"\x15")
         os.write(outer, b"run launch \t")
         wait("run launch " + run_id)
         os.write(outer, b"\r")

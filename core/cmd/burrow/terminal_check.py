@@ -113,6 +113,21 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         assert re.search(rb"\x1b\[\?100[0236]h", output), "panel selection needs mouse events"
         assert b"\x1b]52;" not in output, "unexpected clipboard operation"
         send("management-draft")
+        send(b"\x0c")
+        wait("No collected command output")
+        for width, height in ((200, 50), (120, 30), (80, 24), (160, 40)):
+            while select.select([master], [], [], .05)[0]:
+                output.extend(os.read(master, 65536))
+            output.clear()
+            dimensions[:] = [width, height]
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
+            os.kill(terminal.pid, signal.SIGWINCH)
+            capture = wait("Collected output")
+            Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"], f"results-empty-{width}x{height}.txt").write_text(capture)
+        send(b"\t")
+        wait("Operator notes")
+        send(b"\x0c")
+        wait("management-draft")
         click(39, 1)
         wait("h0v3l>")
         view = wait("modules: 1")
