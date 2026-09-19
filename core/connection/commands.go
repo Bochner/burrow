@@ -18,7 +18,33 @@ import (
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
-const Help = `logs / Ctrl+N                      Open workspace log in embedded read-only Vim
+const Help = `run prepare CONNECTION [--budget BYTES] -- COMMAND [ARG...] Prepare without execution
+run launch ID [--review HASH] [--yes] Review/launch once through the selected master
+run list                            Discover retained runs in this workspace
+run inspect ID                      Execution, output completeness, budget and cleanup
+run output ID stdout|stderr OFFSET   Read up to 32 KiB at a byte offset (CLI: base64)
+run cancel ID [--yes]                Review/request ordinary remote group termination
+run collect ID [--yes]               Register completed/partial output as Hovel artifacts
+run close ID [--yes]                 Drop working output; registered artifacts remain
+TUI mutations open the shared review dialog; CLI repeats with --yes to confirm.
+Repeated launch never repeats the action; viewing/quit does not cancel a run.
+Commands reuse the selected master with no fresh login, staging or remote Python.
+Arguments are quoted individually; use /bin/sh -c explicitly for shell syntax.
+Commands/arguments cannot carry secrets: Hovel records the request, and SSH argv is visible.
+Default storage: 268435456 bytes per stream; --budget sets a positive byte count.
+Separate private local stdout/stderr files retain all bytes within that budget.
+Budget/write failures mark incomplete capture and retain collectible partial output.
+There is no implicit execution timeout. Output reads do not collect evidence.
+Run success, transport/completion uncertainty and collection success are separate.
+Cancellation needs Linux /proc identity and an ordinary OpenSSH process group.
+PID checking and signalling are not atomic; escaped descendants and cleanup after
+connection loss remain unconfirmed. Stopping local SSH proves no remote cleanup.
+Active runs must be cancelled before close. Closing a connection loses its run access.
+Uncollected output can be lost on module/daemon failure; unknown leftovers are not adopted.
+Collected evidence is inspectable with Hovel artifact list/inspect after run close.
+Streaming/staged scripts, independent stdin and live viewers follow in #58/#59.
+
+logs / Ctrl+N                      Open workspace log in embedded read-only Vim
 Ctrl+N or :q returns to the previous context. Reopening refreshes the snapshot.
 Ctrl+N is reserved in management, file mode and embedded SSH/Hovel/editor tabs.
 Logs persist Burrow operations and shell lifecycle, not interactive shell I/O.
@@ -279,6 +305,12 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "run":
+		_, _, _, err := parseRun(args)
+		if err == nil && len(args) > 2 && args[1] == "prepare" {
+			_, err = launch.ConnectionPath(workspace, args[2])
+		}
+		return err
 	case "downloads", "download-cancel", "transfers", "transfer-cancel":
 		if len(args) > 2 || ((args[0] == "download-cancel" || args[0] == "transfer-cancel") && len(args) != 2) {
 			return fmt.Errorf("expected downloads/transfers [ID] or download-cancel/transfer-cancel ID")
@@ -499,10 +531,13 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	}
 	// Capture submitted identity and full safe frontend result, including reviews
 	// and pre-dispatch refusals. Owner records carry asynchronous actual outcomes.
+	if args[0] == "run" && (args[1] == "list" || args[1] == "inspect" || args[1] == "output") {
+		return executeOperation(ctx, w, args, promptSocket)
+	}
 	switch args[0] {
-	case "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
+	case "run", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
 		a, err := launch.BeginAudit(w, commandIdentity(args), "submitted request; see owner result", nil)
-		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove")
+		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove") || (args[0] == "run" && (args[1] == "cancel" || args[1] == "close"))
 		if err != nil && !cleanup {
 			return nil, err
 		}
@@ -530,6 +565,8 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		return execute(ctx, w, expanded, promptSocket)
 	}
 	switch args[0] {
+	case "run":
+		return executeRun(ctx, w, args)
 	case "downloads", "download-cancel", "transfers", "transfer-cancel":
 		return executeDownloads(ctx, w, args)
 	case "files-history":

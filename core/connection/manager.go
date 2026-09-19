@@ -311,6 +311,9 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 	if ctx.InputString("command", "") != "" || ctx.InputString("connection", "") != "" {
 		return hovel.Result{}, fmt.Errorf("manager action excludes legacy connection and profile commands")
 	}
+	if strings.HasPrefix(ctx.InputString("action", ""), "run-") {
+		return runAdapter(ctx, w)
+	}
 	switch ctx.InputString("action", "") {
 	case "download":
 		raw := ctx.InputString("request", "")
@@ -401,7 +404,7 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 	}
 	var found managerIdentity
 	for _, ref := range refs.Sessions {
-		if ref.ModuleID != "burrow@0.1.0" || ref.Kind == "connection" || ref.State == "closed" {
+		if ref.ModuleID != "burrow@0.1.0" || ref.Kind == "connection" || ref.Kind == runKind || ref.State == "closed" {
 			continue
 		}
 		if ref.Kind != managerKind {

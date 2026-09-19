@@ -27,10 +27,12 @@ from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
 from core.cmd.burrow.files_lab import file_checks, load_checks, file_ui
+from core.cmd.burrow.runs_lab import run_checks
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=6, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
+parser.add_argument("--runs-check", action="store_true", help="check retained remote command lifecycle only")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
 parser.add_argument("--files-check", action="store_true", help="check real SFTP browsing only")
 parser.add_argument("--forward-check", action="store_true", help="check real local forwarding only")
@@ -175,6 +177,16 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if args.runs_check:
+            run_checks(burrow, w, first, container, command, hv, binary, env, screen_check)
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        if not (smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check or args.files_check):
+            burrow(w, "connect", "runs", "127.0.0.1", "tester", *options)
+            run_owner = wait(lambda: state_is(w, "runs", "connected"))
+            run_checks(burrow, w, run_owner, container, command, hv, binary, env, screen_check)
+            burrow(w, "close", "runs", "--yes")
+            timing("retained remote runs")
         if args.files_check or not (smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check):
             file_checks(burrow, w, first, container, command)
             file_ui(binary, env, screen_check, w)

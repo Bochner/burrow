@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,6 +52,20 @@ type tunnelList struct {
 	err     error
 }
 
+type runList struct {
+	runs []connection.Run
+	err  error
+}
+
+func refreshRuns(workspace string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		runs, err := connection.Runs(ctx, workspace)
+		return runList{runs, err}
+	}
+}
+
 func refreshTunnels(workspace string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -78,6 +93,7 @@ func connectionTimer() tea.Cmd {
 }
 
 type ui struct {
+	runs                          []connection.Run
 	downloads                     connection.Downloads
 	downloadObserved              bool
 	downloadError                 string
@@ -192,10 +208,17 @@ func terminal(m *frame, noColor bool) (failure error) {
 	return e
 }
 func (m ui) Init() tea.Cmd {
-	return tea.Batch(m.input.Focus(), refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace))
+	return tea.Batch(m.input.Focus(), refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace), refreshRuns(m.info.Workspace))
 }
 func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case runList:
+		m.runs = nil
+		if v.err == nil {
+			m.runs = v.runs
+		}
+		m.input.SetSuggestions(m.suggestions())
+		return m, nil
 	case fileResult:
 		m.acceptFiles(v)
 		return m, nil
@@ -214,7 +237,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.SetSuggestions(m.suggestions())
 		return m, nil
 	case connectionTick:
-		return m, tea.Batch(refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace))
+		return m, tea.Batch(refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace), refreshRuns(m.info.Workspace))
 	case profilesReady:
 		if v.err != nil {
 			m.profileError = "UNAVAILABLE · " + safe(v.err.Error())
@@ -261,8 +284,18 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				lines[i] = safe(lines[i])
 			}
 			m.output = strings.Join(lines, "\n")
+			if chunk, ok := v.result.(connection.RunOutput); ok {
+				data, err := base64.StdEncoding.DecodeString(chunk.Data)
+				if err == nil {
+					lines := strings.Split(string(data), "\n")
+					for i := range lines {
+						lines[i] = safe(lines[i])
+					}
+					m.output = fmt.Sprintf("Output · next byte offset %d\n", chunk.NextOffset) + strings.Join(lines, "\n")
+				}
+			}
 		}
-		return m, tea.Batch(refreshProfiles(m.info.Workspace), refreshTunnels(m.info.Workspace))
+		return m, tea.Batch(refreshProfiles(m.info.Workspace), refreshTunnels(m.info.Workspace), refreshRuns(m.info.Workspace))
 	case tea.WindowSizeMsg:
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
@@ -421,6 +454,9 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return shellRequested{args[1]} }
 				}
 				m.output = "Running reviewed command through Hovel…"
+				if args[0] == "run" && (args[1] == "launch" || args[1] == "cancel" || args[1] == "collect" || args[1] == "close") {
+					return m, func() tea.Msg { return authenticationRequested{args: args} }
+				}
 				if (args[0] == "proxy" && args[1] != "inspect") || args[0] == "tunc" || (args[0] == "tund" && len(args) == 2) || (args[0] == "tunnel" && (args[1] == "create" || (args[1] == "remove" && len(args) == 3))) || args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}

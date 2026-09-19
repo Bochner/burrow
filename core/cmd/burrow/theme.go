@@ -282,6 +282,9 @@ func (m ui) semanticText(text string) string {
 		if field && !strings.ContainsAny(label, "/@") {
 			style := fieldStyle(strings.ToUpper(label))
 			styled := m.paint(style, value)
+			if label == "Command" || label == "Output budget" {
+				styled = m.syntax(value, false)
+			}
 			if label == "Endpoint" || label == "Jump" || label == "Listen" || label == "Destination" || label == "Remote listener" || label == "Local destination" || label == "Local listener" || label == "Remote destination" {
 				styled = m.endpoint(value)
 			}
@@ -428,8 +431,10 @@ var infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
 
 func fieldStyle(header string) lipgloss.Style {
 	switch header {
-	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUNID", "SESSION":
+	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUN", "RUNID", "SESSION":
 		return accent
+	case "ACTION":
+		return heading
 	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION":
 		return hostStyle
 	case "USER", "USERNAME", "OWNER", "GROUP":

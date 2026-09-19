@@ -21,7 +21,7 @@
 <tr><td>Remote ls/tree/cd/pwd and completion</td><td><code>owner.browse</code> records queries and full results before response-size reduction, including implicit tab entry and completion. Account-name enrichment and SFTP operations are part of that query; cached/coalesced results retain their notices.</td></tr>
 <tr><td>get/mget/put review and transfer</td><td>The shared review records frozen source and destination metadata. Retained per-file and final outcomes complete independently of the frontend.</td></tr>
 <tr><td>Local settings, local filesystem browsing, download/profile inventory</td><td>No target contact; existing histories remain authoritative. No additional operational-state registry.</td></tr>
-<tr><td>Future script capabilities</td><td>Must save an attempt before target contact, retain complete safe results from the execution owner, report persistence failures and add controlled acceptance checks at the same public command boundary.</td></tr>
+<tr><td>Retained commands</td><td>Validated submissions record prepare/review/launch/cancel/collect/close results. The retained run saves the launch attempt before target contact and records final exit, capture completeness, byte counts and cancellation independently of the frontend. Binary stdout/stderr stay in the run's files and explicitly collected Hovel artifacts. <code>auditError</code> reports persistence failure without replacing a known remote exit; cleanup still proceeds.</td></tr>
 </tbody></table>
 <p>Validation enters through Aspect: private storage and concurrent-writer checks, interaction checks, and the controlled SSH/file/PTY gate. Automated checks do not constitute the owner’s visual acceptance.</p>
 </article>

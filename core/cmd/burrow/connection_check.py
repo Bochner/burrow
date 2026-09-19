@@ -26,6 +26,14 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         assert result.returncode != 0 and "name must" in result.stderr, result
         assert not workspace.exists()
     for args, message in [
+        (["run"], "run prepare CONNECTION"),
+        (["run", "prepare", "gateway", "--budget", "0", "--", "true"], "positive byte count"),
+        (["run", "prepare", "../escape", "--", "true"], "name must"),
+        (["run", "prepare", "gateway", "--", ""], "command and positive"),
+        (["run", "prepare", "gateway", "--password", "SYNTHETIC-NOT-A-REAL-SECRET", "--", "true"], "run prepare CONNECTION"),
+        (["run", "launch", "id", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "run prepare CONNECTION"),
+        (["run", "output", "id", "stdout", "-1"], "run prepare CONNECTION"),
+        (["run", "list", "extra"], "run prepare CONNECTION"),
         (["tunnel", "create", "gateway", "forward", "8080"], "CONNECTION forward|reverse LISTEN HOST PORT"),
         (["tunnel", "create", "gateway", "forward", "0", "localhost", "80", "--yes"], "port"),
         (["tunc", "gateway", "l", "8080", "localhost", "0"], "port"),

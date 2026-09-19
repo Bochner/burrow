@@ -114,6 +114,39 @@ func TestAuthenticationPopup(t *testing.T) {
 	}
 }
 
+func TestRunReviewPresentation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/run-ui"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		m.current().management.input.SetValue("run launch retained-1")
+		_, dispatch := frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if dispatch == nil {
+			t.Fatal("run launch did not dispatch")
+		}
+		frameEvent(m, dispatch())
+		if m.modal != "review" {
+			t.Fatal("run launch did not enter the shared review flow", m.modal)
+		}
+		m.reviewText = "Launch run retained-1 on gateway.\nCommand: /bin/echo 'untrusted \\u001b]52;c;data'\nOutput budget: 268435456 bytes per stream."
+		m.setForm("review", "Review exact target", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("run-review-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "retained-1") {
+				t.Fatal("run identity hidden during review")
+			}
+			if !plain && size.X >= 120 {
+				assertTextRole(t, screen, m.dialogBounds().Inset(1), "Command:", "#b4befe")
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		if m.modal != "" {
+			t.Fatal("run review could not be cancelled")
+		}
+	}
+}
+
 func TestDownloadReviewAndProgress(t *testing.T) {
 	bar := newDownloadBar()
 	bar.SetWidth(12)

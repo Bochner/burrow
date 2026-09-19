@@ -147,6 +147,18 @@ func (m ui) suggestions() []string {
 	}
 	line := m.input.Value()
 	values := connection.CommandSuggestions(line, m.connections)
+	values = append(values, "run list", "run prepare ")
+	for _, s := range m.connections {
+		if s.State == "connected" && s.Generation != "" {
+			values = append(values, "run prepare "+s.Name+" -- ")
+		}
+	}
+	for _, r := range m.runs {
+		for _, verb := range []string{"inspect", "launch", "cancel", "collect", "close"} {
+			values = append(values, "run "+verb+" "+r.ID)
+		}
+		values = append(values, "run output "+r.ID+" stdout 0", "run output "+r.ID+" stderr 0")
+	}
 	values = append(values, "scp ", "local", "lls ", "lcd ")
 	for _, s := range m.connections {
 		if s.State == "connected" {
@@ -187,6 +199,7 @@ func (m ui) suggestions() []string {
 }
 
 var completionDescriptions = map[string]string{
+	"run prepare": "CONNECTION -- COMMAND [ARG...] · no execution", "run launch": "Review and launch the prepared command once", "run list": "List retained remote runs", "run inspect": "Remote status, capture and cleanup", "run output": "Read stdout/stderr at a byte offset", "run cancel": "Request ordinary remote group termination", "run collect": "Register output as Hovel evidence", "run close": "Drop working output; preserve collected evidence",
 	"proxy create": "CONNECTION LISTEN · port or IP:port", "proxy inspect": "Verify SOCKS endpoint and owner identity", "proxy remove": "Remove SOCKS only; preserve connection/L/R",
 	"tunnel create": "CONNECTION forward|reverse LISTEN HOST PORT", "tunc": "CONNECTION l|r LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected listener", "tund": "Remove selected listener", "tunnel check": "Test tunnel connectivity (destination greeting)",
 	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",
@@ -211,7 +224,7 @@ func completionDescription(value string) string {
 		return description
 	}
 	command := words[0]
-	if (command == "profile" || command == "tunnel" || command == "proxy") && len(words) > 1 {
+	if (command == "run" || command == "profile" || command == "tunnel" || command == "proxy") && len(words) > 1 {
 		command += " " + words[1]
 	}
 	return completionDescriptions[command]
