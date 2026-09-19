@@ -29,11 +29,13 @@ from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
 from core.cmd.burrow.files_lab import file_checks, load_checks, file_ui
 from core.cmd.burrow.runs_lab import run_checks
+from core.cmd.burrow.follow_lab import follow_checks
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=6, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--runs-check", action="store_true", help="check retained remote command lifecycle only")
+parser.add_argument("--follow-check", action="store_true", help="check independent live output readers and viewers")
 parser.add_argument("--scripts-check", action="store_true", help="check script inputs and staging through retained runs")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
 parser.add_argument("--files-check", action="store_true", help="check real SFTP browsing only")
@@ -182,6 +184,10 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if args.follow_check:
+            follow_checks(burrow, w, first, container, command, hv, binary, env, screen_check)
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
         if args.runs_check or args.scripts_check:
             run_checks(burrow, w, first, container, command, hv, binary, env, screen_check, scripts_only=args.scripts_check)
             burrow(w, "close", "gateway", "--yes")
@@ -189,6 +195,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         if not (smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check or args.files_check):
             burrow(w, "connect", "runs", "127.0.0.1", "tester", *options)
             run_owner = wait(lambda: state_is(w, "runs", "connected"))
+            follow_checks(burrow, w, run_owner, container, command, hv, binary, env, screen_check)
             run_checks(burrow, w, run_owner, container, command, hv, binary, env, screen_check)
             burrow(w, "close", "runs", "--yes")
             timing("retained remote runs")

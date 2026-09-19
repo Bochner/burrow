@@ -423,6 +423,10 @@ func (m *frame) commandHelp() string {
 	if m.current().activeUI().files != nil {
 		keys = []key.Binding{binding("back", "management"), binding("Ctrl+C", "cancel/back"), binding("F1", "help"), binding("PgUp/PgDn", "scroll"), showHovel}
 	}
+	if m.current().activeUI().follow != nil {
+		keys = []key.Binding{binding("Esc/Ctrl+C", "close viewer"), binding("Tab", "streams"), binding("End", "follow"), binding("PgUp/PgDn", "scroll"), binding("F1", "help"), showBurrow}
+		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
+	}
 	selection := binding("Alt+S", "native selection")
 	if m.mouseDisabled {
 		selection = binding("Alt+S", "panel selection")

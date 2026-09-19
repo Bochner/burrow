@@ -292,7 +292,7 @@ func (m *frame) cycleShell(delta int) {
 
 func (m *frame) cycleTab(delta int) {
 	w := m.current()
-	total := len(w.shells) + len(w.fileViews) + 2
+	total := len(w.shells) + len(w.fileViews) + len(w.followViews) + 2
 	i := 0
 	if w.tab == "hovel" {
 		i = 1
@@ -300,11 +300,15 @@ func (m *frame) cycleTab(delta int) {
 		i = slices.Index(w.shells, w.shell) + 2
 	} else if w.tab == "files" {
 		i = slices.Index(w.fileViews, w.file) + len(w.shells) + 2
+	} else if w.tab == "follow" {
+		i = slices.Index(w.followViews, w.follow) + len(w.shells) + len(w.fileViews) + 2
 	}
 	i = (i + delta + total) % total
 	w.tab = ""
 	if i == 1 {
 		w.tab = "hovel"
+	} else if i >= len(w.shells)+len(w.fileViews)+2 {
+		m.selectFollow(w.followViews[i-len(w.shells)-len(w.fileViews)-2])
 	} else if i >= len(w.shells)+2 {
 		m.selectFileTab(w.fileViews[i-len(w.shells)-2])
 	} else if i >= 2 {

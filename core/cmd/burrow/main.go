@@ -142,6 +142,10 @@ func run(args []string) error {
 		if (command == "shell" || command == "logs") && !term.IsTerminal(os.Stdin.Fd()) {
 			return fmt.Errorf("shell requires terminal input; use inspect NAME for JSON")
 		}
+		following := command == "run" && len(args) > 1 && args[1] == "follow"
+		if following && !term.IsTerminal(os.Stdin.Fd()) {
+			return fmt.Errorf("run follow requires a terminal; use run output ID stdout|stderr OFFSET for bounded JSON reads")
+		}
 		defer launch.Phase("cli:" + command)()
 		interrupt, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -159,6 +163,11 @@ func run(args []string) error {
 		if command == "logs" {
 			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
 			m.initialLogs = true
+			return terminal(m, m.noColor)
+		}
+		if following {
+			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
+			m.initialFollow = args
 			return terminal(m, m.noColor)
 		}
 		if command == "shell" {

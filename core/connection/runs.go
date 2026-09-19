@@ -80,6 +80,10 @@ type remoteRun struct {
 
 func parseRun(args []string) (runRequest, bool, string, error) {
 	r := runRequest{Budget: 256 << 20}
+	if len(args) > 1 && args[1] == "follow" {
+		_, _, err := FollowArgs(args)
+		return r, false, "", err
+	}
 	bad := fmt.Errorf("expected run prepare CONNECTION [--budget BYTES] -- COMMAND [ARG...], run now CONNECTION [--budget BYTES] [--yes] -- COMMAND [ARG...], run list, run inspect ID, run output ID stdout|stderr OFFSET, run launch ID [--collect] [--review HASH] [--yes], or run cancel|collect|close ID [--review HASH] [--yes]")
 	if len(args) < 2 {
 		return r, false, "", bad
@@ -160,6 +164,30 @@ func parseRun(args []string) (runRequest, bool, string, error) {
 	return r, yes, review, nil
 }
 
+// FollowArgs validates frontend navigation before opening a workspace. The
+// viewer itself uses the same bounded run-output operation as other readers.
+func FollowArgs(args []string) (string, int64, error) {
+	stream, offset := "stdout", int64(0)
+	bad := fmt.Errorf("expected run follow ID [stdout|stderr] [OFFSET]; offset must be a nonnegative byte count")
+	if len(args) < 3 || len(args) > 5 || args[2] == "" || len(args[2]) > 128 || strings.ContainsAny(args[2], "\x00\r\n") {
+		return stream, offset, bad
+	}
+	if len(args) >= 4 {
+		stream = args[3]
+		if stream != "stdout" && stream != "stderr" {
+			return stream, offset, bad
+		}
+	}
+	if len(args) == 5 {
+		var err error
+		offset, err = strconv.ParseInt(args[4], 10, 64)
+		if err != nil || offset < 0 {
+			return stream, offset, bad
+		}
+	}
+	return stream, offset, nil
+}
+
 // RunWaits identifies commands that wait for remote completion and collection.
 // Frontends keep these tied to their lifetime, without a default wait deadline.
 func RunWaits(args []string) bool {
@@ -225,6 +253,9 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if args[1] == "follow" {
+		return nil, fmt.Errorf("run follow requires a terminal frontend; use run output ID stdout|stderr OFFSET for bounded JSON reads")
+	}
 	if args[1] == "list" {
 		return Runs(ctx, w)
 	}
@@ -259,17 +290,17 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 		}
 		return launched, nil
 	}
+	if args[1] == "output" {
+		var out RunOutput
+		err := runControl(ctx, w, args[2], "run-output", args[3:], &out)
+		return out, err
+	}
 	var state Run
 	if err := runControl(ctx, w, args[2], "run-inspect", nil, &state); err != nil {
 		return nil, err
 	}
 	if args[1] == "inspect" {
 		return state, nil
-	}
-	if args[1] == "output" {
-		var out RunOutput
-		err := runControl(ctx, w, args[2], "run-output", args[3:], &out)
-		return out, err
 	}
 	// The immutable command, selected connection and budgets bind every approval.
 	bound, _ := json.Marshal(state.request())
@@ -706,8 +737,15 @@ func (p *runPrefix) flush() {
 }
 
 type RunOutput struct {
-	Data       string `json:"data"`
-	NextOffset int64  `json:"nextOffset"`
+	Data           string `json:"data"`
+	NextOffset     int64  `json:"nextOffset"`
+	State          string `json:"state"`
+	RemoteExit     *int   `json:"remoteExit"`
+	Budget         int64  `json:"budgetPerStream"`
+	Stored         int64  `json:"storedBytes"`
+	Received       int64  `json:"receivedBytes"`
+	OutputComplete bool   `json:"outputComplete"`
+	OutputError    string `json:"outputError"`
 }
 
 func (r *remoteRun) output(args []string) (RunOutput, error) {
@@ -718,12 +756,17 @@ func (r *remoteRun) output(args []string) (RunOutput, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	data := make([]byte, 32768)
+	// Read only the captured snapshot, so bytes and status describe the same
+	// instant. Readers never move the writer's position or collect evidence.
+	data := make([]byte, min(32768, max(0, r.record.Stored[i]-offset)))
 	n, err := r.files[i].ReadAt(data, offset)
 	if err != nil && err != io.EOF {
 		return RunOutput{}, err
 	}
-	return RunOutput{base64.StdEncoding.EncodeToString(data[:n]), offset + int64(n)}, nil
+	return RunOutput{Data: base64.StdEncoding.EncodeToString(data[:n]), NextOffset: offset + int64(n),
+		State: r.record.State, RemoteExit: r.record.RemoteExit, Budget: r.record.Budget,
+		Stored: r.record.Stored[i], Received: r.record.Bytes[i],
+		OutputComplete: r.record.OutputComplete, OutputError: r.record.OutputError}, nil
 }
 
 // The caller holds control, so launch/cancel/close cannot race one another.

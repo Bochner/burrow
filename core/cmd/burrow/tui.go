@@ -93,6 +93,7 @@ func connectionTimer() tea.Cmd {
 }
 
 type ui struct {
+	follow                        *runView
 	runs                          []connection.Run
 	downloads                     connection.Downloads
 	downloadObserved              bool
@@ -608,18 +609,22 @@ func (m ui) View() tea.View {
 	var b strings.Builder
 
 	bodyW := w
-	content := m.savedConnections(bodyW) + "\n\n" +
-		m.activeConnections(bodyW) + "\n\n" + m.localForwards(bodyW)
-	if m.demo {
-		content = m.demoResources(bodyW)
-	}
-	// Reserve command output space even when endpoint text wraps in the table.
-	content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-7)))
-	outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
-	start := min(m.outputOffset, len(outputLines)-1)
-	content += "\n\n" + m.paint(heading, "COMMAND OUTPUT") + "\n" + strings.Join(outputLines[start:], "\n")
-	if m.files != nil {
+	var content string
+	if m.follow != nil {
+		content = m.followContent()
+	} else if m.files != nil {
 		content = m.fileContent(bodyW)
+	} else {
+		content = m.savedConnections(bodyW) + "\n\n" +
+			m.activeConnections(bodyW) + "\n\n" + m.localForwards(bodyW)
+		if m.demo {
+			content = m.demoResources(bodyW)
+		}
+		// Reserve command output space even when endpoint text wraps in the table.
+		content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-7)))
+		outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
+		start := min(m.outputOffset, len(outputLines)-1)
+		content += "\n\n" + m.paint(heading, "COMMAND OUTPUT") + "\n" + strings.Join(outputLines[start:], "\n")
 	}
 	b.WriteString(fit(content, w, max(0, h-3)))
 	footer := "F1 help · Tab completion · Ctrl+C quit"
@@ -630,6 +635,12 @@ func (m ui) View() tea.View {
 	if m.files != nil {
 		prompt = "╭─ scp › " + safe(m.files.state.Name) + " › " + safe(m.files.remote)
 		footer = "F1 help · Tab completion · back management · Ctrl+C cancel/back"
+	}
+	if m.follow != nil {
+		b.WriteString("\n" + m.paint(secondary, "↑↓/PgUp/PgDn scroll · End follow · Tab streams") + "\n" + m.paint(secondary, "Esc close viewer · Alt+B management · F1 help"))
+		v := tea.NewView(fit(b.String(), w, h))
+		v.AltScreen = true
+		return v
 	}
 	b.WriteString("\n" + m.paint(secondary, footer) + "\n" + m.paint(accent, prompt) + "\n" + m.input.View())
 	base := fit(b.String(), w, h)
@@ -680,6 +691,9 @@ func (m ui) View() tea.View {
 }
 
 func (m ui) helpText() string {
+	if m.follow != nil {
+		return strings.ReplaceAll(followHelp, "\\t", "\t")
+	}
 	if m.files != nil {
 		return strings.ReplaceAll(fileHelp, "\\t", "\t")
 	}
@@ -719,6 +733,7 @@ run launch ID [--collect]	Launch once; --collect waits and saves output; Tab com
 run list	List retained runs in this workspace
 run inspect ID	Inspect execution status, output completeness and storage budget
 run output ID stdout|stderr OFFSET	Read a safely displayed preview; start with offset 0
+run follow ID [stdout|stderr] [OFFSET]	Open live output; Tab streams, End follow, Esc closes viewer only
 run cancel ID	Review cancellation of the ordinary remote process group
 run collect ID	Review saving completed or partial output as Hovel evidence
 run close ID	Review removal of working output; collected evidence remains

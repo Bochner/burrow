@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -111,6 +112,68 @@ func TestAuthenticationPopup(t *testing.T) {
 	f.Update(tea.PasteMsg{Content: "synthetic-cli-secret"})
 	if strings.Contains(f.View(), "synthetic-cli-secret") || f.GetFocusedField().GetValue() != "synthetic-cli-secret" {
 		t.Fatal("CLI prompt visibility changed")
+	}
+}
+
+func TestLiveOutputNavigation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/live-view"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		frameEvent(m, tea.PasteMsg{Content: "run follow retained-1"})
+		_, cmd := frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if cmd == nil || !strings.Contains(ansi.Strip(m.View().Content), "LIVE OUTPUT") {
+			t.Fatal("follow did not open a responsive live viewer", ansi.Strip(m.View().Content))
+		}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("live-empty-%dx%d-%t", size.X, size.Y, plain))
+			for _, text := range []string{"LIVE OUTPUT", "retained-1", "stdout", "Connecting"} {
+				if !strings.Contains(ansi.Strip(m.View().Content), text) {
+					t.Fatal("missing viewer identity or truthful initial state", text)
+				}
+			}
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y), "LIVE OUTPUT", blueColor)
+			}
+		}
+		// Presentation fixture only; follow_lab exercises these observations
+		// through real SSH, capture failures and independent terminal processes.
+		view := m.current().follow.follow
+		exit := 0
+		chunk := connection.RunOutput{Data: base64.StdEncoding.EncodeToString([]byte("partial")), NextOffset: 7,
+			State: "exited", RemoteExit: &exit, Budget: 7, Stored: 7, Received: 14,
+			OutputError: "output storage budget exceeded; partial evidence available"}
+		frameEvent(m, m.dispatch(m.active, func() tea.Msg { return followRead{view: view, chunk: chunk} })())
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("live-incomplete-%dx%d-%t", size.X, size.Y, plain))
+			for _, text := range []string{"INCOMPLETE", "exit 0", "partial", "7/7 B"} {
+				if !strings.Contains(screen.String(), text) {
+					t.Fatal("live capture outcome hidden", text)
+				}
+			}
+			if !plain {
+				bounds := image.Rect(0, 0, size.X, size.Y)
+				for text, color := range map[string]string{"retained-1": "#b4befe", "stdout": "#94e2d5", "INCOMPLETE": "#f38ba8", "7/7 B": "#fab387"} {
+					assertTextRole(t, screen, bounds, text, color)
+				}
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if !strings.Contains(ansi.Strip(m.View().Content), "stderr") {
+			t.Fatal("stream switch unavailable while read pending")
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+		if !strings.Contains(ansi.Strip(m.View().Content), "LIVE OUTPUT HELP") {
+			t.Fatal("contextual live help missing")
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF6})
+		frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+		if strings.Contains(ansi.Strip(m.View().Content), "LIVE OUTPUT") || !strings.Contains(ansi.Strip(m.View().Content), "COMMAND OUTPUT") {
+			t.Fatal("closing viewer did not return to management")
+		}
 	}
 }
 

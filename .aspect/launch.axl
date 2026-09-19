@@ -8,7 +8,7 @@ def _impl(ctx: TaskContext) -> int:
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/runs.go", root + "/core/connection/scripts.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
-        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/cmd/burrow/files_ui.go", root + "/core/cmd/burrow/editor.go", root + "/core/cmd/burrow/logs.go", root + "/core/cmd/burrow/log_notes.go", root + "/core/cmd/burrow/collected_notes.go", root + "/core/cmd/burrow/downloads_ui.go"]).current_dir(root).spawn().wait()
+        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/cmd/burrow/files_ui.go", root + "/core/cmd/burrow/follow_ui.go", root + "/core/cmd/burrow/editor.go", root + "/core/cmd/burrow/logs.go", root + "/core/cmd/burrow/log_notes.go", root + "/core/cmd/burrow/collected_notes.go", root + "/core/cmd/burrow/downloads_ui.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/files.go", root + "/core/connection/remote_files.go", root + "/core/connection/downloads.go"]).current_dir(root).spawn().wait()
@@ -35,6 +35,7 @@ def _impl(ctx: TaskContext) -> int:
         "shell-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--shell-check"],
         "files-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--files-check"],
         "runs-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--runs-check"],
+        "follow-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--follow-check"],
         "scripts-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--scripts-check"],
         "forward-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--forward-check"],
         "reverse-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--reverse-check"],
@@ -45,7 +46,7 @@ def _impl(ctx: TaskContext) -> int:
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected run, check, clean, ssh-check, shell-check, files-check, runs-check, scripts-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
+        print("expected run, check, clean, ssh-check, shell-check, files-check, runs-check, follow-check, scripts-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
         return 2
     if mode == "check":
         commands[mode].append("//core/cmd/burrow:files_test")
@@ -56,6 +57,6 @@ burrow = task(
         "mode": args.positional(default = ["check"], minimum = 0, maximum = 1),
         "options": args.trailing_var_args(description = "Burrow options, starting with --workspace PATH."),
     },
-    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, files-check, runs-check, scripts-check, forward-check, reverse-check, proxy-check, ssh-latency, format or package the production Linux frontend.",
+    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, files-check, runs-check, follow-check, scripts-check, forward-check, reverse-check, proxy-check, ssh-latency, format or package the production Linux frontend.",
     implementation = _impl,
 )

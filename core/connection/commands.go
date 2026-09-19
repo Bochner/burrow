@@ -39,6 +39,7 @@ Input bytes stay out of recorded requests; scripts can themselves print sensitiv
 run launch ID [--collect] [--review HASH] [--yes] Launch once; --collect waits and saves output
 run list                            Discover retained runs in this workspace
 run inspect ID                      Execution, output completeness, budget and cleanup
+run follow ID [stdout|stderr] [OFFSET] Open a live terminal viewer; Esc closes only the viewer
 run output ID stdout|stderr OFFSET   Read up to 32 KiB at a byte offset (CLI: base64)
 run cancel ID [--yes]                Review/request ordinary remote group termination
 run collect ID [--yes]               Register completed/partial output as Hovel artifacts
@@ -60,7 +61,11 @@ Active runs must be cancelled before close. Closing a connection loses its run a
 Uncollected output can be lost on module/daemon failure; unknown leftovers are not adopted.
 Collected evidence is inspectable with Hovel artifact list/inspect after run close.
 Inspect also reports input snapshots, staging, stageCleanup and timedOut separately from remoteExit.
-Independent streaming viewers follow in #59; existing output reads and collection apply to scripts.
+Live viewers keep independent positions and a 32 KiB preview per stream in this frontend.
+Tab switches streams; scrolling pauses follow; End resumes; Alt+B returns to management.
+Reopen with run follow ID; explicit OFFSET resets that stream. Positions end with the frontend.
+Output JSON includes the captured snapshot's status, budget, stored/received bytes and errors.
+Original bytes stay in capture; terminal controls and binary data are escaped only for display.
 
 logs / Ctrl+N                      Open workspace log in embedded read-only Vim
 Ctrl+N or :q returns to the previous context. Reopening refreshes the snapshot.
