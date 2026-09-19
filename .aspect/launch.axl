@@ -5,7 +5,7 @@ def _impl(ctx: TaskContext) -> int:
         # Never remove workspace state or retained runtime caches here.
         return ctx.std.process.command("bazel").args(["clean"]).current_dir(root).spawn().wait().code or 0
     if ctx.args.mode[0] == "format":
-        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/runs.go", root + "/core/connection/scripts.go", root + "/core/connection/survey.go"]).current_dir(root).spawn().wait()
+        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/runs.go", root + "/core/connection/scripts.go", root + "/core/connection/survey.go", root + "/core/connection/chains.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/cmd/burrow/files_ui.go", root + "/core/cmd/burrow/follow_ui.go", root + "/core/cmd/burrow/editor.go", root + "/core/cmd/burrow/logs.go", root + "/core/cmd/burrow/log_notes.go", root + "/core/cmd/burrow/collected_notes.go", root + "/core/cmd/burrow/downloads_ui.go"]).current_dir(root).spawn().wait()
@@ -38,6 +38,7 @@ def _impl(ctx: TaskContext) -> int:
         "automation-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--automation-check"],
         "follow-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--follow-check"],
         "reports-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--reports-check"],
+        "chains-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--chains-check"],
         "scripts-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--scripts-check"],
         "forward-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--forward-check"],
         "reverse-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--reverse-check"],
@@ -48,7 +49,7 @@ def _impl(ctx: TaskContext) -> int:
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected run, check, clean, ssh-check, shell-check, files-check, runs-check, follow-check, reports-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
+        print("expected run, check, clean, ssh-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
         return 2
     if mode == "check":
         commands[mode].append("//core/cmd/burrow:files_test")
@@ -59,6 +60,6 @@ burrow = task(
         "mode": args.positional(default = ["check"], minimum = 0, maximum = 1),
         "options": args.trailing_var_args(description = "Burrow options, starting with --workspace PATH."),
     },
-    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, files-check, runs-check, follow-check, reports-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-latency, format or package the production Linux frontend.",
+    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-latency, format or package the production Linux frontend.",
     implementation = _impl,
 )

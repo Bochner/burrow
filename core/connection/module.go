@@ -18,7 +18,7 @@ var Manifest []byte
 type Module struct{}
 
 func (Module) Info() hovel.Info {
-	return hovel.Info{Name: "burrow", Version: "0.1.0", Type: hovel.TypeSurvey, Tags: []string{"dangerous"}, Summary: "Manage Burrow workspace, profiles, SSH connections, retained commands and reports"}
+	return hovel.Info{Name: "burrow", Version: "0.1.0", Type: hovel.TypeSurvey, Tags: []string{"dangerous"}, Summary: "Manage Burrow workspace, SSH connections, commands, reports and selected-tunnel chains"}
 }
 func (Module) Schema() hovel.Schema {
 	req := []hovel.Requirement{hovel.Req("workspace", "string", "Explicit canonical Burrow workspace"), {Key: "command", Type: "string", Description: "Profile, file, retained-run or report command; empty inspects workspace"}, {Key: "connection", Type: "string", Description: "Retired per-connection input; use the manager connect adapter"}}

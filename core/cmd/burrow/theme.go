@@ -143,8 +143,12 @@ func (m ui) syntax(line string, reference bool) string {
 		switch {
 		case index == 0 && word == "burrow":
 			style = heading
-		case len(fields) > 0 && fields[0] == "run" && index < 2:
+		case len(fields) > 0 && (fields[0] == "run" || fields[0] == "chain") && index < 2:
 			style = heading
+		case len(fields) > 0 && fields[0] == "chain" && (index == 2 || (index == 3 && (fields[1] == "http" || fields[1] == "export"))):
+			style = accent
+		case strings.HasPrefix(word, "http://"):
+			style = hostStyle
 		case word == "/usr/bin/ssh":
 			style = heading
 		case prior == "-o":
@@ -347,6 +351,10 @@ func (m ui) styledOutput() string {
 					continue
 				case "direction":
 					style = keywordStyle
+				case "url":
+					style = hostStyle
+				case "connection", "connectionCreation":
+					style = accent
 				case "name", "id", "generation", "creation", "runID", "launchRunID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "cleanupScope", "error", "outputError", "auditError", "cleanupError":
 					style = fieldStyle(strings.ToUpper(field))
 					if token == `""` {
@@ -469,11 +477,11 @@ var infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
 
 func fieldStyle(header string) lipgloss.Style {
 	switch header {
-	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUN", "RUNID", "LAUNCHRUNID", "SESSION", "BURROW_CONNECTION":
+	case "NAME", "ID", "TUNNEL", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUN", "RUNID", "LAUNCHRUNID", "SESSION", "BURROW_CONNECTION":
 		return accent
 	case "ACTION":
 		return heading
-	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION", "BURROW_SSH_HOST":
+	case "URL", "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION", "BURROW_SSH_HOST":
 		return hostStyle
 	case "USER", "USERNAME", "OWNER", "GROUP":
 		return successStyle

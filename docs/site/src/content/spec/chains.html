@@ -1,0 +1,43 @@
+<!-- burrow-doc: {"title":"SSH and tunnel chains","group":"Foundations","order":153,"description":"Create a Burrow SSH connection from a confirmed Hovel chain, or consume an exactly selected live tunnel."} -->
+<article>
+<h1>SSH and tunnel chains</h1>
+<p>Hovel chains can establish a named SSH connection in Burrow or make a bounded HTTP request through an existing forward. Both operations use the single <code>burrow@0.1.0</code> module, its retained connection owner and Hovel's normal planning, confirmation and artifact contracts.</p>
+<h2>Create a connection from a chain</h2>
+<p>The target must already run an SSH server, such as OpenSSH or Dropbear. Its account must accept a key or agent accessible to the Burrow daemon. Exporting a chain resolves and records non-secret connection settings without authenticating:</p>
+<pre data-lang="Shell"><code>burrow --workspace /absolute/workspace chain connect target target.example tester \
+  --port 2222 --key /absolute/path/to/private-key &gt; connect.chain.json
+hovel throw connect.chain.json --workspace /absolute/workspace --allow-dangerous --json</code></pre>
+<p>Use Burrow's installed Hovel executable, or enter the equivalent <code>throw /absolute/connect.chain.json --allow-dangerous --json</code> in the workspace's <a href="embedded-terminal.html">embedded Hovel CLI</a>. Confirm the plan. Headless execution needs an existing matching confirmation or an explicitly selected <code>--now</code>; that option does not bypass dangerous-module or launch-key restrictions. JSON mode does not promise JSON-only failure output.</p>
+<p>The chain waits up to 30 seconds for authentication, then returns the connection's name, session, owner generation and creation identity. The live connection appears in Burrow's management inventory and supports its normal commands:</p>
+<pre data-lang="Burrow management"><code>inspect target
+shell target
+run now target -- /usr/bin/id
+close target</code></pre>
+<p>The connection remains available after the chain finishes. Closing it ends Burrow's master and dependent resources; it does not stop or uninstall the target's pre-existing SSH server. Authentication failure or timeout attempts cleanup of that exact connection and reports uncertainty if cleanup cannot be confirmed. Existing names and unknown reservations are refused, including replay of a chain while its connection is still live. Reconnect remains explicit.</p>
+<p><code>chain connect</code> also accepts <code>--agent</code>, <code>--ssh-config</code> and <code>--jump</code>. Interactive passwords/passphrases and implicit proxy creation are excluded from this connection-only operation. Private keys remain local; exported chains contain paths, never key contents or passwords. The existing owner-approved LazySSH host-trust settings apply. Export again if the resolved SSH configuration or Burrow build changes.</p>
+<p>A Dropbear deployment provider is not required to connect to a running server. Preparing a binary, uploading it, configuring authorization, launching it and owning its remote cleanup are separate deployment work, requiring an existing authorized delivery/execution path. Dropbear alone does not supply initial target access, and a bare Dropbear server needs an external SFTP server for Burrow's file workflows. The current compatibility check proves SSH authentication and command execution, not all Dropbear deployment, PTY or file combinations.</p>
+<h2>Choose and consume an existing tunnel</h2>
+<p>Create the connection and <a href="forwarding.html">forward or SOCKS proxy</a> first. Select the connection, then query its authoritative live inventory. In the following examples, replace <code>gateway/CREATION</code> with a complete ID returned by selection or Tab completion:</p>
+<pre data-lang="Burrow management"><code>chain select gateway
+chain http gateway gateway/CREATION http://internal.example:8080/health
+chain export gateway gateway/CREATION http://internal.example:8080/health</code></pre>
+<p><code>chain http</code> presents a review. The TUI uses its existing confirmation dialog; Escape cancels without a request. The CLI returns a digest: repeat with <code>--review DIGEST --yes</code> to bind approval to that exact selection. <code>chain export</code> returns saved-chain JSON without traffic; redirect the CLI output into a file and execute it with the same Hovel throw workflow shown above.</p>
+<table><thead><tr><th>Forward</th><th>HTTP route</th><th>URL</th></tr></thead><tbody>
+<tr><td>Local (L)</td><td>The owner dials the existing local listener; SSH reaches its fixed remote destination.</td><td>Host and port must match that fixed destination.</td></tr>
+<tr><td>Reverse (R)</td><td>An OpenSSH <code>-W</code> channel asks the SSH server to connect to its own reverse listener, which forwards back to the local destination.</td><td>Host and port must match the fixed destination on the SSH client side.</td></tr>
+<tr><td>SOCKS (D)</td><td>The owner uses the existing SOCKS5 listener, delegating hostname resolution to the SSH server.</td><td>An explicit hostname or IP destination selected for this request.</td></tr>
+</tbody></table>
+<p>The reverse path requires the existing server forwarding permissions and verified Linux listener exposure. It needs no remote Python or HTTP client. Loopback defaults and explicitly requested bind addresses are preserved; wildcard listeners are contacted through the corresponding loopback address. Inventory and use recheck the retained master and listener. Server-forced reverse exposure remains subject to the existing post-allocation observation and cleanup limitation.</p>
+<h2>Results and lifetime</h2>
+<p>The HTTP operation supports one GET over plain HTTP, an eight-second operation bound and at most 1 MiB of response body. It does not follow redirects, inherit ambient HTTP proxies, accept proxy credentials, or support authenticated requests, query strings or TLS. All request fields are recorded: never place secrets in URL paths. A complete HTTP exchange records the actual status, including 3xx/4xx/5xx; that establishes transport success, not application health.</p>
+<p>Hovel stores a JSON artifact with the exact non-secret tunnel selection, request URL, run correlation, HTTP status, byte count and response SHA256. Body and header contents are discarded. Timeout, malformed/incomplete response or a body over the bound produces a failed result. Failure to store evidence must not be reported as successful collection. Inspect artifacts through Hovel after the operation, including when a caller disconnected after dispatch; do not automatically retry a request whose outcome is uncertain.</p>
+<p>Selection binds workspace, manager session/generation, connection creation and tunnel creation. Removing and recreating the same port produces a different ID. Missing selections, changed identities, removed tunnels, closed connections and master loss fail without login, provisioning or fallback. Concurrent consumers retain shared forwarding; ending a consumer or its frontend does not remove it. Explicit listener removal or connection close waits for admitted bounded consumers, then performs the existing cleanup. Collected artifacts survive teardown.</p>
+<p>This is the accepted owner-mediated HTTP consumer, not transparent routing of arbitrary Hovel modules or a generic Mesh bridge. Direct same-user manipulation of control sockets remains outside the owner's inventory contract. The pinned public session-command workaround from issue #34 remains nonblocking; session commands themselves do not certify throw approval. Use the confirmed chain/module route for execution.</p>
+<h2>Checks and provenance</h2>
+<pre data-lang="Aspect"><code>aspect burrow chains-check
+aspect burrow-check ci
+aspect burrow-check
+aspect burrow-site check</code></pre>
+<p>The focused disposable lab covers real selected L/R/SOCKS hostname traffic, confirmation rejection, concurrent consumers, caller disconnect, stale same-port identities, removal, master loss, retained evidence and a confirmed SSH connection handoff. It uses the existing digest-pinned OpenSSH image and declared SHA256-pinned Alpine 3.24 x86_64 packages: Dropbear 2026.91-r0 (MIT), utmps 0.1.3.3-r0 and skalibs 2.15.0.0-r0 (ISC). These packages are fixtures, not Burrow runtime dependencies or distributed target payloads; their exact URLs, hashes and package provenance are recorded in <code>MODULE.bazel</code>. The container owns fixture-server cleanup.</p>
+<p>The owner explicitly added chain-originated connection creation to issue #62 on 2026-09-19. It remains a distinct operation: the existing-tunnel consumer never provisions or reconnects. Uploading or starting Dropbear remains outside this change.</p>
+</article>

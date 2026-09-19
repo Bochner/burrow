@@ -147,9 +147,14 @@ func (m ui) suggestions() []string {
 	}
 	line := m.input.Value()
 	values := connection.CommandSuggestions(line, m.connections)
+	values = append(values, "chain select ", "chain http ", "chain export ", "chain connect ")
 	values = append(values, "reports", "report ", "run list", "run prepare ", "run now ", "run survey ")
 	for _, s := range m.connections {
 		if s.State == "connected" && s.Generation != "" {
+			values = append(values, "chain select "+s.Name)
+			if s.Proxy.ID != "" && s.Proxy.State == "listening" {
+				values = append(values, "chain http "+s.Name+" "+s.Proxy.ID+" http://", "chain export "+s.Name+" "+s.Proxy.ID+" http://")
+			}
 			values = append(values, "run prepare "+s.Name+" -- ", "run now "+s.Name+" -- ", "run survey "+s.Name+" --os ubuntu")
 		}
 	}
@@ -169,6 +174,9 @@ func (m ui) suggestions() []string {
 	if m.tunnelError == "" {
 		for _, t := range m.tunnels {
 			values = append(values, "tunnel remove "+t.ID, "tunnel check "+t.ID, "tund "+t.ID)
+			if t.State == "listening" {
+				values = append(values, "chain http "+t.Connection+" "+t.ID+" http://"+t.Destination+"/", "chain export "+t.Connection+" "+t.ID+" http://"+t.Destination+"/")
+			}
 		}
 	}
 	for _, id := range m.shellIDs {
@@ -200,9 +208,13 @@ func (m ui) suggestions() []string {
 }
 
 var completionDescriptions = map[string]string{
-	"run follow": "ID [stdout|stderr] [OFFSET] · independent live viewer",
-	"run survey": "CONNECTION --os ubuntu · review, run and save Markdown report",
-	"reports":    "Browse saved Markdown reports", "report": "ID · open a saved report",
+	"chain select":  "CONNECTION · authoritative live forwarding identities",
+	"chain http":    "CONNECTION TUNNEL_ID URL · review HTTP and collect result",
+	"chain export":  "CONNECTION TUNNEL_ID URL · saved Hovel chain JSON, no execution",
+	"chain connect": "NAME HOST USER [options] · saved Hovel SSH connection chain JSON",
+	"run follow":    "ID [stdout|stderr] [OFFSET] · independent live viewer",
+	"run survey":    "CONNECTION --os ubuntu · review, run and save Markdown report",
+	"reports":       "Browse saved Markdown reports", "report": "ID · open a saved report",
 	"--local":  "Run the tool on the daemon host with selected connection context",
 	"--script": "Local script inside the workspace upload root", "--mode": "Explicit stream, inline or remote stage semantics", "--interpreter": "Absolute interpreter path on the selected execution host", "--stdin": "Independent binary input from the upload root", "--keep": "Keep explicitly staged files", "--timeout": "Execution deadline, such as 30s or 5m", "--budget": "Positive output byte budget per stream",
 	"run now": "CONNECTION [--local] -- COMMAND [ARG...] · review, launch, wait and collect", "run prepare": "CONNECTION -- COMMAND [ARG...] · no execution", "run launch": "Launch once; --collect waits and saves output", "run list": "List retained local/remote runs", "run inspect": "Local/remote status, capture and cleanup", "run output": "Read stdout/stderr at a byte offset", "run cancel": "Request ordinary process-group termination", "run collect": "Register output as Hovel evidence", "run close": "Drop working output; preserve collected evidence",

@@ -3,7 +3,7 @@ exports_files(["lab-image.txt", "hovel-module.yaml", "survey_ubuntu.sh"])
 go_library(
     name = "connection",
     embedsrcs = ["hovel-module.yaml", "survey_ubuntu.sh"],
-    srcs = ["audit.go", "module.go", "connection_linux.go", "commands.go", "profiles.go", "prompt_linux.go", "ssh_config.go", "manager.go", "forward.go", "proxy.go", "files.go", "remote_files.go", "downloads.go", "runs.go", "scripts.go", "survey.go"],
+    srcs = ["audit.go", "module.go", "connection_linux.go", "commands.go", "profiles.go", "prompt_linux.go", "ssh_config.go", "manager.go", "forward.go", "proxy.go", "files.go", "remote_files.go", "downloads.go", "runs.go", "scripts.go", "survey.go", "chains.go"],
     importpath = "github.com/Bochner/burrow/core/connection",
     visibility = ["//visibility:public"],
     deps = ["//core/launch", "//core/reports", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix", "@com_github_pkg_sftp//:sftp"],

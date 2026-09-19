@@ -115,7 +115,7 @@ func (m *manager) Close(string) error {
 }
 
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "download-review", ReadOnly: true}, {Name: "downloads", ReadOnly: true}, {Name: "download-cancel"}, {Name: "download", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
+	return []hovel.PayloadCommand{{Name: "chain-inventory", ReadOnly: true}, {Name: "tunnel-http", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "download-review", ReadOnly: true}, {Name: "downloads", ReadOnly: true}, {Name: "download-cancel"}, {Name: "download", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
 }
 
 func (m *manager) inventory() ([]State, error) {
@@ -148,6 +148,12 @@ func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 	}
 	if req.Command == "files" {
 		return m.filesCommand(req)
+	}
+	if req.Command == "chain-inventory" {
+		return m.chainInventory(req)
+	}
+	if req.Command == "tunnel-http" {
+		return m.consumeTunnel(req)
 	}
 	if req.Command == "download-review" || req.Command == "downloads" || req.Command == "download-cancel" {
 		return m.downloadCommand(req)
@@ -315,6 +321,10 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 		return runAdapter(ctx, w)
 	}
 	switch ctx.InputString("action", "") {
+	case "chain-connect":
+		return chainConnectAdapter(ctx, w)
+	case "tunnel-http":
+		return tunnelHTTPAdapter(ctx, w)
 	case "download":
 		raw := ctx.InputString("request", "")
 		r, err := decodeDownload(raw)

@@ -115,6 +115,53 @@ func TestAuthenticationPopup(t *testing.T) {
 	}
 }
 
+func TestChainCommandPresentation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/chain-ui"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		u := m.current().management
+		u.connections = []connection.State{{Name: "gateway", State: "connected", Generation: "owner", Proxy: connection.Tunnel{ID: "gateway/" + strings.Repeat("b", 32), State: "listening"}}}
+		u.tunnelError = ""
+		u.tunnels = []connection.Tunnel{{ID: "gateway/" + strings.Repeat("a", 32), Connection: "gateway", State: "listening", Direction: "L", Destination: "localhost:8080"}}
+		u.input.SetValue("chain http gateway ")
+		found := false
+		for _, suggestion := range u.suggestions() {
+			if strings.Contains(suggestion, u.tunnels[0].ID) && strings.HasPrefix(suggestion, "chain http gateway ") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("chain completion lost live tunnel identity")
+		}
+		line := "chain http gateway " + u.tunnels[0].ID + " http://localhost:8080/"
+		frameEvent(m, tea.PasteMsg{Content: line})
+		// Recap arrives through the existing async review boundary.
+		m.reviewText = "HTTP through existing tunnel\nConnection: gateway\nTunnel: " + u.tunnels[0].ID + "\nURL: http://localhost:8080/\nLimit: 8 seconds; 1 MiB response"
+		m.modal = "review"
+		m.formTitle = "Proceed?"
+		m.form = confirmForm("Proceed?", m.reviewText, "Proceed", "Cancel")
+		m.sizeForm()
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("chain-review-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "Proceed?") {
+				t.Fatal("chain recap lost approval at narrow size")
+			}
+			if size.X >= 160 && !plain {
+				assertTextRole(t, screen, m.dialogBounds(), "Connection:", lavenderColor)
+				assertTextRole(t, screen, m.dialogBounds(), "gateway", lavenderColor)
+				assertTextRole(t, screen, m.dialogBounds(), "http://localhost:8080/", "#f5c2e7")
+			}
+		}
+		if got := u.syntax(line, false); ansi.Strip(got) != line {
+			t.Fatal("chain highlighting changed command")
+		} else if !plain && !strings.Contains(got, "\x1b[") {
+			t.Fatal("chain command lacks semantic colors")
+		}
+	}
+}
+
 func TestLiveOutputNavigation(t *testing.T) {
 	for _, plain := range []bool{false, true} {
 		m := newFrame(launch.Info{Workspace: "/tmp/live-view"}, plain, launch.Options{})

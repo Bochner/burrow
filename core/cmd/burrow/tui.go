@@ -455,7 +455,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return shellRequested{args[1]} }
 				}
 				m.output = "Running reviewed command through Hovel…"
-				if args[0] == "run" && (args[1] == "survey" || args[1] == "now" || args[1] == "launch" || args[1] == "cancel" || args[1] == "collect" || args[1] == "close") {
+				if (args[0] == "chain" && args[1] == "http") || (args[0] == "run" && (args[1] == "survey" || args[1] == "now" || args[1] == "launch" || args[1] == "cancel" || args[1] == "collect" || args[1] == "close")) {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
 				if (args[0] == "proxy" && args[1] != "inspect") || args[0] == "tunc" || (args[0] == "tund" && len(args) == 2) || (args[0] == "tunnel" && (args[1] == "create" || (args[1] == "remove" && len(args) == 3))) || args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
@@ -749,6 +749,16 @@ Stage uploads only after review; --keep retains it, otherwise only owned files a
 --timeout 30s requests cancellation; failed/unconfirmed staging cleanup remains visible.
 Tab completes script options, modes and interpreter examples; select an installed interpreter.
 Output shows the next byte offset. Cancel active runs before close; never put secrets in arguments.
+
+# HOVEL CHAINS
+chain select CONNECTION	Query current forward/SOCKS identities from the connection owner
+chain http CONNECTION TUNNEL_ID URL	Review HTTP through that existing tunnel; collect metadata and hash
+chain export CONNECTION TUNNEL_ID URL	Generate saved Hovel consumer-chain JSON without execution
+chain connect NAME HOST USER [options]	Generate a chain to connect to a running OpenSSH/Dropbear server
+Export CLI JSON to a file, then execute with Hovel throw and its normal confirmation.
+HTTP GET only: 8 seconds, 1 MiB, no redirects, TLS, credentials or query strings.
+Use a fixed forward's destination in URL; SOCKS accepts an explicit hostname.
+No automatic tunnel creation/reconnect. Dropbear upload/start is separate deployment work.
 
 # FORWARDING
 tunnel create NAME forward|reverse	Create a local or reverse listener; the prompt guides arguments

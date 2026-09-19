@@ -26,6 +26,15 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         assert result.returncode != 0 and "name must" in result.stderr, result
         assert not workspace.exists()
     for args, message in [
+        (["chain"], "chain select CONNECTION"),
+        (["chain", "select", "../escape"], "name must"),
+        (["chain", "http", "gateway", "gateway/" + "a" * 32, "http://user:SYNTHETIC-NOT-A-REAL-SECRET@example.test/"], "without credentials"),
+        (["chain", "http", "gateway", "gateway/" + "a" * 32, "http://example.test/?token=SYNTHETIC-NOT-A-REAL-SECRET"], "without credentials"),
+        (["chain", "http", "gateway", "gateway/" + "a" * 32, "https://example.test/"], "http://HOST"),
+        (["chain", "http", "gateway", "other/" + "a" * 32, "http://example.test/"], "complete tunnel"),
+        (["chain", "connect", "gateway", "localhost", "tester", "--prompt"], "connection-only"),
+        (["chain", "connect", "gateway", "localhost", "tester", "-proxy"], "connection-only"),
+        (["chain", "connect", "gateway", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection"),
         (["run"], "run prepare CONNECTION"),
         (["run", "prepare", "gateway", "--local", "--", "relative-tool"], "absolute executable"),
         (["run", "prepare", "gateway", "--local", "--script", "a.sh", "--mode", "stage", "--interpreter", "/bin/sh", "--"], "does not stage"),

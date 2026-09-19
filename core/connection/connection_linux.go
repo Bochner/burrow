@@ -187,6 +187,7 @@ type owner struct {
 	fileCancel      context.CancelFunc
 	fileCancelled   map[string]time.Time
 	tunnels         map[string]Tunnel
+	tunnelUse       sync.RWMutex
 	manager         *manager
 	prepared        []byte
 	profile         Profile
@@ -410,6 +411,8 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
 }
 func (s *owner) Close(reason string) (failure error) {
+	s.tunnelUse.Lock()
+	defer s.tunnelUse.Unlock()
 	s.mu.Lock()
 	state := s.state
 	s.mu.Unlock()

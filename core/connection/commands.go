@@ -19,7 +19,29 @@ import (
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 )
 
-const Help = `run survey CONNECTION --os ubuntu [--yes] Review, run and save an Ubuntu Markdown report
+const Help = `chain select CONNECTION             Query live forwards and SOCKS identities from their owner
+chain http CONNECTION TUNNEL_ID URL [--yes] Review HTTP through exactly that existing tunnel
+chain export CONNECTION TUNNEL_ID URL Export a saved Hovel consumer chain as JSON; no execution
+chain connect NAME HOST USER [options] Export a saved Hovel connection chain; no authentication yet
+Connection options: --key PATH, --agent PATH, --port NUMBER, --ssh-config PATH, --jump HOST.
+A confirmed connection chain waits for authentication and registers a live named Burrow connection.
+Requires an already-running OpenSSH/Dropbear server and usable local key/agent; no deployment.
+Existing names are refused; no adoption or automatic reconnect. Close via close NAME.
+Exported chains bind this workspace/build and exact settings; regenerate after changes/upgrades.
+Save CLI JSON to a file, then use hovel throw FILE --workspace PATH --allow-dangerous --json.
+Hovel prompts normally; headless callers need matching confirmation or explicitly choose --now.
+Consumers never create resources. Chain connect is a separate explicit creation operation.
+HTTP is GET only, at most 8 seconds and 1 MiB; no TLS, redirects, credentials or query strings.
+For L/R forwards, URL host/port must match the fixed destination. SOCKS accepts a hostname URL.
+Reverse traffic originates at the SSH server through -W; no Python or remote helper is needed.
+All request fields are public evidence: never put secrets in URL paths or connection arguments.
+Hovel artifacts retain owner/tunnel identity, HTTP status, byte count and response SHA256,
+without response bodies/headers. HTTP errors retain their status; routing/capture failures fail.
+--review HASH binds CLI --yes to the recap. TUI uses the normal review dialog.
+Concurrent consumers share forwarding; removal/close waits for bounded requests to finish.
+Client disconnect stops waiting, not shared forwarding. Already-collected evidence survives close.
+
+run survey CONNECTION --os ubuntu [--yes] Review, run and save an Ubuntu Markdown report
 Survey uses a fixed read-only preset through /bin/sh, without sudo or installed helpers.
 Checks: OS/kernel, identity, uptime/load/memory, disks, addresses/routes, listening ports,
 and failed services. Each probe needs timeout (5 seconds); missing/failed checks are labelled.
@@ -349,6 +371,8 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "chain":
+		return validateChain(workspace, args)
 	case "run":
 		_, _, _, err := parseRun(args)
 		if err == nil && len(args) > 2 && (args[1] == "prepare" || args[1] == "now" || args[1] == "survey") {
@@ -589,7 +613,7 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 		return executeOperation(ctx, w, args, promptSocket)
 	}
 	switch args[0] {
-	case "run", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
+	case "chain", "run", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
 		a, err := launch.BeginAudit(w, commandIdentity(args), "submitted request; see owner result", nil)
 		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove") || (args[0] == "run" && (args[1] == "cancel" || args[1] == "close"))
 		if err != nil && !cleanup {
@@ -631,6 +655,8 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		return execute(ctx, w, expanded, promptSocket)
 	}
 	switch args[0] {
+	case "chain":
+		return executeChain(ctx, w, args)
 	case "run":
 		return executeRun(ctx, w, args)
 	case "reports":

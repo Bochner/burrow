@@ -377,6 +377,10 @@ func (m *manager) tunnelCommand(req hovel.PayloadCommandRequest) (hovel.PayloadC
 		if s == nil {
 			return hovel.PayloadCommandResult{}, fmt.Errorf("tunnel connection unavailable")
 		}
+		if req.Command == "unforward" {
+			s.tunnelUse.Lock()
+			defer s.tunnelUse.Unlock()
+		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		t, ok := s.tunnels[req.Args[2]]
