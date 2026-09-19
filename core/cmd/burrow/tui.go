@@ -726,6 +726,7 @@ run prepare NAME -- COMMAND [ARG...]	Prepare on an already connected SSH target;
 run prepare NAME -- ps -elf	Example: prepare a remote process listing without executing yet
 run now NAME -- ps -elf	Review once, launch, wait and collect; view output with Ctrl+L
 run now NAME --yes -- COMMAND [ARG...]	Explicitly skip review; put Burrow options before --
+run now NAME --local -- /usr/bin/tool [ARG...]	Review a local tool using selected socket/config context
 run prepare NAME --script PATH --mode MODE --interpreter PATH -- [ARG...]	Prepare a local script snapshot; mode is stream, inline or stage
 run now NAME --script check.sh --mode stream --interpreter /bin/sh --	Review, execute and collect a local shell script
 run now NAME --stdin data.bin -- /bin/sh /opt/check.sh	Existing remote script with independent binary input
@@ -734,7 +735,7 @@ run list	List retained runs in this workspace
 run inspect ID	Inspect execution status, output completeness and storage budget
 run output ID stdout|stderr OFFSET	Read a safely displayed preview; start with offset 0
 run follow ID [stdout|stderr] [OFFSET]	Open live output; Tab streams, End follow, Esc closes viewer only
-run cancel ID	Review cancellation of the ordinary remote process group
+run cancel ID	Review cancellation of the run's ordinary process group; local stop proves no remote cleanup
 run collect ID	Review saving completed or partial output as Hovel evidence
 run close ID	Review removal of working output; collected evidence remains
 Use the id returned by prepare. Leaving the view does not cancel execution.

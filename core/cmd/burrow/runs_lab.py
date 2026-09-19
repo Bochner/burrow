@@ -484,7 +484,7 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     master_loss_checks()
 
 
-def run_ui(binary, env, decoder, burrow, workspace, connection):
+def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
     import fcntl
     import pty
     import select
@@ -492,8 +492,10 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
     import termios
 
     script = Path(burrow(workspace, "local")["upload"]) / "viewer script.sh"
+    execution = ["--local"] if local else []
+    mode = "stream" if local else "stage"
     script.write_text("printf 'retained viewer output\\nremote\\033]52;c;untrusted\\007\\n'; printf 'viewer stderr\\n' >&2; exit 7\n")
-    saved = burrow(workspace, "run", "prepare", connection, "--script", script.name, "--mode", "stage", "--interpreter", "/bin/sh", "--")
+    saved = burrow(workspace, "run", "prepare", connection, *execution, "--script", script.name, "--mode", mode, "--interpreter", "/bin/sh", "--")
     burrow(workspace, "run", "launch", saved["id"], "--yes")
     deadline = time.monotonic() + 15
     while burrow(workspace, "run", "inspect", saved["id"])["state"] == "running":
@@ -501,7 +503,7 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
         time.sleep(.1)
     burrow(workspace, "run", "collect", saved["id"], "--yes")
     burrow(workspace, "run", "close", saved["id"], "--yes")
-    prepared = burrow(workspace, "run", "prepare", connection, "--", "/bin/sh", "-c",
+    prepared = burrow(workspace, "run", "prepare", connection, *execution, "--", "/bin/sh", "-c",
                       "printf 'remote\\033]52;c;untrusted\\007'; sleep 60")
     run_id = prepared["id"]
     outer, slave = pty.openpty()
@@ -534,6 +536,8 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
         wait("Collected output")
         wait("retained viewer output")
         wait("FAILED (exit 7)")
+        if local:
+            wait("local tool; remote outcome unconfirmed")
         for width, height in ((200, 50), (120, 30), (80, 24), (160, 40)):
             while select.select([outer], [], [], .05)[0]:
                 output.extend(os.read(outer, 65536))
@@ -569,6 +573,11 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
         wait("Proceed?")
         os.write(outer, b"\t\r")
         wait('"launchRunID"')
+        if local:
+            os.write(outer, ("run follow " + run_id + "\r").encode())
+            wait("running · local")
+            os.write(outer, b"\x1b")
+            wait("COMMAND OUTPUT")
         os.write(outer, ("run output " + run_id + " stdout 0\r").encode())
         wait("remote\\u001b]52;c;untrusted\\u0007")
         # The one-step path must review and launch the same newly prepared ID.
@@ -596,8 +605,10 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
         wait("    --yes")
         os.write(outer, b"\x0c")
         wait("COMMAND OUTPUT")
-        os.write(outer, ("run now " + connection + " --script " + shlex.quote(script.name) + " --mode stage --interpreter /bin/sh --\r").encode())
+        os.write(outer, ("run now " + connection + (" --local" if local else "") + " --script " + shlex.quote(script.name) + " --mode " + mode + " --interpreter /bin/sh --\r").encode())
         wait("Proceed?")
+        if local:
+            wait("local (on the daemon host)")
         cancelled, = [r for r in burrow(workspace, "run", "list") if r["id"] not in before_now]
         os.write(outer, b"\x1b")
         wait("COMMAND OUTPUT")
@@ -607,7 +618,10 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
         os.write(outer, b"\t\r")
         wait('"launchRunID"')
         completed = burrow(workspace, "run", "inspect", cancelled["id"])
-        assert completed["remoteExit"] == 7 and completed["stageCleanup"] == "removed", completed
+        if local:
+            assert completed["localExit"] == 7 and completed["remoteExit"] is None, completed
+        else:
+            assert completed["remoteExit"] == 7 and completed["stageCleanup"] == "removed", completed
         burrow(workspace, "run", "close", cancelled["id"], "--yes")
         os.write(outer, b"quit\r")
         wait("Keep running")

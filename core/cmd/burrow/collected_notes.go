@@ -75,9 +75,13 @@ func writeCollectedNotes(ctx context.Context, workspace string, dst io.Writer) (
 			continue
 		}
 		outcome := "UNKNOWN · " + safe(run.State)
-		if run.RemoteExit != nil {
-			outcome = fmt.Sprintf("FAILED (exit %d)", *run.RemoteExit)
-			if *run.RemoteExit == 0 {
+		exit := run.RemoteExit
+		if run.Execution == "local" {
+			exit = run.LocalExit
+		}
+		if exit != nil && run.State == "exited" {
+			outcome = fmt.Sprintf("FAILED (exit %d)", *exit)
+			if *exit == 0 {
 				outcome = "SUCCEEDED (exit 0)"
 			}
 		} else if strings.HasPrefix(run.State, "cancelled") {
@@ -86,6 +90,17 @@ func writeCollectedNotes(ctx context.Context, workspace string, dst io.Writer) (
 			outcome = "TIMED OUT · ordinary group terminated"
 		} else if run.State == "staging-failed" {
 			outcome = "FAILED · staging; script not launched"
+		} else if run.State == "local-start-failed" {
+			outcome = "FAILED · local tool not launched"
+		} else if run.State == "local-signaled" {
+			outcome = "FAILED · local tool terminated by signal"
+		}
+		if run.Execution == "local" {
+			fmt.Fprintln(out, "  Execution: local tool on daemon host")
+			outcome += " · local tool; remote outcome unconfirmed"
+			if run.LocalSignal != "" {
+				outcome += " · signal " + safe(run.LocalSignal)
+			}
 		}
 		capture := "INCOMPLETE"
 		if run.OutputComplete {

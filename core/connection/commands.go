@@ -20,9 +20,17 @@ import (
 
 const Help = `run prepare CONNECTION [--budget BYTES] -- COMMAND [ARG...] Prepare without execution
 run now CONNECTION [--budget BYTES] [--yes] -- COMMAND [ARG...] Review, launch, wait and collect a fresh run
+run now CONNECTION --local [--yes] -- /absolute/TOOL [ARG...] Run locally with selected connection context
 run prepare CONNECTION --script PATH --mode stream|inline|stage --interpreter PATH -- [ARG...]
 run now CONNECTION --script PATH --mode stream|inline|stage --interpreter PATH [--yes] -- [ARG...]
-Script/command options before --: --stdin PATH, --timeout DURATION, --budget BYTES.
+Script/command options before --: --local, --stdin PATH, --timeout DURATION, --budget BYTES.
+--local executes on the daemon host in the workspace directory; command paths must be absolute.
+Local tools receive PATH=/usr/bin:/bin, LANG=C.UTF-8, BURROW_WORKSPACE, BURROW_CONNECTION,
+BURROW_SOCKET, BURROW_SSH_CONFIG and BURROW_SSH_HOST; no inherited credentials or launch keys.
+Local scripts support stream/inline snapshots; stage/keep is remote-only.
+Local results use localExit/localSignal; remoteExit stays null, including local SSH exit 255.
+Local cancel sends TERM then KILL to the ordinary local group; remote termination stays unconfirmed.
+Raw same-user socket commands have no per-command Hovel approval/audit or remote cleanup guarantee.
 --keep is only for explicit stage mode and retains uploaded files after the run.
 Local script/stdin paths are confined to the workspace upload root; relative paths start there.
 Preparation snapshots up to 256 MiB per input in private files, binding hashes to review.
@@ -41,12 +49,12 @@ run list                            Discover retained runs in this workspace
 run inspect ID                      Execution, output completeness, budget and cleanup
 run follow ID [stdout|stderr] [OFFSET] Open a live terminal viewer; Esc closes only the viewer
 run output ID stdout|stderr OFFSET   Read up to 32 KiB at a byte offset (CLI: base64)
-run cancel ID [--yes]                Review/request ordinary remote group termination
+run cancel ID [--yes]                Review/request ordinary process-group termination
 run collect ID [--yes]               Register completed/partial output as Hovel artifacts
 run close ID [--yes]                 Drop working output; registered artifacts remain
 TUI mutations open the shared review dialog; CLI repeats with --yes to confirm.
 Repeated launch never repeats the action; viewing/quit does not cancel a run.
-Commands reuse the selected master with no fresh login, implicit staging or remote Python.
+Remote commands reuse the selected master with no fresh login, implicit staging or remote Python.
 Arguments are quoted individually; use /bin/sh -c explicitly for shell syntax.
 Commands/arguments cannot carry secrets: Hovel records the request, and SSH argv is visible.
 Default storage: 268435456 bytes per stream; --budget sets a positive byte count.
@@ -54,7 +62,7 @@ Separate private local stdout/stderr files retain all bytes within that budget.
 Budget/write failures mark incomplete capture and retain collectible partial output.
 There is no implicit execution timeout. Output reads do not collect evidence.
 Run success, transport/completion uncertainty and collection success are separate.
-Cancellation needs Linux /proc identity and an ordinary OpenSSH process group.
+Remote cancellation needs Linux /proc identity and an ordinary OpenSSH process group.
 PID checking and signalling are not atomic; escaped descendants and cleanup after
 connection loss remain unconfirmed. Stopping local SSH proves no remote cleanup.
 Active runs must be cancelled before close. Closing a connection loses its run access.

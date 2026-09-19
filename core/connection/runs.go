@@ -33,6 +33,9 @@ type Run struct {
 	LaunchRunID    string   `json:"launchRunID"`
 	Connection     State    `json:"connection"`
 	Command        []string `json:"command"`
+	Execution      string   `json:"execution"`
+	LocalExit      *int     `json:"localExit"`
+	LocalSignal    string   `json:"localSignal,omitempty"`
 	Input          RunInput `json:"input"`
 	Staging        string   `json:"staging,omitempty"`
 	StageCleanup   string   `json:"stageCleanup,omitempty"`
@@ -55,11 +58,12 @@ type Run struct {
 type runRequest struct {
 	Connection State    `json:"connection"`
 	Command    []string `json:"command"`
+	Execution  string   `json:"execution"`
 	Budget     int64    `json:"budgetPerStream"`
 	Input      RunInput `json:"input"`
 }
 
-type remoteRun struct {
+type retainedRun struct {
 	control                   sync.Mutex
 	mu                        sync.Mutex
 	workspace                 string
@@ -79,7 +83,7 @@ type remoteRun struct {
 }
 
 func parseRun(args []string) (runRequest, bool, string, error) {
-	r := runRequest{Budget: 256 << 20}
+	r := runRequest{Budget: 256 << 20, Execution: "remote"}
 	if len(args) > 1 && args[1] == "follow" {
 		_, _, err := FollowArgs(args)
 		return r, false, "", err
@@ -100,6 +104,9 @@ func parseRun(args []string) (runRequest, bool, string, error) {
 		yes, budgetSet := false, false
 		for i < len(args) && args[i] != "--" {
 			switch {
+			case args[i] == "--local" && r.Execution != "local":
+				r.Execution = "local"
+				i++
 			case args[i] == "--keep" && !r.Input.Keep:
 				r.Input.Keep = true
 				i++
@@ -195,6 +202,17 @@ func RunWaits(args []string) bool {
 }
 
 func validateRunRequest(r runRequest) error {
+	if r.Execution != "remote" && r.Execution != "local" {
+		return fmt.Errorf("execution must be remote or local")
+	}
+	if r.Execution == "local" {
+		if r.Input.Mode == "stage" {
+			return fmt.Errorf("local execution does not stage remote files; select stream or inline, or invoke an existing local file")
+		}
+		if r.Input.Script.Path == "" && (len(r.Command) == 0 || !filepath.IsAbs(r.Command[0])) {
+			return fmt.Errorf("local tool requires an absolute executable path")
+		}
+	}
 	if err := r.Input.validate(); err != nil {
 		return err
 	}
@@ -309,13 +327,22 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 		hash = digest("launch-collect" + state.ID + string(bound))
 	}
 	if !yes {
-		text := fmt.Sprintf("Run: %s\nConnection: %s\nEndpoint: %s@%s:%d\nAction: %s\nCommand: %s\nOutput budget: %d bytes per stream.\nUncollected output can be lost on module/daemon failure. Commands/arguments must not contain secrets.", state.ID, state.Connection.Name, state.Connection.User, state.Connection.Host, state.Connection.Port, args[1], quoteCommand(state.Command), state.Budget)
+		text := fmt.Sprintf("Run: %s\nExecution: %s\nConnection: %s\nEndpoint: %s@%s:%d\nAction: %s\nCommand: %s\nOutput budget: %d bytes per stream.\nUncollected output can be lost on module/daemon failure. Commands/arguments must not contain secrets.", state.ID, state.Execution, state.Connection.Name, state.Connection.User, state.Connection.Host, state.Connection.Port, args[1], quoteCommand(state.Command), state.Budget)
 		text += state.Input.review()
+		if state.Execution == "local" {
+			text = strings.Replace(text, "Execution: local\n", "Execution: local (on the daemon host)\n", 1)
+			text += "\nWorking directory: " + w + "\nEnvironment:"
+			for _, entry := range state.localEnvironment(w) {
+				key, value, _ := strings.Cut(entry, "=")
+				text += "\n" + key + ": " + value
+			}
+			text += "\nCancellation stops only the local ordinary process group; remote termination is unconfirmed. Raw socket commands do not receive per-command Hovel approval or audit."
+		}
 		if args[1] == "close" {
 			text += "\nClose removes uncollected working output; registered Hovel artifacts remain."
 		}
 		if RunWaits(args) {
-			text += "\nWait for completion, then collect stdout, stderr and the result as Hovel evidence for Ctrl+L Results. Stopping the wait does not cancel the remote command."
+			text += "\nWait for completion, then collect stdout, stderr and the result as Hovel evidence for Ctrl+L Results. Stopping the wait does not cancel the run."
 		}
 		return map[string]string{"review": text, "digest": hash}, nil
 	}
@@ -333,7 +360,7 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 		for result.State == "running" {
 			select {
 			case <-ctx.Done():
-				return result, fmt.Errorf("wait stopped; remote command was not cancelled: %w", ctx.Err())
+				return result, fmt.Errorf("wait stopped; run was not cancelled: %w", ctx.Err())
 			case <-time.After(250 * time.Millisecond):
 			}
 			if err := runControl(ctx, w, state.ID, "run-inspect", nil, &result); err != nil {
@@ -407,7 +434,13 @@ func runAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 		if err != nil {
 			return hovel.Result{}, err
 		}
-		r := &remoteRun{workspace: w, dir: dir, root: root, done: make(chan struct{}), identityReady: make(chan struct{}), record: Run{RunID: ctx.RunID, OwnerPID: os.Getpid(), Connection: req.Connection, Command: req.Command, Budget: req.Budget, Input: req.Input, State: "prepared", Cancellation: "not-requested", CleanupScope: "ordinary process group only; escaped descendants and post-loss recovery unconfirmed"}}
+		r := &retainedRun{workspace: w, dir: dir, root: root, done: make(chan struct{}), identityReady: make(chan struct{}), record: Run{RunID: ctx.RunID, OwnerPID: os.Getpid(), Connection: req.Connection, Command: req.Command, Budget: req.Budget, Input: req.Input, State: "prepared", Cancellation: "not-requested", CleanupScope: "ordinary process group only; escaped descendants and post-loss recovery unconfirmed"}}
+		r.record.Execution = req.Execution
+		transport := "ssh"
+		if req.Execution == "local" {
+			transport = "local"
+			r.record.CleanupScope = "local ordinary process group only; remote termination and escaped descendants unconfirmed"
+		}
 		for i, name := range []string{"stdout", "stderr"} {
 			r.files[i], err = root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 			if err != nil {
@@ -418,7 +451,7 @@ func runAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 		if err := r.prepareInputs(c); err != nil {
 			return hovel.Result{}, errors.Join(err, r.Close("prepare failed"))
 		}
-		ref, err := ctx.OpenSession(r, hovel.WithName("Run on "+req.Connection.Name), hovel.WithKind(runKind), hovel.WithTransport("ssh"))
+		ref, err := ctx.OpenSession(r, hovel.WithName(req.Execution+" run · "+req.Connection.Name), hovel.WithKind(runKind), hovel.WithTransport(transport))
 		if err != nil {
 			r.Close("prepare failed")
 			return hovel.Result{}, err
@@ -428,7 +461,7 @@ func runAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 		state := r.record
 		r.mu.Unlock()
 		data, _ := json.Marshal(state)
-		ctx.Log.Info("retained command prepared; no remote command launched")
+		ctx.Log.Info("retained command prepared; no command launched")
 		return hovel.Ok(nil, hovel.WithSummary(string(data))), nil
 	}
 	id := ctx.InputString("session", "")
@@ -496,16 +529,16 @@ func runAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 	return hovel.Ok(nil, hovel.WithSummary(string(data)), hovel.WithArtifacts(artifacts...)), nil
 }
 
-func (r *remoteRun) Open() error                        { return nil }
-func (r *remoteRun) Read(time.Duration) ([]byte, error) { return nil, nil }
-func (r *remoteRun) Write([]byte) error {
+func (r *retainedRun) Open() error                        { return nil }
+func (r *retainedRun) Read(time.Duration) ([]byte, error) { return nil, nil }
+func (r *retainedRun) Write([]byte) error {
 	return fmt.Errorf("use typed run controls; terminal input never launches a command")
 }
-func (r *remoteRun) Closed() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.closed }
-func (r *remoteRun) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
+func (r *retainedRun) Closed() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.closed }
+func (r *retainedRun) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
 	return []hovel.PayloadCommand{{Name: "run-inspect", ReadOnly: true}, {Name: "run-output", ReadOnly: true}, {Name: "run-launch", Destructive: true}, {Name: "run-cancel", Destructive: true}, {Name: "run-collect", ReadOnly: true}}, nil
 }
-func (r *remoteRun) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
+func (r *retainedRun) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
 	if req.InstalledPayloadID != "" || req.Reconnect != nil || req.InputPath != "" || req.InputData != "" || len(req.Config) != 0 {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported run inputs")
 	}
@@ -574,7 +607,7 @@ func (r *remoteRun) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Pa
 	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(data), Fields: fields}, err
 }
 
-func (r *remoteRun) launch(runID string) (failure error) {
+func (r *retainedRun) launch(runID string) (failure error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.record.State != "prepared" {
@@ -626,23 +659,140 @@ exec ` + quoteCommand(argv)
 	r.process.Stdin = input
 	r.process.Stdout = runWriter{r, 0}
 	r.process.Stderr = &runPrefix{r: r, marker: marker}
+	var localPipes [3][2]*os.File // stdout, stderr, optional stdin
+	drained := make(chan error, len(localPipes))
+	if r.record.Execution == "local" {
+		r.process = exec.Command(argv[0], argv[1:]...)
+		r.process.Dir = r.workspace
+		r.process.Env = r.record.localEnvironment(r.workspace)
+		r.process.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		// Own the pipes so Wait reaps only the leader without cutting off
+		// ordinary children's streams. Bound draining after group completion.
+		defer func() {
+			for i, p := range localPipes {
+				if p[0] == nil {
+					continue
+				}
+				child, parent := p[1], p[0]
+				if i == 2 {
+					child, parent = p[0], p[1]
+				}
+				child.Close()
+				if failure != nil {
+					parent.Close()
+				}
+			}
+		}()
+		for i := range localPipes {
+			if i == 2 && input == nil {
+				continue
+			}
+			localPipes[i][0], localPipes[i][1], err = os.Pipe()
+			if err != nil {
+				return err
+			}
+		}
+		r.process.Stdout, r.process.Stderr = localPipes[0][1], localPipes[1][1]
+		if input != nil {
+			r.process.Stdin = localPipes[2][0]
+		}
+	}
 	r.record.State, r.record.LaunchRunID = "running", runID
 	if err := r.process.Start(); err != nil {
 		r.record.State = "transport-or-completion-unknown"
+		if r.record.Execution == "local" {
+			r.record.State = "local-start-failed"
+			r.record.OutputComplete = true
+		}
 		r.cleanupStage()
 		close(r.done)
 		return err
 	}
+	for i, p := range localPipes {
+		if p[0] == nil {
+			continue
+		}
+		go func() {
+			var copyErr error
+			if i == 2 {
+				_, copyErr = io.Copy(p[1], input)
+				p[1].Close()
+				if errors.Is(copyErr, syscall.EPIPE) {
+					copyErr = nil // A tool may finish without consuming all stdin.
+				}
+			} else {
+				_, copyErr = io.Copy(runWriter{r, i}, p[0])
+				p[0].Close()
+			}
+			drained <- copyErr
+		}()
+	}
 	go func() {
 		err := r.process.Wait()
-		prefix := r.process.Stderr.(*runPrefix)
-		prefix.flush()
+		prefix, remote := r.process.Stderr.(*runPrefix)
+		code := r.process.ProcessState.ExitCode()
+		if remote {
+			prefix.flush()
+		} else {
+			r.mu.Lock()
+			if code >= 0 {
+				r.record.LocalExit = &code
+			} else if status, ok := r.process.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+				r.record.LocalSignal = status.Signal().String()
+			}
+			r.mu.Unlock()
+			// A leader's exit is not its ordinary children's completion. Keep
+			// cancellation, timeout and close protection until the group is empty.
+			// ponytail: scan /proc only after leader exit; use cgroups if stronger
+			// containment or many simultaneous orphaned groups become a requirement.
+			for {
+				live, groupErr := localGroupLive(r.process.Process.Pid)
+				if groupErr != nil {
+					r.mu.Lock()
+					r.record.Cancellation = "unconfirmed; local group observation failed; remote termination unconfirmed"
+					r.mu.Unlock()
+					break
+				}
+				if !live {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+			timer := time.NewTimer(time.Second)
+			defer timer.Stop()
+			for _, p := range localPipes {
+				if p[0] == nil {
+					continue
+				}
+				select {
+				case copyErr := <-drained:
+					if copyErr != nil && !errors.Is(copyErr, os.ErrClosed) {
+						r.mu.Lock()
+						r.record.OutputError = "stream copy failed; partial evidence available"
+						r.mu.Unlock()
+					}
+				case <-timer.C:
+					err = exec.ErrWaitDelay
+					for _, pipe := range localPipes {
+						if pipe[0] != nil {
+							pipe[0].Close()
+							pipe[1].Close()
+						}
+					}
+					<-drained
+				}
+			}
+		}
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		defer close(r.done)
-		code := r.process.ProcessState.ExitCode()
 		r.record.State = "transport-or-completion-unknown"
-		if prefix.seen && code >= 0 && code != 255 {
+		if !remote {
+			r.record.State = "local-signaled"
+			if code >= 0 {
+				r.record.State = "exited"
+			}
+		} else if prefix.seen && code >= 0 && code != 255 {
 			r.record.State = "exited"
 			r.record.RemoteExit = &code
 		}
@@ -652,7 +802,7 @@ exec ` + quoteCommand(argv)
 			}
 		}
 		if err == exec.ErrWaitDelay && r.record.OutputError == "" {
-			r.record.OutputError = "output drain incomplete after local SSH exit"
+			r.record.OutputError = "output drain incomplete after process exit"
 		}
 		r.record.OutputComplete = r.record.OutputError == "" && r.record.State == "exited" && err != exec.ErrWaitDelay
 		if !r.stopRequested {
@@ -671,7 +821,7 @@ exec ` + quoteCommand(argv)
 }
 
 type runWriter struct {
-	r      *remoteRun
+	r      *retainedRun
 	stream int
 }
 
@@ -697,7 +847,7 @@ func (w runWriter) Write(p []byte) (int, error) {
 }
 
 type runPrefix struct {
-	r            *remoteRun
+	r            *retainedRun
 	marker       string
 	buffer       []byte
 	parsed, seen bool
@@ -741,6 +891,9 @@ type RunOutput struct {
 	NextOffset     int64  `json:"nextOffset"`
 	State          string `json:"state"`
 	RemoteExit     *int   `json:"remoteExit"`
+	Execution      string `json:"execution"`
+	LocalExit      *int   `json:"localExit"`
+	LocalSignal    string `json:"localSignal,omitempty"`
 	Budget         int64  `json:"budgetPerStream"`
 	Stored         int64  `json:"storedBytes"`
 	Received       int64  `json:"receivedBytes"`
@@ -748,7 +901,7 @@ type RunOutput struct {
 	OutputError    string `json:"outputError"`
 }
 
-func (r *remoteRun) output(args []string) (RunOutput, error) {
+func (r *retainedRun) output(args []string) (RunOutput, error) {
 	i := slices.Index([]string{"stdout", "stderr"}, args[0])
 	offset, err := strconv.ParseInt(args[1], 10, 64)
 	if i < 0 || err != nil || offset < 0 {
@@ -765,6 +918,7 @@ func (r *remoteRun) output(args []string) (RunOutput, error) {
 	}
 	return RunOutput{Data: base64.StdEncoding.EncodeToString(data[:n]), NextOffset: offset + int64(n),
 		State: r.record.State, RemoteExit: r.record.RemoteExit, Budget: r.record.Budget,
+		Execution: r.record.Execution, LocalExit: r.record.LocalExit, LocalSignal: r.record.LocalSignal,
 		Stored: r.record.Stored[i], Received: r.record.Bytes[i],
 		OutputComplete: r.record.OutputComplete, OutputError: r.record.OutputError}, nil
 }
@@ -772,7 +926,7 @@ func (r *remoteRun) output(args []string) (RunOutput, error) {
 // The caller holds control, so launch/cancel/close cannot race one another.
 // PID/starttime verification is not atomic with signalling; stronger containment
 // and post-loss recovery remain outside the accepted ordinary-group contract.
-func (r *remoteRun) cancel() {
+func (r *retainedRun) cancel() {
 	defer func() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -801,7 +955,12 @@ func (r *remoteRun) cancel() {
 		return
 	}
 	r.stopRequested = true
+	local := r.record.Execution == "local"
 	r.mu.Unlock()
+	if local {
+		r.cancelLocal()
+		return
+	}
 	select {
 	case <-r.identityReady:
 	case <-r.done:
@@ -879,7 +1038,84 @@ exit 7`, pid, pid, start, pid, pid)
 	r.record.OutputComplete = false
 }
 
-func (r *remoteRun) Close(string) error {
+// Only explicitly selected, non-secret context crosses into the local tool.
+// In particular the module's Hovel launch key and SSH agent are not inherited.
+func (s Run) localEnvironment(workspace string) []string {
+	return []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8", "BURROW_WORKSPACE=" + workspace,
+		"BURROW_CONNECTION=" + s.Connection.Name, "BURROW_SOCKET=" + s.Connection.Socket,
+		"BURROW_SSH_CONFIG=" + filepath.Join(filepath.Dir(s.Connection.Socket), "ssh_config"),
+		"BURROW_SSH_HOST=burrow-hop-0"}
+}
+
+func (r *retainedRun) cancelLocal() {
+	pid := r.process.Process.Pid
+	outcome := "unconfirmed; local group cleanup failed; remote termination unconfirmed"
+	// TERM first, then KILL the remaining ordinary local group. /proc excludes
+	// zombies; neither observation nor signalling claims escaped-child control.
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL} {
+		if err := syscall.Kill(-pid, sig); err != nil && err != syscall.ESRCH {
+			break
+		}
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			live, err := localGroupLive(pid)
+			if err != nil {
+				break
+			}
+			if !live {
+				outcome = "local-group-terminated; remote termination unconfirmed"
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		if strings.HasPrefix(outcome, "local-group-terminated") {
+			break
+		}
+	}
+	select {
+	case <-r.done:
+	case <-time.After(2 * time.Second):
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.record.Cancellation = outcome
+	if strings.HasPrefix(outcome, "local-group-terminated") && r.record.State != "running" {
+		r.record.State = "cancelled"
+		if r.record.TimedOut {
+			r.record.State = "timed-out"
+		}
+	}
+	r.record.OutputComplete = false
+}
+
+func localGroupLive(group int) (bool, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if _, err := strconv.Atoi(entry.Name()); err != nil {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		fields := strings.Fields(string(data)[strings.LastIndexByte(string(data), ')')+1:])
+		if len(fields) < 3 {
+			return false, fmt.Errorf("invalid local process metadata")
+		}
+		if fields[2] == strconv.Itoa(group) && fields[0] != "Z" && fields[0] != "X" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *retainedRun) Close(string) error {
 	r.control.Lock()
 	defer r.control.Unlock()
 	r.mu.Lock()
@@ -944,7 +1180,7 @@ func (r *remoteRun) Close(string) error {
 	return errors.Join(failures, auditErr, logErr)
 }
 
-func (r *remoteRun) verifyDirectory() error {
+func (r *retainedRun) verifyDirectory() error {
 	live, err := launch.FileRoot(r.dir, false)
 	if err != nil {
 		return fmt.Errorf("run output directory unavailable; unknown paths preserved")

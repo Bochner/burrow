@@ -35,7 +35,7 @@ type RunInput struct {
 }
 
 func (s Run) request() runRequest {
-	return runRequest{Connection: s.Connection, Command: s.Command, Budget: s.Budget, Input: s.Input}
+	return runRequest{Connection: s.Connection, Command: s.Command, Execution: s.Execution, Budget: s.Budget, Input: s.Input}
 }
 
 func (in RunInput) validate() error {
@@ -79,7 +79,7 @@ func (in RunInput) review() string {
 			text += "\nStandard input carries script source; no remote script file is created."
 		}
 		if in.Mode == "inline" {
-			text += "\nInline source is visible in SSH process arguments; NO SECRETS. Quoted invocation must fit 64 KiB. No remote script file is created."
+			text += "\nInline source is visible in process arguments; NO SECRETS. Quoted invocation must fit 64 KiB. No remote script file is created."
 		}
 		if in.Mode == "stage" {
 			text += "\nStaged script: " + in.StagePath + "\nCleanup: remove only the owned script and its empty private directory. Staging starts after confirmation."
@@ -97,7 +97,7 @@ func (in RunInput) review() string {
 	return text
 }
 
-func (r *remoteRun) startTimeout() {
+func (r *retainedRun) startTimeout() {
 	duration, _ := time.ParseDuration(r.record.Input.Timeout)
 	if duration == 0 {
 		return
@@ -130,7 +130,7 @@ func (r *remoteRun) startTimeout() {
 	}()
 }
 
-func (r *remoteRun) prepareInputs(ctx context.Context) error {
+func (r *retainedRun) prepareInputs(ctx context.Context) error {
 	if r.record.Input.Script.Path == "" && r.record.Input.Stdin.Path == "" {
 		return nil
 	}
@@ -159,7 +159,7 @@ func (r *remoteRun) prepareInputs(ctx context.Context) error {
 	return err
 }
 
-func (r *remoteRun) snapshotInput(root *os.Root, base string, i int, meta *RunFile) error {
+func (r *retainedRun) snapshotInput(root *os.Root, base string, i int, meta *RunFile) error {
 	name := []string{"script", "stdin"}[i]
 	rel, err := containedLocal(base, meta.Path)
 	if err != nil {
@@ -202,7 +202,7 @@ func (r *remoteRun) snapshotInput(root *os.Root, base string, i int, meta *RunFi
 
 // The retained file descriptor supplies the reviewed bytes, independently of
 // the caller's lifetime and subsequent changes to the source path.
-func (r *remoteRun) invocation() ([]string, io.Reader, error) {
+func (r *retainedRun) invocation() ([]string, io.Reader, error) {
 	in := r.record.Input
 	for i, meta := range []RunFile{in.Script, in.Stdin} {
 		if meta.Path == "" {
@@ -271,7 +271,10 @@ func runSuggestions(line string, args []string) []string {
 	var choices []string
 	switch args[len(args)-2] {
 	case "--mode":
-		choices = []string{"stream ", "inline ", "stage "}
+		choices = []string{"stream ", "inline "}
+		if !slices.Contains(args, "--local") {
+			choices = append(choices, "stage ")
+		}
 	case "--interpreter":
 		choices = []string{"/bin/sh ", "/bin/bash "}
 	case "--script", "--stdin", "--timeout", "--budget":
@@ -280,7 +283,7 @@ func runSuggestions(line string, args []string) []string {
 		if last != "" && !strings.HasPrefix(last, "-") {
 			return nil
 		}
-		choices = []string{"--script ", "--mode ", "--interpreter ", "--stdin ", "--timeout ", "--budget ", "-- "}
+		choices = []string{"--local ", "--script ", "--mode ", "--interpreter ", "--stdin ", "--timeout ", "--budget ", "-- "}
 		if slices.Contains(args, "stage") {
 			choices = append(choices, "--keep ")
 		}
@@ -300,7 +303,7 @@ func runSuggestions(line string, args []string) []string {
 
 // Never reuse a colliding directory. Acknowledged inode/owner identities bind
 // later cleanup to files created by this run, including partial uploads.
-func (r *remoteRun) stage() error {
+func (r *retainedRun) stage() error {
 	dir := filepath.Dir(r.record.Input.StagePath)
 	script := "umask 077\nmkdir -m 700 -- " + quoteCommand([]string{dir}) + " || exit 20\ncd -P -- " + quoteCommand([]string{dir}) + ` || exit 21
 d=$(stat -c '%d:%i:%u:%a' .) || exit 21
@@ -346,7 +349,7 @@ printf 'ready\n'`
 
 // The caller holds mu. Removal never follows replacement links or recursively
 // deletes a directory. Unknown identities remain visible for manual recovery.
-func (r *remoteRun) cleanupStage() {
+func (r *retainedRun) cleanupStage() {
 	if r.record.Input.Mode != "stage" || r.stageDirectory == "" {
 		return
 	}

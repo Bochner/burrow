@@ -27,6 +27,10 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         assert not workspace.exists()
     for args, message in [
         (["run"], "run prepare CONNECTION"),
+        (["run", "prepare", "gateway", "--local", "--", "relative-tool"], "absolute executable"),
+        (["run", "prepare", "gateway", "--local", "--script", "a.sh", "--mode", "stage", "--interpreter", "/bin/sh", "--"], "does not stage"),
+        (["run", "prepare", "gateway", "--local", "--local", "--", "/bin/true"], "run prepare CONNECTION"),
+        (["run", "prepare", "gateway", "--local", "--"], "absolute executable"),
         (["run", "prepare", "gateway", "--timeout", "0s", "--", "true"], "timeout must"),
         (["run", "prepare", "gateway", "--timeout", "garbage", "--", "true"], "timeout must"),
         (["run", "prepare", "gateway", "--script", "a.sh", "--", "x"], "explicit --mode"),

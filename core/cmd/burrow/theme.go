@@ -354,15 +354,17 @@ func (m ui) styledOutput() string {
 					}
 				case "path", "stagePath":
 					style = secondary
-				case "mode":
+				case "mode", "execution":
 					style = keywordStyle
+				case "localSignal":
+					style = errorStyle
 				case "interpreter":
 					style = infoStyle
 				case "timeout":
 					style = numberStyle
 				case "cancellation", "stageCleanup", "staging":
 					style = secondary
-					if strings.HasPrefix(token, `"unconfirmed`) {
+					if strings.Contains(token, "unconfirmed") {
 						style = warningStyle
 					} else if strings.HasPrefix(token, `"failed`) {
 						style = errorStyle
@@ -401,7 +403,7 @@ func connectionStyle(state string) lipgloss.Style {
 	switch state {
 	case "connected", "active", "running", "listening", "traffic-observed":
 		return successStyle
-	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable", "staging-failed", "timed-out":
+	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable", "staging-failed", "timed-out", "local-start-failed", "local-signaled":
 		return errorStyle
 	case "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown":
 		return warningStyle
@@ -467,11 +469,11 @@ var infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
 
 func fieldStyle(header string) lipgloss.Style {
 	switch header {
-	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUN", "RUNID", "LAUNCHRUNID", "SESSION":
+	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUN", "RUNID", "LAUNCHRUNID", "SESSION", "BURROW_CONNECTION":
 		return accent
 	case "ACTION":
 		return heading
-	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION":
+	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION", "BURROW_SSH_HOST":
 		return hostStyle
 	case "USER", "USERNAME", "OWNER", "GROUP":
 		return successStyle
@@ -479,11 +481,11 @@ func fieldStyle(header string) lipgloss.Style {
 		return warningStyle
 	case "KEY", "AGENT", "SHELL", "PROXY", "SOCKS PROXY", "INTERPRETER":
 		return infoStyle
-	case "TERM", "TYPE", "PERMISSIONS", "MODE":
+	case "TERM", "TYPE", "PERMISSIONS", "MODE", "EXECUTION", "LANG":
 		return keywordStyle
 	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
 		return numberStyle
-	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "CLEANUPSCOPE", "SOURCE", "DESTINATION PATH", "SCRIPT", "STAGED SCRIPT", "PROGRAM STDIN":
+	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "CLEANUPSCOPE", "SOURCE", "DESTINATION PATH", "SCRIPT", "STAGED SCRIPT", "PROGRAM STDIN", "WORKING DIRECTORY", "BURROW_WORKSPACE", "BURROW_SOCKET", "BURROW_SSH_CONFIG", "PATH":
 		return secondary
 	case "ERROR", "OUTPUTERROR", "AUDITERROR", "CLEANUPERROR":
 		return errorStyle

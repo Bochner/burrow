@@ -1,0 +1,92 @@
+<!-- burrow-doc: {"title":"Local tools and automation","group":"Foundations","order":151,"description":"Run selected local tools and automate Burrow through Hovel saved chains and public daemon operations."} -->
+<article>
+<h1>Local tools and automation</h1>
+<p><code>--local</code> runs a tool on the daemon host with an explicitly selected live SSH connection's non-secret context. It uses the same <a href="runs.html">retained run lifecycle</a>, output viewer, cancellation and evidence collection as remote commands. The initial supported daemon is local to Burrow, so the tool runs on your machine.</p>
+<h2>Run a local tool</h2>
+<pre data-lang="Burrow management"><code>run now gateway --local -- /usr/bin/printf 'local output\n'
+run prepare gateway --local -- /usr/bin/python3 /absolute/path/report.py</code></pre>
+<p>The first command opens a review, then launches, waits and collects when approved. The second prepares without executing; use its returned ID with <code>run launch ID</code>. The tool path must be absolute. Paths and arguments for an existing tool are reviewed references, not immutable snapshots of that tool's executable or files. Run scripts you trust; a same-user local process is not sandboxed.</p>
+<p>For a reviewed source snapshot, put this shell script in the workspace upload root as <code>connection-report.sh</code>. Use <code>local</code> to find the configured root:</p>
+<pre data-lang="Shell script"><code>printf 'Selected connection: %s\n' "$BURROW_CONNECTION"
+/usr/bin/ssh -F "$BURROW_SSH_CONFIG" -S "$BURROW_SOCKET" \
+  -o ControlMaster=no -o ProxyCommand=/usr/bin/false -o BatchMode=yes \
+  -T "$BURROW_SSH_HOST" 'uname -s'
+ssh_status=$?
+printf 'Local SSH client exit: %s\n' "$ssh_status" &gt;&amp;2
+exit "$ssh_status"</code></pre>
+<pre data-lang="Burrow management"><code>run now gateway --local --script connection-report.sh --mode stream --interpreter /bin/sh --</code></pre>
+<p>The script prints the selected connection name and asks that master for the remote operating-system name. The explicit SSH options refuse a fresh connection when the master is absent. Burrow validates the selected connection during preparation and launch; raw socket use after that belongs to the tool. A disappearing socket must not cause your tool to authenticate again. The generated config alone is not a no-reconnect guarantee.</p>
+<p>Local scripts can reuse <code>stream</code> or <code>inline</code> source snapshots, binary <code>--stdin</code>, <code>--timeout</code> and <code>--budget</code>. Stream mode owns stdin; inline mode uses shell <code>-c</code> semantics and exposes source in process arguments. Remote staging and <code>--keep</code> do not apply to local tools. Preparation never runs the tool. Repeated launch uses the same ID without executing twice.</p>
+<h2>Selected context</h2>
+<p>The review shows execution location, working directory and the exact environment. The working directory is the explicitly selected workspace. Only these environment entries are supplied; tools do not inherit a frontend shell's directory, environment or identity, SSH agents, authentication secrets or Hovel launch keys.</p>
+<table><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody>
+<tr><td><code>BURROW_WORKSPACE</code></td><td>Canonical absolute workspace path.</td></tr>
+<tr><td><code>BURROW_CONNECTION</code></td><td>Explicitly selected connection name.</td></tr>
+<tr><td><code>BURROW_SOCKET</code></td><td>That live connection's master socket path.</td></tr>
+<tr><td><code>BURROW_SSH_CONFIG</code></td><td>That connection's generated SSH config path; contains settings and references, not authentication secrets.</td></tr>
+<tr><td><code>BURROW_SSH_HOST</code></td><td><code>burrow-hop-0</code>, the target alias in that config.</td></tr>
+<tr><td><code>PATH</code>, <code>LANG</code></td><td><code>/usr/bin:/bin</code> and <code>C.UTF-8</code>.</td></tr>
+</tbody></table>
+<p>Supply an absolute interpreter when a tool lives outside this PATH. Keep passwords and passphrases out of commands, arguments, chain files, logs and output. A tool can print sensitive data itself; retained stdout/stderr are evidence, not a redaction service. There is no plugin discovery system or compatibility promise for LazySSH environment variables.</p>
+<h2>Results and cancellation</h2>
+<p>Inspect, output reads and collected JSON distinguish <code>execution: local</code>, <code>localExit</code> and <code>localSignal</code> from <code>remoteExit</code>. A local run always leaves <code>remoteExit</code> null. A local SSH client exiting 255 is a real <code>localExit: 255</code>; it does not establish a remote exit or completion. The live viewer labels local exits, and collected output labels the local tool outcome. Stdout/stderr remain separate and byte-exact even for non-JSON errors.</p>
+<p><code>run cancel ID</code> and the optional timeout stop the ordinary local process group: TERM first, then KILL for remaining members, with a bounded Linux <code>/proc</code> observation. Ordinary background children keep the run active after its main process exits; that process's known local exit remains visible. The result reports whether local group cleanup was observed; remote termination remains unconfirmed. Escaped descendants, process identity races and recovery after owner loss are outside that guarantee. A failed cleanup remains visible and does not claim success. Stopping a foreground wait or closing a viewer never cancels a retained run.</p>
+<p>Cancellation leaves the connection and sibling runs available. Collect completed or partial output explicitly, then close the run; registered evidence remains. Uncollected output can be lost on module/daemon failure. Confirmation covers the outer tool operation. Every raw same-user socket command the tool issues does not automatically receive its own Hovel confirmation, complete audit or remote cancellation guarantee.</p>
+<h2>Automate with a saved Hovel chain</h2>
+<p>Start or verify your Burrow workspace with <code>burrow --workspace /absolute/workspace status</code> and explicitly connect <code>gateway</code> first. Use Burrow’s pinned Hovel executable at <code>${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.2/hovel</code>. Save this as <code>local-report.chain.json</code>, replacing the workspace path with the same canonical path:</p>
+<pre data-lang="JSON"><code>{
+  "apiVersion": "hovel.dev/v1alpha1",
+  "kind": "Chain",
+  "metadata": {"name": "local-report"},
+  "spec": {
+    "mode": "configured",
+    "steps": [{"id": "report", "uses": "module:burrow@0.1.0"}],
+    "targets": [{"id": "local://selected"}],
+    "config": {
+      "workspace": "/absolute/workspace",
+      "command": "run now gateway --local --script connection-report.sh --mode stream --interpreter /bin/sh --yes --"
+    }
+  }
+}</code></pre>
+<p>The outer Hovel target is a label; the Burrow command selects the live connection. This example explicitly authorizes the inner launch/collection with <code>--yes</code>. For Burrow's two-step review instead, omit that flag, inspect the returned summary's review and use its exact <code>confirm</code> command in a subsequent saved-chain throw. Do not repeat <code>run now</code> to approve an existing ID: it prepares another run.</p>
+<pre data-lang="Local shell · explicit headless approval"><code>HOVEL="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.2/hovel"
+WORKSPACE=/absolute/workspace
+"$HOVEL" throw ./local-report.chain.json --workspace "$WORKSPACE" \
+  --daemon-endpoint "$WORKSPACE/hoveld.sock" \
+  --allow-dangerous --now --json &gt;throw.json 2&gt;throw.err
+status=$?
+if [ "$status" -ne 0 ]; then
+  cat throw.err &gt;&amp;2
+  exit "$status"
+fi
+python3 - &lt;&lt;'PY'
+import json
+with open("throw.json") as source:
+    throw = json.load(source)
+step = throw["results"][0]
+if step["state"] != "succeeded":
+    raise SystemExit("Hovel operation failed; inspect the throw result")
+run = json.loads(step["summary"])
+print("Run:", run["id"], "local exit:", run["localExit"], "collection:", run.get("collection"))
+if run["localExit"] != 0 or not run["outputComplete"] or run.get("collection") != "succeeded":
+    raise SystemExit("Tool execution or capture needs inspection")
+PY</code></pre>
+<p>Provide the explicit <code>--daemon-endpoint</code> shown above to address the selected existing Burrow daemon. Hovel launch-key policy counts matching active approvers; with no matching connected entities it requires no additional approvals, even in quorum mode.</p>
+<p>Here <code>--now</code> is an explicit operator choice recorded by Hovel as <code>now_bypass</code>. It does not bypass dangerous-module permission or launch-key policy. Alternatively use an existing matching-plan preconfirmation through Hovel. Changed plan inputs require a matching confirmation. No wrapper silently adds these flags. Launch-key policy may require other active approvers; satisfy it through Hovel rather than changing policy to make automation pass.</p>
+<p>Preserve Hovel's stdout, stderr and process status before parsing. Successful JSON-mode execution returns a throw result, but a successfully recorded local-tool failure can still give Hovel process status 0. Read <code>localExit</code> separately. Execution errors can be plain stderr with status 1; command parsing errors generally use status 2. Without a matching preconfirmation or explicit <code>--now</code>, even JSON mode can print an interactive review prompt on stdout and fail at EOF. API failures are not universally JSON either.</p>
+<h2>Use public daemon operations</h2>
+<p>For supported operations outside saved-chain execution, address the explicitly selected workspace's existing Unix socket. Verify identity before proceeding; do not rely on another frontend's active workspace:</p>
+<pre data-lang="Local shell"><code>WORKSPACE=/absolute/workspace
+curl --fail-with-body --silent --show-error \
+  --unix-socket "$WORKSPACE/hoveld.sock" \
+  -H 'Content-Type: application/json' -d '{}' \
+  http://localhost/hovel.daemon.v1.DaemonService/GetDaemonInfo</code></pre>
+<p>Check the response's <code>workspacePath</code> matches the intended canonical path. <code>ListSessions</code> discovers retained runs on this same public surface. Collected output remains available in Burrow’s <kbd>Ctrl+L</kbd> view and Hovel’s artifact inventory. Use saved throws for confirmed execution and collection. Privileged <code>ExecuteModule</code> or raw session controls do not establish the surrounding planning/confirmation contract. The product automation contract is saved-chain <code>hovel throw</code> and documented public daemon operations, not compatibility/developer <code>hovel run</code>, <code>command</code> or internal registry roots. No separate Burrow scripting runtime is required.</p>
+<h2>Verification and provenance</h2>
+<pre data-lang="Aspect checks"><code>aspect burrow automation-check
+aspect burrow-check ci
+aspect burrow-check
+aspect burrow-site check</code></pre>
+<p>The focused disposable SSH check exercises local execution and stream results, saved-chain confirmation/danger/launch-key refusals, explicit workspace identity, a local SSH socket driver across two live connections, missing selection/master, local child cancellation and timeout, and evidence retention. Portable terminal checks cover contextual completion, execution labels, semantic colors and narrow/no-color reviews.</p>
+<p>Contracts follow <a href="https://github.com/Bochner/burrow/issues/13">the accepted automation decision</a> and <a href="https://github.com/Bochner/burrow/issues/26">the retained-run proof</a>, with Hovel 0.4.2 / SDK source <code>c461ba282a8aecc7aa3a079a4613bf5e2640c388</code>. The implementation traces <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/plugin_manager.py">LazySSH's plugin runner</a> and <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/tests/test_plugin_manager.py">its environment, argument and output tests</a>. Useful connection context and tool output are preserved through explicit selection and retained Hovel runs; legacy discovery, inherited ambient credentials, combined output and implicit five-minute timeouts are intentionally not carried forward.</p>
+</article>

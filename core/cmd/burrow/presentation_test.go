@@ -260,6 +260,58 @@ func TestRunReviewPresentation(t *testing.T) {
 	}
 }
 
+func TestLocalRunPresentation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/local-ui"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		frameEvent(m, tea.PasteMsg{Content: "run now gateway --loc"})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if !strings.Contains(m.current().management.input.Value(), "--local ") {
+			t.Fatal("local execution flag completion unavailable")
+		}
+		for _, suggestion := range connection.CommandSuggestions("run now gateway --local --mode ", nil) {
+			if strings.Contains(suggestion, "stage") {
+				t.Fatal("local completion offers unsupported remote staging", suggestion)
+			}
+		}
+		m.reviewText = "Run: retained-local\nExecution: local (on the daemon host)\nConnection: gateway\nCommand: /bin/sh /uploads/tool.sh\nWorking directory: /tmp/local-ui\nSocket: /tmp/local-ui/master\nSSH config: /tmp/local-ui/ssh_config"
+		m.setForm("review", "Review local run", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("local-review-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "local (on the daemon host)") {
+				t.Fatal("local execution location hidden")
+			}
+			if !plain && size.X >= 120 {
+				assertTextRole(t, screen, m.dialogBounds(), "local (on the daemon host)", "#cba6f7")
+			}
+		}
+		m.dismissForm()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		for _, state := range []string{"local-start-failed", "local-signaled"} {
+			frameEvent(m, connectionResult{result: map[string]string{"state": state, "cancellation": "local-group-terminated; remote termination unconfirmed"}})
+			screen := capturePresentation(t, m, fmt.Sprintf("local-result-%s-%t", state, plain))
+			if plain {
+				if !strings.Contains(m.View().Content, state) || !strings.Contains(m.View().Content, "remote termination unconfirmed") {
+					t.Fatal("NO_COLOR hid local failure or cancellation uncertainty")
+				}
+			} else {
+				assertTextRole(t, screen, m.selectionBounds(), state, "#f38ba8")
+				assertTextRole(t, screen, m.selectionBounds(), "local-group-terminated; remote termination unconfirmed", "#f9e2af")
+			}
+		}
+		u := m.current().management
+		u.width = 80
+		exit := 3
+		u.follow = &runView{id: "retained-local"}
+		u.follow.status[0] = connection.RunOutput{Execution: "local", LocalExit: &exit, State: "exited", OutputComplete: true}
+		if text := ansi.Strip(u.followHeader()); !strings.Contains(text, "local exit 3") || strings.Contains(text, "remote exit") {
+			t.Fatal("viewer mislabels the local result", text)
+		}
+	}
+}
+
 func TestDownloadReviewAndProgress(t *testing.T) {
 	bar := newDownloadBar()
 	bar.SetWidth(12)
@@ -2134,6 +2186,7 @@ func TestLogVimRenderedColors(t *testing.T) {
 2026-09-19T14:00:00Z -- collected command
   Command: ps -elf
   Script: /uploads/check.sh
+  Execution: local tool on daemon host
   Mode: stage
   Interpreter: /bin/sh
   Stage cleanup: kept
@@ -2178,7 +2231,7 @@ STDOUT · 123 stored / 456 received bytes
 		screen := vt.NewEmulator(160, 40)
 		screen.Write([]byte(strings.ReplaceAll(snap.Screen, "\n", "\r\n")))
 		for text, want := range map[string]string{"gateway": "#b4befe", "tester": "#a6e3a1", "192.0.2.10": "#f5c2e7", "2222": "#f9e2af", "COMPLETE": "#a6e3a1", "failed": "#f38ba8", "/downloads/data": "#a6adc8",
-			"/uploads/check.sh": "#a6adc8", "stage": "#cba6f7", "/bin/sh": "#94e2d5", "kept": "#f9e2af", "30s": "#fab387",
+			"/uploads/check.sh": "#a6adc8", "stage": "#cba6f7", "local tool on daemon host": "#cba6f7", "/bin/sh": "#94e2d5", "kept": "#f9e2af", "30s": "#fab387",
 			"ps -elf": blueColor, "-elf": blueColor, "SUCCEEDED": "#a6e3a1", "INCOMPLETE": "#f38ba8", "retained-1": lavenderColor, "collection-1": lavenderColor, "unconfirmed": "#f9e2af", "disk full": "#f38ba8", "STDOUT": blueColor, "123": "#fab387", "PREVIEW TRUNCATED": "#f9e2af", "/workspace/artifacts/output": "#a6adc8"} {
 			if !plain {
 				assertTextRole(t, screen, image.Rect(0, 1, 160, 26), text, want)

@@ -35,6 +35,7 @@ def _impl(ctx: TaskContext) -> int:
         "shell-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--shell-check"],
         "files-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--files-check"],
         "runs-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--runs-check"],
+        "automation-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--automation-check"],
         "follow-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--follow-check"],
         "scripts-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--scripts-check"],
         "forward-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--forward-check"],
@@ -46,7 +47,7 @@ def _impl(ctx: TaskContext) -> int:
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected run, check, clean, ssh-check, shell-check, files-check, runs-check, follow-check, scripts-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
+        print("expected run, check, clean, ssh-check, shell-check, files-check, runs-check, follow-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
         return 2
     if mode == "check":
         commands[mode].append("//core/cmd/burrow:files_test")
@@ -57,6 +58,6 @@ burrow = task(
         "mode": args.positional(default = ["check"], minimum = 0, maximum = 1),
         "options": args.trailing_var_args(description = "Burrow options, starting with --workspace PATH."),
     },
-    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, files-check, runs-check, follow-check, scripts-check, forward-check, reverse-check, proxy-check, ssh-latency, format or package the production Linux frontend.",
+    summary = "Run, check, clean build outputs, ssh-smoke, ssh-check, shell-check, files-check, runs-check, follow-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-latency, format or package the production Linux frontend.",
     implementation = _impl,
 )

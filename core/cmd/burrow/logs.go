@@ -198,7 +198,7 @@ syntax match burrowSuccess /\<\%(complete\|completed\|connected\|removed\|closed
 syntax match burrowFailure /\<\%(failed\|refused\|lost\|cancelled\|incomplete\|unverified\|unavailable\|timed out\)\>/
 syntax match burrowPending /\<\%(attempt\|running\|connecting\|unknown\|partial\|unconfirmed\|kept\|preview truncated\)\>/
 syntax match burrowNotePath /\%(^  \%(Saved\|Destination\|Partial\|File\|Script\|Staged script\|Program stdin\): \)\@<=.*/
-syntax match burrowScriptMode /\%(^  Mode: \)\@<=.*/
+syntax match burrowScriptMode /\%(^  \%(Mode\|Execution\): \)\@<=.*/
 syntax match burrowInterpreter /\%(^  Interpreter: \)\@<=.*/
 syntax match burrowNumber /\%(^  Timeout: \)\@<=.*/
 syntax match burrowNoteUser /\<[[:alnum:]_.-]\+\ze@/

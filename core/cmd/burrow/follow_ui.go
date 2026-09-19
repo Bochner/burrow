@@ -288,11 +288,22 @@ func (m ui) followHeader() string {
 	if state.State != "" {
 		status = safe(state.State)
 		style = connectionStyle(state.State)
-		if state.RemoteExit != nil {
-			status += fmt.Sprintf(" · exit %d", *state.RemoteExit)
-			style = successStyle
-			if *state.RemoteExit != 0 {
-				style = errorStyle
+		exit, location := state.RemoteExit, "remote"
+		if state.Execution == "local" {
+			exit, location = state.LocalExit, "local"
+		}
+		if exit != nil {
+			status += fmt.Sprintf(" · %s exit %d", location, *exit)
+			if state.State == "exited" {
+				style = successStyle
+				if *exit != 0 {
+					style = errorStyle
+				}
+			}
+		} else if state.Execution == "local" {
+			status += " · local"
+			if state.LocalSignal != "" {
+				status += " signal " + safe(state.LocalSignal)
 			}
 		}
 	}
