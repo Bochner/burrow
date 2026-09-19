@@ -350,7 +350,8 @@ func (m *manager) consumeTunnel(req hovel.PayloadCommandRequest) (hovel.PayloadC
 	if t.Direction == "R" {
 		stream, closeStream, err := reverseHTTPStream(c, state, endpoint)
 		if err != nil {
-			return hovel.PayloadCommandResult{}, fmt.Errorf("remote-origin consumer could not start; no new login attempted")
+			result.Detail = "remote-origin consumer could not start; no new login attempted"
+			return hovel.PayloadCommandResult{}, audit.Finish(result, fmt.Errorf("%s", result.Detail))
 		}
 		defer closeStream()
 		transport.DialContext = func(context.Context, string, string) (net.Conn, error) { return stream, nil }
@@ -373,7 +374,11 @@ func (m *manager) consumeTunnel(req hovel.PayloadCommandRequest) (hovel.PayloadC
 	if result.State != "succeeded" {
 		result.Detail = "selected tunnel HTTP request failed, timed out or exceeded 1 MiB; no response content retained"
 	}
-	if err := audit.Finish(result, nil); err != nil {
+	status := "completed"
+	if result.State != "succeeded" {
+		status = "failed"
+	}
+	if err := audit.Record(status, map[string]any{"result": result, "error": result.Detail}); err != nil {
 		return hovel.PayloadCommandResult{}, err
 	}
 	b, err := json.Marshal(result)

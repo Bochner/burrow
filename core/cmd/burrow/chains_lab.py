@@ -27,6 +27,9 @@ def chain_checks(burrow, workspace, connection, hovel, env, hv, connect_options,
             if self.path == "/hold":
                 active.append(threading.get_ident())
                 release.wait(6)
+            if self.path == "/slow":
+                active.append(threading.get_ident())
+                time.sleep(7)
             data = canary.encode() if self.path == "/secret" else body
             if self.path == "/large":
                 data = b"x" * ((1 << 20) + 1)
@@ -137,6 +140,8 @@ def chain_checks(burrow, workspace, connection, hovel, env, hv, connect_options,
             if path == "/redirect":
                 assert result["statusCode"] == 302 and "/must-not-follow" not in requests
         burrow(workspace, "chain", "http", name, local["id"], url.replace("/check", "/large"), "--yes", ok=False)
+        records = (workspace / "burrow-logs/operations.log").read_text().split("End record\n\n")
+        assert any(" -- chain http\n" in record and "  Status: failed\n" in record and "/large" in record for record in records), "failed HTTP exchange has no failed audit outcome"
         for path in workspace.rglob("*"):
             if path.is_file():
                 assert canary.encode() not in path.read_bytes(), path
@@ -163,8 +168,22 @@ def chain_checks(burrow, workspace, connection, hovel, env, hv, connect_options,
         assert burrow(workspace, "inspect", name)["masterPID"] == connection["masterPID"]
         chain_ui(binary, env, decoder, workspace, name, replacement["id"], url, requests)
         print("PASS concurrent consumers, frontend disconnect, bounded capture, secret exclusion and stale creation refusal", flush=True)
+        chain.write_text(json.dumps(burrow(workspace, "chain", "export", name, replacement["id"], url.replace("/check", "/slow"))))
+        active.clear()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            consumer = pool.submit(throw, "--allow-dangerous", "--now")
+            deadline = time.monotonic() + 15
+            while not active and time.monotonic() < deadline:
+                time.sleep(.02)
+            assert active, "slow consumer never started"
+            started = time.monotonic()
+            removed = burrow(workspace, "tunnel", "remove", replacement["id"], "--yes")
+            assert removed["state"] == "removed" and time.monotonic() - started > 5, removed
+            completed = consumer.result(timeout=15)
+            assert json.loads(completed.stdout)["results"][0]["state"] == "succeeded", completed
+        assert burrow(workspace, "chain", "http", name, proxy["id"], url, "--yes")["state"] == "succeeded"
+        print("PASS removal waits for a slow consumer, then removes only its listener", flush=True)
         burrow(workspace, "proxy", "remove", name, "--yes")
-        burrow(workspace, "tunnel", "remove", replacement["id"], "--yes")
         burrow(workspace, "tunnel", "remove", reverse["id"], "--yes")
         created_chain = burrow(workspace, "chain", "connect", "chain-created", connection["host"], connection["user"],
                                *[arg for arg in connect_options if arg != "--yes"])

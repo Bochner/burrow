@@ -67,7 +67,9 @@ def interrupted(signum, _frame):
     raise SystemExit(f"acceptance interrupted by signal {signum}")
 for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
     signal.signal(signum, interrupted)
-signal.alarm(1200 if args.measure else 600)
+# The full milestone gate includes real scripts, transfer, TUI and chain labs.
+# Leave cleanup time before Bazel's large-test timeout (900 seconds).
+signal.alarm(1200 if args.measure else 840)
 
 def command(*args, env=None, ok=True):
     p = subprocess.run(list(map(str, args)), env=env, capture_output=True, text=True, timeout=60)
