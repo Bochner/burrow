@@ -16,6 +16,14 @@ assumptions broke across systems. They also proposed a Reports tab under Ctrl+L,
 and explicitly requested the full recommendations before implementation begins.
 These directions narrow the proposal below; no implementation has begun.
 
+The owner subsequently clarified that existing Ctrl+L Collected output and
+Activity log behavior must remain intact. Reports are a separate capability;
+the proposed replacement tab strip is withdrawn. They suggested
+`run survey ubuntu-test --ubuntu`, with an explicitly selected OS command set,
+automatic report saving as part of that operation, and a report format that
+future commands/plugins/modules can also produce. The command and shared report
+contract below are recommendations for discussion, not implemented behavior.
+
 #61 already asks for a selected enumeration script, a structured Markdown Hovel
 artifact, and an embedded reader with scrolling, resize, no-color and unchanged
 source bytes. It separates collection from viewing and allows Glow reuse only
@@ -60,17 +68,14 @@ builds a plain snapshot for the Vim viewer and limits each saved stream preview
 to 64 KiB. An embedded Markdown artifact reader is still new work; it is not an
 existing reader with a theme switch.
 
-The proposed Ctrl+L Reports tab needs a deliberate integration choice: the
-current Collected output and Activity log tabs belong to Vim, while Glamour
-returns styled text for Bubble Tea. Adding a native report viewport is not
-equivalent to adding another Vim file. Prefer a Burrow-owned Results tab strip
-with Collected output, Activity log and Reports, retaining the existing Vim
-reader for its current content and opening selected reports in a native
-viewport. Validate focus, Tab/Shift+Tab, search and context restoration in a
-small presentation proof before restructuring this area. Replacing all Results
-with a native reader would also need to preserve current search/navigation;
-that broader rewrite is not justified merely by this report. This is a proposed
-layout direction, not a proven implementation plan.
+Keep Ctrl+L's Collected output and Activity log tabs, their Vim reader, search,
+keybindings and navigation intact. Reports should have their own inventory and
+native Glamour reader. Recommend an explicit `reports` command and menu entry
+to open that view. An additional entry from Ctrl+L remains optional only if it
+is additive and preserves both existing tabs; do not make restructuring those
+tabs a prerequisite for this feature. Opening and closing Reports must preserve
+the previous management context. This supersedes this note's earlier proposed
+Burrow-owned Results tab strip.
 
 Keep original Markdown and derive a rendered display for the available center
 panel width. Re-render when that width changes, then update the viewport while
@@ -250,15 +255,19 @@ bundled engagement-plugin capabilities.
 
 ## Smallest useful delivery to discuss
 
-1. Supply one inspectable host-survey script that emits ordinary Markdown,
-   with literal probe output safely separated from authored Markdown structure.
-   Run it through the existing confirmed script path, with visible timeout and
-   output-budget behavior. Do not automatically enumerate on connect.
-2. Extend existing explicit collection so the selected report is discoverable
-   as Markdown through Hovel's artifact inventory, alongside execution/capture
-   metadata and stderr. Keep source bytes intact and preserve partial evidence.
-   Generic stdout remains generic unless deliberately identified as a report.
-3. Open the collected report in Burrow's center pane, using Glamour and its
+1. Add a `run survey` entry point selecting a named connection and an explicit
+   OS survey preset. Supply one inspectable Ubuntu survey for the proof, with
+   literal probe output safely separated from authored Markdown structure.
+   Reuse confirmed retained execution, timeouts, budgets and collection; show
+   the selected command set and that the operation will save a report in review.
+   Do not automatically enumerate on connect.
+2. Save the report through Hovel's existing artifact contract as part of the
+   confirmed survey operation, following the existing `run now` execution-plus-
+   collection precedent. Expose execution, capture and saving outcomes separately.
+   Keep source bytes, metadata, stderr and partial evidence intact. Ordinary
+   commands retain their current behavior and are not automatically converted
+   into reports. Viewing never triggers collection.
+3. Open the collected report in a separate Reports view, using Glamour and its
    existing viewport/context patterns. Keep the Markdown file useful outside
    Burrow. Returning from the reader restores the prior context; opening it
    never launches, collects, updates or consumes anything.
@@ -267,8 +276,34 @@ bundled engagement-plugin capabilities.
    and controls, original hashes before/after viewing, persistence after close,
    scrolling, resize/reflow, Catppuccin roles, NO_COLOR and context return.
 
-Exact command spelling, the starter probe list and the Results tab integration
-remain implementation choices to settle after this research. A reporting framework, Markdown-to-PDF export,
+### Command and reusable report contract
+
+The owner's example is `run survey ubuntu-test --ubuntu`: `ubuntu-test` selects
+the existing connection, and `--ubuntu` selects the commands to run. A suggested
+syntax refinement is `run survey ubuntu-test --os ubuntu`, making the choice one
+required value instead of accumulating mutually exclusive flags. This refinement
+is not an owner decision. Either spelling should select a known reviewed plan,
+refuse unknown selections and avoid silent OS substitution.
+
+Keep the survey preset responsible for command selection and execution needs.
+The report reader should not care whether a report came from a survey, another
+command or a future producer. A common contract needs Markdown content and
+enough metadata for title, producer, selected target, creation time, provenance
+and completeness. Reuse Hovel's existing artifact/run metadata where it already
+supplies those fields; keep survey-specific probe details in the survey report.
+Ordinary Markdown remains the portable document, not a proprietary replacement
+format. Do not build a second report database or duplicate daemon-owned state.
+
+The report capability can expose the small operations to save/register a report,
+list reports and read one. Survey is its first caller, not its permanent owner.
+All Burrow capabilities still use the single base `burrow` Hovel module. Future
+producers should reuse the artifact convention when implemented, without adding
+a plugin loader, a provider registry or empty adapters now. Future OS presets
+must validate their own execution requirements; sharing the report contract
+does not establish that a non-Ubuntu target accepts the Ubuntu script path.
+
+Exact command spelling, the starter probe list and any optional Ctrl+L access
+remain choices to settle after this research. A reporting framework, Markdown-to-PDF export,
 automatic AI summaries, third-party output parsers and a Glow fork are not
 needed for this first workflow. If there is no recurring need for even the host
 survey or user-authored Markdown, deferring #61 is also reasonable—but would be
