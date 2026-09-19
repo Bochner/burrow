@@ -20,6 +20,22 @@ import (
 
 const Help = `run prepare CONNECTION [--budget BYTES] -- COMMAND [ARG...] Prepare without execution
 run now CONNECTION [--budget BYTES] [--yes] -- COMMAND [ARG...] Review, launch, wait and collect a fresh run
+run prepare CONNECTION --script PATH --mode stream|inline|stage --interpreter PATH -- [ARG...]
+run now CONNECTION --script PATH --mode stream|inline|stage --interpreter PATH [--yes] -- [ARG...]
+Script/command options before --: --stdin PATH, --timeout DURATION, --budget BYTES.
+--keep is only for explicit stage mode and retains uploaded files after the run.
+Local script/stdin paths are confined to the workspace upload root; relative paths start there.
+Preparation snapshots up to 256 MiB per input in private files, binding hashes to review.
+Stream mode feeds shell source through stdin; it cannot also take --stdin, even an empty file.
+Inline mode uses shell -c, exposes source in SSH argv, and MUST NOT contain secrets.
+Inline source and the quoted invocation must fit 64 KiB; larger source needs stream or stage.
+Stage mode creates an owned 0700 directory and 0600 script in /tmp after confirmation.
+Staging needs /bin/sh, mkdir, stat, cat, rm and rmdir (Linux GNU/BusyBox); no Python/helper install.
+Staging has an 8-second attempt bound; cleanup has a 4-second bound. Uncertainty stays visible.
+Cleanup removes only owned staged files and their empty directory; existing/replaced files survive.
+Existing remote script example: run now CONNECTION --stdin data.bin -- /bin/sh /opt/check.sh
+Timeout example: --timeout 30s requests ordinary-group cancellation; no implicit execution timeout.
+Input bytes stay out of recorded requests; scripts can themselves print sensitive data into output.
 run launch ID [--collect] [--review HASH] [--yes] Launch once; --collect waits and saves output
 run list                            Discover retained runs in this workspace
 run inspect ID                      Execution, output completeness, budget and cleanup
@@ -29,7 +45,7 @@ run collect ID [--yes]               Register completed/partial output as Hovel 
 run close ID [--yes]                 Drop working output; registered artifacts remain
 TUI mutations open the shared review dialog; CLI repeats with --yes to confirm.
 Repeated launch never repeats the action; viewing/quit does not cancel a run.
-Commands reuse the selected master with no fresh login, staging or remote Python.
+Commands reuse the selected master with no fresh login, implicit staging or remote Python.
 Arguments are quoted individually; use /bin/sh -c explicitly for shell syntax.
 Commands/arguments cannot carry secrets: Hovel records the request, and SSH argv is visible.
 Default storage: 268435456 bytes per stream; --budget sets a positive byte count.
@@ -43,7 +59,8 @@ connection loss remain unconfirmed. Stopping local SSH proves no remote cleanup.
 Active runs must be cancelled before close. Closing a connection loses its run access.
 Uncollected output can be lost on module/daemon failure; unknown leftovers are not adopted.
 Collected evidence is inspectable with Hovel artifact list/inspect after run close.
-Streaming/staged scripts, independent stdin and live viewers follow in #58/#59.
+Inspect also reports input snapshots, staging, stageCleanup and timedOut separately from remoteExit.
+Independent streaming viewers follow in #59; existing output reads and collection apply to scripts.
 
 logs / Ctrl+N                      Open workspace log in embedded read-only Vim
 Ctrl+N or :q returns to the previous context. Reopening refreshes the snapshot.
@@ -719,6 +736,9 @@ func Suggestions(states []State) []string {
 
 func CommandSuggestions(line string, states []State) []string {
 	args, e := Split(line)
+	if e == nil && len(args) >= 3 && args[0] == "run" {
+		return runSuggestions(line, args)
+	}
 	if len(args) == 1 && !strings.ContainsAny(line, " \t") {
 		return Suggestions(states)
 	}

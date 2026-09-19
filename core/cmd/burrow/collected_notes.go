@@ -67,7 +67,7 @@ func writeCollectedNotes(ctx context.Context, workspace string, dst io.Writer) (
 		fmt.Fprintf(out, "%s -- collected command\n", safe(a.CreatedAt))
 		data, truncated, err := readCollectedArtifact(workspace, a, 1<<20)
 		var run connection.Run
-		if err == nil && (truncated || json.Unmarshal(data, &run) != nil || a.Name != "run-"+run.ID+"-result" || len(run.Command) == 0) {
+		if err == nil && (truncated || json.Unmarshal(data, &run) != nil || a.Name != "run-"+run.ID+"-result" || (len(run.Command) == 0 && run.Input.Script.Path == "")) {
 			err = fmt.Errorf("invalid or oversized collected run result")
 		}
 		if err != nil {
@@ -82,16 +82,26 @@ func writeCollectedNotes(ctx context.Context, workspace string, dst io.Writer) (
 			}
 		} else if strings.HasPrefix(run.State, "cancelled") {
 			outcome = "CANCELLED · " + safe(run.State)
+		} else if run.State == "timed-out" {
+			outcome = "TIMED OUT · ordinary group terminated"
+		} else if run.State == "staging-failed" {
+			outcome = "FAILED · staging; script not launched"
 		}
 		capture := "INCOMPLETE"
 		if run.OutputComplete {
 			capture = "COMPLETE"
 		}
-		fmt.Fprintf(out, "  Command: %s\n  Target: %s (%s@%s:%d)\n  Outcome: %s\n  Capture: %s\n  Run: %s\n  Collection: %s\n",
-			safe(connection.CommandLine(run.Command)), safe(run.Connection.Name), safe(run.Connection.User), safe(run.Connection.Host), run.Connection.Port,
+		if run.Input.Script.Path != "" {
+			fmt.Fprintf(out, "  Script: %s\n  Mode: %s\n  Interpreter: %s\n  Arguments: %s\n", safe(run.Input.Script.Path), safe(run.Input.Mode), safe(run.Input.Interpreter), safe(connection.CommandLine(run.Command)))
+		} else {
+			fmt.Fprintf(out, "  Command: %s\n", safe(connection.CommandLine(run.Command)))
+		}
+		fmt.Fprintf(out, "  Target: %s (%s@%s:%d)\n  Outcome: %s\n  Capture: %s\n  Run: %s\n  Collection: %s\n",
+			safe(run.Connection.Name), safe(run.Connection.User), safe(run.Connection.Host), run.Connection.Port,
 			outcome, capture, safe(run.ID), safe(a.RunID))
 		for _, detail := range []struct{ label, value string }{
 			{"Cancellation", run.Cancellation}, {"Capture error", run.OutputError}, {"Audit error", run.AuditError}, {"Cleanup error", run.CleanupError},
+			{"Program stdin", run.Input.Stdin.Path}, {"Staged script", run.Input.StagePath}, {"Staging", run.Staging}, {"Stage cleanup", run.StageCleanup}, {"Timeout", run.Input.Timeout},
 		} {
 			if detail.value != "" {
 				fmt.Fprintf(out, "  %s: %s\n", detail.label, safe(detail.value))

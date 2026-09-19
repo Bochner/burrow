@@ -34,6 +34,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=6, metavar="PATH")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--runs-check", action="store_true", help="check retained remote command lifecycle only")
+parser.add_argument("--scripts-check", action="store_true", help="check script inputs and staging through retained runs")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
 parser.add_argument("--files-check", action="store_true", help="check real SFTP browsing only")
 parser.add_argument("--forward-check", action="store_true", help="check real local forwarding only")
@@ -181,8 +182,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
-        if args.runs_check:
-            run_checks(burrow, w, first, container, command, hv, binary, env, screen_check)
+        if args.runs_check or args.scripts_check:
+            run_checks(burrow, w, first, container, command, hv, binary, env, screen_check, scripts_only=args.scripts_check)
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
         if not (smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check or args.files_check):

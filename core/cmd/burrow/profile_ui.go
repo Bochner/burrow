@@ -199,6 +199,7 @@ func (m ui) suggestions() []string {
 }
 
 var completionDescriptions = map[string]string{
+	"--script": "Local script inside the workspace upload root", "--mode": "Explicit stream, inline or stage semantics", "--interpreter": "Absolute interpreter path on the SSH target", "--stdin": "Independent binary input from the upload root", "--keep": "Keep explicitly staged files", "--timeout": "Execution deadline, such as 30s or 5m", "--budget": "Positive output byte budget per stream",
 	"run now": "CONNECTION -- COMMAND [ARG...] · review, launch, wait and collect", "run prepare": "CONNECTION -- COMMAND [ARG...] · no execution", "run launch": "Launch once; --collect waits and saves output", "run list": "List retained remote runs", "run inspect": "Remote status, capture and cleanup", "run output": "Read stdout/stderr at a byte offset", "run cancel": "Request ordinary remote group termination", "run collect": "Register output as Hovel evidence", "run close": "Drop working output; preserve collected evidence",
 	"proxy create": "CONNECTION LISTEN · port or IP:port", "proxy inspect": "Verify SOCKS endpoint and owner identity", "proxy remove": "Remove SOCKS only; preserve connection/L/R",
 	"tunnel create": "CONNECTION forward|reverse LISTEN HOST PORT", "tunc": "CONNECTION l|r LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected listener", "tund": "Remove selected listener", "tunnel check": "Test tunnel connectivity (destination greeting)",

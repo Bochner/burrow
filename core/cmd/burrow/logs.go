@@ -195,9 +195,12 @@ syntax match burrowLabel /^  [A-Za-z ][A-Za-z ]*:/
 syntax match burrowSection /^\%(Collected output\|Activity log\|STDOUT\|STDERR\)\>/
 syntax match burrowNumber /\<\d\+\%(\.\d\+\)\?\>/
 syntax match burrowSuccess /\<\%(complete\|completed\|connected\|removed\|closed\|succeeded\|ordinary-group-terminated\)\>/
-syntax match burrowFailure /\<\%(failed\|refused\|lost\|cancelled\|incomplete\|unverified\|unavailable\)\>/
-syntax match burrowPending /\<\%(attempt\|running\|connecting\|unknown\|partial\|unconfirmed\|preview truncated\)\>/
-syntax match burrowNotePath /\%(^  \%(Saved\|Destination\|Partial\|File\): \)\@<=.*/
+syntax match burrowFailure /\<\%(failed\|refused\|lost\|cancelled\|incomplete\|unverified\|unavailable\|timed out\)\>/
+syntax match burrowPending /\<\%(attempt\|running\|connecting\|unknown\|partial\|unconfirmed\|kept\|preview truncated\)\>/
+syntax match burrowNotePath /\%(^  \%(Saved\|Destination\|Partial\|File\|Script\|Staged script\|Program stdin\): \)\@<=.*/
+syntax match burrowScriptMode /\%(^  Mode: \)\@<=.*/
+syntax match burrowInterpreter /\%(^  Interpreter: \)\@<=.*/
+syntax match burrowNumber /\%(^  Timeout: \)\@<=.*/
 syntax match burrowNoteUser /\<[[:alnum:]_.-]\+\ze@/
 syntax match burrowNoteHost /@\zs[[:alnum:].-]\+/
 syntax match burrowNoteName /\%(^  Target: \)\@<=[^ (]\+/
@@ -221,6 +224,8 @@ highlight link burrowNumber Number
 highlight link burrowSuccess String
 highlight link burrowFailure Error
 highlight link burrowNotePath Comment
+highlight link burrowScriptMode burrowType
+highlight link burrowInterpreter burrowKey
 highlight link burrowNoteUser String
 highlight link burrowNoteHost burrowHost
 highlight link burrowNoteName burrowName
@@ -236,6 +241,7 @@ call BurrowLogSyntax()
 		fallback int
 	}{
 		{"burrowHost", hostStyle, 218}, {"burrowName", accent, 183}, {"burrowPort", warningStyle, 229}, {"burrowType", keywordStyle, 183},
+		{"burrowKey", infoStyle, 116},
 	} {
 		r, g, bl, _ := role.style.GetForeground().RGBA()
 		fmt.Fprintf(&b, "highlight %s guifg=#%02x%02x%02x guibg=%s ctermfg=%d ctermbg=235\n", role.name, r>>8, g>>8, bl>>8, baseColor, role.fallback)

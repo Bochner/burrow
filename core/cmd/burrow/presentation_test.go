@@ -156,11 +156,36 @@ func TestRunReviewPresentation(t *testing.T) {
 			}
 			m.dismissForm()
 		}
+		m.current().management.input.Reset()
+		frameEvent(m, tea.PasteMsg{Content: "run prepare gateway --script check.sh --mode stag"})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if !strings.Contains(m.current().management.input.Value(), "--mode stage") {
+			t.Fatal("script mode completion unavailable")
+		}
+		m.reviewText = "Run: retained-1\nScript: /uploads/check.sh\nInterpreter: /bin/sh\nMode: stage\nScript snapshot: 42 bytes; SHA256 abc\nInput snapshot: 256 bytes; SHA256 def\nExecution timeout: 30s; requests cancellation\nStaged script: /tmp/burrow-script.X/script\nKeep: retain staged files"
+		m.setForm("review", "Review script", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("script-review-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "retained-1") {
+				t.Fatal("script review identity hidden")
+			}
+			if !plain && size.X >= 120 {
+				assertTextRole(t, screen, m.dialogBounds(), "/uploads/check.sh", "#a6adc8")
+				assertTextRole(t, screen, m.dialogBounds(), "/bin/sh", "#94e2d5")
+				assertTextRole(t, screen, m.dialogBounds(), "stage", "#cba6f7")
+				assertTextRole(t, screen, m.dialogBounds(), "42 bytes", "#fab387")
+				assertTextRole(t, screen, m.dialogBounds(), "256 bytes", "#fab387")
+				assertTextRole(t, screen, m.dialogBounds(), "30s", "#fab387")
+			}
+		}
+		m.dismissForm()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 		frameEvent(m, connectionResult{result: map[string]string{
-			"launchRunID": "execution-1", "outputError": "capture failed", "auditError": "audit incomplete", "cleanupError": "cleanup refused", "cancellation": "unconfirmed; no signal", "state": "transport-or-completion-unknown",
+			"launchRunID": "execution-1", "outputError": "capture failed", "auditError": "audit incomplete", "cleanupError": "cleanup refused", "cancellation": "unconfirmed; no signal", "state": "transport-or-completion-unknown", "stageCleanup": "failed; unrelated files preserved", "timeout": "30s",
 		}})
 		screen := capturePresentation(t, m, fmt.Sprint("run-result-", plain))
-		for value, hex := range map[string]string{"execution-1": lavenderColor, "capture failed": "#f38ba8", "audit incomplete": "#f38ba8", "cleanup refused": "#f38ba8", "unconfirmed; no signal": "#f9e2af", "transport-or-completion-unknown": "#f9e2af"} {
+		for value, hex := range map[string]string{"execution-1": lavenderColor, "capture failed": "#f38ba8", "audit incomplete": "#f38ba8", "cleanup refused": "#f38ba8", "unconfirmed; no signal": "#f9e2af", "transport-or-completion-unknown": "#f9e2af", "failed; unrelated files preserved": "#f38ba8", "30s": "#fab387"} {
 			if plain {
 				if !strings.Contains(m.View().Content, value) {
 					t.Fatal("NO_COLOR hid run result", value)
@@ -2045,6 +2070,11 @@ func TestLogVimRenderedColors(t *testing.T) {
 
 2026-09-19T14:00:00Z -- collected command
   Command: ps -elf
+  Script: /uploads/check.sh
+  Mode: stage
+  Interpreter: /bin/sh
+  Stage cleanup: kept
+  Timeout: 30s
   Outcome: SUCCEEDED (exit 0)
   Capture: INCOMPLETE
   Run: retained-1
@@ -2085,9 +2115,10 @@ STDOUT · 123 stored / 456 received bytes
 		screen := vt.NewEmulator(160, 40)
 		screen.Write([]byte(strings.ReplaceAll(snap.Screen, "\n", "\r\n")))
 		for text, want := range map[string]string{"gateway": "#b4befe", "tester": "#a6e3a1", "192.0.2.10": "#f5c2e7", "2222": "#f9e2af", "COMPLETE": "#a6e3a1", "failed": "#f38ba8", "/downloads/data": "#a6adc8",
+			"/uploads/check.sh": "#a6adc8", "stage": "#cba6f7", "/bin/sh": "#94e2d5", "kept": "#f9e2af", "30s": "#fab387",
 			"ps -elf": blueColor, "-elf": blueColor, "SUCCEEDED": "#a6e3a1", "INCOMPLETE": "#f38ba8", "retained-1": lavenderColor, "collection-1": lavenderColor, "unconfirmed": "#f9e2af", "disk full": "#f38ba8", "STDOUT": blueColor, "123": "#fab387", "PREVIEW TRUNCATED": "#f9e2af", "/workspace/artifacts/output": "#a6adc8"} {
 			if !plain {
-				assertTextRole(t, screen, image.Rect(0, 1, 160, 21), text, want)
+				assertTextRole(t, screen, image.Rect(0, 1, 160, 26), text, want)
 			}
 			if !strings.Contains(screen.String(), text) {
 				t.Fatal("viewer text lost", text, plain)

@@ -712,6 +712,9 @@ run prepare NAME -- COMMAND [ARG...]	Prepare on an already connected SSH target;
 run prepare NAME -- ps -elf	Example: prepare a remote process listing without executing yet
 run now NAME -- ps -elf	Review once, launch, wait and collect; view output with Ctrl+L
 run now NAME --yes -- COMMAND [ARG...]	Explicitly skip review; put Burrow options before --
+run prepare NAME --script PATH --mode MODE --interpreter PATH -- [ARG...]	Prepare a local script snapshot; mode is stream, inline or stage
+run now NAME --script check.sh --mode stream --interpreter /bin/sh --	Review, execute and collect a local shell script
+run now NAME --stdin data.bin -- /bin/sh /opt/check.sh	Existing remote script with independent binary input
 run launch ID [--collect]	Launch once; --collect waits and saves output; Tab completes IDs
 run list	List retained runs in this workspace
 run inspect ID	Inspect execution status, output completeness and storage budget
@@ -721,6 +724,11 @@ run collect ID	Review saving completed or partial output as Hovel evidence
 run close ID	Review removal of working output; collected evidence remains
 Use the id returned by prepare. Leaving the view does not cancel execution.
 Optional prepare setting: --budget BYTES before -- (default 256 MiB per stream).
+Scripts and --stdin files come from the workspace upload root (256 MiB per input).
+Stream owns stdin. Inline exposes source in argv (64 KiB limit); never use secrets.
+Stage uploads only after review; --keep retains it, otherwise only owned files are removed.
+--timeout 30s requests cancellation; failed/unconfirmed staging cleanup remains visible.
+Tab completes script options, modes and interpreter examples; select an installed interpreter.
 Output shows the next byte offset. Cancel active runs before close; never put secrets in arguments.
 
 # FORWARDING

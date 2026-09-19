@@ -289,6 +289,10 @@ func (m ui) semanticText(text string) string {
 			if label == "Command" || label == "Output budget" {
 				styled = m.syntax(value, false)
 			}
+			if label == "Script snapshot" || label == "Input snapshot" || label == "Execution timeout" {
+				quantity, _, _ := strings.Cut(value, ";")
+				styled = m.paint(numberStyle, quantity) + m.paint(style, value[len(quantity):])
+			}
 			if label == "Endpoint" || label == "Jump" || label == "Listen" || label == "Destination" || label == "Remote listener" || label == "Local destination" || label == "Local listener" || label == "Remote destination" {
 				styled = m.endpoint(value)
 			}
@@ -348,10 +352,24 @@ func (m ui) styledOutput() string {
 					if token == `""` {
 						style = secondary
 					}
-				case "cancellation":
+				case "path", "stagePath":
+					style = secondary
+				case "mode":
+					style = keywordStyle
+				case "interpreter":
+					style = infoStyle
+				case "timeout":
+					style = numberStyle
+				case "cancellation", "stageCleanup", "staging":
 					style = secondary
 					if strings.HasPrefix(token, `"unconfirmed`) {
 						style = warningStyle
+					} else if strings.HasPrefix(token, `"failed`) {
+						style = errorStyle
+					} else if token == `"pending"` || token == `"kept"` || token == `"not-started"` {
+						style = warningStyle
+					} else if token == `"removed"` || token == `"ready"` {
+						style = successStyle
 					} else if token == `"ordinary-group-terminated"` {
 						style = successStyle
 					}
@@ -383,7 +401,7 @@ func connectionStyle(state string) lipgloss.Style {
 	switch state {
 	case "connected", "active", "running", "listening", "traffic-observed":
 		return successStyle
-	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable":
+	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable", "staging-failed", "timed-out":
 		return errorStyle
 	case "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown":
 		return warningStyle
@@ -455,13 +473,13 @@ func fieldStyle(header string) lipgloss.Style {
 		return successStyle
 	case "PORT", "LOCAL PORT", "OVERWRITE":
 		return warningStyle
-	case "KEY", "AGENT", "SHELL", "PROXY", "SOCKS PROXY":
+	case "KEY", "AGENT", "SHELL", "PROXY", "SOCKS PROXY", "INTERPRETER":
 		return infoStyle
-	case "TERM", "TYPE", "PERMISSIONS":
+	case "TERM", "TYPE", "PERMISSIONS", "MODE":
 		return keywordStyle
 	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
 		return numberStyle
-	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "CLEANUPSCOPE", "SOURCE", "DESTINATION PATH":
+	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "CLEANUPSCOPE", "SOURCE", "DESTINATION PATH", "SCRIPT", "STAGED SCRIPT", "PROGRAM STDIN":
 		return secondary
 	case "ERROR", "OUTPUTERROR", "AUDITERROR", "CLEANUPERROR":
 		return errorStyle

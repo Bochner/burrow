@@ -33,6 +33,10 @@ type Run struct {
 	LaunchRunID    string   `json:"launchRunID"`
 	Connection     State    `json:"connection"`
 	Command        []string `json:"command"`
+	Input          RunInput `json:"input"`
+	Staging        string   `json:"staging,omitempty"`
+	StageCleanup   string   `json:"stageCleanup,omitempty"`
+	TimedOut       bool     `json:"timedOut"`
 	Budget         int64    `json:"budgetPerStream"`
 	State          string   `json:"state"`
 	RemoteExit     *int     `json:"remoteExit"`
@@ -52,22 +56,26 @@ type runRequest struct {
 	Connection State    `json:"connection"`
 	Command    []string `json:"command"`
 	Budget     int64    `json:"budgetPerStream"`
+	Input      RunInput `json:"input"`
 }
 
 type remoteRun struct {
-	control       sync.Mutex
-	mu            sync.Mutex
-	workspace     string
-	record        Run
-	dir           string
-	root          *os.Root
-	files         [2]*os.File
-	process       *exec.Cmd
-	done          chan struct{}
-	identityReady chan struct{}
-	closed        bool
-	pid, group    int
-	start         string
+	control                   sync.Mutex
+	mu                        sync.Mutex
+	workspace                 string
+	record                    Run
+	dir                       string
+	root                      *os.Root
+	files                     [2]*os.File
+	inputs                    [2]*os.File
+	process                   *exec.Cmd
+	done                      chan struct{}
+	identityReady             chan struct{}
+	closed                    bool
+	pid, group                int
+	start                     string
+	stageDirectory, stageFile string
+	stopRequested             bool
 }
 
 func parseRun(args []string) (runRequest, bool, string, error) {
@@ -88,6 +96,16 @@ func parseRun(args []string) (runRequest, bool, string, error) {
 		yes, budgetSet := false, false
 		for i < len(args) && args[i] != "--" {
 			switch {
+			case args[i] == "--keep" && !r.Input.Keep:
+				r.Input.Keep = true
+				i++
+			case slices.Contains([]string{"--script", "--mode", "--interpreter", "--stdin", "--timeout"}, args[i]) && i+1 < len(args):
+				field := map[string]*string{"--script": &r.Input.Script.Path, "--mode": &r.Input.Mode, "--interpreter": &r.Input.Interpreter, "--stdin": &r.Input.Stdin.Path, "--timeout": &r.Input.Timeout}[args[i]]
+				if *field != "" || args[i+1] == "" {
+					return r, false, "", bad
+				}
+				*field = args[i+1]
+				i += 2
 			case args[i] == "--budget" && !budgetSet && i+1 < len(args):
 				var err error
 				r.Budget, err = strconv.ParseInt(args[i+1], 10, 64)
@@ -103,7 +121,7 @@ func parseRun(args []string) (runRequest, bool, string, error) {
 				return r, false, "", bad
 			}
 		}
-		if i+1 >= len(args) || args[i] != "--" {
+		if i >= len(args) || args[i] != "--" {
 			return r, false, "", bad
 		}
 		r.Command = args[i+1:]
@@ -149,7 +167,10 @@ func RunWaits(args []string) bool {
 }
 
 func validateRunRequest(r runRequest) error {
-	if r.Budget <= 0 || len(r.Command) == 0 || r.Command[0] == "" || strings.HasPrefix(r.Command[0], "-") {
+	if err := r.Input.validate(); err != nil {
+		return err
+	}
+	if r.Budget <= 0 || (r.Input.Script.Path == "" && (len(r.Command) == 0 || r.Command[0] == "" || strings.HasPrefix(r.Command[0], "-"))) {
 		return fmt.Errorf("command and positive output budget required")
 	}
 	size := 0
@@ -251,13 +272,14 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 		return out, err
 	}
 	// The immutable command, selected connection and budgets bind every approval.
-	bound, _ := json.Marshal(runRequest{state.Connection, state.Command, state.Budget})
+	bound, _ := json.Marshal(state.request())
 	hash := digest(args[1] + state.ID + string(bound))
 	if RunWaits(args) {
 		hash = digest("launch-collect" + state.ID + string(bound))
 	}
 	if !yes {
 		text := fmt.Sprintf("Run: %s\nConnection: %s\nEndpoint: %s@%s:%d\nAction: %s\nCommand: %s\nOutput budget: %d bytes per stream.\nUncollected output can be lost on module/daemon failure. Commands/arguments must not contain secrets.", state.ID, state.Connection.Name, state.Connection.User, state.Connection.Host, state.Connection.Port, args[1], quoteCommand(state.Command), state.Budget)
+		text += state.Input.review()
 		if args[1] == "close" {
 			text += "\nClose removes uncollected working output; registered Hovel artifacts remain."
 		}
@@ -354,13 +376,16 @@ func runAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 		if err != nil {
 			return hovel.Result{}, err
 		}
-		r := &remoteRun{workspace: w, dir: dir, root: root, done: make(chan struct{}), identityReady: make(chan struct{}), record: Run{RunID: ctx.RunID, OwnerPID: os.Getpid(), Connection: req.Connection, Command: req.Command, Budget: req.Budget, State: "prepared", Cancellation: "not-requested", CleanupScope: "ordinary process group only; escaped descendants and post-loss recovery unconfirmed"}}
+		r := &remoteRun{workspace: w, dir: dir, root: root, done: make(chan struct{}), identityReady: make(chan struct{}), record: Run{RunID: ctx.RunID, OwnerPID: os.Getpid(), Connection: req.Connection, Command: req.Command, Budget: req.Budget, Input: req.Input, State: "prepared", Cancellation: "not-requested", CleanupScope: "ordinary process group only; escaped descendants and post-loss recovery unconfirmed"}}
 		for i, name := range []string{"stdout", "stderr"} {
 			r.files[i], err = root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 			if err != nil {
 				r.Close("prepare failed")
 				return hovel.Result{}, err
 			}
+		}
+		if err := r.prepareInputs(c); err != nil {
+			return hovel.Result{}, errors.Join(err, r.Close("prepare failed"))
 		}
 		ref, err := ctx.OpenSession(r, hovel.WithName("Run on "+req.Connection.Name), hovel.WithKind(runKind), hovel.WithTransport("ssh"))
 		if err != nil {
@@ -380,7 +405,7 @@ func runAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 	if err := runControl(c, w, id, "run-inspect", nil, &state); err != nil {
 		return hovel.Result{}, err
 	}
-	bound, _ := json.Marshal(runRequest{state.Connection, state.Command, state.Budget})
+	bound, _ := json.Marshal(state.request())
 	if ctx.InputString("review", "") != digest(action+state.ID+string(bound)) {
 		return hovel.Result{}, fmt.Errorf("run approval does not match immutable request")
 	}
@@ -547,17 +572,33 @@ func (r *remoteRun) launch(runID string) (failure error) {
 	if live.Socket != s.Socket || live.SocketInode != s.SocketInode || live.MasterPID != s.MasterPID {
 		return fmt.Errorf("selected master changed; prepare a new run explicitly")
 	}
+	argv, input, err := r.invocation()
+	if err != nil {
+		return err
+	}
+	if r.record.Input.Mode == "stage" {
+		r.record.LaunchRunID = runID
+		if err := r.stage(); err != nil {
+			r.record.State = "staging-failed"
+			r.record.OutputComplete = true
+			r.cleanupStage()
+			close(r.done)
+			return err
+		}
+	}
 	marker := "burrow-start-" + rand.Text() + ":"
 	// OpenSSH's non-PTY child is the process-group leader. No remote file or
 	// installed supervisor is needed. The one prefix precedes executable output.
 	script := `(if { IFS= read -r stat < /proc/$$/stat; } 2>/dev/null; then set -- ${stat##*) }; group=$3; shift 19; printf '` + marker + `%s:%s:%s\n' "$$" "$group" "$1"; else printf '` + marker + `0:0:0\n'; fi) >&2
-exec ` + quoteCommand(r.record.Command)
+exec ` + quoteCommand(argv)
 	r.process = fileSSH(context.Background(), s, "unused", "exec /bin/sh -c "+quoteCommand([]string{script}))
+	r.process.Stdin = input
 	r.process.Stdout = runWriter{r, 0}
 	r.process.Stderr = &runPrefix{r: r, marker: marker}
 	r.record.State, r.record.LaunchRunID = "running", runID
 	if err := r.process.Start(); err != nil {
 		r.record.State = "transport-or-completion-unknown"
+		r.cleanupStage()
 		close(r.done)
 		return err
 	}
@@ -583,10 +624,18 @@ exec ` + quoteCommand(r.record.Command)
 			r.record.OutputError = "output drain incomplete after local SSH exit"
 		}
 		r.record.OutputComplete = r.record.OutputError == "" && r.record.State == "exited" && err != exec.ErrWaitDelay
+		if !r.stopRequested {
+			if r.record.State == "exited" || r.record.Input.Keep {
+				r.cleanupStage()
+			} else if r.record.Input.Mode == "stage" {
+				r.record.StageCleanup = "unconfirmed; execution observation lost"
+			}
+		}
 		if err := audit.Finish(r.record, nil); err != nil {
 			r.record.AuditError = err.Error()
 		}
 	}()
+	r.startTimeout()
 	return nil
 }
 
@@ -687,6 +736,13 @@ func (r *remoteRun) cancel() {
 		if r.record.State == "transport-or-completion-unknown" && r.record.Cancellation == "not-requested" {
 			r.record.Cancellation = "unconfirmed; execution observation lost; no signal sent"
 		}
+		if r.record.Input.Mode == "stage" && r.record.StageCleanup == "pending" && r.record.State != "running" {
+			if r.record.State == "exited" || r.record.Cancellation == "ordinary-group-terminated" || r.record.Input.Keep {
+				r.cleanupStage()
+			} else {
+				r.record.StageCleanup = "unconfirmed; remote termination not verified"
+			}
+		}
 	}()
 	r.mu.Lock()
 	if r.record.State == "prepared" {
@@ -701,6 +757,7 @@ func (r *remoteRun) cancel() {
 		r.mu.Unlock()
 		return
 	}
+	r.stopRequested = true
 	r.mu.Unlock()
 	select {
 	case <-r.identityReady:
@@ -769,6 +826,9 @@ exit 7`, pid, pid, start, pid, pid)
 	r.record.Cancellation = outcome
 	if outcome == "ordinary-group-terminated" {
 		r.record.State = "cancelled"
+		if r.record.TimedOut {
+			r.record.State = "timed-out"
+		}
 		r.record.RemoteExit = nil
 	} else if r.record.State != "exited" {
 		r.record.State = "transport-or-completion-unknown"
@@ -806,6 +866,19 @@ func (r *remoteRun) Close(string) error {
 				failures = errors.Join(failures, r.root.Remove(name))
 			} else {
 				failures = errors.Join(failures, fmt.Errorf("output replaced; unknown file preserved"))
+			}
+			failures = errors.Join(failures, f.Close())
+		}
+	}
+	for i, f := range r.inputs {
+		if f != nil {
+			name := []string{"script", "stdin"}[i]
+			live, err := r.root.Lstat(name)
+			held, e := f.Stat()
+			if err == nil && e == nil && os.SameFile(live, held) {
+				failures = errors.Join(failures, r.root.Remove(name))
+			} else {
+				failures = errors.Join(failures, fmt.Errorf("input replaced; unknown file preserved"))
 			}
 			failures = errors.Join(failures, f.Close())
 		}

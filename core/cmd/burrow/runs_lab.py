@@ -11,7 +11,7 @@ from pathlib import Path
 import time
 
 
-def run_checks(burrow, workspace, connection, container, command, hv, binary, env, decoder):
+def run_checks(burrow, workspace, connection, container, command, hv, binary, env, decoder, scripts_only=False):
     def run(*args, **kw):
         return burrow(workspace, "run", *args, **kw)
 
@@ -32,6 +32,178 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
                 return
             time.sleep(.05)
         raise AssertionError("remote command never published " + path)
+
+    def master_loss_checks():
+        missing = run("prepare", connection["name"], "--", "true")
+        source.write_text("sleep 60\n")
+        loss = run("prepare", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--")
+        run("launch", loss["id"], "--yes")
+        socket = Path(connection["socket"])
+        hidden = socket.with_name("master-hidden")
+        socket.rename(hidden)
+        try:
+            run("launch", missing["id"], "--yes", ok=False)
+            assert not socket.exists()
+            uncertain = run("cancel", loss["id"], "--yes")
+            assert uncertain["cancellation"].startswith("unconfirmed"), uncertain
+            assert uncertain["stageCleanup"].startswith("unconfirmed"), uncertain
+            assert uncertain["remoteExit"] is None
+            command("docker", "exec", container, "test", "-f", loss["input"]["stagePath"])
+        finally:
+            hidden.rename(socket)
+        run("cancel", missing["id"], "--yes")
+        run("close", missing["id"], "--yes")
+        assert run("collect", loss["id"], "--yes")["collection"] == "succeeded"
+        run("close", loss["id"], "--yes")
+        print("PASS master-loss uncertainty preserves staged files without reconnect", flush=True)
+
+    # Local source is snapshotted before review; streamed source owns stdin.
+    uploads = Path(burrow(workspace, "local")["upload"])
+    source = uploads / "quoted script.sh"
+    source.write_text("printf '<%s>\\n' \"$@\"; printf separate >&2; exit 7\n")
+    scripted = run("prepare", connection["name"], "--script", source.name,
+                   "--mode", "stream", "--interpreter", "/bin/sh", "--",
+                   "My Documents", "café", "$(hostname)", "a'b", "")
+    source.write_text("exit 99\n")
+    review = run("launch", scripted["id"])
+    assert "stream" in review["review"] and "quoted script.sh" in review["review"]
+    run("launch", scripted["id"], "--review", review["digest"], "--yes")
+    state = finished(scripted["id"])
+    assert state["remoteExit"] == 7 and state["outputComplete"], state
+    assert base64.b64decode(run("output", scripted["id"], "stdout", "0")["data"]) == "<My Documents>\n<café>\n<$(hostname)>\n<a'b>\n<>\n".encode()
+    assert base64.b64decode(run("output", scripted["id"], "stderr", "0")["data"]) == b"separate"
+    assert run("collect", scripted["id"], "--yes")["collection"] == "succeeded"
+    run("close", scripted["id"], "--yes")
+
+    print("PASS streamed script snapshot and exact arguments", flush=True)
+    data = uploads / "input.bin"
+    payload = bytes(range(256)) * 1024 + b"SCRIPT-STDIN-SECRET-CANARY"
+    data.write_bytes(payload)
+    source.write_text("sha256sum; printf '%s' \"$1\" >&2\n")
+    for options, argv in [
+        (["--script", source.name, "--mode", "inline", "--interpreter", "/bin/sh"], ["literal;λ"]),
+        ([], ["/usr/bin/sha256sum"]),
+    ]:
+        data.write_bytes(payload)
+        prepared = run("prepare", connection["name"], *options, "--stdin", data.name, "--", *argv)
+        data.write_bytes(b"changed after preparation")
+        assert "SCRIPT-STDIN-SECRET-CANARY" not in json.dumps(prepared)
+        run("launch", prepared["id"], "--yes")
+        state = finished(prepared["id"])
+        assert state["remoteExit"] == 0 and state["outputComplete"], state
+        output = base64.b64decode(run("output", state["id"], "stdout", "0")["data"])
+        assert output.split()[0].decode() == hashlib.sha256(payload).hexdigest(), output
+        assert run("collect", state["id"], "--yes")["collection"] == "succeeded"
+        run("close", state["id"], "--yes")
+    assert b"SCRIPT-STDIN-SECRET-CANARY" not in (workspace / "burrow-logs/operations.log").read_bytes()
+    print("PASS inline source and independent binary stdin", flush=True)
+    source.write_text("printf '%s\\n' \"$0\"; cat; exit 7\n")
+    data.write_bytes(b"staged-input")
+    staged = run("prepare", connection["name"], "--script", source.name, "--mode", "stage",
+                 "--interpreter", "/bin/sh", "--stdin", data.name, "--")
+    stage = staged["input"]["stagePath"]
+    command("docker", "exec", container, "test", "!", "-e", str(Path(stage).parent))
+    run("launch", staged["id"], "--yes")
+    state = finished(staged["id"])
+    assert state["remoteExit"] == 7 and state["staging"] == "ready" and state["stageCleanup"] == "removed", state
+    assert base64.b64decode(run("output", state["id"], "stdout", "0")["data"]) == (stage + "\nstaged-input").encode()
+    command("docker", "exec", container, "test", "!", "-e", str(Path(stage).parent))
+    assert run("collect", staged["id"], "--yes")["collection"] == "succeeded"
+    run("close", staged["id"], "--yes")
+    print("PASS explicit staging and nonzero-exit cleanup", flush=True)
+    source.write_text("printf kept\n")
+    kept = run("now", connection["name"], "--script", source.name, "--mode", "stage",
+               "--interpreter", "/bin/sh", "--keep", "--yes", "--")
+    assert kept["stageCleanup"] == "kept" and kept["collection"] == "succeeded", kept
+    stage = kept["input"]["stagePath"]
+    assert command("docker", "exec", container, "cat", stage) == "printf kept\n"
+    assert command("docker", "exec", container, "stat", "-c", "%a", str(Path(stage).parent), stage).split() == ["700", "600"]
+    run("close", kept["id"], "--yes")
+    command("docker", "exec", container, "test", "-f", stage)
+
+    # Existing remote scripts use the ordinary command path and are never deleted.
+    existing = run("now", connection["name"], "--yes", "--", "/bin/sh", stage)
+    assert existing["remoteExit"] == 0
+    command("docker", "exec", container, "test", "-f", stage)
+    run("close", existing["id"], "--yes")
+
+    source.write_text('printf preserve > "$(dirname "$0")/unrelated"\n')
+    unrelated = run("now", connection["name"], "--script", source.name, "--mode", "stage",
+                    "--interpreter", "/bin/sh", "--yes", "--")
+    stage = unrelated["input"]["stagePath"]
+    assert unrelated["remoteExit"] == 0 and unrelated["stageCleanup"].startswith("failed"), unrelated
+    command("docker", "exec", container, "test", "!", "-e", stage)
+    assert command("docker", "exec", container, "cat", str(Path(stage).parent / "unrelated")) == "preserve"
+    run("close", unrelated["id"], "--yes")
+
+    collision = run("prepare", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--")
+    stage = collision["input"]["stagePath"]
+    command("docker", "exec", container, "mkdir", str(Path(stage).parent))
+    command("docker", "exec", container, "sh", "-c", 'printf original > "$1"', "sh", stage)
+    run("launch", collision["id"], "--yes", ok=False)
+    state = run("inspect", collision["id"])
+    assert state["state"] == "staging-failed" and state["remoteExit"] is None, state
+    assert state["stageCleanup"].startswith("not-created"), state
+    assert command("docker", "exec", container, "cat", stage) == "original"
+    assert run("launch", collision["id"], "--yes")["state"] == "staging-failed"
+    assert run("collect", collision["id"], "--yes")["collection"] == "succeeded"
+    run("close", collision["id"], "--yes")
+    print("PASS keep, existing remote script, staging failure and unrelated-file preservation", flush=True)
+    source.write_text("echo $$; sleep 60 & echo $!; wait\n")
+    sibling = run("prepare", connection["name"], "--", "sleep", "120")
+    run("launch", sibling["id"], "--yes")
+    for timeout, keep in ((False, False), (True, False), (True, True)):
+        options = ["--timeout", "2s"] if timeout else []
+        if keep:
+            options.append("--keep")
+        stopped = run("prepare", connection["name"], "--script", source.name, "--mode", "stage",
+                      "--interpreter", "/bin/sh", *options, "--")
+        run("launch", stopped["id"], "--yes")
+        if timeout:
+            state = finished(stopped["id"])
+            assert state["timedOut"] and state["state"] == "timed-out", state
+        else:
+            state = run("cancel", stopped["id"], "--yes")
+            assert state["state"] == "cancelled", state
+        assert state["cancellation"] == "ordinary-group-terminated" and state["stageCleanup"] == ("kept" if keep else "removed"), state
+        pids = base64.b64decode(run("output", stopped["id"], "stdout", "0")["data"]).split()
+        assert len(pids) == 2
+        for pid in pids:
+            command("docker", "exec", container, "sh", "-c",
+                    'test ! -e /proc/$1/stat || test "$(cut -d " " -f 3 /proc/$1/stat)" = Z', "sh", pid.decode())
+        assert run("inspect", sibling["id"])["state"] == "running", "script cancellation killed sibling"
+        assert run("collect", stopped["id"], "--yes")["collection"] == "succeeded"
+        run("close", stopped["id"], "--yes")
+    run("cancel", sibling["id"], "--yes")
+    run("close", sibling["id"], "--yes")
+    print("PASS script cancellation/timeout, cleanup and sibling usability", flush=True)
+    source.write_text('mv "$0" "$0.original"; printf replacement > "$0"\n')
+    replaced_script = run("now", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--yes", "--")
+    assert replaced_script["stageCleanup"].startswith("failed"), replaced_script
+    assert command("docker", "exec", container, "cat", replaced_script["input"]["stagePath"]) == "replacement"
+    run("close", replaced_script["id"], "--yes")
+
+    # Reject traversal, escaping links, special files and inline argument limits.
+    outside = uploads.parent / "outside.sh"
+    outside.write_text("exit 0\n")
+    (uploads / "outside-link").symlink_to(outside)
+    os.mkfifo(uploads / "input-pipe")
+    source.write_bytes(b"#" * 65537)
+    before = set(workspace.glob(".burrow-run-*"))
+    for local in ("../outside.sh", "outside-link", "input-pipe"):
+        run("prepare", connection["name"], "--stdin", local, "--", "cat", ok=False)
+    run("prepare", connection["name"], "--script", source.name, "--mode", "inline", "--interpreter", "/bin/sh", "--", ok=False)
+    source.write_bytes(b"printf '\x00'\n")
+    run("prepare", connection["name"], "--script", source.name, "--mode", "inline", "--interpreter", "/bin/sh", "--", ok=False)
+    assert set(workspace.glob(".burrow-run-*")) == before, "failed preparation leaked working files"
+    for p in workspace.rglob("*"):
+        if p.is_file() and p.name.endswith((".log", ".db", ".db-wal", ".json")):
+            assert b"SCRIPT-STDIN-SECRET-CANARY" not in p.read_bytes(), p
+    print("PASS input containment, inline limits, replacement refusal and secret exclusion", flush=True)
+    if scripts_only:
+        run_ui(binary, env, decoder, burrow, workspace, connection["name"])
+        master_loss_checks()
+        return
 
     immediate = run("now", connection["name"], "--budget", "1024", "--yes", "--", "printf", "%s", "--yes")
     assert immediate["id"] and immediate["launchRunID"], immediate
@@ -93,6 +265,12 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
         result = json.loads(hv("throw", "--now", "--allow-dangerous", "--json", chain="retained-check"))["results"][0]
         assert result["state"] == "succeeded", result
         return json.loads(result["summary"])
+
+    source.write_text("printf hovel-script\n")
+    scripted = hovel_run("now", connection["name"], "--script", source.name, "--mode", "stream", "--interpreter", "/bin/sh", "--yes", "--")
+    assert scripted["collection"] == "succeeded" and scripted["remoteExit"] == 0, scripted
+    assert base64.b64decode(run("output", scripted["id"], "stdout", "0")["data"]) == b"hovel-script"
+    run("close", scripted["id"], "--yes")
 
     now_review = hovel_run("now", connection["name"], "--", "printf", "reviewed-now")
     assert run("inspect", now_review["id"])["state"] == "prepared", now_review
@@ -303,26 +481,7 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
         assert (workspace / item["path"]).exists()
     command("docker", "exec", container, "sh", "-c", 'kill -TERM -$(cat /tmp/burrow-lost-run)')
 
-    # Selected-master loss refuses launch and cannot make a new authenticated
-    # connection. Restore only the fixture socket name; the owner remains exact.
-    missing = run("prepare", connection["name"], "--", "true")
-    loss = run("prepare", connection["name"], "--", "sleep", "60")
-    run("launch", loss["id"], "--yes")
-    socket = Path(connection["socket"])
-    hidden = socket.with_name("master-hidden")
-    socket.rename(hidden)
-    try:
-        run("launch", missing["id"], "--yes", ok=False)
-        assert not socket.exists()
-        uncertain = run("cancel", loss["id"], "--yes")
-        assert uncertain["cancellation"].startswith("unconfirmed"), uncertain
-        assert uncertain["remoteExit"] is None
-    finally:
-        hidden.rename(socket)
-    run("cancel", missing["id"], "--yes")
-    run("close", missing["id"], "--yes")
-    assert run("collect", loss["id"], "--yes")["collection"] == "succeeded"
-    run("close", loss["id"], "--yes")
+    master_loss_checks()
 
 
 def run_ui(binary, env, decoder, burrow, workspace, connection):
@@ -332,8 +491,9 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
     import struct
     import termios
 
-    saved = burrow(workspace, "run", "prepare", connection, "--", "/bin/sh", "-c",
-                   "printf 'retained viewer output\\nremote\\033]52;c;untrusted\\007\\n'; printf 'viewer stderr\\n' >&2; exit 7")
+    script = Path(burrow(workspace, "local")["upload"]) / "viewer script.sh"
+    script.write_text("printf 'retained viewer output\\nremote\\033]52;c;untrusted\\007\\n'; printf 'viewer stderr\\n' >&2; exit 7\n")
+    saved = burrow(workspace, "run", "prepare", connection, "--script", script.name, "--mode", "stage", "--interpreter", "/bin/sh", "--")
     burrow(workspace, "run", "launch", saved["id"], "--yes")
     deadline = time.monotonic() + 15
     while burrow(workspace, "run", "inspect", saved["id"])["state"] == "running":
@@ -436,12 +596,18 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
         wait("    --yes")
         os.write(outer, b"\x0c")
         wait("COMMAND OUTPUT")
-        os.write(outer, ("run now " + connection + " -- true\r").encode())
+        os.write(outer, ("run now " + connection + " --script " + shlex.quote(script.name) + " --mode stage --interpreter /bin/sh --\r").encode())
         wait("Proceed?")
         cancelled, = [r for r in burrow(workspace, "run", "list") if r["id"] not in before_now]
         os.write(outer, b"\x1b")
         wait("COMMAND OUTPUT")
         assert burrow(workspace, "run", "inspect", cancelled["id"])["state"] == "prepared"
+        os.write(outer, ("run launch " + cancelled["id"] + " --collect\r").encode())
+        wait("Proceed?")
+        os.write(outer, b"\t\r")
+        wait('"launchRunID"')
+        completed = burrow(workspace, "run", "inspect", cancelled["id"])
+        assert completed["remoteExit"] == 7 and completed["stageCleanup"] == "removed", completed
         burrow(workspace, "run", "close", cancelled["id"], "--yes")
         os.write(outer, b"quit\r")
         wait("Keep running")
