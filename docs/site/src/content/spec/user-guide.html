@@ -1,14 +1,19 @@
 <!-- burrow-doc: {"title":"User guide","group":"Foundations","order":100} -->
 <article>
 <h1>User guide</h1>
-<p>Burrow is the Go successor to LazySSH. The production Linux amd64 package supports verified Hovel workspace setup, retained SSH connections and saved connection collections. Start with the <a href="launch.html">setup and launch guide</a>.</p>
+<p>Burrow is the Go successor to LazySSH. The production Linux amd64 package supports verified Hovel workspaces, retained SSH connections, saved settings, interactive shells, forwarding, file transfers, and commands and scripts with collected output. Start with the <a href="launch.html">setup and launch guide</a>.</p>
 <h2>Connect and save settings</h2>
 <p>The <a href="connections.html">connection guide</a> covers passwords, encrypted keys, SSH agents, host-key verification, SSH config aliases and jump hosts. After successful interactive authentication, Burrow offers to save the settings for a future session.</p>
 <p>Each workspace automatically receives a private <code>burrow-profiles.json</code> template with instructions and an inactive example. Follow <a href="profiles.html">saved connection collections</a> for a filled-out JSON example and commands to create, save, edit, delete, load and back up profiles. Opening a collection only displays settings; connect explicitly when ready.</p>
 <h2>Connection lifetime</h2>
 <p>Quit reviews whether to keep connections running or close them, while retaining the daemon. Frontend-local shells end on exit. Reopen the same workspace to manage retained connections, or use <code>close NAME</code> to review and end one. Editing or deleting a saved profile changes future connections only. Saved settings contain no passwords or private-key contents.</p>
 <h2>Follow the work</h2>
-<p><code>scp NAME</code> enters <a href="files.html">file browsing</a> through a live connection, with remote navigation, cached completion and persistent workspace upload/download roots. File transfers themselves follow in separate tickets.</p>
-<p>Use <code>shell NAME</code> to open an <a href="shells.html">interactive SSH shell</a> through a live connection. Ctrl+] backgrounds it; open another, list with <code>shells</code>, return with <code>resume ID</code>, or close one with <code>shell-close ID</code>. Shells share the owning connection's master socket. The <a href="https://github.com/Bochner/burrow/issues/1">SSH specification map</a> tracks remaining file transfer and forwarding work.</p>
-<p>Existing LazySSH plugins need not run unchanged. Remote scripts, local scripts invoking Hovel, and local tools using SSH tunnels are separate integration questions. SMB and WinRM implementation remain outside this map.</p>
+<p><code>scp NAME</code> enters <a href="files.html">file browsing and transfers</a> through a live connection, with remote navigation, cached completion and persistent workspace upload/download roots. Download with <code>get</code> or <code>mget</code>, upload with <code>put</code>, and review retained outcomes with <code>transfers</code>.</p>
+<p>Use <code>shell NAME</code> to open an <a href="shells.html">interactive SSH shell</a> through a live connection. Ctrl+] backgrounds it; open another, list with <code>shells</code>, return with <code>resume ID</code>, or close one with <code>shell-close ID</code>. Shells share the owning connection's master socket. The <a href="forwarding.html">forwarding guide</a> covers local and reverse listeners.</p>
+<h2>Run commands and scripts</h2>
+<p>Enter these examples in the management prompt for a live connection named <code>gateway</code>. The first runs an existing command. The second streams a local script from the configured upload root:</p>
+<pre data-lang="Burrow management"><code>run now gateway -- ps -elf
+run now gateway --script check.sh --mode stream --interpreter /bin/sh --</code></pre>
+<p>Review and confirm to execute and collect. Press <kbd>Ctrl+L</kbd> to read stdout, stderr and the outcome. The <a href="runs.html#tui-workflow">TUI walkthrough</a> and <a href="runs.html#script-inputs">worked script examples</a> explain where files belong, literal arguments, independent stdin, inline and staged modes, timeouts, keep and cleanup. <code>run list</code> and <code>run inspect ID</code> expose retained state after you leave the view.</p>
+<p>The <a href="https://github.com/Bochner/burrow/issues/1">SSH specification map</a> tracks remaining work. Existing LazySSH plugin compatibility, local scripts invoking Hovel, local tools using tunnels, and reports/chains remain separate integration questions. SMB and WinRM implementation remain outside this map.</p>
 </article>
