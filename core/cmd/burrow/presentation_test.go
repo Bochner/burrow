@@ -145,7 +145,7 @@ func TestRunReviewPresentation(t *testing.T) {
 			t.Fatal("run review could not be cancelled")
 		}
 		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
-		for _, verb := range []string{"prepare", "launch", "inspect", "cancel", "collect", "close", "output"} {
+		for _, verb := range []string{"prepare", "now", "launch", "inspect", "cancel", "collect", "close", "output"} {
 			m.reviewText = "Command: run " + verb + " retained-1"
 			m.setForm("review", "Review command", confirmForm("Proceed?", "", "Proceed", "Cancel"))
 			screen := capturePresentation(t, m, "run-command-"+verb+fmt.Sprint(plain))

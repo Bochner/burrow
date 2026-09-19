@@ -413,10 +413,17 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		m.commandArgs = nil
 		if args[0] == "run" || args[0] == "proxy" || args[0] == "profile" || args[0] == "tunnel" || args[0] == "tunc" || args[0] == "tund" {
 			path := m.active
+			parent := m.terminals.context
 			m.modal = ""
+			if connection.RunWaits(args) {
+				m.current().management.output = "Run " + safe(args[2]) + ": waiting for completion and collecting output…"
+			}
 			return m.dispatch(path, func() tea.Msg {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				ctx, cancel := context.WithTimeout(parent, time.Minute)
 				defer cancel()
+				if connection.RunWaits(args) {
+					ctx = parent
+				}
 				result, e := connection.Execute(ctx, path, args)
 				return connectionResult{result, e}
 			})
@@ -500,6 +507,7 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 		}
 	}
 	path := m.active
+	parent := m.terminals.context
 	m.commandArgs = args
 	m.reviewText = ""
 	m.inputEpoch++
@@ -507,7 +515,7 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 	m.modal = "review"
 	m.formTitle = "Resolving exact target…"
 	return m.dispatch(path, func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		ctx, cancel := context.WithTimeout(parent, time.Minute)
 		defer cancel()
 		r := commandReview{epoch: epoch, args: args}
 		if args[0] == "profile" && args[1] == "connect" {
@@ -534,12 +542,18 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 			r.target, r.review, r.err = connection.ReviewClose(ctx, path, args[1])
 			return r
 		}
+		if connection.RunWaits(args) {
+			ctx = parent
+		}
 		result, e := connection.Execute(ctx, path, args)
 		r.err = e
 		if e == nil {
 			r.result = result
 			if details, ok := result.(map[string]string); ok {
 				r.review = details["review"]
+				if args[0] == "run" && args[1] == "now" && details["id"] != "" {
+					r.args = []string{"run", "launch", details["id"], "--collect"}
+				}
 				if details["digest"] != "" {
 					r.args = append(r.args, "--review", details["digest"])
 				}

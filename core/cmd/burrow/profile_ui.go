@@ -147,10 +147,10 @@ func (m ui) suggestions() []string {
 	}
 	line := m.input.Value()
 	values := connection.CommandSuggestions(line, m.connections)
-	values = append(values, "run list", "run prepare ")
+	values = append(values, "run list", "run prepare ", "run now ")
 	for _, s := range m.connections {
 		if s.State == "connected" && s.Generation != "" {
-			values = append(values, "run prepare "+s.Name+" -- ")
+			values = append(values, "run prepare "+s.Name+" -- ", "run now "+s.Name+" -- ")
 		}
 	}
 	for _, r := range m.runs {
@@ -199,7 +199,7 @@ func (m ui) suggestions() []string {
 }
 
 var completionDescriptions = map[string]string{
-	"run prepare": "CONNECTION -- COMMAND [ARG...] · no execution", "run launch": "Review and launch the prepared command once", "run list": "List retained remote runs", "run inspect": "Remote status, capture and cleanup", "run output": "Read stdout/stderr at a byte offset", "run cancel": "Request ordinary remote group termination", "run collect": "Register output as Hovel evidence", "run close": "Drop working output; preserve collected evidence",
+	"run now": "CONNECTION -- COMMAND [ARG...] · review, launch, wait and collect", "run prepare": "CONNECTION -- COMMAND [ARG...] · no execution", "run launch": "Launch once; --collect waits and saves output", "run list": "List retained remote runs", "run inspect": "Remote status, capture and cleanup", "run output": "Read stdout/stderr at a byte offset", "run cancel": "Request ordinary remote group termination", "run collect": "Register output as Hovel evidence", "run close": "Drop working output; preserve collected evidence",
 	"proxy create": "CONNECTION LISTEN · port or IP:port", "proxy inspect": "Verify SOCKS endpoint and owner identity", "proxy remove": "Remove SOCKS only; preserve connection/L/R",
 	"tunnel create": "CONNECTION forward|reverse LISTEN HOST PORT", "tunc": "CONNECTION l|r LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected listener", "tund": "Remove selected listener", "tunnel check": "Test tunnel connectivity (destination greeting)",
 	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",

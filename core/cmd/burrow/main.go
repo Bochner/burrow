@@ -187,6 +187,9 @@ func run(args []string) error {
 				return printResult(a.result, noColor)
 			}
 		}
+		if connection.RunWaits(args) {
+			ctx = interrupt
+		}
 		result, e := connection.Execute(ctx, o.Workspace, args)
 		if e != nil {
 			return e

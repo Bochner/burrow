@@ -72,7 +72,7 @@ type remoteRun struct {
 
 func parseRun(args []string) (runRequest, bool, string, error) {
 	r := runRequest{Budget: 256 << 20}
-	bad := fmt.Errorf("expected run prepare CONNECTION [--budget BYTES] -- COMMAND [ARG...], run list, run inspect ID, run output ID stdout|stderr OFFSET, or run launch|cancel|collect|close ID [--review HASH] [--yes]")
+	bad := fmt.Errorf("expected run prepare CONNECTION [--budget BYTES] -- COMMAND [ARG...], run now CONNECTION [--budget BYTES] [--yes] -- COMMAND [ARG...], run list, run inspect ID, run output ID stdout|stderr OFFSET, run launch ID [--collect] [--review HASH] [--yes], or run cancel|collect|close ID [--review HASH] [--yes]")
 	if len(args) < 2 {
 		return r, false, "", bad
 	}
@@ -82,19 +82,26 @@ func parseRun(args []string) (runRequest, bool, string, error) {
 	if len(args) < 3 || args[2] == "" || len(args[2]) > 128 || strings.ContainsAny(args[2], "\x00\r\n") {
 		return r, false, "", bad
 	}
-	if args[1] == "prepare" {
+	if args[1] == "prepare" || args[1] == "now" {
 		r.Connection.Name = args[2]
 		i := 3
-		if i < len(args) && args[i] == "--budget" {
-			if i+1 >= len(args) {
+		yes, budgetSet := false, false
+		for i < len(args) && args[i] != "--" {
+			switch {
+			case args[i] == "--budget" && !budgetSet && i+1 < len(args):
+				var err error
+				r.Budget, err = strconv.ParseInt(args[i+1], 10, 64)
+				if err != nil || r.Budget <= 0 {
+					return r, false, "", fmt.Errorf("output budget must be a positive byte count per stream")
+				}
+				budgetSet = true
+				i += 2
+			case args[1] == "now" && args[i] == "--yes" && !yes:
+				yes = true
+				i++
+			default:
 				return r, false, "", bad
 			}
-			var err error
-			r.Budget, err = strconv.ParseInt(args[i+1], 10, 64)
-			if err != nil || r.Budget <= 0 {
-				return r, false, "", fmt.Errorf("output budget must be a positive byte count per stream")
-			}
-			i += 2
 		}
 		if i+1 >= len(args) || args[i] != "--" {
 			return r, false, "", bad
@@ -103,7 +110,7 @@ func parseRun(args []string) (runRequest, bool, string, error) {
 		if err := validateRunRequest(r); err != nil {
 			return r, false, "", err
 		}
-		return r, false, "", nil
+		return r, yes, "", nil
 	}
 	if args[1] == "inspect" && len(args) == 3 {
 		return r, false, "", nil
@@ -118,9 +125,11 @@ func parseRun(args []string) (runRequest, bool, string, error) {
 	if !slices.Contains([]string{"launch", "cancel", "collect", "close"}, args[1]) {
 		return r, false, "", bad
 	}
-	yes, review := false, ""
+	yes, review, collect := false, "", false
 	for i := 3; i < len(args); i++ {
 		switch {
+		case args[1] == "launch" && args[i] == "--collect" && !collect:
+			collect = true
 		case args[i] == "--yes" && !yes:
 			yes = true
 		case args[i] == "--review" && review == "" && i+1 < len(args):
@@ -131,6 +140,12 @@ func parseRun(args []string) (runRequest, bool, string, error) {
 		}
 	}
 	return r, yes, review, nil
+}
+
+// RunWaits identifies commands that wait for remote completion and collection.
+// Frontends keep these tied to their lifetime, without a default wait deadline.
+func RunWaits(args []string) bool {
+	return len(args) >= 3 && args[0] == "run" && (args[1] == "now" || (args[1] == "launch" && slices.Contains(args[3:], "--collect")))
 }
 
 func validateRunRequest(r runRequest) error {
@@ -192,7 +207,7 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 	if args[1] == "list" {
 		return Runs(ctx, w)
 	}
-	if args[1] == "prepare" {
+	if args[1] == "prepare" || args[1] == "now" {
 		state, err := selected(ctx, w, req.Connection.Name)
 		if err != nil {
 			return nil, err
@@ -204,7 +219,24 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 		raw, _ := json.Marshal(req)
 		var result Run
 		err = managerThrow(ctx, w, map[string]string{"action": "run-prepare", "request": string(raw), "review": digest(string(raw))}, &result)
-		return result, err
+		if err != nil || args[1] == "prepare" {
+			return result, err
+		}
+		// Reuse inspect, immutable review and launch of this exact prepared run.
+		// Confirmation must launch this ID, never prepare another command.
+		next := []string{"run", "launch", result.ID, "--collect"}
+		if yes {
+			next = append(next, "--yes")
+		}
+		launched, err := executeRun(ctx, w, next)
+		if err != nil {
+			return result, err
+		}
+		if details, ok := launched.(map[string]string); ok {
+			details["id"] = result.ID
+			details["confirm"] = "run launch " + result.ID + " --collect --review " + details["digest"] + " --yes"
+		}
+		return launched, nil
 	}
 	var state Run
 	if err := runControl(ctx, w, args[2], "run-inspect", nil, &state); err != nil {
@@ -221,10 +253,16 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 	// The immutable command, selected connection and budgets bind every approval.
 	bound, _ := json.Marshal(runRequest{state.Connection, state.Command, state.Budget})
 	hash := digest(args[1] + state.ID + string(bound))
+	if RunWaits(args) {
+		hash = digest("launch-collect" + state.ID + string(bound))
+	}
 	if !yes {
 		text := fmt.Sprintf("Run: %s\nConnection: %s\nEndpoint: %s@%s:%d\nAction: %s\nCommand: %s\nOutput budget: %d bytes per stream.\nUncollected output can be lost on module/daemon failure. Commands/arguments must not contain secrets.", state.ID, state.Connection.Name, state.Connection.User, state.Connection.Host, state.Connection.Port, args[1], quoteCommand(state.Command), state.Budget)
 		if args[1] == "close" {
 			text += "\nClose removes uncollected working output; registered Hovel artifacts remain."
+		}
+		if RunWaits(args) {
+			text += "\nWait for completion, then collect stdout, stderr and the result as Hovel evidence for Ctrl+L Results. Stopping the wait does not cancel the remote command."
 		}
 		return map[string]string{"review": text, "digest": hash}, nil
 	}
@@ -232,7 +270,29 @@ func executeRun(ctx context.Context, w string, args []string) (any, error) {
 		return nil, fmt.Errorf("run review changed; inspect and review again")
 	}
 	var result Run
-	err = managerThrow(ctx, w, map[string]string{"action": "run-" + args[1], "session": state.ID, "review": hash}, &result)
+	err = managerThrow(ctx, w, map[string]string{"action": "run-" + args[1], "session": state.ID, "review": digest(args[1] + state.ID + string(bound))}, &result)
+	if err != nil {
+		return state, err
+	}
+	if RunWaits(args) {
+		// Waiting holds no dispatch lock: inspect/cancel and sibling commands
+		// remain available through the same retained owner.
+		for result.State == "running" {
+			select {
+			case <-ctx.Done():
+				return result, fmt.Errorf("wait stopped; remote command was not cancelled: %w", ctx.Err())
+			case <-time.After(250 * time.Millisecond):
+			}
+			if err := runControl(ctx, w, state.ID, "run-inspect", nil, &result); err != nil {
+				return result, fmt.Errorf("completion unverified: %w", err)
+			}
+		}
+		collected, err := executeRun(ctx, w, []string{"run", "collect", state.ID, "--yes"})
+		if err != nil {
+			return result, fmt.Errorf("collection failed: %w", err)
+		}
+		return collected, nil
+	}
 	if err == nil && args[1] == "collect" {
 		result.Collection = "succeeded"
 	}

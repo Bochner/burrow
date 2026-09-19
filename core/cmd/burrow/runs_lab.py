@@ -33,6 +33,56 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
             time.sleep(.05)
         raise AssertionError("remote command never published " + path)
 
+    immediate = run("now", connection["name"], "--budget", "1024", "--yes", "--", "printf", "%s", "--yes")
+    assert immediate["id"] and immediate["launchRunID"], immediate
+    assert immediate["state"] == "exited" and immediate.get("collection") == "succeeded", immediate
+    state = finished(immediate["id"])
+    assert state["remoteExit"] == 0 and state["command"] == ["printf", "%s", "--yes"], state
+    assert base64.b64decode(run("output", immediate["id"], "stdout", "0")["data"]) == b"--yes"
+    artifacts = [a for a in json.loads(hv("artifact", "list", "--json")) if a["runId"] == immediate["runID"]]
+    assert len(artifacts) == 3, artifacts
+    stdout, = [a for a in artifacts if a["name"].endswith("-stdout")]
+    assert (workspace / stdout["path"]).read_bytes() == b"--yes"
+    run("close", immediate["id"], "--yes")
+
+    # A failed final audit write must still identify a command that executed.
+    audit_command = ["/bin/sh", "-c", "echo ready >/tmp/burrow-now-audit; while [ ! -f /tmp/burrow-now-release ]; do sleep .1; done; printf audit-output"]
+    caller = subprocess.Popen([binary, "--workspace", str(workspace), "run", "now", connection["name"], "--yes", "--", *audit_command],
+                              env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    log = workspace / "burrow-logs/operations.log"
+    try:
+        remote_ready("/tmp/burrow-now-audit")
+        audit_run, = [r for r in run("list") if r["command"] == audit_command]
+        log.chmod(0o400)
+        command("docker", "exec", container, "touch", "/tmp/burrow-now-release")
+        _, error = caller.communicate(timeout=20)
+        assert caller.returncode != 0 and "audit incomplete" in error and audit_run["id"] in error, error
+    finally:
+        log.chmod(0o600)
+        if caller.poll() is None:
+            caller.terminate()
+            caller.communicate(timeout=10)
+    assert run("inspect", audit_run["id"])["remoteExit"] == 0
+    run("close", audit_run["id"], "--yes")
+
+    interrupted_command = ["/bin/sh", "-c", "echo ready >/tmp/burrow-now-interrupt; sleep 300"]
+    caller = subprocess.Popen([binary, "--workspace", str(workspace), "run", "now", connection["name"], "--yes", "--", *interrupted_command],
+                              env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        remote_ready("/tmp/burrow-now-interrupt")
+        interrupted, = [r for r in run("list") if r["command"] == interrupted_command]
+        caller.send_signal(signal.SIGINT)
+        _, error = caller.communicate(timeout=15)
+        assert caller.returncode != 0 and interrupted["id"] in error, error
+        assert run("inspect", interrupted["id"])["state"] == "running", "stopping the wait cancelled the remote command"
+    finally:
+        if caller.poll() is None:
+            caller.terminate()
+            caller.communicate(timeout=10)
+    run("cancel", interrupted["id"], "--yes")
+    assert run("collect", interrupted["id"], "--yes")["collection"] == "succeeded"
+    run("close", interrupted["id"], "--yes")
+
     hv("chain", "create", "retained-check", chain="retained-check")
     hv("chain", "add", "burrow@0.1.0", chain="retained-check")
     hv("target", "add", "local", chain="retained-check")
@@ -43,6 +93,19 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
         result = json.loads(hv("throw", "--now", "--allow-dangerous", "--json", chain="retained-check"))["results"][0]
         assert result["state"] == "succeeded", result
         return json.loads(result["summary"])
+
+    now_review = hovel_run("now", connection["name"], "--", "printf", "reviewed-now")
+    assert run("inspect", now_review["id"])["state"] == "prepared", now_review
+    assert now_review["confirm"] == f'run launch {now_review["id"]} --collect --review {now_review["digest"]} --yes'
+    assert hovel_run(*shlex.split(now_review["confirm"])[1:])["collection"] == "succeeded"
+    assert finished(now_review["id"])["remoteExit"] == 0
+    assert base64.b64decode(run("output", now_review["id"], "stdout", "0")["data"]) == b"reviewed-now"
+    run("close", now_review["id"], "--yes")
+    hovel_now = hovel_run("now", connection["name"], "--yes", "--", "true")
+    assert hovel_now["collection"] == "succeeded" and hovel_now["remoteExit"] == 0
+    assert hovel_now["id"] not in (immediate["id"], now_review["id"])
+    assert finished(hovel_now["id"])["remoteExit"] == 0
+    run("close", hovel_now["id"], "--yes")
 
     prepared = hovel_run("prepare", connection["name"], "--", "/bin/sh", "-c",
                    "sleep 1; printf 'retained stdout'; printf 'separate stderr' >&2; exit 7")
@@ -212,6 +275,18 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     command("docker", "exec", container, "sh", "-c", 'kill -TERM -$(cat /tmp/burrow-escaped)')
     run("close", escaped["id"], "--yes")
 
+    # Waiting outlives the ordinary one-minute frontend request deadline.
+    # Keep this separate from direct Hovel setup writers (see HovelDispatch).
+    slow = subprocess.Popen([binary, "--workspace", str(workspace), "run", "now", connection["name"], "--yes", "--",
+                             "/bin/sh", "-c", "sleep 61; printf delayed-output; printf delayed-error >&2; exit 7"],
+                            env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    out, error = slow.communicate(timeout=75)
+    assert slow.returncode == 0, error
+    slow_result = json.loads(out)
+    assert slow_result["collection"] == "succeeded" and slow_result["remoteExit"] == 7, slow_result
+    assert base64.b64decode(run("output", slow_result["id"], "stdout", "0")["data"]) == b"delayed-output"
+    assert base64.b64decode(run("output", slow_result["id"], "stderr", "0")["data"]) == b"delayed-error"
+    run("close", slow_result["id"], "--yes")
     run_ui(binary, env, decoder, burrow, workspace, connection["name"])
 
     # Lost retained owners are never adopted or relaunched. Registered evidence
@@ -336,6 +411,38 @@ def run_ui(binary, env, decoder, burrow, workspace, connection):
         wait('"launchRunID"')
         os.write(outer, ("run output " + run_id + " stdout 0\r").encode())
         wait("remote\\u001b]52;c;untrusted\\u0007")
+        # The one-step path must review and launch the same newly prepared ID.
+        before_now = {r["id"] for r in burrow(workspace, "run", "list")}
+        os.write(outer, ("run now " + connection[:-1] + "\t").encode())
+        wait("run now " + connection + " -- ")
+        os.write(outer, b"printf %s --yes\r")
+        wait("Proceed?")
+        pending, = [r for r in burrow(workspace, "run", "list") if r["id"] not in before_now]
+        assert pending["state"] == "prepared" and pending["command"] == ["printf", "%s", "--yes"]
+        os.write(outer, b"\t\r")
+        wait('"launchRunID"')
+        assert {r["id"] for r in burrow(workspace, "run", "list")} == before_now | {pending["id"]}
+        deadline = time.monotonic() + 10
+        while burrow(workspace, "run", "inspect", pending["id"])["state"] == "running":
+            assert time.monotonic() < deadline
+            time.sleep(.1)
+        assert base64.b64decode(burrow(workspace, "run", "output", pending["id"], "stdout", "0")["data"]) == b"--yes"
+        burrow(workspace, "run", "close", pending["id"], "--yes")
+        os.write(outer, b"\x0c")
+        wait("Collected output")
+        os.write(outer, ("/" + pending["id"] + "\r").encode())
+        wait(pending["id"])
+        os.write(outer, b"/STDOUT\r")
+        wait("    --yes")
+        os.write(outer, b"\x0c")
+        wait("COMMAND OUTPUT")
+        os.write(outer, ("run now " + connection + " -- true\r").encode())
+        wait("Proceed?")
+        cancelled, = [r for r in burrow(workspace, "run", "list") if r["id"] not in before_now]
+        os.write(outer, b"\x1b")
+        wait("COMMAND OUTPUT")
+        assert burrow(workspace, "run", "inspect", cancelled["id"])["state"] == "prepared"
+        burrow(workspace, "run", "close", cancelled["id"], "--yes")
         os.write(outer, b"quit\r")
         wait("Keep running")
         os.write(outer, b"\r")

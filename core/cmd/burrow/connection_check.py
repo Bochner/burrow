@@ -29,6 +29,7 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["run"], "run prepare CONNECTION"),
         (["run", "prepare", "gateway", "--budget", "0", "--", "true"], "positive byte count"),
         (["run", "prepare", "../escape", "--", "true"], "name must"),
+        (["run", "now", "../escape", "--yes", "--", "true"], "name must"),
         (["run", "prepare", "gateway", "--", ""], "command and positive"),
         (["run", "prepare", "gateway", "--password", "SYNTHETIC-NOT-A-REAL-SECRET", "--", "true"], "run prepare CONNECTION"),
         (["run", "launch", "id", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "run prepare CONNECTION"),

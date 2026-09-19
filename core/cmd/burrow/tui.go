@@ -454,7 +454,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return shellRequested{args[1]} }
 				}
 				m.output = "Running reviewed command through Hovel…"
-				if args[0] == "run" && (args[1] == "launch" || args[1] == "cancel" || args[1] == "collect" || args[1] == "close") {
+				if args[0] == "run" && (args[1] == "now" || args[1] == "launch" || args[1] == "cancel" || args[1] == "collect" || args[1] == "close") {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
 				if (args[0] == "proxy" && args[1] != "inspect") || args[0] == "tunc" || (args[0] == "tund" && len(args) == 2) || (args[0] == "tunnel" && (args[1] == "create" || (args[1] == "remove" && len(args) == 3))) || args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
@@ -710,7 +710,9 @@ The connection form includes SSH keys, agents, jump hosts and a SOCKS proxy.
 # RETAINED COMMANDS
 run prepare NAME -- COMMAND [ARG...]	Prepare on an already connected SSH target; returns a run ID
 run prepare NAME -- ps -elf	Example: prepare a remote process listing without executing yet
-run launch ID	Review and launch once; Tab completes prepared run IDs
+run now NAME -- ps -elf	Review once, launch, wait and collect; view output with Ctrl+L
+run now NAME --yes -- COMMAND [ARG...]	Explicitly skip review; put Burrow options before --
+run launch ID [--collect]	Launch once; --collect waits and saves output; Tab completes IDs
 run list	List retained runs in this workspace
 run inspect ID	Inspect execution status, output completeness and storage budget
 run output ID stdout|stderr OFFSET	Read a safely displayed preview; start with offset 0

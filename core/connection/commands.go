@@ -19,7 +19,8 @@ import (
 )
 
 const Help = `run prepare CONNECTION [--budget BYTES] -- COMMAND [ARG...] Prepare without execution
-run launch ID [--review HASH] [--yes] Review/launch once through the selected master
+run now CONNECTION [--budget BYTES] [--yes] -- COMMAND [ARG...] Review, launch, wait and collect a fresh run
+run launch ID [--collect] [--review HASH] [--yes] Launch once; --collect waits and saves output
 run list                            Discover retained runs in this workspace
 run inspect ID                      Execution, output completeness, budget and cleanup
 run output ID stdout|stderr OFFSET   Read up to 32 KiB at a byte offset (CLI: base64)
@@ -307,7 +308,7 @@ func ValidateCommand(workspace string, args []string) error {
 	switch args[0] {
 	case "run":
 		_, _, _, err := parseRun(args)
-		if err == nil && len(args) > 2 && args[1] == "prepare" {
+		if err == nil && len(args) > 2 && (args[1] == "prepare" || args[1] == "now") {
 			_, err = launch.ConnectionPath(workspace, args[2])
 		}
 		return err
@@ -548,6 +549,18 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 			}
 			logErr := a.Record(status, map[string]any{"result": value, "error": fmt.Sprint(failure)})
 			failure = errors.Join(failure, err, logErr)
+			if failure != nil && args[0] == "run" {
+				id := ""
+				switch result := value.(type) {
+				case Run:
+					id = result.ID
+				case map[string]string:
+					id = result["id"]
+				}
+				if id != "" {
+					failure = fmt.Errorf("run %s: %w; inspect that ID before retrying", id, failure)
+				}
+			}
 		}()
 	}
 	return executeOperation(ctx, w, args, promptSocket)

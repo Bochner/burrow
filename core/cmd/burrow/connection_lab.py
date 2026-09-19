@@ -12,6 +12,7 @@ import signal
 import pty
 import select
 import shlex
+import shutil
 import sqlite3
 import socket
 import struct
@@ -75,6 +76,9 @@ def wait(check):
 
 with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
     root = Path(scratch)
+    # Frontends and retained modules must keep the same build even if the
+    # shared checkout is rebuilt while this disposable lab is running.
+    binary = str(shutil.copy2(binary, root / "burrow"))
     env = {k: v for k, v in os.environ.items() if not k.startswith(("HOVEL_", "SSH_"))}
     env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
     daemons = []
