@@ -1688,6 +1688,21 @@ func TestHelpQuickReference(t *testing.T) {
 			if u.helpOffset != 0 {
 				t.Fatal("Home did not return to top")
 			}
+			var pages strings.Builder
+			for {
+				pages.WriteString(ansi.Strip(m.View().Content))
+				pages.WriteByte('\n')
+				before := u.helpOffset
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+				if u.helpOffset == before {
+					break
+				}
+			}
+			for _, verb := range []string{"prepare", "launch", "list", "inspect", "output", "cancel", "collect", "close"} {
+				if !strings.Contains(pages.String(), "run "+verb) {
+					t.Fatal("F1 help hides retained command", verb, size, plain)
+				}
+			}
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 			if u.help || u.input.Value() != "connect draft" {
 				t.Fatal("help dismissal lost draft")

@@ -705,6 +705,20 @@ inspect NAME / status	Inspect connection details / verify the daemon
 reconnect NAME HOST USER	Explicitly replace a lost connection
 The connection form includes SSH keys, agents, jump hosts and a SOCKS proxy.
 
+# RETAINED COMMANDS
+run prepare NAME -- COMMAND [ARG...]	Prepare on an already connected SSH target; returns a run ID
+run prepare NAME -- ps -elf	Example: prepare a remote process listing without executing yet
+run launch ID	Review and launch once; Tab completes prepared run IDs
+run list	List retained runs in this workspace
+run inspect ID	Inspect execution status, output completeness and storage budget
+run output ID stdout|stderr OFFSET	Read a safely displayed preview; start with offset 0
+run cancel ID	Review cancellation of the ordinary remote process group
+run collect ID	Review saving completed or partial output as Hovel evidence
+run close ID	Review removal of working output; collected evidence remains
+Use the id returned by prepare. Leaving the view does not cancel execution.
+Optional prepare setting: --budget BYTES before -- (default 256 MiB per stream).
+Output shows the next byte offset. Cancel active runs before close; never put secrets in arguments.
+
 # FORWARDING
 tunnel create NAME forward|reverse	Create a local or reverse listener; the prompt guides arguments
 tunc myserver l 8080 localhost 80	Example: local port 8080 reaches port 80 from the SSH server
