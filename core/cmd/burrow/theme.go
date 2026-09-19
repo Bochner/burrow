@@ -143,6 +143,8 @@ func (m ui) syntax(line string, reference bool) string {
 		switch {
 		case index == 0 && word == "burrow":
 			style = heading
+		case len(fields) > 0 && fields[0] == "run" && index < 2:
+			style = heading
 		case word == "/usr/bin/ssh":
 			style = heading
 		case prior == "-o":
@@ -157,6 +159,8 @@ func (m ui) syntax(line string, reference bool) string {
 			return strings.Replace(token, word, m.endpoint(word), 1)
 		case reference && strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word && word != "F1" && word != "F6":
 			style = warningStyle
+		case len(fields) > 1 && fields[0] == "run" && fields[1] != "list" && index == 2:
+			style = accent
 		case connectionIndex >= 0 && index == connectionIndex:
 			style = accent
 		case connectionIndex >= 0 && index == connectionIndex+1:
@@ -339,8 +343,18 @@ func (m ui) styledOutput() string {
 					continue
 				case "direction":
 					style = keywordStyle
-				case "name", "id", "generation", "creation", "runID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "error":
+				case "name", "id", "generation", "creation", "runID", "launchRunID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "cleanupScope", "error", "outputError", "auditError", "cleanupError":
 					style = fieldStyle(strings.ToUpper(field))
+					if token == `""` {
+						style = secondary
+					}
+				case "cancellation":
+					style = secondary
+					if strings.HasPrefix(token, `"unconfirmed`) {
+						style = warningStyle
+					} else if token == `"ordinary-group-terminated"` {
+						style = successStyle
+					}
 				case "state", "status":
 					var state string
 					_ = json.Unmarshal([]byte(token), &state)
@@ -371,7 +385,7 @@ func connectionStyle(state string) lipgloss.Style {
 		return successStyle
 	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable":
 		return errorStyle
-	case "connecting", "reconnecting", "opening", "closing":
+	case "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown":
 		return warningStyle
 	default:
 		return secondary
@@ -431,7 +445,7 @@ var infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
 
 func fieldStyle(header string) lipgloss.Style {
 	switch header {
-	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUN", "RUNID", "SESSION":
+	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUN", "RUNID", "LAUNCHRUNID", "SESSION":
 		return accent
 	case "ACTION":
 		return heading
@@ -447,9 +461,9 @@ func fieldStyle(header string) lipgloss.Style {
 		return keywordStyle
 	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
 		return numberStyle
-	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "SOURCE", "DESTINATION PATH":
+	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "CLEANUPSCOPE", "SOURCE", "DESTINATION PATH":
 		return secondary
-	case "ERROR":
+	case "ERROR", "OUTPUTERROR", "AUDITERROR", "CLEANUPERROR":
 		return errorStyle
 	default:
 		return pageStyle

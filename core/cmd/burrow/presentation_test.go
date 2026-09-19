@@ -144,6 +144,31 @@ func TestRunReviewPresentation(t *testing.T) {
 		if m.modal != "" {
 			t.Fatal("run review could not be cancelled")
 		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		for _, verb := range []string{"prepare", "launch", "inspect", "cancel", "collect", "close", "output"} {
+			m.reviewText = "Command: run " + verb + " retained-1"
+			m.setForm("review", "Review command", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+			screen := capturePresentation(t, m, "run-command-"+verb+fmt.Sprint(plain))
+			if !plain {
+				assertTextRole(t, screen, m.dialogBounds(), "run", blueColor)
+				assertTextRole(t, screen, m.dialogBounds(), verb, blueColor)
+				assertTextRole(t, screen, m.dialogBounds(), "retained-1", lavenderColor)
+			}
+			m.dismissForm()
+		}
+		frameEvent(m, connectionResult{result: map[string]string{
+			"launchRunID": "execution-1", "outputError": "capture failed", "auditError": "audit incomplete", "cleanupError": "cleanup refused", "cancellation": "unconfirmed; no signal", "state": "transport-or-completion-unknown",
+		}})
+		screen := capturePresentation(t, m, fmt.Sprint("run-result-", plain))
+		for value, hex := range map[string]string{"execution-1": lavenderColor, "capture failed": "#f38ba8", "audit incomplete": "#f38ba8", "cleanup refused": "#f38ba8", "unconfirmed; no signal": "#f9e2af", "transport-or-completion-unknown": "#f9e2af"} {
+			if plain {
+				if !strings.Contains(m.View().Content, value) {
+					t.Fatal("NO_COLOR hid run result", value)
+				}
+			} else {
+				assertTextRole(t, screen, m.selectionBounds(), value, hex)
+			}
+		}
 	}
 }
 
