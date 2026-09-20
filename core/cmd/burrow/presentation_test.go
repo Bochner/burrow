@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -123,6 +124,11 @@ func TestAuthenticationPopup(t *testing.T) {
 }
 
 func TestChainHelpAndCompletion(t *testing.T) {
+	for _, line := range []string{"chain connect target host --password 'quoted value' ", "chain connect target host --password=-dash "} {
+		if !slices.Contains(connection.CommandSuggestions(line, nil), line+"--user ") {
+			t.Fatal("password value consumed the missing user positional", line)
+		}
+	}
 	for _, plain := range []bool{false, true} {
 		m := newFrame(launch.Info{Workspace: "/tmp/chain-help"}, plain, launch.Options{})
 		defer m.terminals.close()
@@ -184,6 +190,22 @@ func TestChainHelpAndCompletion(t *testing.T) {
 		}
 		if m.current().management.input.Value() != prefix+"--password" {
 			t.Fatal("chain help changed the draft")
+		}
+	}
+}
+
+func TestPasswordCommandRecall(t *testing.T) {
+	for _, prefix := range []string{"connect", "reconnect", "chain connect"} {
+		for _, value := range []string{"--password 'inline-secret-canary'", "--password=inline-secret-canary", "--password 'inline-secret-canary"} {
+			u := newUI(launch.Info{Workspace: "/tmp/recall"}, true)
+			u.input.SetValue(prefix + " target host --user tester " + value)
+			u.draft = u.input.Value()
+			u.cycleCompletion(false)
+			next, _ := u.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			u = next.(ui)
+			if len(u.history) != 0 || u.input.Value() != "" || u.draft != "" || u.completionValue != "" || len(u.completionValues) != 0 {
+				t.Fatal("password command survived submission in recall/input/completions")
+			}
 		}
 	}
 }

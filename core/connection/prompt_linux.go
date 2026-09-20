@@ -17,8 +17,9 @@ import (
 // Prompt contains public display text only. Answers travel over an ephemeral
 // same-user Unix socket, never through Hovel RPC, chain settings or logging.
 type Prompt struct {
-	Text   string
-	Secret bool
+	Text           string
+	Secret         bool
+	TargetPassword bool
 }
 type PromptFunc func(context.Context, Prompt) ([]byte, error)
 
@@ -47,6 +48,7 @@ func Askpass(prompt string) error {
 		request = Prompt{Text: "SSH key passphrase (hidden; Ctrl+C cancels)", Secret: true}
 	case strings.HasSuffix(strings.TrimSpace(prompt), "password:"):
 		request = Prompt{Text: "SSH password (hidden; Ctrl+C cancels)", Secret: true}
+		request.TargetPassword = strings.TrimSpace(prompt) == os.Getenv("BURROW_PASSWORD_PROMPT")
 	default:
 		return fmt.Errorf("unsupported authentication prompt")
 	}
@@ -84,6 +86,28 @@ func Askpass(prompt string) error {
 // ExecutePrompt uses the same reviewed Hovel launch and waits for observed
 // authentication. Cancel/failure closes only the owner this attempt created.
 func ExecutePrompt(ctx context.Context, w string, args []string, ask PromptFunc) (any, error) {
+	if len(args) < 2 || (args[0] != "connect" && args[0] != "reconnect") {
+		return nil, fmt.Errorf("explicit connection command required")
+	}
+	c, _, err := Parse(w, args[1:])
+	if err != nil {
+		return nil, err
+	}
+	if c.Password != nil {
+		password := []byte(*c.Password)
+		defer clear(password)
+		answered := false
+		ask = func(_ context.Context, p Prompt) ([]byte, error) {
+			if !p.Secret || !p.TargetPassword {
+				return nil, fmt.Errorf("automatic password refused for non-target authentication; use keys/agents for jump hosts or bare --password for interactive entry")
+			}
+			if answered {
+				return nil, fmt.Errorf("supplied password rejected; retry explicitly")
+			}
+			answered = true
+			return append([]byte{}, password...), nil
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	dir, e := os.MkdirTemp("", "burrow-auth-")
@@ -103,6 +127,7 @@ func ExecutePrompt(ctx context.Context, w string, args []string, ask PromptFunc)
 	stop := context.AfterFunc(ctx, func() { listener.Close() })
 	defer stop()
 	finished := make(chan struct{})
+	questionError := make(chan error, 1)
 	go func() {
 		defer close(finished)
 		for {
@@ -122,9 +147,17 @@ func ExecutePrompt(ctx context.Context, w string, args []string, ask PromptFunc)
 				if json.NewDecoder(io.LimitReader(c, 8192)).Decode(&p) != nil {
 					return
 				}
+				if ask == nil {
+					cancel()
+					return
+				}
 				answer, err := ask(ctx, p)
 				defer clear(answer)
 				if err != nil {
+					select {
+					case questionError <- err:
+					default:
+					}
 					cancel()
 					return
 				}
@@ -156,6 +189,11 @@ func ExecutePrompt(ctx context.Context, w string, args []string, ask PromptFunc)
 			reason := s.Detail
 			if ctx.Err() != nil {
 				reason = "authentication cancelled or timed out"
+			}
+			select {
+			case err := <-questionError:
+				reason = err.Error()
+			default:
 			}
 			cleanup, done := context.WithTimeout(context.Background(), 10*time.Second)
 			e := closeOwned(cleanup, w, s)

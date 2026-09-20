@@ -359,18 +359,20 @@ def connection_chain_ui(binary, env, decoder, workspace, burrow, port, key, cont
     subprocess.run(["docker", "exec", "-i", container, "chpasswd"],
                    input=("tester:" + secret + "\n").encode(), check=True, capture_output=True)
 
-    def no_leaks(output):
+    def no_leaks(output, original_pid=None):
         assert secret.encode() not in output, "password echoed in terminal"
         for path in workspace.rglob("*"):
             if path.is_file():
                 assert secret.encode() not in path.read_bytes(), ("password persisted", path)
         for path in Path("/proc").glob("[0-9]*/cmdline"):
             try:
-                assert secret.encode() not in path.read_bytes(), "password in process arguments"
+                if path.parent.name != str(original_pid):
+                    assert secret.encode() not in path.read_bytes(), "password in child process arguments"
+                assert secret.encode() not in path.with_name("environ").read_bytes(), "password in process environment"
             except (FileNotFoundError, PermissionError, ProcessLookupError):
                 pass
 
-    for mode in ("key", "password", "cancel", "cli"):
+    for mode in ("key", "password", "cancel", "cli", "inline"):
         name = "handoff-" + mode
         outer, slave = pty.openpty()
         before = termios.tcgetattr(slave)
@@ -383,6 +385,8 @@ def connection_chain_ui(binary, env, decoder, workspace, burrow, port, key, cont
             viewer_env.pop("NO_COLOR", None)
         args = ["chain", "connect", name, "127.0.0.1", "--user", "tester", "--port", str(port)]
         args += ["--key", str(key)] if mode == "key" else ["--password"]
+        if mode == "inline": args += [secret]
+        public_start = 0
         exported = workspace / "cli-password.chain.json"
         stdout = exported.open("wb") if mode == "cli" else None
         frontend = subprocess.Popen([binary, "--workspace", str(workspace), *(args if mode == "cli" else ["tui"])],
@@ -409,6 +413,7 @@ def connection_chain_ui(binary, env, decoder, workspace, burrow, port, key, cont
                 wait("--allow-dangerous")
                 chain, = workspace.glob("connect-" + name + "-*.chain.json")
                 assert chain.stat().st_mode & 0o777 == 0o600
+                if mode == "inline": public_start = len(output)  # Initial typed command is intentionally visible.
             assert not any(s["name"] == name for s in burrow(workspace, "connections")), "staging authenticated"
             request = json.loads(json.loads(chain.read_text())["spec"]["config"]["request"])
             assert request["settings"]["user"] == "tester"
@@ -457,10 +462,10 @@ def connection_chain_ui(binary, env, decoder, workspace, burrow, port, key, cont
                 os.write(outer, b"yes")
                 time.sleep(.15)
                 os.write(outer, b"\r")
-            if mode != "key":
+            if mode not in ("key", "inline"):
                 wait("SSH password")
                 assert not termios.tcgetattr(slave)[3] & termios.ECHO
-                no_leaks(output)
+                no_leaks(output[public_start:])
                 if mode != "cancel":
                     os.write(outer, secret.encode())
                     # Let the renderer publish the in-progress field before
@@ -469,7 +474,7 @@ def connection_chain_ui(binary, env, decoder, workspace, burrow, port, key, cont
                     while time.monotonic() < until:
                         if select.select([outer], [], [], .05)[0]:
                             output.extend(os.read(outer, 65536))
-                    no_leaks(output)
+                    no_leaks(output[public_start:])
                 os.write(outer, b"\x1b" if mode == "cancel" else b"\r")
             if mode == "cli":
                 out, err = throw.communicate(timeout=30)
@@ -497,7 +502,15 @@ def connection_chain_ui(binary, env, decoder, workspace, burrow, port, key, cont
                 while any(s["name"] == name for s in burrow(workspace, "connections")):
                     assert time.monotonic() < deadline, "cancelled attempt retained a reservation"
                     time.sleep(.1)
-            no_leaks(output)
+            no_leaks(output[public_start:])
+            if mode == "inline":
+                assert b"SSH password" not in output[public_start:], "inline value opened a password popup"
+                os.write(outer, b"\x1b[A")
+                time.sleep(.2)
+                if select.select([outer], [], [], .1)[0]: output.extend(os.read(outer, 65536))
+                screen = subprocess.run([decoder, "160", "40"], input=output, capture_output=True, check=True).stdout
+                assert secret.encode() not in screen, "inline command recalled from history"
+                os.write(outer, b"\x15")
             if mode != "cli":
                 os.write(outer, b"quit\r")
                 wait("No connections to close" if mode == "cancel" else "Keep running")
@@ -532,7 +545,72 @@ def connection_chain_ui(binary, env, decoder, workspace, burrow, port, key, cont
             if stdout:
                 stdout.close()
             if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
-                Path(directory, "chain-connect-" + mode + ".ansi").write_bytes(output)
+                Path(directory, "chain-connect-" + mode + ".ansi").write_bytes(output[public_start:])
             os.close(outer)
             os.close(slave)
     print("PASS TUI Hovel key/password handoff, cancellation, Alt+B live ownership, CLI private password and no leaks", flush=True)
+
+    # No controlling terminal: review stays passive, approval uses the private
+    # broker, and only the original explicitly supplied CLI argv may contain it.
+    base = ["127.0.0.1", "--user", "tester", "--port", str(port)]
+    def headless(*args):
+        result = subprocess.run([binary, "--workspace", str(workspace), *args], env=env,
+                                stdin=subprocess.DEVNULL, capture_output=True, timeout=30, start_new_session=True)
+        no_leaks(result.stdout + result.stderr)
+        return result
+    review = headless("connect", "inline-cli", *base, "--password", secret)
+    assert review.returncode == 0 and "review" in json.loads(review.stdout), review.stderr
+    assert not (workspace / "burrow/inline-cli").exists(), "review launched SSH"
+    connected = headless("connect", "inline-cli", *base, "--password", secret, "--yes",
+                         "--review", json.loads(review.stdout)["digest"])
+    assert connected.returncode == 0 and json.loads(connected.stdout)["state"] == "connected", connected.stderr
+    burrow(workspace, "profile", "save", "inline-cli")
+    no_leaks(b"")
+    burrow(workspace, "close", "inline-cli", "--yes")
+    burrow(workspace, "profile", "delete", "inline-cli", "--yes")
+    wrong = headless("connect", "inline-wrong", *base, "--password", secret + "-wrong", "--yes")
+    assert wrong.returncode != 0 and b"attempt closed" in wrong.stderr, wrong.stderr
+    assert not (workspace / "burrow/inline-wrong").exists(), "wrong-password attempt retained"
+    # Same host/user as the target, with a password-only jump: no target password
+    # may be sent to it. The jump's config disables the available test key.
+    jump_config = workspace / "inline-jump-config"
+    jump_config.write_text(f"Host jump\n HostName 127.0.0.1\n User tester\n Port {port}\n PubkeyAuthentication no\n PreferredAuthentications password\n")
+    refused = headless("connect", "inline-jump", "127.0.0.1", "--user", "tester", "--port", "2222", "--ssh-config", str(jump_config), "--jump", "jump",
+                       "--password", secret, "--yes")
+    assert refused.returncode != 0 and b"non-target authentication" in refused.stderr, refused.stderr
+    assert not (workspace / "burrow/inline-jump").exists(), "jump refusal retained an attempt"
+    jump_config.write_text(f"Host jump\n HostName 127.0.0.1\n User tester\n Port {port}\n IdentityFile {json.dumps(str(key))}\n")
+    connected = headless("connect", "inline-jump", "127.0.0.1", "--user", "tester", "--port", "2222", "--ssh-config", str(jump_config), "--jump", "jump",
+                         "--password", secret, "--yes")
+    assert connected.returncode == 0 and json.loads(connected.stdout)["state"] == "connected", connected.stderr
+    burrow(workspace, "close", "inline-jump", "--yes")
+    exported = workspace / "headless-inline.chain.json"
+    with exported.open("wb") as output_file:
+        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "chain", "connect", "inline-chain", *base,
+                                     "--password=" + secret], env=env, stdin=subprocess.DEVNULL, stdout=output_file,
+                                    stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            deadline = time.monotonic() + 15
+            while not exported.stat().st_size:
+                assert frontend.poll() is None and time.monotonic() < deadline, "headless export failed"
+                time.sleep(.05)
+            no_leaks(b"", frontend.pid)
+            def throw(*flags):
+                return subprocess.run([str(hovel), "throw", str(exported), "--workspace", str(workspace),
+                                       "--daemon-endpoint", str(workspace / "hoveld.sock"), "--allow-dangerous", "--json", *flags],
+                                      env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=30, start_new_session=True)
+            assert throw().returncode != 0, "headless password bypassed Hovel confirmation"
+            assert not (workspace / "burrow/inline-chain").exists()
+            completed = throw("--now")
+            assert completed.returncode == 0 and json.loads(completed.stdout)["results"][0]["state"] == "succeeded", completed.stdout
+            _, error = frontend.communicate(timeout=10)
+            assert frontend.returncode == 0, error
+            no_leaks(completed.stdout + completed.stderr + error)
+            assert json.loads(exported.read_text())["kind"] == "Chain", "export stdout contaminated"
+            burrow(workspace, "close", "inline-chain", "--yes")
+            stale = throw("--now")
+            assert json.loads(stale.stdout)["results"][0]["state"] == "failed"
+            assert not (workspace / "burrow/inline-chain").exists(), "one-use chain replayed"
+        finally:
+            if frontend.poll() is None: frontend.terminate(); frontend.communicate(timeout=15)
+    print("PASS inline TUI/headless direct/chain password, passive review, one-use broker, wrong password cleanup, jump account isolation and no downstream secrets", flush=True)

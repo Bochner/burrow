@@ -3,6 +3,17 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 py_test(
+    name = "manager_compatibility_test",
+    srcs = ["manager_compatibility_check.py"],
+    main = "manager_compatibility_check.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :legacy_module)", "$(location //core/connection:hovel-module.yaml)"],
+    data = [":burrow", "@hovel_linux_wheel//file", ":legacy_module", "//core/connection:hovel-module.yaml"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)
+
+py_test(
     name = "files_test",
     srcs = ["files_check.py"],
     main = "files_check.py",

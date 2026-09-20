@@ -52,7 +52,7 @@ def _impl(ctx: TaskContext) -> int:
         print("expected run, check, clean, ssh-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
         return 2
     if mode == "check":
-        commands[mode].append("//core/cmd/burrow:files_test")
+        commands[mode] += ["//core/cmd/burrow:files_test", "//core/cmd/burrow:manager_compatibility_test"]
     return ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait().code or 0
 
 burrow = task(

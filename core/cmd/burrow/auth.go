@@ -133,22 +133,28 @@ func readPrompt(ctx context.Context, tty *os.File, p connection.Prompt) ([]byte,
 }
 
 func promptChainCLI(ctx context.Context, workspace string, args []string, noColor bool) error {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	c, _, err := connection.Parse(workspace, args[2:])
 	if err != nil {
-		return fmt.Errorf("password/passphrase chain needs a controlling terminal; use an available key or agent for unattended exports")
+		return err
 	}
-	defer tty.Close()
-	_, err = connection.PrepareChainPrompt(ctx, workspace, args, func(ctx context.Context, p connection.Prompt) ([]byte, error) {
-		return readPrompt(ctx, tty, p)
-	}, func(chain any) error {
+	var ask connection.PromptFunc
+	if c.Password == nil {
+		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+		if err != nil {
+			return fmt.Errorf("hidden password/passphrase entry needs a controlling terminal; supply --password PASSWORD or use a key/agent for unattended exports")
+		}
+		defer tty.Close()
+		ask = func(ctx context.Context, p connection.Prompt) ([]byte, error) { return readPrompt(ctx, tty, p) }
+	}
+	_, err = connection.PrepareChainPrompt(ctx, workspace, args, ask, func(chain any) error {
 		if err := printResult(chain, noColor); err != nil {
 			return err
 		}
-		fmt.Fprintln(tty, "Chain JSON exported. Keep this terminal open; confirm the chain in Hovel from another terminal within 10 minutes. Ctrl+C cancels.")
+		fmt.Fprintln(os.Stderr, "Chain JSON exported. Keep this process running; confirm the chain in Hovel from another process within 10 minutes. Ctrl+C cancels.")
 		return nil
 	})
 	if err == nil {
-		fmt.Fprintln(tty, "SSH connection established; Hovel is collecting the chain result. Burrow retains the connection.")
+		fmt.Fprintln(os.Stderr, "SSH connection established; Hovel is collecting the chain result. Burrow retains the connection.")
 	}
 	return err
 }

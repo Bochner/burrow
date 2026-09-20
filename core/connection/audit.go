@@ -60,7 +60,16 @@ func targetLabel(s State) string {
 func commandIdentity(args []string) string {
 	// Only call after validation; never render rejected unknown options (secrets).
 	var quoted []string
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") && optionName(arg) == "password" {
+			if strings.Contains(arg, "=") {
+				arg = "--password=<redacted>"
+			} else if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				arg = "--password=<redacted>"
+				i++
+			}
+		}
 		if strings.ContainsAny(arg, " \t\r\n\"\\") {
 			b, _ := json.Marshal(arg)
 			arg = string(b)
@@ -68,4 +77,14 @@ func commandIdentity(args []string) string {
 		quoted = append(quoted, arg)
 	}
 	return strings.Join(quoted, " ")
+}
+
+// Password commands are deliberately excluded from interactive recall.
+func HasPassword(args []string) bool {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") && optionName(arg) == "password" {
+			return true
+		}
+	}
+	return false
 }

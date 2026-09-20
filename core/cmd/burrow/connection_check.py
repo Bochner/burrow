@@ -30,6 +30,15 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
                                "192.0.2.1", "--user", "tester", "--password"], capture_output=True, text=True)
     assert accepted.returncode != 0 and "invalid connection" not in accepted.stderr, accepted
     assert not workspace.exists(), "validation started a workspace"
+    for password_args in (["--password", "SYNTHETIC-NOT-A-REAL-SECRET"],
+                          ["--password=SYNTHETIC-NOT-A-REAL-SECRET"],
+                          ["--password", "quoted spaces"], ["--password="],
+                          ["--password=-leading-dash"]):
+        result = subprocess.run([binary, "--workspace", str(workspace), "chain", "connect", "named",
+                                 "192.0.2.1", "--user", "tester", *password_args], capture_output=True, text=True)
+        assert result.returncode != 0 and "invalid connection" not in result.stderr and "terminal" not in result.stderr, result
+        assert "SYNTHETIC-NOT-A-REAL-SECRET" not in result.stdout + result.stderr
+        assert not workspace.exists(), "validation started a workspace"
     for name in ("../escape", "a b", "é", "x" * 25):
         result = subprocess.run([binary, "--workspace", str(workspace), "connect", name,
                                  "localhost", "tester", "--yes"], capture_output=True, text=True)
@@ -43,10 +52,10 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["chain", "http", "gateway", "gateway/" + "a" * 32, "https://example.test/"], "http://HOST"),
         (["chain", "http", "gateway", "other/" + "a" * 32, "http://example.test/"], "complete tunnel"),
         (["chain", "connect", "gateway", "localhost", "tester", "-proxy"], "connection-only"),
-        (["chain", "connect", "gateway", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection"),
-        (["chain", "connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection"),
-        (["connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection"),
-        (["chain", "connect", "gateway", "localhost", "--user", "tester", "--password=SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection"),
+        (["chain", "connect", "gateway", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET", "--key", "/tmp/key"], "choose --password or --key"),
+        (["chain", "connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "required NAME HOST --user USER"),
+        (["connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "required NAME HOST --user USER"),
+        (["chain", "connect", "gateway", "localhost", "--user", "tester", "--password=SYNTHETIC-NOT-A-REAL-SECRET", "--agent", "/tmp/agent"], "choose --password or --key"),
         (["chain", "connect", "gateway", "localhost", "--user", "tester", "--key", "/tmp/key", "--password"], "choose --password or --key"),
         (["run"], "run prepare CONNECTION"),
         (["run", "prepare", "gateway", "--local", "--", "relative-tool"], "absolute executable"),
@@ -130,7 +139,8 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["connect", "valid", "localhost", "tester", "--trust", "not-a-fingerprint"], "invalid connection options"),
         (["connect", "valid", "localhost", "tester", "--known-hosts", "/tmp/known_hosts"], "invalid connection options"),
         (["connect", "valid", "localhost", "tester", "--key", "relative"], "absolute"),
-        (["connect", "valid", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection options"),
+        (["connect", "valid", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET\n"], "invalid password"),
+        (["connect", "valid", "localhost", "tester", "--password=" + "x" * 4097], "invalid password"),
     ]:
         result = subprocess.run([binary, "--workspace", str(workspace), *args], capture_output=True, text=True)
         assert result.returncode != 0 and message in result.stderr, result

@@ -23,17 +23,18 @@ const Help = `chain select CONNECTION             Query live forwards and SOCKS 
 chain http CONNECTION TUNNEL_ID URL [--yes] Review HTTP through exactly that existing tunnel
 chain export CONNECTION TUNNEL_ID URL Export a saved Hovel consumer chain as JSON; no execution
 chain connect NAME HOST --user USER [options] Export a saved Hovel connection chain; no authentication yet
-Connection options: --user USER, --key PATH, --password, --prompt, --agent PATH, --port NUMBER, --ssh-config PATH, --jump HOST.
+Connection options: --user USER, --key PATH, --password [PASSWORD], --prompt, --agent PATH, --port NUMBER, --ssh-config PATH, --jump HOST.
 A confirmed connection chain waits for authentication and registers a live named Burrow connection.
-Requires an already-running OpenSSH/Dropbear server; no deployment. --password takes no secret value.
+Requires an already-running OpenSSH/Dropbear server; no deployment. Bare --password opens a hidden field.
 TUI connect/export stages a private chain file and opens Hovel with throw ready; Enter reviews.
-CLI --password/--prompt exports JSON and stays open for private authentication from another Hovel terminal.
-Keep that frontend open; its one-use prompt expires after 10 minutes. Unattended exports use keys/agents.
+CLI --password/--prompt exports JSON and stays alive as a private broker for a confirmed Hovel throw.
+Keep that frontend alive; its one-use broker expires after 10 minutes. --password PASSWORD needs no TTY.
 Existing names are refused; no adoption or automatic reconnect. Close via close NAME.
 Exported chains bind this workspace/build and exact settings; regenerate after changes/upgrades.
 Save CLI JSON to a file, then use hovel throw FILE --workspace PATH --allow-dangerous --json.
 TUI examples (enter in Burrow management, Alt+B):
   chain connect target 192.168.10.50 --user alice --password
+  chain connect target 192.168.10.50 --user alice --password PASSWORD
   chain connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519
   chain connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519 --prompt
 Enter in Hovel reviews the staged throw; confirm yes, authenticate, then Alt+B after success.
@@ -42,14 +43,15 @@ CLI example (local shell):
   burrow --workspace /absolute/workspace chain connect target 192.168.10.50 --user alice --password > /absolute/workspace/connect.chain.json
 Keep that terminal open. In another terminal, review and confirm with the installed Hovel CLI:
   hovel throw /absolute/workspace/connect.chain.json --workspace /absolute/workspace --daemon-endpoint /absolute/workspace/hoveld.sock --allow-dangerous --json
+For unattended password export, supply --password PASSWORD and keep the exporter alive; confirm separately.
 For unattended key/agent exports, omit --password/--prompt; JSON prints and the CLI exits.
---password takes no value and cannot be combined with --key or a nonempty explicit --agent.
+--password [PASSWORD] cannot be combined with --key or a nonempty explicit --agent.
 Hovel prompts normally; headless callers need matching confirmation or explicitly choose --now.
 Consumers never create resources. Chain connect is a separate explicit creation operation.
 HTTP is GET only, at most 8 seconds and 1 MiB; no TLS, redirects, credentials or query strings.
 For L/R forwards, URL host/port must match the fixed destination. SOCKS accepts a hostname URL.
 Reverse traffic originates at the SSH server through -W; no Python or remote helper is needed.
-All request fields are public evidence: never put secrets in URL paths or connection arguments.
+URL paths and ordinary request fields are public evidence; only --password PASSWORD is private input.
 Hovel artifacts retain owner/tunnel identity, HTTP status, byte count and response SHA256,
 without response bodies/headers. HTTP errors retain their status; routing/capture failures fail.
 --review HASH binds CLI --yes to the recap. TUI uses the normal review dialog.
@@ -242,7 +244,7 @@ Options (required fields are shown before optional settings):
 -proxy [PORT] (local SOCKS4/5 on 127.0.0.1, default 9050; omitted = off),
 --key PATH, --agent PATH (SSH_AUTH_SOCK default), --port NUMBER (config/22),
 --ssh-config PATH (~/.ssh/config), --jump [USER@]HOST[:PORT][,...],
---prompt (CLI hidden password/passphrase entry), --password (password-only hidden prompt), --yes (confirm review),
+--prompt (CLI hidden password/passphrase entry), --password [PASSWORD] (password only), --yes (confirm review),
 --review HASH (bind --yes to the exact previously displayed recap).
 Examples (add burrow --workspace PATH when running from a local shell):
   connect target 192.168.10.50 --user alice --password
@@ -252,7 +254,14 @@ Every hop uses UserKnownHostsFile=/dev/null and StrictHostKeyChecking=no.
 There is no host-key approval.
 TUI connects review and prompt interactively; Ctrl+C/Esc cancels the attempt.
 CLI without --yes reviews; --password/--prompt waits for authentication and cleans failure.
-Passwords/passphrases are terminal-only: never put secrets in commands.
+Bare --password opens hidden entry; --password PASSWORD supplies the target password without a popup.
+Quote spaces; use --password=VALUE for leading dashes or an empty password (maximum 4096 bytes; no NUL/CR/LF).
+Supplied values stay in frontend memory, out of Burrow history, logs, JSON, previews and child argv/environment.
+Literal CLI values remain visible in the original process argv and may enter shell history.
+Inline TUI text is visible while typed. Use the bare flag for hidden entry.
+Only the target receives an automatic value, once; jump hosts need keys/agents or interactive entry.
+Wrong values fail and clean up the attempt; retry explicitly. Headless direct connect still needs --yes.
+An incompatible retained manager refuses before password staging/dispatch: inspect, then review burrow restart.
 Aliases use OpenSSH HostName/User/Port/IdentityFile/IdentityAgent/ProxyJump.
 ProxyCommand and config forwarding/commands/trust overrides are not imported.
 SOCKS is separate from --jump: configure tools with socks5 127.0.0.1 PORT.
@@ -320,7 +329,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 		name = optionName(name)
 		f := fs.Lookup(name)
 		if f == nil {
-			return c, false, fmt.Errorf("invalid connection options; use help (secrets are not accepted)")
+			return c, false, fmt.Errorf("invalid connection options; use help")
 		}
 		// Interactive review appends --yes after an explicit --yes=false.
 		// Only this approval switch may repeat; connection fields stay unique.
@@ -328,8 +337,16 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 			return c, false, fmt.Errorf("duplicate connection option %s", name)
 		}
 		seen[name] = true
-		if name == "password" && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-			return c, false, fmt.Errorf("invalid connection options; --password takes no value, provide --user USER before it")
+		if name == "password" {
+			if !assigned && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+				value, assigned = args[i], true
+			}
+			if assigned {
+				c.Password = &value
+			}
+			options = append(options, "--password=true")
+			continue
 		}
 		if !assigned && name == "proxy" {
 			value, assigned = "9050", true
@@ -353,7 +370,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	}
 	for i, value := range positional {
 		if i >= 3 {
-			return c, false, fmt.Errorf("invalid connection options; expected NAME HOST --user USER; secrets are not accepted")
+			return c, false, fmt.Errorf("invalid connection options; expected NAME HOST --user USER")
 		}
 		name := []string{"name", "host", "user"}[i]
 		if seen[name] {
@@ -366,7 +383,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 		return c, false, fmt.Errorf("required NAME HOST --user USER (or -socket NAME -ip HOST -user USER); bare connect opens the form")
 	}
 	if e = fs.Parse(options); e != nil {
-		return c, false, fmt.Errorf("invalid connection options; use help (secrets are not accepted)")
+		return c, false, fmt.Errorf("invalid connection options; use help")
 	}
 	c.Prompt = c.Prompt || c.PasswordAuth
 	if _, e := launch.ConnectionPath(workspace, c.Name); e != nil {
@@ -748,6 +765,9 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 	if e != nil {
 		return nil, e
 	}
+	if e := checkPasswordManager(ctx, c); e != nil {
+		return nil, e
+	}
 	review, preview, e := c.review(ctx, args[0])
 	if e != nil {
 		return nil, e
@@ -759,7 +779,7 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		return nil, fmt.Errorf("SSH settings changed after review; review again")
 	}
 	if c.Prompt && promptSocket == "" {
-		return nil, fmt.Errorf("--prompt requires a private interactive frontend; secrets cannot be supplied as command inputs")
+		return nil, fmt.Errorf("authentication requires a private frontend; use the CLI or TUI password flow")
 	}
 	a, auditErr := launch.BeginAudit(w, commandIdentity(args), c.User+"@"+c.Host, nil)
 	if auditErr != nil {
@@ -869,7 +889,7 @@ func CommandSuggestions(line string, states []State) []string {
 		name := optionName(args[i])
 		if strings.HasPrefix(args[i], "-") {
 			seen[name] = true
-			if name == "proxy" {
+			if name == "proxy" || name == "password" {
 				if !strings.Contains(args[i], "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 					i++
 				}

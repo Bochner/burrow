@@ -412,6 +412,9 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.historyIndex = len(m.history)
 			m.input.Reset()
+			m.input.SetSuggestions(nil)
+			m.completionValues = nil
+			m.completionValue, m.draft = "", ""
 			switch command {
 			case "logs":
 				m.input.Reset()
@@ -444,7 +447,9 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.output = "REFUSED: " + safe(e.Error())
 					return m, nil
 				}
-				m.history = append(m.history, command)
+				if !connection.HasPassword(args) {
+					m.history = append(m.history, command)
+				}
 				m.historyIndex = len(m.history)
 				m.busy = true
 				workspace := m.info.Workspace
@@ -697,6 +702,7 @@ func (m ui) View() tea.View {
 
 const chainHelp = `# HOVEL CHAINS
 chain connect target 192.168.10.50 --user alice --password	Example: SSH password, entered in a hidden field after Hovel confirmation
+chain connect target 192.168.10.50 --user alice --password PASSWORD	Example: supply the target password automatically; PASSWORD is a placeholder
 chain connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519	Example: use a local private key instead
 chain connect NAME HOST --user USER [options]	Stage connection settings for an already-running OpenSSH/Dropbear server
 Enter these commands in Burrow management (Alt+B).
@@ -706,15 +712,19 @@ An unfinished Hovel command/confirmation is preserved; the staged command remain
 
 # CHAIN CONNECTION OPTIONS
 --user USER	SSH account name; use an explicit username in copied commands
---password	Password-only authentication; takes no value and conflicts with --key/--agent
+--password [PASSWORD]	Bare: hidden popup; with value: automatic target password. Conflicts with --key/--agent
 --key PATH	Local private key; add --prompt for an encrypted key
 --prompt	Enable hidden password/passphrase entry after Hovel confirmation
 --agent PATH	Use an available SSH agent socket
 --port NUMBER	SSH port; defaults to SSH config or 22
 --ssh-config PATH	Local SSH configuration file
 --jump HOST	SSH jump host, optionally USER@HOST:PORT
-Never type a password after --password. Escape in the hidden field cancels authentication.
-Keep Burrow open for a password/passphrase chain; start it within ten minutes.
+Quote spaces; --password=VALUE allows a leading dash or empty value. Escape cancels hidden entry.
+Inline text is visible while typed; supplied values stay out of Burrow recall, logs and saved JSON.
+CLI literals are visible in original argv and may enter shell history. Bare --password hides entry.
+Automatic values answer the target once; jump hosts need keys/agents or interactive entry.
+Keep Burrow open for any password/passphrase chain; its one-use broker expires after ten minutes.
+Older retained managers may require an explicit reviewed restart after inspecting connections.
 Ctrl+C in Hovel cancels a staged interactive chain, including after rejecting its plan.
 No --yes or -proxy on chain connect; Hovel owns confirmation and proxy creation stays explicit.
 
@@ -725,7 +735,8 @@ chain export CONNECTION TUNNEL_ID URL	Stage a private consumer chain and prepare
 HTTP GET only: 8 seconds, 1 MiB, no redirects, TLS, credentials or query strings.
 Use a fixed forward's destination in URL; SOCKS accepts an explicit hostname.
 No automatic tunnel creation/reconnect. Dropbear upload/start is separate deployment work.
-Standalone CLI prints chain JSON; --password/--prompt keeps its terminal open for private entry.
+Standalone CLI prints chain JSON; --password/--prompt keeps its broker alive.
+Supplied passwords need no TTY; Hovel still requires confirmation or explicit --now.
 Full TUI and CLI walkthroughs: https://bochner.github.io/burrow/spec/chains.html
 `
 
@@ -753,7 +764,7 @@ connect	Open the guided connection form
 connect NAME HOST --user USER	Connect directly; review first, then authenticate
 connect target 192.168.10.50 --user alice --password	Example: password-only authentication with hidden entry
 connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519	Example: local private key; add --prompt if encrypted
---password / --key PATH / --agent PATH	Choose password-only entry, a key, or an SSH agent; --password takes no value
+--password [PASSWORD] / --key PATH / --agent PATH	Choose hidden/automatic password entry, a key, or an SSH agent
 --port NUMBER / --jump HOST / --ssh-config PATH	Select port, network hops or local SSH configuration
 logs / Ctrl+N	Open workspace log in Vim; Ctrl+N or :q returns; reopen refreshes
 Ctrl+N in SSH/Hovel/Vim	Burrow shortcut, not forwarded to the embedded program

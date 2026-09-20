@@ -422,6 +422,9 @@ type chainConnectionRequest struct {
 }
 
 func connectionChain(ctx context.Context, c Config, frontend string) (any, chainConnectionRequest, error) {
+	if err := checkPasswordManager(ctx, c); err != nil {
+		return nil, chainConnectionRequest{}, err
+	}
 	_, preview, err := c.review(ctx, "connect")
 	r := chainConnectionRequest{c, preview, frontend}
 	if err != nil {
@@ -567,6 +570,9 @@ func chainConnectAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 	}
 	operation, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	if err := checkPasswordManager(operation, c); err != nil {
+		return hovel.Result{}, err
+	}
 	_, preview, err := c.review(operation, "connect")
 	if err != nil || preview != r.Preview {
 		return hovel.Result{}, fmt.Errorf("SSH settings changed since chain export; export and confirm again")

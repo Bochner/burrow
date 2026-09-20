@@ -26,11 +26,12 @@ const managerKind = "burrow-manager-v1"
 const buildMismatch = "installed Burrow module build differs from the requesting frontend; run burrow status to register this build; nothing was dispatched"
 
 type managerIdentity struct {
-	Session    string `json:"session"`
-	Generation string `json:"generation"`
-	Workspace  string `json:"workspace"`
-	OwnerPID   int    `json:"ownerPID"`
-	RunID      string `json:"runID"`
+	PasswordAuth bool   `json:"passwordAuth,omitempty"`
+	Session      string `json:"session"`
+	Generation   string `json:"generation"`
+	Workspace    string `json:"workspace"`
+	OwnerPID     int    `json:"ownerPID"`
+	RunID        string `json:"runID"`
 }
 
 type managerRequest struct {
@@ -364,7 +365,7 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 		if e != nil {
 			return hovel.Result{}, e
 		}
-		m := &manager{managerIdentity: managerIdentity{Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, connections: map[string]*owner{}, log: ctx.Log}
+		m := &manager{managerIdentity: managerIdentity{PasswordAuth: true, Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, connections: map[string]*owner{}, log: ctx.Log}
 		ref, e := ctx.OpenSession(m, hovel.WithName("Burrow manager"), hovel.WithKind(managerKind))
 		if e != nil {
 			dir.Close()
@@ -546,6 +547,9 @@ func connectManaged(ctx context.Context, c Config, preview string) (State, error
 	if e != nil {
 		return State{}, e
 	}
+	if e := passwordManagerCompatible(c, id); e != nil {
+		return State{}, e
+	}
 	if id.Session == "" {
 		generation := rand.Text()
 		if e = managerThrow(ctx, c.Workspace, map[string]string{"action": "activate", "generation": generation}, &id); e != nil {
@@ -581,6 +585,24 @@ func connectManaged(ctx context.Context, c Config, preview string) (State, error
 		return State{}, fmt.Errorf("connection result identity changed; inspect before retrying")
 	}
 	return state, nil
+}
+
+func passwordManagerCompatible(c Config, id managerIdentity) error {
+	if c.PasswordAuth && id.Session != "" && !id.PasswordAuth {
+		return fmt.Errorf("retained manager does not support password authentication from this frontend; inspect connections, then explicitly review burrow restart in this workspace; nothing was dispatched")
+	}
+	return nil
+}
+
+func checkPasswordManager(ctx context.Context, c Config) error {
+	if !c.PasswordAuth {
+		return nil
+	}
+	id, err := findManager(ctx, c.Workspace)
+	if err != nil {
+		return err
+	}
+	return passwordManagerCompatible(c, id)
 }
 
 // CloseInventory rechecks the manager's whole review under its admission lock.

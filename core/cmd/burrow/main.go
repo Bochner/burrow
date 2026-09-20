@@ -196,6 +196,18 @@ func run(args []string) error {
 				if err != nil {
 					return err
 				}
+				if c.Password != nil {
+					var result any
+					if yes {
+						result, err = connection.ExecutePrompt(interrupt, o.Workspace, args, nil)
+					} else {
+						result, err = connection.Execute(ctx, o.Workspace, args)
+					}
+					if err != nil {
+						return err
+					}
+					return printResult(result, noColor)
+				}
 				interactive = c.Prompt || (!yes && term.IsTerminal(os.Stdin.Fd()))
 			}
 			if interactive {
