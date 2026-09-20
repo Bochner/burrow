@@ -1432,14 +1432,16 @@ func TestForwardJSONRoles(t *testing.T) {
 }
 
 func TestConciseSSHRecap(t *testing.T) {
-	result, err := connection.Execute(context.Background(), "/tmp/recap", []string{"connect", "gateway", "nas.example", "alice", "--ssh-config", "/dev/null", "-proxy", "1080"})
+	t.Setenv("TMPDIR", "/tmp") // Real private evidence storage, with a short SSH socket path.
+	workspace := t.TempDir()
+	result, err := connection.Execute(context.Background(), workspace, []string{"connect", "gateway", "nas.example", "alice", "--ssh-config", "/dev/null", "-proxy", "1080"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	review := result.(map[string]string)["review"]
 	for _, plain := range []bool{false, true} {
 		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
-			m := newFrame(launch.Info{Workspace: "/tmp/recap"}, plain, launch.Options{})
+			m := newFrame(launch.Info{Workspace: workspace}, plain, launch.Options{})
 			defer m.terminals.close()
 			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 			m.reviewText = review

@@ -1193,7 +1193,9 @@ func TestProxyOption(t *testing.T) {
 		}
 	}
 	args := []string{"connect", "gateway", "example.com", "operator", "--ssh-config", "/dev/null", "-proxy"}
-	result, err := connection.Execute(context.Background(), "/tmp/forms", args)
+	t.Setenv("TMPDIR", "/tmp") // Keep the reviewed SSH socket within its path bound.
+	workspace := t.TempDir()
+	result, err := connection.Execute(context.Background(), workspace, args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1204,7 +1206,7 @@ func TestProxyOption(t *testing.T) {
 	if !strings.HasPrefix(review["review"], "SSH command:\n/usr/bin/ssh -F ") || strings.Contains(review["review"], "Generated config:") || !strings.Contains(review["review"], "-D 127.0.0.1:9050") {
 		t.Fatal("recap is not the concise actual command", review)
 	}
-	_, err = connection.Execute(context.Background(), "/tmp/forms", append(args, "1080", "--yes", "--review", review["digest"]))
+	_, err = connection.Execute(context.Background(), workspace, append(args, "1080", "--yes", "--review", review["digest"]))
 	if err == nil || !strings.Contains(err.Error(), "changed after review") {
 		t.Fatal("proxy change was not bound to recap approval", err)
 	}
