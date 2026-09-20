@@ -25,6 +25,11 @@ and a distribution release are not yet claimed.
 
 The documentation uses the same Astro GitHub Pages book format as Hovel.
 
+`burrow capabilities` prints the current machine-readable operation contract
+without opening a workspace or TUI. Use `burrow capabilities run.output` to
+inspect one route. The generated [API reference](https://bochner.github.io/burrow/api/)
+publishes the same inventory, including human-only routes and current gaps.
+
 ## [bochner.github.io/burrow](https://bochner.github.io/burrow/index.html)
 
 GitHub Pages publishes the documentation after successful checks on main.

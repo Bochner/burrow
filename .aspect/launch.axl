@@ -5,7 +5,7 @@ def _impl(ctx: TaskContext) -> int:
         # Never remove workspace state or retained runtime caches here.
         return ctx.std.process.command("bazel").args(["clean"]).current_dir(root).spawn().wait().code or 0
     if ctx.args.mode[0] == "format":
-        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/runs.go", root + "/core/connection/scripts.go", root + "/core/connection/survey.go", root + "/core/connection/chains.go"]).current_dir(root).spawn().wait()
+        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/capabilities.go", root + "/core/connection/runs.go", root + "/core/connection/scripts.go", root + "/core/connection/survey.go", root + "/core/connection/chains.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/cmd/burrow/files_ui.go", root + "/core/cmd/burrow/follow_ui.go", root + "/core/cmd/burrow/editor.go", root + "/core/cmd/burrow/logs.go", root + "/core/cmd/burrow/log_notes.go", root + "/core/cmd/burrow/collected_notes.go", root + "/core/cmd/burrow/downloads_ui.go"]).current_dir(root).spawn().wait()
@@ -23,7 +23,7 @@ def _impl(ctx: TaskContext) -> int:
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/cmd/burrow/legacy_module.go", root + "/core/cmd/burrow/terminal.go", root + "/core/cmd/burrow/auth.go", root + "/core/cmd/burrow/forms.go", root + "/core/cmd/burrow/profile_ui.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
-        for paths in [["core/reports/reports.go"], ["core/cmd/burrow/reports_ui.go", "core/cmd/burrow/reports_test.go"], ["core/launch/audit.go", "core/launch/audit_test.go", "core/launch/files_linux.go", "core/launch/package.go", "core/launch/online_test.go", "core/launch/daemon_linux.go", "core/launch/operations_linux.go", "core/launch/trace.go", "core/launch/digest_test.go", "core/launch/rpc_test.go"], ["core/connection/audit.go", "core/connection/module.go", "core/connection/connection_linux.go", "core/connection/commands.go", "core/connection/profiles.go", "core/connection/prompt_linux.go", "core/connection/ssh_config.go"], ["core/cmd/burrow/main.go", "core/cmd/burrow/quit.go", "core/cmd/burrow/selection.go", "core/cmd/burrow/tui.go", "core/cmd/burrow/screen_check.go", "core/cmd/burrow/frame.go", "core/cmd/burrow/frame_test.go", "core/cmd/burrow/auth_signal_test.go", "core/cmd/burrow/theme.go", "core/cmd/burrow/demo.go", "core/cmd/burrow/presentation_test.go"]]:
+        for paths in [["core/reports/reports.go"], ["core/cmd/burrow/reports_ui.go", "core/cmd/burrow/reports_test.go"], ["core/launch/audit.go", "core/launch/audit_test.go", "core/launch/files_linux.go", "core/launch/package.go", "core/launch/online_test.go", "core/launch/daemon_linux.go", "core/launch/operations_linux.go", "core/launch/trace.go", "core/launch/digest_test.go", "core/launch/rpc_test.go"], ["core/connection/audit.go", "core/connection/module.go", "core/connection/connection_linux.go", "core/connection/commands.go", "core/connection/profiles.go", "core/connection/prompt_linux.go", "core/connection/ssh_config.go"], ["core/cmd/burrow/capabilities.go", "core/cmd/burrow/main.go", "core/cmd/burrow/quit.go", "core/cmd/burrow/selection.go", "core/cmd/burrow/tui.go", "core/cmd/burrow/screen_check.go", "core/cmd/burrow/frame.go", "core/cmd/burrow/frame_test.go", "core/cmd/burrow/auth_signal_test.go", "core/cmd/burrow/theme.go", "core/cmd/burrow/demo.go", "core/cmd/burrow/presentation_test.go"]]:
             status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt"] + [root + "/" + p for p in paths]).current_dir(root).spawn().wait()
             if status.code:
                 return status.code
@@ -52,7 +52,7 @@ def _impl(ctx: TaskContext) -> int:
         print("expected run, check, clean, ssh-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
         return 2
     if mode == "check":
-        commands[mode] += ["//core/cmd/burrow:files_test", "//core/cmd/burrow:manager_compatibility_test"]
+        commands[mode] += ["//core/cmd/burrow:capabilities_test", "//core/cmd/burrow:files_test", "//core/cmd/burrow:manager_compatibility_test"]
     return ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait().code or 0
 
 burrow = task(

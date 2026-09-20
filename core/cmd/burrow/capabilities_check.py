@@ -1,0 +1,64 @@
+"""Exercise offline discovery through the shipped binary, without a workspace."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+binary = str(Path(sys.argv[1]).resolve())
+with tempfile.TemporaryDirectory(prefix="burrow-api-") as scratch:
+    root = Path(scratch)
+    env = dict(os.environ, HOME=str(root / "home"), XDG_CACHE_HOME=str(root / "cache"))
+    result = subprocess.run([binary, "capabilities"], env=env, cwd=root,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result
+    contract = json.loads(result.stdout)
+    assert contract["schemaVersion"] == 1
+    assert contract["module"]["name"] == "burrow"
+    assert contract["provenance"]["binarySHA256"]
+    operations = {op["id"]: op for op in contract["operations"]}
+    assert len(operations) == len(contract["operations"])
+    assert {"workspace", "connection", "profile", "shell", "tunnel", "files",
+            "transfer", "run", "report", "chain", "logs", "installation"} <= {
+                op["category"] for op in operations.values()}
+    for op in operations.values():
+        for key in ("id", "summary", "human", "agent", "scope", "effects", "review", "evidence"):
+            assert op[key], (op["id"], key)
+        assert op["result"] in contract["results"], op
+        for name in op["inputs"]:
+            assert name in contract["inputs"], (op["id"], name)
+    assert operations["workspace.open"]["effects"].startswith("Initializes")
+    assert operations["shell.resume"]["agent"]["status"] == "unsupported"
+    assert operations["logs.view"]["agent"]["status"] == "terminal-only"
+    assert contract["errors"]["encoding"] == "text/stderr"
+    # Reachability only: valid examples must pass the production parser and
+    # reach the same missing-workspace refusal, without starting local state.
+    workspace = str(root / "untouched")
+    baseline = subprocess.run([binary, "--workspace", workspace, "connections"],
+                              env=env, capture_output=True, text=True, timeout=15)
+    assert baseline.returncode == 1
+    for op in operations.values():
+        if not op["dispatch"] or op["agent"]["status"] != "supported":
+            continue
+        argv = [workspace if token == "/absolute/workspace" else token
+                for token in op["agent"]["example"][1:]]
+        route = subprocess.run([binary, *argv], env=env, capture_output=True,
+                               text=True, timeout=15)
+        assert route.returncode == 1 and route.stderr == baseline.stderr, (op["id"], route, baseline)
+    for verb in ("prepare", "now"):
+        assert any("-- [ARG...]" in variant for variant in operations[f"run.{verb}"]["agent"]["variants"])
+        script = subprocess.run([binary, "--workspace", workspace, "run", verb, "target",
+                                 "--script", "check.sh", "--mode", "stream", "--interpreter", "/bin/sh", "--"],
+                                env=env, capture_output=True, text=True, timeout=15)
+        assert script.returncode == 1 and script.stderr == baseline.stderr, script
+    for args in (["capabilities", "run.output"], ["--offline", "capabilities", "run.output"]):
+        selected = subprocess.run([binary, *args], env=env, cwd=root,
+                                  capture_output=True, text=True, timeout=15)
+        assert selected.returncode == 0, selected
+        assert json.loads(selected.stdout)["operations"] == [operations["run.output"]]
+    bad = subprocess.run([binary, "capabilities", "not-an-operation"], env=env,
+                         capture_output=True, text=True, timeout=15)
+    assert bad.returncode == 1 and "unknown capability" in bad.stderr, bad
+    assert not list(root.iterdir()), "discovery initialized local state"
+print("PASS offline binary discovery, stable selection, route limitations and contract references")

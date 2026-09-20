@@ -16,8 +16,8 @@ py_test(
     size = "small",
     legacy_create_init = 0,
     srcs = ["site_test.py"],
-    args = ["$(rootpath //docs/site:astro_site)"],
-    data = ["//docs/site:astro_site"],
+    args = ["$(rootpath //docs/site:astro_site)", "$(rootpath //core/cmd/burrow:burrow)"],
+    data = ["//docs/site:astro_site", "//core/cmd/burrow:burrow"],
 )
 
 py_binary(

@@ -21,6 +21,13 @@ The inherited stylesheet is kept intact apart from attribution/branding.
 Burrow's staging tool also restores owner write access to previously copied
 output directories so repeated staging can replace read-only Bazel artifacts.
 
+The API tab (#88) reuses that header, sidebar, table styling and search. Its
+operation pages and downloadable JSON are generated from the production
+`burrow capabilities` command as a declared build input. It documents Burrow
+CLI and base-module routes and links the pinned upstream RPC/SDK sources;
+it does not add a Burrow REST service or SDK. `src/lib/api.ts` is original
+Burrow rendering code; the upstream stylesheet remains unchanged.
+
 Dependency pins match the inspected Hovel source: Astro 7.0.7, Node 22.20.0,
 pnpm 10.20.0, rules_js 3.2.2, rules_nodejs 6.7.5, and rules_python 2.2.0.
 Action revisions match Hovel's CI/Pages workflows. No upstream credentials,

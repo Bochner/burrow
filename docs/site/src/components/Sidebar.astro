@@ -1,15 +1,20 @@
 ---
 // Adapted from Hovel c461ba; Copyright 2026 William Born; Apache-2.0. See UPSTREAM.md.
-import { bookChapter, bookParts, type DocPage } from "../lib/catalog";
+import { bookChapter, bookParts, navGroups, type DocPage } from "../lib/catalog";
 interface Props { current: DocPage; root: string }
 const { current, root } = Astro.props;
 const currentChapter = bookChapter(current);
+const api = current.area === "api";
 ---
 <aside class="sidebar">
   <button class="sidebar-toggle" type="button" aria-controls="book-sidebar-navigation" aria-expanded="false">
-    <span><small>Book navigation</small>{current.title}</span><span aria-hidden="true">+</span>
+    <span><small>{api ? "API" : "Book"} navigation</small>{current.title}</span><span aria-hidden="true">+</span>
   </button>
-  <nav id="book-sidebar-navigation" aria-label="Book navigation">
+  <nav id="book-sidebar-navigation" aria-label={`${api ? "API" : "Book"} navigation`}>
+    {api ? navGroups("api").map((group) => <details class="sidebar-part" open>
+      <summary class="sidebar-section">{group.label}</summary>
+      <ul>{group.pages.map((page) => <li><a href={`${root}${page.href}`} aria-current={page.slug === current.slug ? "page" : undefined}>{page.title}</a></li>)}</ul>
+    </details>) : <>
     <a class="sidebar-contents" href={`${root}spec/`} aria-current={current.slug === "spec/index" ? "page" : undefined}><span>TOC</span><strong>Book contents</strong></a>
     {bookParts().map((part) => <details class="sidebar-part" open={part.number === currentChapter?.partNumber}>
       <summary class="sidebar-section"><span>{String(part.number).padStart(2, "0")}</span>{part.label}</summary>
@@ -19,6 +24,7 @@ const currentChapter = bookChapter(current);
         </a>
       </li>)}</ul>
     </details>)}
+    </>}
   </nav>
 </aside>
 <script>

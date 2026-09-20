@@ -690,6 +690,10 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 	if e := ValidateCommand(w, args); e != nil {
 		return nil, e
 	}
+	operation, ok := CommandOperation(args)
+	if !ok {
+		return nil, fmt.Errorf("command has no registered capability")
+	}
 	if args[0] == "profile" && args[1] == "connect" {
 		expanded, e := ProfileConnect(ctx, w, args)
 		if e != nil {
@@ -697,7 +701,7 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		}
 		return execute(ctx, w, expanded, promptSocket)
 	}
-	switch args[0] {
+	switch operation.Dispatch {
 	case "chain":
 		return executeChain(ctx, w, args)
 	case "run":

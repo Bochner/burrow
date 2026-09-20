@@ -112,6 +112,21 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         wait("SAVED CONNECTION")
         assert re.search(rb"\x1b\[\?100[0236]h", output), "panel selection needs mouse events"
         assert b"\x1b]52;" not in output, "unexpected clipboard operation"
+        # #88 semantic evidence: the real human command route writes the same
+        # non-secret profile the discovered headless route subsequently reads.
+        inventory = json.loads(subprocess.check_output([binary, "capabilities"], env=env, text=True))
+        routes = {op["id"]: op for op in inventory["operations"]}
+        assert routes["profile.create"]["agent"]["status"] == "supported"
+        send("profile create api-human 192.0.2.88 --user apiuser\r")
+        wait('"state": "create"')
+        select_route = routes["profile.select"]["agent"]["example"][1:]
+        select_route = [str(a) if token == "/absolute/workspace" else
+                        "api-human" if token == "target" else token for token in select_route]
+        saved = json.loads(subprocess.check_output([binary, *select_route], env=env, text=True))
+        assert (saved["name"], saved["host"], saved["user"]) == ("api-human", "192.0.2.88", "apiuser"), saved
+        schema = inventory["results"][routes["profile.select"]["result"]]
+        assert set(schema["required"]) <= saved.keys() <= schema["properties"].keys(), (schema, saved)
+        assert json.loads(subprocess.check_output([binary, "--workspace", str(a), "connections"], env=env, text=True)) == [], "saving settings connected"
         send("management-draft")
         send(b"\x0c")
         wait("No collected command output")

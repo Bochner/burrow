@@ -22,6 +22,7 @@ import (
 
 const usage = `Burrow — verified Hovel workspace
 Usage: burrow --workspace /absolute/workspace [options] [status|tui|COMMAND]
+       burrow capabilities [ID]
        burrow --demo [--no-color]
 
 Required:
@@ -35,6 +36,7 @@ Options:
   --help                Show this help without starting anything
 
 status opens/reuses the workspace and prints verified daemon identity as JSON.
+capabilities prints the versioned JSON operation contract without initializing anything.
 tui opens the management interface (default); quit retains the daemon.
 restart [--yes] retires the workspace's Burrow manager, then opens the current TUI.
 --yes skips restart confirmation and ends the workspace's connections and shells.
@@ -101,6 +103,9 @@ func run(args []string) error {
 			return nil
 		}
 		return e
+	}
+	if fs.NArg() > 0 && fs.Arg(0) == "capabilities" {
+		return capabilities(fs, fs.Args()[1:])
 	}
 	if noColor {
 		if e := os.Setenv("NO_COLOR", "1"); e != nil {

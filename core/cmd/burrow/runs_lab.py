@@ -273,6 +273,9 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("close", scripted["id"], "--yes")
 
     now_review = hovel_run("now", connection["name"], "--", "printf", "reviewed-now")
+    contract = burrow(workspace, "capabilities", "run.now")
+    review_shape = contract["results"]["RunReview"]["anyOf"][0]
+    assert set(review_shape["required"]) <= now_review.keys() <= review_shape["properties"].keys(), (review_shape, now_review)
     assert run("inspect", now_review["id"])["state"] == "prepared", now_review
     assert now_review["confirm"] == f'run launch {now_review["id"]} --collect --review {now_review["digest"]} --yes'
     assert hovel_run(*shlex.split(now_review["confirm"])[1:])["collection"] == "succeeded"

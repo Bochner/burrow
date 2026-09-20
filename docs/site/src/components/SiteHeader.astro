@@ -3,7 +3,7 @@
 import SearchDialog from "./SearchDialog.astro";
 
 interface Props {
-  current: "Home" | "Book" | "Modules" | "API Docs" | "Reports";
+  current: "Home" | "Book" | "Modules" | "API" | "Reports";
   root: string;
   tag: string;
 }
@@ -12,6 +12,7 @@ const { current, root, tag } = Astro.props;
 const links = [
   ["Home", `${root}index.html`],
   ["Book", `${root}spec/`],
+  ["API", `${root}api/`],
 ] as const;
 ---
 

@@ -43,6 +43,9 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
         port = free.getsockname()[1]
     args = ("tunnel", "create", "gateway", "forward", str(port), "localhost", "2222")
     review = burrow(w, *args)
+    contract = burrow(w, "capabilities", "tunnel.create")
+    review_shape = contract["results"]["TunnelReview"]["anyOf"][0]
+    assert set(review_shape["required"]) <= review.keys() <= review_shape["properties"].keys(), (review_shape, review)
     alias = ("tunc", "gateway", "l", str(port), "localhost", "2222")
     assert burrow(w, *alias) == review, "alias changed reviewed endpoints or owner binding"
     assert f"127.0.0.1:{port}" in review["review"]

@@ -11,6 +11,13 @@ npm_link_all_packages()
 
 astro.astro_binary(name = "astro")
 
+genrule(
+    name = "api_inventory",
+    outs = ["api-inventory.json"],
+    tools = ["//core/cmd/burrow:burrow"],
+    cmd = "$(location //core/cmd/burrow:burrow) capabilities > $@",
+)
+
 filegroup(
     name = "site_sources",
     srcs = glob(["public/**", "src/**"]) + ["astro.config.mjs", "package.json", "tsconfig.json"],
@@ -18,7 +25,7 @@ filegroup(
 
 js_run_binary(
     name = "astro_site",
-    srcs = [":node_modules/astro", ":site_sources"],
+    srcs = [":node_modules/astro", ":site_sources", ":api_inventory"],
     args = ["build"],
     chdir = package_name(),
     env = {"ASTRO_TELEMETRY_DISABLED": "1"},
