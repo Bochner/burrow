@@ -207,7 +207,8 @@ func init() {
 // actual JSON result types. Map/union replies are declared separately below.
 func ResultSchemas() map[string]any {
 	values := map[string]any{
-		"State": State{}, "States": []State{}, "Profile": Profile{}, "Collection": Collection{},
+		"Activity": Activity{},
+		"State":    State{}, "States": []State{}, "Profile": Profile{}, "Collection": Collection{},
 		"Tunnel": Tunnel{}, "Tunnels": []Tunnel{},
 		"FileRoots": FileRoots{}, "FileListing": FileListing{}, "FileTree": FileTree{},
 		"Download": Download{}, "Downloads": Downloads{}, "DownloadPlan": DownloadPlan{},

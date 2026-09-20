@@ -18,6 +18,7 @@ import time
 
 
 def follow_checks(burrow, workspace, connection, container, command, hv, binary, env, decoder):
+    activity_checks(burrow, workspace, connection, container, command, hv, binary, env, decoder)
     def run(*args, **kw):
         return burrow(workspace, "run", *args, **kw)
 
@@ -109,6 +110,157 @@ def follow_checks(burrow, workspace, connection, container, command, hv, binary,
     print("PASS output readers expose budget and kernel write failures with collectible partial bytes", flush=True)
     for plain in (False, True):
         follow_ui(burrow, workspace, connection["name"], container, command, hv, binary, env, decoder, plain)
+
+
+def activity_checks(burrow, workspace, connection, container, command, hv, binary, env, decoder):
+    viewers = []
+    consoles = []
+    run_id = None
+    new_connection = False
+
+    def console(args, plain=False):
+        outer, slave = pty.openpty()
+        before = termios.tcgetattr(slave)
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+        def controlling():
+            os.setsid()
+            fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+        p = subprocess.Popen([binary, "--workspace", str(workspace), *args],
+                             env=env | {"NO_COLOR": "1" if plain else "", "COLORTERM": "truecolor"},
+                             stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+        view = {"process": p, "outer": outer, "slave": slave, "before": before, "output": bytearray()}
+        consoles.append(view)
+        return view
+
+    def drain():
+        for view in consoles:
+            while select.select([view["outer"]], [], [], 0)[0]:
+                view["output"].extend(os.read(view["outer"], 65536))
+
+    def screen(view, needle):
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            drain()
+            text = subprocess.run([decoder, "160", "40"], input=view["output"], capture_output=True, check=True).stdout
+            if needle in text:
+                return text
+            assert view["process"].poll() is None, text
+            time.sleep(.05)
+        raise AssertionError((needle, text))
+
+    def start():
+        p = subprocess.Popen([binary, "--workspace", str(workspace), "follow", "--json"],
+                             env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        view = {"process": p, "pending": b"", "events": []}
+        viewers.append(view)
+        return view
+
+    def wait(view, predicate):
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            drain()
+            for event in view["events"]:
+                if predicate(event):
+                    return event
+            p = view["process"]
+            if select.select([p.stdout], [], [], .1)[0]:
+                chunk = os.read(p.stdout.fileno(), 65536)
+                assert chunk, (p.poll(), p.stderr.read())
+                lines = (view["pending"] + chunk).split(b"\n")
+                view["pending"] = lines.pop()
+                view["events"].extend(json.loads(line) for line in lines)
+        raise AssertionError(view["events"][-20:])
+
+    try:
+        human, tui = console(["follow"]), console(["tui"], plain=True)
+        screen(human, b"BURROW FOLLOW")
+        screen(tui, connection["name"].encode())
+        a, b = start(), start()
+        for view in viewers:
+            wait(view, lambda e: e["kind"] == "ready")
+        burrow(workspace, "profile", "save", connection["name"], "--as", "feed-target")
+        burrow(workspace, "profile", "connect", "feed-target", "--as", "activity-host", "--yes")
+        new_connection = True
+        wait(a, lambda e: e.get("state") == "connected" and e["source"] == "burrow/connection" and "activity-host" in json.dumps(e))
+        screen(tui, b"activity-host")
+        assert b"activity-host" in re.sub(rb"\x1b\[[0-9;]*m", b"", human["output"])
+        # Shared boundary records failed/refused operations without claiming success.
+        burrow(workspace, "tunnel", "remove", "activity-host/" + "0" * 32, "--yes", ok=False)
+        wait(a, lambda e: e["kind"] == "failed" and "tunnel remove activity-host" in e["message"])
+        prepared = burrow(workspace, "run", "prepare", connection["name"], "--", "/bin/sh", "-c",
+                          "printf 'activity-ready\\n'; printf 'activity-warning\\n\\303' >&2; "
+                          "while [ ! -f /tmp/burrow-activity-release ]; do sleep .1; done; "
+                          "printf 'activity-end\\n'; exit 7")
+        run_id = prepared["id"]
+        # Drive the same base module using documented native Hovel commands.
+        hv("chain", "create", "activity-events", chain="activity-events")
+        hv("chain", "add", "burrow@0.1.0", chain="activity-events")
+        hv("target", "add", "local", chain="activity-events")
+        hv("chain", "config", "set", "workspace", str(workspace), chain="activity-events")
+        hv("chain", "config", "set", "command", "profiles", chain="activity-events")
+        native = json.loads(hv("throw", "--now", "--allow-dangerous", "--json", chain="activity-events"))
+        assert native["results"][0]["state"] == "succeeded", native
+        wait(a, lambda e: e.get("chain") == "activity-events" and e["message"] == "run completed")
+        burrow(workspace, "run", "launch", run_id)  # Review must not launch.
+        review = wait(a, lambda e: e["kind"] == "review" and e.get("resourceID") == run_id)
+        assert burrow(workspace, "run", "inspect", run_id)["state"] == "prepared", review
+        burrow(workspace, "run", "launch", run_id, "--yes")
+        wait(a, lambda e: e["kind"] == "started" and e.get("resourceID") == run_id and e["source"] == "burrow/audit")
+        for view in (a, b):
+            wait(view, lambda e: e["kind"] == "output" and e.get("stream") == "stdout"
+                 and b"activity-ready" in base64.b64decode(e["data"]))
+            wait(view, lambda e: e["kind"] == "output" and e.get("stream") == "stderr"
+                 and b"activity-warning" in base64.b64decode(e["data"]))
+        a["process"].send_signal(signal.SIGINT)
+        assert a["process"].wait(timeout=5) == 0
+        assert burrow(workspace, "run", "inspect", run_id)["state"] == "running"
+        command("docker", "exec", container, "touch", "/tmp/burrow-activity-release")
+        event = wait(b, lambda e: e["kind"] == "result" and e.get("resourceID") == run_id
+                     and e.get("state") == "exited")
+        assert event["details"]["remoteExit"] == 7
+        wait(b, lambda e: e["kind"] == "output" and b"activity-end" in base64.b64decode(e["data"]))
+        burrow(workspace, "run", "collect", run_id, "--yes")
+        wait(b, lambda e: e["kind"] == "collected" and e.get("resourceID") == run_id)
+        drain()
+        rendered = re.sub(rb"\x1b\[[0-9;]*m", b"", human["output"])
+        for expected in (b"activity-ready", b"activity-warning", b"activity-end", b"remote exit: 7", b"\\xc3"):
+            assert expected in rendered, (expected, rendered[-6000:])
+        assert b"?1049" not in human["output"] and termios.tcgetattr(human["slave"]) == human["before"]
+        # A real transfer yields owner-measured bytes and completion.
+        command("docker", "exec", container, "sh", "-c", "head -c 4194304 /dev/zero > /tmp/burrow-activity-data")
+        plan = burrow(workspace, "scp", connection["name"], "get", "/tmp/burrow-activity-data", "activity-data")
+        transfer = burrow(workspace, "scp", connection["name"], "get", "/tmp/burrow-activity-data", "activity-data", "--yes", "--review", plan["digest"])
+        wait(b, lambda e: e.get("resourceID") == transfer["id"] and e["kind"] in ("progress", "result"))
+        burrow(workspace, "close", "activity-host", "--yes")
+        new_connection = False
+        wait(b, lambda e: e.get("state") == "closed" and "activity-host" in json.dumps(e))
+        print("PASS workspace activity: review, real stdout/stderr, independent viewers, nonzero exit and collection", flush=True)
+    finally:
+        command("docker", "exec", container, "touch", "/tmp/burrow-activity-release")
+        for view in viewers:
+            p = view["process"]
+            if p.poll() is None:
+                p.terminate()
+                p.wait(timeout=10)
+        for view in consoles:
+            p = view["process"]
+            if p.poll() is None:
+                p.terminate()
+                deadline = time.monotonic() + 10
+                while p.poll() is None and time.monotonic() < deadline:
+                    drain()
+                    time.sleep(.02)
+                if p.poll() is None:
+                    p.kill()
+                p.wait(timeout=5)
+        for view in consoles:
+            os.close(view["outer"])
+            os.close(view["slave"])
+        if new_connection:
+            burrow(workspace, "close", "activity-host", "--yes")
+        if run_id:
+            burrow(workspace, "run", "cancel", run_id, "--yes")
+            burrow(workspace, "run", "close", run_id, "--yes")
 
 
 def follow_ui(burrow, workspace, connection, container, command, hv, binary, env, decoder, plain):

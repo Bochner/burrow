@@ -3,6 +3,17 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 py_test(
+    name = "activity_test",
+    srcs = ["activity_check.py"],
+    main = "activity_check.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :screen_check)"],
+    data = [":burrow", "@hovel_linux_wheel//file", ":screen_check"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)
+
+py_test(
     name = "workspace_test",
     srcs = ["workspace_check.py"],
     main = "workspace_check.py",
@@ -96,7 +107,7 @@ go_binary(
 go_binary(
     name = "burrow",
     visibility = ["//core/prototype_manager:__pkg__", "//core/prototype_sessions:__pkg__", "//docs/site:__pkg__", "//docs/tools/docs:__pkg__"],
-    srcs = ["capabilities.go", "workspace.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go"],
+    srcs = ["activity.go", "capabilities.go", "workspace.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go"],
     deps = [
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
@@ -134,7 +145,7 @@ py_test(
 
 go_test(
     name = "interaction_test",
-    srcs = ["capabilities.go", "workspace.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go", "frame_test.go", "presentation_test.go", "auth_signal_test.go", "reports_test.go"],
+    srcs = ["activity.go", "capabilities.go", "workspace.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go", "frame_test.go", "presentation_test.go", "auth_signal_test.go", "reports_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",

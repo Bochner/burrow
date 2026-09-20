@@ -24,6 +24,7 @@ import (
 const usage = `Burrow — verified Hovel workspace
 Usage: burrow --workspace /absolute/workspace [options] [status|tui|COMMAND]
        burrow --workspace /absolute/workspace workspace open|inspect|restart|retire
+       burrow --workspace /absolute/workspace follow [--json]
        burrow workspace list PATH [PATH...]
        burrow capabilities [ID]
        burrow --demo [--no-color]
@@ -47,6 +48,8 @@ restart also registers the current build; next approved connect starts a manager
 Workspace routes emit JSON results and JSON errors on stderr (exit 1).
 capabilities prints the versioned JSON operation contract without initializing anything.
 tui opens the management interface (default); quit retains the daemon.
+follow streams new shared activity with normal scrollback; --json or a pipe emits NDJSON.
+It requires an existing daemon. Ctrl+C ends only the viewer; no approvals or SSH reconnects.
 restart [--yes] retires the workspace's Burrow manager, then opens the current TUI.
 --yes skips restart confirmation and ends the workspace's connections and shells.
 It ends that manager's connections and shells; saved settings, evidence and Hovel remain.
@@ -156,6 +159,12 @@ func run(args []string) (failure error) {
 	}
 	if o.Workspace == "" {
 		return fmt.Errorf("--workspace PATH is required; use --help")
+	}
+	if fs.Arg(0) == "follow" {
+		if loadPath != "" {
+			return fmt.Errorf("follow does not load settings; select the existing workspace only")
+		}
+		return activityCommand(o.Workspace, fs.Args()[1:], noColor)
 	}
 	command := "tui"
 	if fs.NArg() > 0 {

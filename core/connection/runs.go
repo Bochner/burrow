@@ -723,6 +723,11 @@ exec ` + quoteCommand(argv)
 		close(r.done)
 		return err
 	}
+	// Owner evidence distinguishes actual process start from the reviewed request.
+	// A failed notification cannot undo a running command or replace its outcome.
+	if err := audit.Record("running", r.record); err != nil {
+		r.record.AuditError = err.Error()
+	}
 	for i, p := range localPipes {
 		if p[0] == nil {
 			continue
