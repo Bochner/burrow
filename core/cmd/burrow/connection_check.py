@@ -20,6 +20,10 @@ for target, expected in {
 print("PASS human Make shortcuts delegate to Aspect without executing cleanup")
 with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
     workspace = Path(scratch) / "untouched"
+    accepted = subprocess.run([binary, "--workspace", str(workspace), "chain", "connect", "named",
+                               "192.0.2.1", "--user", "tester", "--password"], capture_output=True, text=True)
+    assert accepted.returncode != 0 and "invalid connection" not in accepted.stderr, accepted
+    assert not workspace.exists(), "validation started a workspace"
     for name in ("../escape", "a b", "é", "x" * 25):
         result = subprocess.run([binary, "--workspace", str(workspace), "connect", name,
                                  "localhost", "tester", "--yes"], capture_output=True, text=True)
@@ -32,9 +36,12 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["chain", "http", "gateway", "gateway/" + "a" * 32, "http://example.test/?token=SYNTHETIC-NOT-A-REAL-SECRET"], "without credentials"),
         (["chain", "http", "gateway", "gateway/" + "a" * 32, "https://example.test/"], "http://HOST"),
         (["chain", "http", "gateway", "other/" + "a" * 32, "http://example.test/"], "complete tunnel"),
-        (["chain", "connect", "gateway", "localhost", "tester", "--prompt"], "connection-only"),
         (["chain", "connect", "gateway", "localhost", "tester", "-proxy"], "connection-only"),
         (["chain", "connect", "gateway", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection"),
+        (["chain", "connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection"),
+        (["connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection"),
+        (["chain", "connect", "gateway", "localhost", "--user", "tester", "--password=SYNTHETIC-NOT-A-REAL-SECRET"], "invalid connection"),
+        (["chain", "connect", "gateway", "localhost", "--user", "tester", "--key", "/tmp/key", "--password"], "choose --password or --key"),
         (["run"], "run prepare CONNECTION"),
         (["run", "prepare", "gateway", "--local", "--", "relative-tool"], "absolute executable"),
         (["run", "prepare", "gateway", "--local", "--script", "a.sh", "--mode", "stage", "--interpreter", "/bin/sh", "--"], "does not stage"),

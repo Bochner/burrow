@@ -87,6 +87,11 @@ func (c Config) resolve(ctx context.Context) (Config, error) {
 		}
 	}
 	c.identities = nil
+	if c.PasswordAuth {
+		c.Agent = ""
+		c.authOptions = []string{"PasswordAuthentication yes", "PubkeyAuthentication no", "PreferredAuthentications password"}
+		return c, c.Validate()
+	}
 	if c.Key != "" {
 		identities = []string{c.Key}
 	}
@@ -229,5 +234,8 @@ func (c Config) review(ctx context.Context, verb string) (string, string, error)
 		proxy = fmt.Sprintf("SOCKS4/5 · 127.0.0.1:%d", c.ProxyPort)
 	}
 	text := fmt.Sprintf("SSH command:\n%s\n\n%s %s\nEndpoint: %s@%s:%d\nSOCKS proxy: %s\nJump: %s\nKey: %s\nAgent: %s\n\nHost trust: verification disabled; known-host writes discarded.", strings.Join(args, " "), verb, c.Name, resolved.User, resolved.Host, resolved.Port, proxy, displaySetting(resolved.Jump, "none"), displaySetting(c.Key, "SSH config/default identities"), displaySetting(resolved.Agent, "none"))
+	if c.PasswordAuth {
+		text += "\nAuthentication: password only (hidden prompt)"
+	}
 	return text, string(config), nil
 }

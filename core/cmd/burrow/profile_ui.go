@@ -210,8 +210,8 @@ func (m ui) suggestions() []string {
 var completionDescriptions = map[string]string{
 	"chain select":  "CONNECTION · authoritative live forwarding identities",
 	"chain http":    "CONNECTION TUNNEL_ID URL · review HTTP and collect result",
-	"chain export":  "CONNECTION TUNNEL_ID URL · saved Hovel chain JSON, no execution",
-	"chain connect": "NAME HOST USER [options] · saved Hovel SSH connection chain JSON",
+	"chain export":  "CONNECTION TUNNEL_ID URL · stage chain and prepare Hovel throw",
+	"chain connect": "NAME HOST --user USER [--key PATH | --password] · stage and open Hovel",
 	"run follow":    "ID [stdout|stderr] [OFFSET] · independent live viewer",
 	"run survey":    "CONNECTION --os ubuntu · review, run and save Markdown report",
 	"reports":       "Browse saved Markdown reports", "report": "ID · open a saved report",

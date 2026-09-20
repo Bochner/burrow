@@ -22,10 +22,13 @@ import (
 const Help = `chain select CONNECTION             Query live forwards and SOCKS identities from their owner
 chain http CONNECTION TUNNEL_ID URL [--yes] Review HTTP through exactly that existing tunnel
 chain export CONNECTION TUNNEL_ID URL Export a saved Hovel consumer chain as JSON; no execution
-chain connect NAME HOST USER [options] Export a saved Hovel connection chain; no authentication yet
-Connection options: --key PATH, --agent PATH, --port NUMBER, --ssh-config PATH, --jump HOST.
+chain connect NAME HOST --user USER [options] Export a saved Hovel connection chain; no authentication yet
+Connection options: --key PATH, --password, --prompt, --agent PATH, --port NUMBER, --ssh-config PATH, --jump HOST.
 A confirmed connection chain waits for authentication and registers a live named Burrow connection.
-Requires an already-running OpenSSH/Dropbear server and usable local key/agent; no deployment.
+Requires an already-running OpenSSH/Dropbear server; no deployment. --password takes no secret value.
+TUI connect/export stages a private chain file and opens Hovel with throw ready; Enter reviews.
+CLI --password/--prompt exports JSON and stays open for private authentication from another Hovel terminal.
+Keep that frontend open; its one-use prompt expires after 10 minutes. Unattended exports use keys/agents.
 Existing names are refused; no adoption or automatic reconnect. Close via close NAME.
 Exported chains bind this workspace/build and exact settings; regenerate after changes/upgrades.
 Save CLI JSON to a file, then use hovel throw FILE --workspace PATH --allow-dangerous --json.
@@ -226,7 +229,7 @@ Options (required fields are shown before optional settings):
 -proxy [PORT] (local SOCKS4/5 on 127.0.0.1, default 9050; omitted = off),
 --key PATH, --agent PATH (SSH_AUTH_SOCK default), --port NUMBER (config/22),
 --ssh-config PATH (~/.ssh/config), --jump [USER@]HOST[:PORT][,...],
---prompt (CLI hidden password/passphrase entry), --yes (confirm review),
+--prompt (CLI hidden password/passphrase entry), --password (password-only hidden prompt), --yes (confirm review),
 --review HASH (bind --yes to the exact previously displayed recap).
 Every hop uses UserKnownHostsFile=/dev/null and StrictHostKeyChecking=no.
 There is no host-key approval.
@@ -281,6 +284,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	fs.StringVar(&c.Jump, "jump", "", "jump hosts")
 	fs.StringVar(&c.Review, "review", "", "exact SSH preview digest")
 	fs.BoolVar(&c.Prompt, "prompt", false, "private terminal authentication")
+	fs.BoolVar(&c.PasswordAuth, "password", false, "prompt privately for password authentication")
 	fs.IntVar(&c.Port, "port", 0, "SSH port (configuration or 22)")
 	fs.IntVar(&c.ProxyPort, "proxy", 0, "local SOCKS port (9050 when flag is bare)")
 	yes := fs.Bool("yes", false, "confirm reviewed operation")
@@ -307,6 +311,9 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 			return c, false, fmt.Errorf("duplicate connection option %s", name)
 		}
 		seen[name] = true
+		if name == "password" && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			return c, false, fmt.Errorf("invalid connection options; --password takes no value, provide --user USER before it")
+		}
 		if !assigned && name == "proxy" {
 			value, assigned = "9050", true
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
@@ -314,7 +321,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 				value = args[i]
 			}
 		}
-		if !assigned && name != "yes" && name != "prompt" {
+		if !assigned && name != "yes" && name != "prompt" && name != "password" {
 			i++
 			if i == len(args) {
 				return c, false, fmt.Errorf("missing value for %s; required NAME HOST USER; use help", name)
@@ -329,7 +336,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	}
 	for i, value := range positional {
 		if i >= 3 {
-			return c, false, fmt.Errorf("expected NAME HOST USER and options; use help")
+			return c, false, fmt.Errorf("invalid connection options; expected NAME HOST --user USER; secrets are not accepted")
 		}
 		name := []string{"name", "host", "user"}[i]
 		if seen[name] {
@@ -344,6 +351,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 	if e = fs.Parse(options); e != nil {
 		return c, false, fmt.Errorf("invalid connection options; use help (secrets are not accepted)")
 	}
+	c.Prompt = c.Prompt || c.PasswordAuth
 	if _, e := launch.ConnectionPath(workspace, c.Name); e != nil {
 		return c, false, e
 	}
@@ -802,6 +810,15 @@ func Suggestions(states []State) []string {
 
 func CommandSuggestions(line string, states []State) []string {
 	args, e := Split(line)
+	if e == nil && len(args) >= 2 && args[0] == "chain" && args[1] == "connect" {
+		values := []string{}
+		for _, suggestion := range CommandSuggestions(strings.TrimPrefix(line, "chain "), states) {
+			if strings.HasPrefix(suggestion, "connect ") && !strings.HasSuffix(suggestion, "--yes") && !strings.HasSuffix(suggestion, "-proxy ") {
+				values = append(values, "chain "+suggestion)
+			}
+		}
+		return values
+	}
 	if e == nil && len(args) >= 3 && args[0] == "run" {
 		return runSuggestions(line, args)
 	}
@@ -835,14 +852,17 @@ func CommandSuggestions(line string, states []State) []string {
 				}
 				continue
 			}
-			if !strings.Contains(args[i], "=") && name != "yes" && name != "prompt" {
+			if !strings.Contains(args[i], "=") && name != "yes" && name != "prompt" && name != "password" {
 				i++
 			}
 		} else {
 			positionals++
 		}
 	}
-	options := []string{"-proxy ", "-ssh-key ", "--key ", "--agent ", "--port ", "--ssh-config ", "--jump ", "--prompt", "--yes"}
+	options := []string{"-proxy ", "-ssh-key ", "--key ", "--password", "--agent ", "--port ", "--ssh-config ", "--jump ", "--prompt", "--yes"}
+	if positionals < 3 && !seen["user"] {
+		options = append([]string{"--user "}, options...)
+	}
 	if positionals == 0 {
 		for _, required := range [][2]string{{"host", "-ip "}, {"port", "-port "}, {"user", "-user "}, {"name", "-socket "}} {
 			if !seen[required[0]] {
@@ -852,6 +872,9 @@ func CommandSuggestions(line string, states []State) []string {
 	}
 	values := []string{}
 	for _, option := range options {
+		if (seen["password"] && (option == "--key " || option == "-ssh-key " || option == "--agent ")) || (option == "--password" && (seen["key"] || seen["agent"])) {
+			continue
+		}
 		if !seen[optionName(strings.TrimSpace(option))] {
 			values = append(values, line[:start]+option)
 		}

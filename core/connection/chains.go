@@ -69,8 +69,8 @@ func validateChain(w string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if yes || c.Prompt || c.ProxyPort != 0 || c.Review != "" {
-			return fmt.Errorf("chain connect exports connection-only settings; confirm the saved chain in Hovel; use an available key or agent without --prompt, --yes, --review or -proxy")
+		if yes || c.ProxyPort != 0 || c.Review != "" {
+			return fmt.Errorf("chain connect exports connection-only settings; confirm the saved chain in Hovel; omit --yes, --review and -proxy")
 		}
 		return nil
 	}
@@ -133,16 +133,11 @@ func executeChain(ctx context.Context, w string, args []string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		_, preview, err := c.review(ctx, "connect")
-		if err != nil {
-			return nil, err
+		if c.Prompt {
+			return nil, fmt.Errorf("interactive chain requires a foreground Burrow CLI or TUI to provide private authentication")
 		}
-		raw, _ := json.Marshal(chainConnectionRequest{Settings: c, Preview: preview})
-		build, err := launch.Build()
-		if err != nil {
-			return nil, err
-		}
-		return savedChain(map[string]string{"action": "chain-connect", "workspace": w, "build": build, "request": string(raw), "review": digest(string(raw))}), nil
+		chain, _, err := connectionChain(ctx, c, "")
+		return chain, err
 	}
 	selection, err := selectChain(ctx, w, args[2])
 	if err != nil || args[1] == "select" {
@@ -423,6 +418,131 @@ func reverseHTTPStream(ctx context.Context, state State, endpoint string) (net.C
 type chainConnectionRequest struct {
 	Settings Config `json:"settings"`
 	Preview  string `json:"preview"`
+	Frontend string `json:"frontend,omitempty"`
+}
+
+func connectionChain(ctx context.Context, c Config, frontend string) (any, chainConnectionRequest, error) {
+	_, preview, err := c.review(ctx, "connect")
+	r := chainConnectionRequest{c, preview, frontend}
+	if err != nil {
+		return nil, r, err
+	}
+	build, err := launch.Build()
+	if err != nil {
+		return nil, r, err
+	}
+	raw, _ := json.Marshal(r)
+	return savedChain(map[string]string{"action": "chain-connect", "workspace": c.Workspace, "build": build, "request": string(raw), "review": digest(string(raw))}), r, nil
+}
+
+type chainPromptResult struct {
+	State State  `json:"state"`
+	Error string `json:"error,omitempty"`
+}
+
+// PrepareChainPrompt publishes settings and keeps a one-use private frontend
+// available for a confirmed adapter. No authentication starts during export.
+// The adapter returns here for the existing ExecutePrompt flow; secrets still
+// travel only from its hidden prompt to OpenSSH's private askpass pipe.
+func PrepareChainPrompt(ctx context.Context, w string, args []string, ask PromptFunc, ready func(any) error) (any, error) {
+	if err := ValidateCommand(w, args); err != nil {
+		return nil, err
+	}
+	if len(args) < 3 || args[0] != "chain" || args[1] != "connect" {
+		return nil, fmt.Errorf("interactive connection chain required")
+	}
+	c, _, err := Parse(w, args[2:])
+	if err != nil || !c.Prompt {
+		return nil, fmt.Errorf("interactive connection settings required")
+	}
+	stageCtx, endStaging := context.WithTimeout(ctx, 10*time.Minute)
+	defer endStaging()
+	dir, err := os.MkdirTemp("", "burrow-chain-auth-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(dir)
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: filepath.Join(dir, "connect"), Net: "unix"})
+	if err != nil {
+		return nil, err
+	}
+	defer listener.Close()
+	if err := os.Chmod(listener.Addr().String(), 0600); err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(stageCtx, func() { listener.Close() })
+	defer stop()
+	chain, request, err := connectionChain(stageCtx, c, listener.Addr().String())
+	if err != nil {
+		return nil, err
+	}
+	if err := ready(chain); err != nil {
+		return nil, err
+	}
+	peer, err := listener.AcceptUnix()
+	if err != nil {
+		return nil, fmt.Errorf("chain authentication frontend expired or cancelled; stage the chain again")
+	}
+	listener.Close() // One confirmed attempt; stale files cannot replay its prompt.
+	endStaging()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer peer.Close()
+	stopPeer := context.AfterFunc(ctx, func() { peer.Close() })
+	defer stopPeer()
+	peer.SetDeadline(time.Now().Add(150 * time.Second))
+	if err := sameUser(peer); err != nil {
+		return nil, err
+	}
+	raw, _ := json.Marshal(request)
+	var binding string
+	if json.NewDecoder(io.LimitReader(peer, 256)).Decode(&binding) != nil || binding != digest(string(raw)) {
+		return nil, fmt.Errorf("chain authentication binding refused")
+	}
+	// Loss of the adapter cancels this exact ExecutePrompt attempt and its cleanup.
+	go func() { _, _ = peer.Read(make([]byte, 1)); cancel() }()
+	connect := append([]string{"connect"}, args[2:]...)
+	connect = append(connect, "--yes", "--review", c.reviewDigest("connect", request.Preview))
+	value, err := ExecutePrompt(ctx, w, connect, ask)
+	response := chainPromptResult{}
+	if err != nil {
+		response.Error = err.Error()
+	} else {
+		response.State, _ = value.(State)
+	}
+	if writeErr := json.NewEncoder(peer).Encode(response); writeErr != nil && err == nil {
+		return value, fmt.Errorf("connection established but chain acknowledgement unavailable; inspect before retrying")
+	}
+	return value, err
+}
+
+func connectChainFrontend(ctx context.Context, r chainConnectionRequest, raw string) (State, error) {
+	peer, err := (&net.Dialer{}).DialContext(ctx, "unix", r.Frontend)
+	if err != nil {
+		return State{}, fmt.Errorf("chain authentication frontend unavailable; keep Burrow open and stage again")
+	}
+	defer peer.Close()
+	stop := context.AfterFunc(ctx, func() { peer.Close() })
+	defer stop()
+	if err := sameUser(peer.(*net.UnixConn)); err != nil {
+		return State{}, err
+	}
+	if err := json.NewEncoder(peer).Encode(digest(raw)); err != nil {
+		return State{}, err
+	}
+	var result chainPromptResult
+	if err := json.NewDecoder(io.LimitReader(peer, 32<<10)).Decode(&result); err != nil {
+		return State{}, fmt.Errorf("chain authentication cancelled or frontend lost; inspect exact connection before retrying")
+	}
+	if result.Error != "" {
+		return State{}, fmt.Errorf("%s", result.Error)
+	}
+	s := result.State
+	observed, err := selected(ctx, r.Settings.Workspace, r.Settings.Name)
+	if err != nil || observed.State != "connected" || s.State != "connected" || observed.Name != s.Name || observed.Creation != s.Creation || observed.Generation != s.Generation || observed.Session != s.Session {
+		return State{}, fmt.Errorf("chain frontend connection result unverified; inspect before retrying")
+	}
+	return observed, nil
 }
 
 // Connection creation is a separate, explicitly confirmed chain operation.
@@ -436,10 +556,16 @@ func chainConnectAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 		return hovel.Result{}, fmt.Errorf("invalid reviewed chain connection request")
 	}
 	c := r.Settings
-	if c.Workspace != w || c.Validate() != nil || c.Prompt || c.PromptSocket != "" || c.ProxyPort != 0 || c.Review != "" {
-		return hovel.Result{}, fmt.Errorf("explicit workspace and connection-only key/agent settings required")
+	frontendPath := c
+	frontendPath.PromptSocket = r.Frontend
+	if c.Workspace != w || frontendPath.Validate() != nil || c.PromptSocket != "" || c.ProxyPort != 0 || c.Review != "" || c.Prompt != (r.Frontend != "") || (c.PasswordAuth && !c.Prompt) {
+		return hovel.Result{}, fmt.Errorf("explicit workspace and connection-only settings with a live private frontend for prompts required")
 	}
-	operation, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	timeout := 30 * time.Second
+	if c.Prompt {
+		timeout = 150 * time.Second
+	}
+	operation, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	_, preview, err := c.review(operation, "connect")
 	if err != nil || preview != r.Preview {
@@ -449,7 +575,12 @@ func chainConnectAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 	if _, err := os.Lstat(filepath.Dir(socket)); !os.IsNotExist(err) {
 		return hovel.Result{}, fmt.Errorf("connection name is already reserved; no adoption or implicit reconnect")
 	}
-	state, err := connectManaged(operation, c, preview)
+	var state State
+	if c.Prompt {
+		state, err = connectChainFrontend(operation, r, raw)
+	} else {
+		state, err = connectManaged(operation, c, preview)
+	}
 	if err != nil {
 		return hovel.Result{}, err
 	}

@@ -105,8 +105,13 @@ def chain_checks(burrow, workspace, connection, hovel, env, hv, connect_options,
         print("PASS confirmed saved-chain local/reverse/SOCKS hostname traffic and rejection", flush=True)
         chain.write_text(json.dumps(burrow(workspace, "chain", "export", name, local["id"], url.replace("/check", "/hold"))))
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [pool.submit(throw, "--allow-dangerous", "--now") for _ in range(2)]
+            futures = [pool.submit(throw, "--allow-dangerous", "--now")]
             deadline = time.monotonic() + 5
+            # Overlap admitted consumers, without racing the pinned Hovel
+            # CLIs' SQLite initialization (which can refuse with SQLITE_BUSY).
+            while not active and time.monotonic() < deadline:
+                time.sleep(.02)
+            futures.append(pool.submit(throw, "--allow-dangerous", "--now"))
             while len(active) < 2 and time.monotonic() < deadline:
                 time.sleep(.02)
             release.set()
@@ -339,3 +344,195 @@ def chain_ui(binary, env, decoder, workspace, name, tunnel, url, requests):
             os.close(outer)
             os.close(slave)
     print("PASS production TUI selected HTTP review, cancel, confirm, no-color and terminal restoration", flush=True)
+
+
+def connection_chain_ui(binary, env, decoder, workspace, burrow, port, key, container, hovel):
+    """Real Hovel handoff, private TUI/CLI authentication, and retained ownership."""
+    import fcntl
+    import pty
+    import select
+    import shlex
+    import struct
+    import termios
+
+    secret = "chain-auth-" + os.urandom(16).hex()
+    subprocess.run(["docker", "exec", "-i", container, "chpasswd"],
+                   input=("tester:" + secret + "\n").encode(), check=True, capture_output=True)
+
+    def no_leaks(output):
+        assert secret.encode() not in output, "password echoed in terminal"
+        for path in workspace.rglob("*"):
+            if path.is_file():
+                assert secret.encode() not in path.read_bytes(), ("password persisted", path)
+        for path in Path("/proc").glob("[0-9]*/cmdline"):
+            try:
+                assert secret.encode() not in path.read_bytes(), "password in process arguments"
+            except (FileNotFoundError, PermissionError, ProcessLookupError):
+                pass
+
+    for mode in ("key", "password", "cancel", "cli"):
+        name = "handoff-" + mode
+        outer, slave = pty.openpty()
+        before = termios.tcgetattr(slave)
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+        def controlling():
+            os.setsid()
+            fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+        viewer_env = dict(env)
+        if mode == "key":
+            viewer_env.pop("NO_COLOR", None)
+        args = ["chain", "connect", name, "127.0.0.1", "--user", "tester", "--port", str(port)]
+        args += ["--key", str(key)] if mode == "key" else ["--password"]
+        exported = workspace / "cli-password.chain.json"
+        stdout = exported.open("wb") if mode == "cli" else None
+        frontend = subprocess.Popen([binary, "--workspace", str(workspace), *(args if mode == "cli" else ["tui"])],
+                                    env=viewer_env, stdin=slave, stdout=stdout or slave, stderr=slave, preexec_fn=controlling)
+        output = bytearray()
+        throw = None
+        def wait(needle):
+            deadline = time.monotonic() + 25
+            while time.monotonic() < deadline:
+                if select.select([outer], [], [], .05)[0]:
+                    output.extend(os.read(outer, 65536))
+                screen = subprocess.run([decoder, "160", "40"], input=output, capture_output=True, check=True).stdout.decode()
+                if needle in screen:
+                    return screen
+                assert frontend.poll() is None, (mode, needle, screen)
+            raise AssertionError((mode, needle, screen))
+        try:
+            if mode == "cli":
+                wait("Chain JSON exported")
+                chain = exported
+            else:
+                wait("SAVED CONNECTIONS")
+                os.write(outer, (shlex.join(args) + "\r").encode())
+                wait("--allow-dangerous")
+                chain, = workspace.glob("connect-" + name + "-*.chain.json")
+                assert chain.stat().st_mode & 0o777 == 0o600
+            assert not any(s["name"] == name for s in burrow(workspace, "connections")), "staging authenticated"
+            request = json.loads(json.loads(chain.read_text())["spec"]["config"]["request"])
+            assert request["settings"]["user"] == "tester"
+            if mode != "key":
+                assert "PubkeyAuthentication no" in request["preview"] and "PreferredAuthentications password" in request["preview"]
+                assert Path(request["frontend"]).exists()
+            if mode == "cli":
+                throw = subprocess.Popen([str(hovel), "throw", str(chain), "--workspace", str(workspace),
+                                          "--daemon-endpoint", str(workspace / "hoveld.sock"), "--allow-dangerous", "--now", "--json"],
+                                         env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            else:
+                os.write(outer, b"\r")
+                wait("Type yes to throw:")
+                assert not any(s["name"] == name for s in burrow(workspace, "connections")), "review authenticated"
+                if mode == "cancel":
+                    # A rejected plan leaves the private frontend waiting, but
+                    # must not block an independent reviewed connection close.
+                    os.write(outer, b"no")
+                    time.sleep(.15)
+                    os.write(outer, b"\r")
+                    sibling = "handoff-sibling"
+                    burrow(workspace, "connect", sibling, "127.0.0.1", "--user", "tester",
+                           "--port", str(port), "--key", str(key), "--yes")
+                    os.write(outer, b"\x1bb")
+                    wait("ACTIVE SSH CONNECTIONS")
+                    os.write(outer, b"close handoff-sibling\r")
+                    wait("Close handoff-sibling")
+                    os.write(outer, b"\t\r")
+                    wait('"closed"')
+                    assert not any(s["name"] == sibling for s in burrow(workspace, "connections"))
+                    os.write(outer, b"\x1bh")
+                    wait("h0v3l")
+                    os.write(outer, b"\x03")
+                    deadline = time.monotonic() + 10
+                    while Path(request["frontend"]).exists():
+                        assert time.monotonic() < deadline, "Ctrl+C left staged authentication waiting"
+                        time.sleep(.05)
+                    os.write(outer, b"\x1bb")
+                    wait("frontend expired or cancelled")
+                    os.write(outer, (shlex.join(args) + "\r").encode())
+                    wait("Chain ready")
+                    chain, = [p for p in workspace.glob("connect-" + name + "-*.chain.json") if p != chain]
+                    request = json.loads(json.loads(chain.read_text())["spec"]["config"]["request"])
+                    os.write(outer, b"\r")
+                    wait("Type yes to throw:")
+                os.write(outer, b"yes")
+                time.sleep(.15)
+                os.write(outer, b"\r")
+            if mode != "key":
+                wait("SSH password")
+                assert not termios.tcgetattr(slave)[3] & termios.ECHO
+                no_leaks(output)
+                if mode != "cancel":
+                    os.write(outer, secret.encode())
+                    # Let the renderer publish the in-progress field before
+                    # Enter; a same-read submit would miss visible-echo regressions.
+                    until = time.monotonic() + .4
+                    while time.monotonic() < until:
+                        if select.select([outer], [], [], .05)[0]:
+                            output.extend(os.read(outer, 65536))
+                    no_leaks(output)
+                os.write(outer, b"\x1b" if mode == "cancel" else b"\r")
+            if mode == "cli":
+                out, err = throw.communicate(timeout=30)
+                assert throw.returncode == 0 and json.loads(out)["results"][0]["state"] == "succeeded", (out, err)
+                wait("SSH connection established")
+                frontend.wait(timeout=10)
+                assert frontend.returncode == 0
+                assert json.loads(chain.read_text())["kind"] == "Chain", "CLI result contaminated exported JSON"
+            else:
+                wait("completed" if mode != "cancel" else "failed")
+                os.write(outer, b"\x1bb")
+                wait("ACTIVE SSH CONNECTIONS")
+                if mode != "cancel":
+                    view = wait(name)
+                    assert "connected" in view.lower(), view
+            if mode != "cancel":
+                live = burrow(workspace, "inspect", name)
+                assert live["state"] == "connected" and live["creation"], live
+                if mode == "password":
+                    burrow(workspace, "profile", "save", name)
+                    profiles = burrow(workspace, "profiles")
+                    assert any(p["name"] == name and p.get("passwordAuth") for p in profiles["profiles"]), profiles
+            else:
+                deadline = time.monotonic() + 15
+                while any(s["name"] == name for s in burrow(workspace, "connections")):
+                    assert time.monotonic() < deadline, "cancelled attempt retained a reservation"
+                    time.sleep(.1)
+            no_leaks(output)
+            if mode != "cli":
+                os.write(outer, b"quit\r")
+                wait("No connections to close" if mode == "cancel" else "Keep running")
+                if mode == "cancel":
+                    os.write(outer, b"\t")
+                os.write(outer, b"\r")
+                deadline = time.monotonic() + 15
+                while frontend.poll() is None and time.monotonic() < deadline:
+                    if select.select([outer], [], [], .05)[0]:
+                        output.extend(os.read(outer, 65536))
+                assert frontend.poll() == 0, "TUI did not exit"
+            assert termios.tcgetattr(slave) == before
+            if mode != "key":
+                assert not Path(request["frontend"]).exists(), "one-use prompt endpoint survived"
+            if mode != "cancel":
+                assert burrow(workspace, "inspect", name)["state"] == "connected", "frontend exit closed a completed chain connection"
+                burrow(workspace, "close", name, "--yes")
+            if mode == "password":
+                burrow(workspace, "profile", "delete", name, "--yes")
+                stale = subprocess.run([str(hovel), "throw", str(chain), "--workspace", str(workspace),
+                                        "--daemon-endpoint", str(workspace / "hoveld.sock"), "--allow-dangerous", "--now", "--json"],
+                                       env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+                assert stale.returncode == 0 and json.loads(stale.stdout)["results"][0]["state"] == "failed", stale
+                assert not any(s["name"] == name for s in burrow(workspace, "connections")), "expired password chain started SSH"
+        finally:
+            if throw is not None and throw.poll() is None:
+                throw.kill()
+                throw.communicate(timeout=5)
+            if frontend.poll() is None:
+                frontend.terminate()
+                frontend.wait(timeout=15)
+            if stdout:
+                stdout.close()
+            if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
+                Path(directory, "chain-connect-" + mode + ".ansi").write_bytes(output)
+            os.close(outer)
+            os.close(slave)
+    print("PASS TUI Hovel key/password handoff, cancellation, Alt+B live ownership, CLI private password and no leaks", flush=True)

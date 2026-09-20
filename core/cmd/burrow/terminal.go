@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
+	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +20,7 @@ import (
 	"github.com/Bochner/burrow/core/launch"
 	ptyhost "github.com/Bochner/burrow/core/terminal"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var terminalEscape = key.NewBinding(key.WithKeys("ctrl+]"))
@@ -66,6 +70,11 @@ func (l *terminalLifetime) close() {
 }
 
 type cliTab struct {
+	setupInput string
+	setupWait  string
+	prefill    string
+	prefillBy  time.Time
+	notice     string
 	logs       *logView
 	auditDone  chan error
 	editor     *profileEdit
@@ -87,6 +96,171 @@ type cliScreen struct {
 }
 type cliClosed struct{ tab *cliTab }
 type shellRequested struct{ name string }
+
+type chainStaged struct {
+	file string
+	err  error
+}
+
+func saveChain(path, name string, chain any) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var ignored struct{}
+	if err := launch.Call(ctx, path, "CreateOperation", map[string]string{"Operation": "burrow"}, &ignored); err != nil {
+		return "", err
+	}
+	if err := launch.Call(ctx, path, "CreateChain", map[string]string{"Operation": "burrow", "Chain": "burrow-chain"}, &ignored); err != nil {
+		return "", err
+	}
+	data, err := json.MarshalIndent(chain, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(path, name+"-*.chain.json")
+	if err != nil {
+		return "", err
+	}
+	_, err = f.Write(append(data, '\n'))
+	err = errors.Join(err, f.Close())
+	if err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+func (m *frame) stageChain(args []string) tea.Cmd {
+	path, parent := m.active, m.terminals.context
+	if args[1] == "connect" {
+		c, _, err := connection.Parse(path, args[2:])
+		if err == nil && c.Prompt {
+			ctx, cancel := context.WithCancel(parent)
+			a := &authAttempt{path: path, ctx: ctx, cancel: cancel, questions: make(chan authQuestion), done: make(chan struct{}), chain: true, label: c.Name + " · " + c.User + "@" + c.Host}
+			m.attempt = a
+			staged := make(chan chainStaged, 1)
+			return tea.Batch(waitQuestion(a), m.dispatch(path, func() tea.Msg {
+				select {
+				case v := <-staged:
+					return v
+				case <-ctx.Done():
+					return nil
+				}
+			}), func() tea.Msg {
+				defer close(a.done)
+				defer cancel()
+				result, err := connection.PrepareChainPrompt(ctx, path, args, a.ask, func(chain any) error {
+					file, err := saveChain(path, args[1]+"-"+args[2], chain)
+					if err == nil {
+						staged <- chainStaged{file: file}
+					}
+					return err
+				})
+				return authFinished{a, result, err}
+			})
+		}
+	}
+	return m.dispatch(path, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(parent, time.Minute)
+		defer cancel()
+		chain, err := connection.Execute(ctx, path, args)
+		if err != nil {
+			return chainStaged{err: err}
+		}
+		file, err := saveChain(path, args[1]+"-"+args[2], chain)
+		return chainStaged{file, err}
+	})
+}
+
+func (m *frame) acceptChain(path string, v chainStaged) tea.Cmd {
+	w := m.workspaces[path]
+	w.management.busy = false
+	if v.err != nil {
+		w.management.output = "REFUSED: " + safe(v.err.Error())
+		return nil
+	}
+	command := connection.CommandLine([]string{"throw", v.file, "--allow-dangerous"})
+	w.management.output = "Chain staged: " + v.file + "\nHovel command:\n" + command + "\nEnter in Hovel to review; after completion, Alt+B shows connections."
+	if path != m.active {
+		return nil
+	}
+	cmd := m.openCLI()
+	tab := w.cli
+	if !tab.pending && (tab.host == nil || !emptyHovelPrompt(tab.screen)) {
+		tab.notice = "Chain staged · Hovel input retained · Alt+B for command"
+		return cmd
+	}
+	tab.prefill, tab.prefillBy = command, time.Now().Add(10*time.Second)
+	return cmd
+}
+
+// ponytail: recognize the pinned Hovel primary prompt only; use an upstream
+// prefill API when available. Config/confirmation prompts and drafts are refused.
+var hovelPrimaryPrompt = regexp.MustCompile(`^h0v3l(?:>| \(.* \| steps:[0-9]+ targets:[0-9]+\) >| \[op:[^\]]+\]>| \[[^\]]+ \| steps:[0-9]+ targets:[0-9]+\] >) $`)
+
+func emptyHovelPrompt(s ptyhost.Snapshot) bool {
+	if s.Exited || s.Err != nil || !s.Visible || s.ScrollOffset != 0 {
+		return false
+	}
+	lines := strings.Split(ansi.Strip(s.Screen), "\n")
+	if s.Cursor.Y < 0 || s.Cursor.Y >= len(lines) {
+		return false
+	}
+	line := strings.TrimRight(lines[s.Cursor.Y], " ") + " "
+	return hovelPrimaryPrompt.MatchString(line) && s.Cursor.X == ansi.StringWidth(line)
+}
+
+func (tab *cliTab) prepareChainInput() {
+	if tab.prefill == "" {
+		return
+	}
+	s := tab.screen
+	if s.Exited || time.Now().After(tab.prefillBy) {
+		tab.prefill, tab.setupInput, tab.setupWait = "", "", ""
+		tab.notice = "Chain staged · Hovel input retained · Alt+B for command"
+		return
+	}
+	lines := strings.Split(ansi.Strip(s.Screen), "\n")
+	if s.Cursor.Y < 0 || s.Cursor.Y >= len(lines) || !s.Visible || s.ScrollOffset != 0 {
+		return
+	}
+	line := strings.TrimRight(lines[s.Cursor.Y], " ")
+	if tab.setupInput != "" {
+		prefix, ok := strings.CutSuffix(line, tab.setupInput)
+		if ok && hovelPrimaryPrompt.MatchString(prefix) && s.Cursor.X == ansi.StringWidth(line) {
+			// Only these two fixed context-selection commands are submitted.
+			// The throw itself is always left for the operator's Enter.
+			if err := tab.host.Send(uv.KeyPressEvent{Code: uv.KeyEnter}); err != nil {
+				tab.prefill = ""
+				tab.notice = "Chain staged · input not sent · Alt+B for command"
+			}
+			tab.setupInput = ""
+		}
+		return
+	}
+	inOperation := line == "h0v3l [op:burrow]>" || strings.HasPrefix(line, "h0v3l [burrow/")
+	inChain := strings.HasPrefix(line, "h0v3l [burrow/burrow-chain |")
+	if !emptyHovelPrompt(s) || (tab.setupWait == "operation" && !inOperation) || (tab.setupWait == "chain" && !inChain) {
+		return
+	}
+	tab.setupWait = ""
+	input := tab.prefill
+	if !inChain {
+		input = "op use burrow"
+		tab.setupWait = "operation"
+		if inOperation {
+			input = "chain use burrow-chain"
+			tab.setupWait = "chain"
+		}
+		tab.setupInput = input
+	} else {
+		tab.prefill = ""
+		tab.notice = "Chain ready · Enter reviews · Alt+B connections"
+	}
+	if err := tab.host.Send(input); err != nil {
+		tab.prefill, tab.setupInput, tab.setupWait = "", "", ""
+		tab.notice = "Chain staged · input not sent · Alt+B for command"
+	}
+}
 
 type shellEntry struct {
 	workspace int
@@ -481,6 +655,7 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 			return nil
 		} // Explicit close reports after reaping.
 		v.tab.screen = v.screen
+		v.tab.prepareChainInput()
 		if v.tab.connection != "" && v.screen.Exited {
 			if v.tab.logs != nil {
 				w.restoreLogs(v.tab)
@@ -540,6 +715,16 @@ func (m *frame) sendTerminal(event any) {
 	tab := m.current().activeTerminal()
 	if tab == nil || tab.pending || tab.host == nil {
 		return
+	}
+	if press, ok := event.(uv.KeyPressEvent); ok && press.Code == 'c' && press.Mod == uv.ModCtrl && tab == m.current().cli && m.attempt != nil && m.attempt.chain && m.attempt.path == m.active {
+		m.attempt.cancel()
+	}
+	// A user editing during startup takes precedence over an automatic prefill.
+	if _, ok := event.(uv.KeyPressEvent); ok {
+		tab.prefill, tab.notice, tab.setupInput, tab.setupWait = "", "", "", ""
+	}
+	if _, ok := event.(string); ok {
+		tab.prefill, tab.notice, tab.setupInput, tab.setupWait = "", "", "", ""
 	}
 	if err := tab.host.Send(event); err != nil {
 		tab.error = safe(err.Error())

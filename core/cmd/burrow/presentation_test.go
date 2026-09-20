@@ -105,6 +105,13 @@ func TestAuthenticationPopup(t *testing.T) {
 		if _, cmd := frameEvent(m, m.authSpinner.Tick()); cmd != nil {
 			t.Fatal("dismissed spinner kept ticking")
 		}
+		m.startAuthentication([]string{"connect", "gateway", "example.test", "--user", "tester", "--password", "--yes"})
+		defer m.attempt.cancel()
+		frameEvent(m, authQuestionReady{m.attempt, q})
+		frameEvent(m, tea.PasteMsg{Content: "explicit-password-hidden-canary"})
+		if strings.Contains(m.View().Content, "explicit-password-hidden-canary") || !strings.Contains(m.View().Content, "SSH password") {
+			t.Fatal("explicit --password did not select hidden entry")
+		}
 	}
 	f := promptForm(connection.Prompt{Text: "SSH password:", Secret: true}, false)
 	f.WithWidth(60)
@@ -121,6 +128,14 @@ func TestChainCommandPresentation(t *testing.T) {
 		defer m.terminals.close()
 		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
 		u := m.current().management
+		u.input.SetValue("chain connect gateway 192.168.10.50 ")
+		if !strings.Contains(strings.Join(u.suggestions(), "\n"), "--user ") {
+			t.Fatal("chain completion omitted explicit --user")
+		}
+		u.input.SetValue("chain connect gateway 192.168.10.50 --user alice ")
+		if !strings.Contains(strings.Join(u.suggestions(), "\n"), "--password") {
+			t.Fatal("chain completion omitted --password")
+		}
 		u.connections = []connection.State{{Name: "gateway", State: "connected", Generation: "owner", Proxy: connection.Tunnel{ID: "gateway/" + strings.Repeat("b", 32), State: "listening"}}}
 		u.tunnelError = ""
 		u.tunnels = []connection.Tunnel{{ID: "gateway/" + strings.Repeat("a", 32), Connection: "gateway", State: "listening", Direction: "L", Destination: "localhost:8080"}}
@@ -158,6 +173,25 @@ func TestChainCommandPresentation(t *testing.T) {
 			t.Fatal("chain highlighting changed command")
 		} else if !plain && !strings.Contains(got, "\x1b[") {
 			t.Fatal("chain command lacks semantic colors")
+		}
+		m.current().cli = &cliTab{screen: ptyhost.Snapshot{Screen: "h0v3l> ", Visible: true}}
+		m.current().tab, m.current().focus, m.modal = "hovel", "terminal", ""
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		m.attempt = &authAttempt{path: m.active, ctx: ctx, cancel: cancel, chain: true, label: "gateway · alice@192.168.10.50"}
+		frameEvent(m, authQuestionReady{m.attempt, authQuestion{prompt: connection.Prompt{Text: "SSH password", Secret: true}, answer: make(chan []byte)}})
+		frameEvent(m, tea.PasteMsg{Content: "chain-hidden-canary"})
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			capturePresentation(t, m, fmt.Sprintf("chain-password-%dx%d-%t", size.X, size.Y, plain))
+			view := ansi.Strip(m.View().Content)
+			if strings.Contains(view, "chain-hidden-canary") || !strings.Contains(view, "SSH password") || (plain && m.View().Cursor == nil) {
+				t.Fatalf("chain password visibility or keyboard access changed (%v, plain=%t): %s", size, plain, view)
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if m.modal != "" || m.current().tab != "hovel" || strings.Contains(m.View().Content, "chain-hidden-canary") {
+			t.Fatal("chain password submission did not return to Hovel")
 		}
 	}
 }

@@ -37,6 +37,7 @@ type Config struct {
 	SSHConfig      string `json:"sshConfig,omitempty"`
 	Jump           string `json:"jump,omitempty"`
 	Prompt         bool   `json:"prompt,omitempty"`
+	PasswordAuth   bool   `json:"passwordAuth,omitempty"`
 	PromptSocket   string `json:"promptSocket,omitempty"`
 	Review         string `json:"review,omitempty"`
 }
@@ -91,6 +92,9 @@ func ShellCommand(ctx context.Context, workspace, name string) (*exec.Cmd, error
 }
 
 func (c Config) Validate() error {
+	if c.PasswordAuth && (c.Key != "" || (c.AgentExplicit && c.Agent != "")) {
+		return fmt.Errorf("choose --password or --key/--agent; --password takes no secret value")
+	}
 	if _, e := launch.ConnectionPath(c.Workspace, c.Name); e != nil {
 		return e
 	}

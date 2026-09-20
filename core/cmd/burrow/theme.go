@@ -149,6 +149,10 @@ func (m ui) syntax(line string, reference bool) string {
 			style = accent
 		case strings.HasPrefix(word, "http://"):
 			style = hostStyle
+		case len(fields) > 1 && fields[0] == "chain" && fields[1] == "connect" && index == 3:
+			style = hostStyle
+		case prior == "--user" || prior == "-user":
+			style = successStyle
 		case word == "/usr/bin/ssh":
 			style = heading
 		case prior == "-o":

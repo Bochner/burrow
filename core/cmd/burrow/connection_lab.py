@@ -32,7 +32,7 @@ from core.cmd.burrow.runs_lab import run_checks, run_ui
 from core.cmd.burrow.follow_lab import follow_checks
 from core.cmd.burrow.automation_lab import automation_checks
 from core.cmd.burrow.reports_lab import report_checks
-from core.cmd.burrow.chains_lab import chain_checks, dropbear_check
+from core.cmd.burrow.chains_lab import chain_checks, dropbear_check, connection_chain_ui
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=10, metavar="PATH")
@@ -194,6 +194,9 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
         if args.chains_check:
+            handoff_workspace = root / "hc"
+            daemons.append(burrow(handoff_workspace, "status")["pid"])
+            connection_chain_ui(binary, env, screen_check, handoff_workspace, burrow, port, key, container, hovel)
             chain_checks(burrow, w, first, hovel, env, hv, options, binary, screen_check)
             dropbear_workspace = root / "db"
             daemons.append(burrow(dropbear_workspace, "status")["pid"])
@@ -221,6 +224,9 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
         if not (smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check or args.files_check):
+            handoff_workspace = root / "hc"
+            daemons.append(burrow(handoff_workspace, "status")["pid"])
+            connection_chain_ui(binary, env, screen_check, handoff_workspace, burrow, port, key, container, hovel)
             burrow(w, "connect", "runs", "127.0.0.1", "tester", *options)
             run_owner = wait(lambda: state_is(w, "runs", "connected"))
             chain_checks(burrow, w, run_owner, hovel, env, hv, options, binary, screen_check)

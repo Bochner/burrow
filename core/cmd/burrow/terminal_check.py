@@ -129,7 +129,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         send(b"\x0c")
         wait("management-draft")
         click(39, 1)
-        wait("h0v3l>")
+        wait("h0v3l")
         view = wait("modules: 1")
         expected = "\n".join(line[28:126].rstrip() for line in view.splitlines()[3:6])
         send(b"\x1b[<0;29;4M\x1b[<32;160;6M\x1b[<0;160;6m")
@@ -228,6 +228,25 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         send(b"\x04")  # Hovel's actual EOF path, not a Burrow quit binding.
         wait("CLI: exited")
         send(b"\x12")  # Ctrl+R explicitly restarts only the exited CLI.
+        wait("h0v3l", True)
+        send(b"\x1bb\x15")
+        before_plans = json.loads(cli(a, "throw", "list", "--json"))
+        send("chain connect staged 192.0.2.1 --user tester --key /tmp/test-key\r")
+        wait("--allow-dangerous")
+        staged = list(a.glob("connect-staged-*.chain.json"))
+        assert len(staged) == 1 and staged[0].stat().st_mode & 0o777 == 0o600, staged
+        request = json.loads(json.loads(staged[0].read_text())["spec"]["config"]["request"])
+        assert request["settings"]["user"] == "tester", request
+        assert json.loads(cli(a, "throw", "list", "--json")) == before_plans, "handoff submitted without Enter"
+        send(b"\x03")  # discard the prepared command, without executing it
+        wait("h0v3l", True)
+        send("unfinished-draft")
+        wait("unfinished-draft")
+        send(b"\x1bb")
+        send("chain connect second 192.0.2.2 --user tester\r")
+        wait("unfinished-draft")
+        assert len(list(a.glob("connect-second-*.chain.json"))) == 1
+        send(b"\x03")
         wait("h0v3l", True)
         # Daemon loss must not start a replacement or silently retry a tab.
         os.kill(info_a["pid"], signal.SIGTERM)

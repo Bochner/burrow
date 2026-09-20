@@ -482,8 +482,16 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.attempt != v.attempt || v.attempt.ctx.Err() != nil {
 			return m, nil
 		}
+		if v.attempt.chain {
+			if m.modal != "" && m.modal != "auth" {
+				// Preserve an independent review; the existing authentication
+				// timeout still bounds how long the private question can wait.
+				return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return v })
+			}
+			m.active = v.attempt.path
+		}
 		m.question = &v.question
-		return m, m.setForm("auth", "SSH authentication", promptForm(v.question.prompt, true))
+		return m, m.setForm("auth", strings.TrimSpace("SSH authentication "+v.attempt.label), promptForm(v.question.prompt, !v.attempt.chain && !v.attempt.hidden))
 	case authFinished:
 		if m.attempt != v.attempt {
 			return m, nil
@@ -493,7 +501,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.dismissForm()
 		}
 		cmd := m.updateManagement(v.attempt.path, connectionResult{v.result, v.err})
-		if v.err == nil {
+		if v.err == nil && !v.attempt.chain {
 			if state, ok := v.result.(connection.State); ok && state.State == "connected" {
 				return m, tea.Batch(cmd, m.dispatch(v.attempt.path, offerSave(v.attempt.path, state.Name)))
 			}
@@ -514,6 +522,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 		switch result := v.message.(type) {
+		case chainStaged:
+			return m, m.acceptChain(path, result)
 		case followRead:
 			return m, m.acceptFollow(path, result)
 		case followTick:
@@ -1706,6 +1716,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			if tab.screen.Exited {
 				status = "CLI: exited"
 				statusStyle = errorStyle
+			}
+			if tab.notice != "" {
+				status = tab.notice
 			}
 			if tab.error != "" {
 				status = tab.error

@@ -26,10 +26,11 @@ type Profile struct {
 	SSHConfig     string `json:"sshConfig,omitempty"`
 	Jump          string `json:"jump,omitempty"`
 	ProxyPort     int    `json:"proxyPort,omitempty"`
+	PasswordAuth  bool   `json:"passwordAuth,omitempty"`
 }
 
 func saved(c Config) Profile {
-	p := Profile{c.Name, c.Host, c.User, c.Port, c.Key, c.Agent, c.AgentExplicit, c.SSHConfig, c.Jump, c.ProxyPort}
+	p := Profile{c.Name, c.Host, c.User, c.Port, c.Key, c.Agent, c.AgentExplicit, c.SSHConfig, c.Jump, c.ProxyPort, c.PasswordAuth}
 	if !p.AgentExplicit {
 		p.Agent = ""
 	}
@@ -37,6 +38,9 @@ func saved(c Config) Profile {
 }
 func (p Profile) Args() []string {
 	args := []string{"connect", p.Name, p.Host, p.User}
+	if p.PasswordAuth {
+		args = append(args, "--password")
+	}
 	if p.Port != 0 {
 		args = append(args, "--port", fmt.Sprint(p.Port))
 	}

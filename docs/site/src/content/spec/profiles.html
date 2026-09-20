@@ -47,6 +47,7 @@ burrow --workspace /home/alice/lab profiles</code></pre>
 <tr><td><code>host</code></td><td>Hostname, IP address or trusted SSH alias: <code>build-alias</code>. Aliases are kept as aliases when saved.</td></tr>
 <tr><td><code>user</code></td><td>Explicit username, or <code>-</code> to use SSH configuration.</td></tr>
 <tr><td><code>port</code></td><td>Explicit port 1–65535, or 0/omitted to use SSH configuration or 22.</td></tr>
+<tr><td><code>passwordAuth</code></td><td>Optional boolean, saved by <code>--password</code>. Selects password-only authentication with hidden entry when connecting; stores no password. Cannot be combined with a key or fixed nonempty agent.</td></tr>
 <tr><td><code>key</code></td><td>Optional absolute key-file reference. The key bytes are never copied.</td></tr>
 <tr><td><code>sshConfig</code></td><td>Optional absolute trusted SSH config path. Omitted uses the current user's default.</td></tr>
 <tr><td><code>jump</code></td><td>Optional explicit jump chain, such as <code>alice@bastion.example:22</code>; omitted inherits configuration.</td></tr>

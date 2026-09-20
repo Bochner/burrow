@@ -179,6 +179,15 @@ func run(args []string) error {
 		if e != nil {
 			return e
 		}
+		if args[0] == "chain" && args[1] == "connect" {
+			c, _, err := connection.Parse(o.Workspace, args[2:])
+			if err != nil {
+				return err
+			}
+			if c.Prompt {
+				return promptChainCLI(interrupt, o.Workspace, args, noColor)
+			}
+		}
 		if args[0] == "connect" || args[0] == "reconnect" {
 			interactive := wizard
 			if len(args) > 1 {

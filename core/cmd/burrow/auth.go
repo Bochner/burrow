@@ -131,3 +131,24 @@ func readPrompt(ctx context.Context, tty *os.File, p connection.Prompt) ([]byte,
 	}
 	return promptAnswer(f, p.Secret), nil
 }
+
+func promptChainCLI(ctx context.Context, workspace string, args []string, noColor bool) error {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("password/passphrase chain needs a controlling terminal; use an available key or agent for unattended exports")
+	}
+	defer tty.Close()
+	_, err = connection.PrepareChainPrompt(ctx, workspace, args, func(ctx context.Context, p connection.Prompt) ([]byte, error) {
+		return readPrompt(ctx, tty, p)
+	}, func(chain any) error {
+		if err := printResult(chain, noColor); err != nil {
+			return err
+		}
+		fmt.Fprintln(tty, "Chain JSON exported. Keep this terminal open; confirm the chain in Hovel from another terminal within 10 minutes. Ctrl+C cancels.")
+		return nil
+	})
+	if err == nil {
+		fmt.Fprintln(tty, "SSH connection established; Hovel is collecting the chain result. Burrow retains the connection.")
+	}
+	return err
+}
