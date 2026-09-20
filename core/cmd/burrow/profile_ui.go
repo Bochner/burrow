@@ -211,7 +211,7 @@ var completionDescriptions = map[string]string{
 	"chain select":  "CONNECTION · authoritative live forwarding identities",
 	"chain http":    "CONNECTION TUNNEL_ID URL · review HTTP and collect result",
 	"chain export":  "CONNECTION TUNNEL_ID URL · stage chain and prepare Hovel throw",
-	"chain connect": "NAME HOST --user USER [--key PATH | --password [PASSWORD]] · stage and open Hovel",
+	"chain connect": "Stage a new SSH connection and open Hovel",
 	"run follow":    "ID [stdout|stderr] [OFFSET] · independent live viewer",
 	"run survey":    "CONNECTION --os ubuntu · review, run and save Markdown report",
 	"reports":       "Browse saved Markdown reports", "report": "ID · open a saved report",
@@ -249,8 +249,14 @@ func completionDescription(value string) string {
 	return completionDescriptions[command]
 }
 
-func (m ui) forwardingGuidance() string {
+func (m ui) commandGuidance() string {
 	words := strings.Fields(safe(m.input.Value()))
+	if len(words) >= 2 && words[0] == "chain" && words[1] == "connect" {
+		return m.syntax("chain connect NAME HOST --user USER [options]", false) + "\n" +
+			m.paint(secondary, "NAME: your connection label (example: target)") + "\n" +
+			m.paint(accent, "Example (replace host and user):") + "\n" +
+			m.syntax("chain connect target server.example --user alice --password", false)
+	}
 	direction := 2
 	if len(words) >= 2 && words[0] == "tunnel" && words[1] == "create" {
 		direction = 3

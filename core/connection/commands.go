@@ -257,6 +257,7 @@ CLI without --yes reviews; --password/--prompt waits for authentication and clea
 Bare --password opens hidden entry; --password PASSWORD supplies the target password without a popup.
 Quote spaces; use --password=VALUE for leading dashes or an empty password (maximum 4096 bytes; no NUL/CR/LF).
 Supplied values stay in frontend memory, out of Burrow history, logs, JSON, previews and child argv/environment.
+TUI Up recalls the connection command with bare --password for fresh hidden entry.
 Literal CLI values remain visible in the original process argv and may enter shell history.
 Inline TUI text is visible while typed. Use the bare flag for hidden entry.
 Only the target receives an automatic value, once; jump hosts need keys/agents or interactive entry.
@@ -847,20 +848,9 @@ func Suggestions(states []State) []string {
 
 func CommandSuggestions(line string, states []State) []string {
 	args, e := Split(line)
-	if e == nil && len(args) >= 2 && args[0] == "chain" && args[1] == "connect" {
-		sub := strings.TrimLeft(line, " \t")
-		if !strings.HasPrefix(sub, "chain ") && !strings.HasPrefix(sub, "chain\t") {
-			return nil
-		}
-		sub = strings.TrimLeft(sub[len("chain"):], " \t")
-		prefix := line[:len(line)-len(sub)]
-		values := []string{}
-		for _, suggestion := range CommandSuggestions(sub, states) {
-			if strings.HasPrefix(suggestion, "connect ") && !strings.HasSuffix(suggestion, "--yes") && !strings.HasSuffix(suggestion, "-proxy ") {
-				values = append(values, prefix+suggestion)
-			}
-		}
-		return values
+	chain := e == nil && len(args) >= 2 && args[0] == "chain" && args[1] == "connect"
+	if chain {
+		args = args[1:]
 	}
 	if e == nil && len(args) >= 3 && args[0] == "run" {
 		return runSuggestions(line, args)
@@ -906,7 +896,15 @@ func CommandSuggestions(line string, states []State) []string {
 	if positionals < 3 && !seen["user"] {
 		options = append([]string{"--user "}, options...)
 	}
-	if positionals == 0 {
+	if chain {
+		// The chain parser requires a positional name before the host/options.
+		if positionals == 0 || (positionals < 2 && !seen["host"]) {
+			return nil
+		}
+		if positionals < 3 && !seen["user"] {
+			return []string{line[:start] + "--user "}
+		}
+	} else if positionals == 0 {
 		for _, required := range [][2]string{{"host", "-ip "}, {"port", "-port "}, {"user", "-user "}, {"name", "-socket "}} {
 			if !seen[required[0]] {
 				return []string{line[:start] + required[1]}
@@ -915,6 +913,9 @@ func CommandSuggestions(line string, states []State) []string {
 	}
 	values := []string{}
 	for _, option := range options {
+		if chain && (option == "--yes" || option == "-proxy ") {
+			continue
+		}
 		if (seen["password"] && (option == "--key " || option == "-ssh-key " || option == "--agent ")) || (option == "--password" && (seen["key"] || seen["agent"])) {
 			continue
 		}

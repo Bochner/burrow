@@ -503,13 +503,13 @@ def connection_chain_ui(binary, env, decoder, workspace, burrow, port, key, cont
                     assert time.monotonic() < deadline, "cancelled attempt retained a reservation"
                     time.sleep(.1)
             no_leaks(output[public_start:])
-            if mode == "inline":
-                assert b"SSH password" not in output[public_start:], "inline value opened a password popup"
+            if mode in ("password", "inline"):
+                if mode == "inline":
+                    assert b"SSH password" not in output[public_start:], "inline value opened a password popup"
                 os.write(outer, b"\x1b[A")
-                time.sleep(.2)
-                if select.select([outer], [], [], .1)[0]: output.extend(os.read(outer, 65536))
-                screen = subprocess.run([decoder, "160", "40"], input=output, capture_output=True, check=True).stdout
-                assert secret.encode() not in screen, "inline command recalled from history"
+                screen = wait("chain connect " + name)
+                assert secret not in screen, "inline password recalled from history"
+                assert "--password" in screen, "password option lost from recall"
                 os.write(outer, b"\x15")
             if mode != "cli":
                 os.write(outer, b"quit\r")

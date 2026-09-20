@@ -133,6 +133,27 @@ func TestChainHelpAndCompletion(t *testing.T) {
 		m := newFrame(launch.Info{Workspace: "/tmp/chain-help"}, plain, launch.Options{})
 		defer m.terminals.close()
 		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		for stage, line := range []string{"chain connect ", "chain connect target ", "chain connect target server.example "} {
+			frameEvent(m, tea.PasteMsg{Content: line})
+			for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+				frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+				screen := capturePresentation(t, m, fmt.Sprintf("chain-required-%d-%dx%d-%t", stage, size.X, size.Y, plain))
+				popup := strings.Join(strings.Split(screen.String(), "\n")[:size.Y-4], "\n")
+				for _, required := range []string{"NAME", "HOST", "--user", "target"} {
+					if !strings.Contains(popup, required) {
+						t.Fatalf("inline chain guidance omitted %s for %q at %v: %s", required, line, size, popup)
+					}
+				}
+				if !plain {
+					assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y-4), "--user", blueColor)
+				}
+			}
+			values := connection.CommandSuggestions(line, nil)
+			if stage < 2 && len(values) != 0 || stage == 2 && !slices.Equal(values, []string{line + "--user "}) {
+				t.Fatal("chain completion must require name, host and user before optional flags", line, values)
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+		}
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd})
 		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
@@ -196,15 +217,42 @@ func TestChainHelpAndCompletion(t *testing.T) {
 
 func TestPasswordCommandRecall(t *testing.T) {
 	for _, prefix := range []string{"connect", "reconnect", "chain connect"} {
-		for _, value := range []string{"--password 'inline-secret-canary'", "--password=inline-secret-canary", "--password 'inline-secret-canary"} {
+		for _, value := range []string{
+			"target host --user tester --password 'inline-secret-canary'",
+			"target --password=inline-secret-canary host --user tester",
+			"target host --password --user tester",
+			"target host --user tester --password=",
+			"target host --user tester --password=-inline-secret-canary",
+			"target host --user tester --password 'inline-secret-canary",
+		} {
 			u := newUI(launch.Info{Workspace: "/tmp/recall"}, true)
-			u.input.SetValue(prefix + " target host --user tester " + value)
+			u.input.SetValue(prefix + " " + value)
 			u.draft = u.input.Value()
 			u.cycleCompletion(false)
 			next, _ := u.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			u = next.(ui)
-			if len(u.history) != 0 || u.input.Value() != "" || u.draft != "" || u.completionValue != "" || len(u.completionValues) != 0 {
-				t.Fatal("password command survived submission in recall/input/completions")
+			if strings.Contains(strings.Join(u.history, " "), "inline-secret-canary") || u.input.Value() != "" || u.draft != "" || u.completionValue != "" || len(u.completionValues) != 0 {
+				t.Fatal("password survived submission in recall/input/completions")
+			}
+			next, _ = u.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+			u = next.(ui)
+			if strings.HasSuffix(value, "'inline-secret-canary") {
+				if u.input.Value() != "" {
+					t.Fatal("rejected password command entered recall")
+				}
+				continue
+			}
+			want := prefix + " target host --user tester --password"
+			if u.input.Value() != want {
+				t.Fatalf("Up recalled %q, want %q", u.input.Value(), want)
+			}
+			args, err := connection.Split(u.input.Value())
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, _, err := connection.Parse("/tmp/recall", args[len(strings.Fields(prefix)):])
+			if err != nil || !c.PasswordAuth || c.Password != nil {
+				t.Fatal("recalled command must request a fresh hidden password", err)
 			}
 		}
 	}

@@ -447,9 +447,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.output = "REFUSED: " + safe(e.Error())
 					return m, nil
 				}
-				if !connection.HasPassword(args) {
-					m.history = append(m.history, command)
-				}
+				m.history = append(m.history, connection.RecallCommand(args))
 				m.historyIndex = len(m.history)
 				m.busy = true
 				workspace := m.info.Workspace
@@ -681,7 +679,7 @@ func (m ui) View() tea.View {
 				rows = append(rows, line)
 			}
 		}
-		if hint := m.forwardingGuidance(); hint != "" {
+		if hint := m.commandGuidance(); hint != "" {
 			rows = append(rows, ansi.Wrap(hint, w, ""))
 		}
 		if len(rows) > 0 {
@@ -721,6 +719,7 @@ An unfinished Hovel command/confirmation is preserved; the staged command remain
 --jump HOST	SSH jump host, optionally USER@HOST:PORT
 Quote spaces; --password=VALUE allows a leading dash or empty value. Escape cancels hidden entry.
 Inline text is visible while typed; supplied values stay out of Burrow recall, logs and saved JSON.
+Up recalls the connection command with bare --password for fresh hidden entry.
 CLI literals are visible in original argv and may enter shell history. Bare --password hides entry.
 Automatic values answer the target once; jump hosts need keys/agents or interactive entry.
 Keep Burrow open for any password/passphrase chain; its one-use broker expires after ten minutes.
