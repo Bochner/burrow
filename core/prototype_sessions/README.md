@@ -1,9 +1,10 @@
 # Shared interactive sessions — disposable #87 proof
 
-Status: **bounded proof, awaiting owner review**. This is not production session
-parity. Work stays on `mvp5`; the production frontend and module behavior are
-unchanged. [Issue #87](https://github.com/Bochner/burrow/issues/87) requires owner
-acceptance and published migration dependencies before resolution.
+Status: **bounded proof and operator policy accepted by the owner, 2026-09-20**.
+The [shared-session decision](../../docs/adr/0002-shared-interactive-sessions.md)
+records the accepted contract from [#87](https://github.com/Bochner/burrow/issues/87).
+This is not production session parity. Work stays on `mvp5`; the production
+frontend and module behavior are unchanged. Published migration slices are below.
 
 Run the real SSH/daemon/terminal check:
 
@@ -109,10 +110,10 @@ The native TUI-observation test and the typed-control test are distinct paths;
 a typed session is not yet rendered by Burrow's SSH tabs. Daemon/module restart
 recovery, sustained-load behavior and a normal quit-review UI are not proven.
 
-## Concrete owner review
+## Accepted owner review
 
-Recommended direction: adopt the **typed public-session-command approach** for
-production planning, keeping native raw attach as negative compatibility evidence.
+The owner accepted the **typed public-session-command approach** for production
+on 2026-09-20, keeping native raw attach as negative compatibility evidence.
 Use one explicit controller; observers never resize or send input. Takeover
 invalidates old input tokens. Normal detach releases control and retains the
 shell. If a controller disappears unexpectedly, its claim remains until an
@@ -123,40 +124,41 @@ all dependent resources; Cancel changes nothing. Output gaps must be visible.
 Master/module/daemon loss never silently reconnects or claims remote command
 completion.
 
-Accepting retained shells changes [#24's frontend-local lifetime decision](https://github.com/Bochner/burrow/issues/24):
+The accepted retained shells change [#24's frontend-local lifetime decision](https://github.com/Bochner/burrow/issues/24):
 today SSH shells end when Burrow exits. It does not promise survival after the
 daemon or owning module is lost. The wider policy examples are in the
-[source note](../../docs/research/shared-session-contract.md#concrete-behavior-to-review-with-the-owner).
+[source note](../../docs/research/shared-session-contract.md#operator-behavior-accepted-after-this-investigation).
 
-## Draft migration slices — not approved or published
+## Production migration slices
 
-1. **Retained shell ownership and public controls.** Register a recognized shell
+1. **[Retained shell ownership and public controls #93](https://github.com/Bochner/burrow/issues/93).** Register a recognized shell
    kind in the single base module, bind it to exact manager/connection creation,
    and expose CLI create/inspect/close. Admit subsequent shells normally; enforce
    connection-wide teardown and sibling preservation. Include bounded PTY input,
-   output backpressure, process cleanup and truthful loss states. Blocked by
-   accepted #87 contract, not merely a passing proof.
-2. **Shared control and independent terminal observation.** Build the approved
+   output backpressure, process cleanup and truthful loss states. Depends on the
+   accepted #87 contract and #89's existing headless lifecycle.
+2. **[Shared control and independent terminal observation #94](https://github.com/Bochner/burrow/issues/94).** Build the approved
    token/generation/cursor contract at the real shell owner. Reject stale control,
    validate initial/live geometry, surface gaps, and prove a VT snapshot/replay or
    explicit redraw/resynchronization contract after truncation. Prove close/input
    races, slow readers and controller disappearance. Depends on slice 1.
-3. **Burrow TUI attachment and quit review.** Use slice 2 in existing SSH tabs,
+3. **[Burrow TUI attachment and quit review #95](https://github.com/Bochner/burrow/issues/95).** Use slice 2 in existing SSH tabs,
    show controller/synchronization state, provide observe/takeover/detach, preserve
    Catppuccin/NO_COLOR and isolate terminal controls. Check two full-screen shells,
    initial/live resize, all exits/restoration, keep/close/cancel and loss. Depends
    on slices 1–2. No production terminal migration is included in this proof.
-4. **Shared-session activity and agent workflow acceptance.** Integrate actual
-   session routes with #89's CLI lifecycle, #90's follower and #64's skill/external
-   agent exercise. Distinguish submitted input, provider result and terminal I/O;
+4. **[Shared-session activity #96](https://github.com/Bochner/burrow/issues/96).** Integrate actual
+   session routes with #89's CLI lifecycle and #90's follower. Distinguish
+   submitted input, provider result and terminal I/O;
    do not claim a raw shell command has a structured exit result. Depends on
-   slices 1–3 and the relevant CLI/follower tickets.
+   slices 1–3 and #89/#90. The installed skills and real external-agent exercise
+   remain in #64, consuming these demonstrated production routes.
 
-After owner review, publish accepted slices with native dependencies and make
-them native blockers of #64 before resolving #87. Keep #64 `needs-info` until
-then. The proven typed route does not establish that upstream changes are
+All four slices belong to MVP 5 under #43 and are native blockers of #64;
+their dependency chain keeps production work ahead of agent-workflow acceptance.
+The proven typed route does not establish that upstream changes are
 mandatory; remaining native gaps stay in Burrow for the owner, with #29/#34 as
 existing handoff context. Confirmed native defects remain in Burrow's Hovel
 handoff tickets; reader, controller, resize and subprocess-ownership work that
-Burrow can implement is not filed as an upstream bug. No unapproved production
-tickets were published.
+Burrow can implement is not filed as an upstream bug. The owner accepted the
+behavior before these production tickets were published.

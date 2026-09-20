@@ -95,8 +95,10 @@ not a security boundary against another process running as the same operator.
 | Chain-originated execution | Normal Hovel planning, confirmation and launch-key constraints apply. A fresh adapter selects the exact existing owner/resource or refuses; no fallback login, invented installed payload or implicit connection recreation. | Preserve Hovel cancellation semantics and the selected operation's explicit cleanup contract; consumer cancellation must preserve the shared connection. | Hovel plan, confirmation, run/results and explicitly collected artifacts, with non-secret owner/resource correlation. Live viewing is not collection. |
 
 Quit retains the subsequently accepted keep-running / verified-close / cancel
-review across opened workspaces (#76). Frontend-local shells end on exit; the
-daemon remains. The earlier blanket quit-retention wording is superseded.
+review across opened workspaces (#76). Current frontend-local shells end on exit;
+the daemon remains. The accepted [MVP 5 shared-session decision](0002-shared-interactive-sessions.md)
+supersedes that shell lifetime with retained shells and release of frontend control
+on detach. The earlier blanket quit-retention wording is superseded.
 
 ## Supported methods and pinned limits
 

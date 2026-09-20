@@ -1,7 +1,9 @@
 # Shared interactive session contract: source evidence
 
-Investigation for [#87][issue], checked on 2026-09-20. This is evidence and
-proposed behavior for owner review, not an approved production migration.
+Investigation for [#87][issue], checked on 2026-09-20. The owner subsequently
+accepted the proposed behavior and typed public-session-command direction in
+the [shared-session decision](../adr/0002-shared-interactive-sessions.md).
+This file preserves the source evidence; production migration remains separate.
 Runtime proof results belong beside the runnable prototype; source availability
 alone does not count as successful CLI, SSH or terminal behavior.
 
@@ -9,8 +11,8 @@ The [completed bounded proof](../../core/prototype_sessions/README.md) verifies
 that the released headless CLI works and demonstrates both native gaps and a
 typed session-command candidate. That candidate has independent cursors,
 explicit gap detection, controller fencing and resize without a second registry.
-It still needs the documented production terminal-state/backpressure work and
-owner acceptance; the proposals below remain review material.
+It still needs the documented production terminal-state/backpressure work.
+The decision above is authoritative for the accepted operator policy.
 
 ## Provenance
 
@@ -114,13 +116,14 @@ every keystroke or use this route to duplicate terminal output. This ceiling
 remains unchanged in latest source. [Notification handling][runner],
 [earlier diagnostics investigation](hovel-events.md).
 
-## Concrete behavior to review with the owner
+## Operator behavior accepted after this investigation
 
-The following is a proposed owner-facing policy. It is not implemented or
-accepted by this research. It preserves the previously selected one-controller
+The owner accepted the following policy on 2026-09-20 in [#87][issue]; research
+alone did not authorize it, and production implementation remains pending.
+It preserves the previously selected one-controller
 direction in [#24][local-shell-decision] and [#29][geometry-issue].
 
-| Situation | Proposed visible behavior | Example |
+| Situation | Accepted visible behavior | Example |
 | --- | --- | --- |
 | Attach an observer | Show the current controller, terminal size and synchronization status. Do not change geometry or accept observer input. | A human watches an agent's 100×30 shell; opening a 140×40 view does not resize the agent's `top`. |
 | Take control | Explicitly transfer control; serialize takeover with writes and resize. Previous controller becomes an observer before new input is accepted. | The human selects Take control, the shell adopts that view's 140×40 dimensions, and the agent gets a visible refusal on its next write. |
@@ -134,10 +137,10 @@ direction in [#24][local-shell-decision] and [#29][geometry-issue].
 | Output gap | Expose a missed-output/screen-unsynchronized state and use a proven replay/snapshot or explicit redraw path. | A slow observer falling behind the buffer cannot display its stale screen as current. |
 | Master/module/daemon loss | Show closed/lost/unavailable truthfully. Preserve uncertainty about remote commands and cleanup; no automatic reconnect or login. | Relaunching the daemon never claims to have restored the previous shell or its working directory. |
 
-Normal frontend quit should review retained shells along with connections and
-offer Keep running, Close and Cancel. Acceptance of this behavior would change
+Normal frontend quit must review retained shells along with connections and
+offer Keep running, Close connections and Cancel. Acceptance of this behavior changes
 the explicit [#24 resolution][local-shell-decision]: today frontend-local shells
-end on Burrow exit while the connection/tunnels may remain. It would not change
+end on Burrow exit while the connection/tunnels may remain. It does not change
 the existing rule that restart/loss requires explicit reconnect. There is no
 accepted promise that a shell survives daemon or module loss.
 
@@ -165,15 +168,16 @@ solves attachment fencing, independent cursors, terminal reconstruction or
 backpressure. The current [#34][commands-issue] usage is a proven precedent for
 retained structured requests, not proof of those additional semantics.
 
-After owner review, scope the production work around the chosen public
+The owner accepted production work around the chosen public
 contract: (1) retained shell lifecycle and same-owner teardown; (2) headless
 control and independent observation with input/geometry enforcement;
 (3) Burrow TUI attachment, screen synchronization, quit review and restoration;
 (4) truthful activity/result presentation and CLI-first agent workflows. Use
 native issue dependencies to make the accepted prerequisites block [#64][agent-issue].
-If native Hovel changes are necessary, keep their handoff in Burrow for the
+If native Hovel changes prove necessary, keep their handoff in Burrow for the
 owner, extending [#29][geometry-issue] and [#34][commands-issue] where appropriate.
-These are candidate boundaries, not published or build-ready tickets.
+The published slices and native dependencies are linked from the
+[proof record](../../core/prototype_sessions/README.md#production-migration-slices).
 
 ## Validation boundary
 
