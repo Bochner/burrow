@@ -26,7 +26,9 @@ func activityCommand(workspace string, args []string, noColor bool) error {
 	structured := fs.Bool("json", false, "emit newline-delimited JSON events")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
-			_, err = fmt.Fprintln(os.Stdout, "Usage: burrow --workspace PATH follow [--json]\nFollow new workspace activity. Ctrl+C stops only the viewer. Pipes emit NDJSON; terminals use Burrow colors.")
+			m := ui{noColor: noColor || os.Getenv("NO_COLOR") != "" || !term.IsTerminal(os.Stdout.Fd())}
+			help := m.paint(heading, "Usage:") + " " + m.syntax("burrow --workspace PATH", true) + " " + m.paint(heading, "follow") + " " + m.syntax("[--json]", true) + "\n" + m.syntax("Follow new workspace activity. Ctrl+C stops only the viewer. Pipes emit NDJSON; terminals use Burrow colors.", false)
+			_, err = lipgloss.Fprintln(os.Stdout, help)
 			return err
 		}
 		return err

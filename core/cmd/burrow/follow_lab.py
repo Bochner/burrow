@@ -211,6 +211,17 @@ def activity_checks(burrow, workspace, connection, container, command, hv, binar
                  and b"activity-ready" in base64.b64decode(e["data"]))
             wait(view, lambda e: e["kind"] == "output" and e.get("stream") == "stderr"
                  and b"activity-warning" in base64.b64decode(e["data"]))
+        # Initial owner failure must not turn existing captured bytes into live output.
+        owner_pid = burrow(workspace, "run", "inspect", run_id)["ownerPID"]
+        os.kill(owner_pid, signal.SIGSTOP)
+        try:
+            recovering = start()
+            wait(recovering, lambda e: e["kind"] == "gap" and e["source"] == "burrow/runs")
+            wait(recovering, lambda e: e["kind"] == "ready")
+        finally:
+            os.kill(owner_pid, signal.SIGCONT)
+        wait(recovering, lambda e: e["kind"] == "snapshot" and e.get("resourceID") == run_id)
+        assert not any(e["kind"] == "output" and e.get("resourceID") == run_id for e in recovering["events"])
         a["process"].send_signal(signal.SIGINT)
         assert a["process"].wait(timeout=5) == 0
         assert burrow(workspace, "run", "inspect", run_id)["state"] == "running"
@@ -219,6 +230,8 @@ def activity_checks(burrow, workspace, connection, container, command, hv, binar
                      and e.get("state") == "exited")
         assert event["details"]["remoteExit"] == 7
         wait(b, lambda e: e["kind"] == "output" and b"activity-end" in base64.b64decode(e["data"]))
+        resumed_output = wait(recovering, lambda e: e["kind"] == "output" and e.get("resourceID") == run_id)
+        assert base64.b64decode(resumed_output["data"]) == b"activity-end\n" and resumed_output["offset"] > 0, resumed_output
         burrow(workspace, "run", "collect", run_id, "--yes")
         wait(b, lambda e: e["kind"] == "collected" and e.get("resourceID") == run_id)
         drain()

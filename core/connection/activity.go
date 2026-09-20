@@ -31,8 +31,8 @@ type Activity struct {
 	State      string `json:"state,omitempty"`
 	Sequence   uint64 `json:"sequence,omitempty"`
 	Stream     string `json:"stream,omitempty"`
-	Offset     int64  `json:"offset,omitempty"`
-	NextOffset int64  `json:"nextOffset,omitempty"`
+	Offset     int64  `json:"offset"`
+	NextOffset int64  `json:"nextOffset"`
 	Data       string `json:"data,omitempty"` // base64, exactly the observed bytes
 	Details    any    `json:"details,omitempty"`
 }
@@ -55,15 +55,16 @@ type activityRun struct {
 }
 
 type activityFeed struct {
-	workspace   string
-	emit        func(Activity) error
-	sequence    uint64
-	daemon      launch.Info
-	audit       launch.AuditCursor
-	problems    map[string]string
-	runs        map[string]*activityRun
-	transfers   map[string]string
-	connections map[string]string
+	workspace                                              string
+	emit                                                   func(Activity) error
+	sequence                                               uint64
+	daemon                                                 launch.Info
+	audit                                                  launch.AuditCursor
+	problems                                               map[string]string
+	runs                                                   map[string]*activityRun
+	transfers                                              map[string]string
+	connections                                            map[string]State
+	logsReady, runsReady, connectionsReady, transfersReady bool
 }
 
 func (f *activityFeed) write(e Activity) error {
@@ -103,13 +104,11 @@ func FollowActivity(ctx context.Context, workspace string, emit func(Activity) e
 	if err != nil {
 		return err
 	}
-	f := activityFeed{workspace: workspace, emit: emit, daemon: info, problems: map[string]string{}, runs: map[string]*activityRun{}, transfers: map[string]string{}, connections: map[string]string{}}
+	f := activityFeed{workspace: workspace, emit: emit, daemon: info, problems: map[string]string{}, runs: map[string]*activityRun{}, transfers: map[string]string{}, connections: map[string]State{}}
 	initial := true
 	for {
 		for _, read := range []func(context.Context) error{
-			func(c context.Context) error { return f.logs(c, initial) }, f.notes,
-			func(c context.Context) error { return f.runOutput(c, initial) },
-			func(c context.Context) error { return f.connectionStates(c, initial) }, f.transferProgress,
+			f.logs, f.notes, f.runOutput, f.connectionStates, f.transferProgress,
 		} {
 			poll, cancel := context.WithTimeout(ctx, 3*time.Second)
 			err := read(poll)
@@ -135,7 +134,7 @@ func FollowActivity(ctx context.Context, workspace string, emit func(Activity) e
 	}
 }
 
-func (f *activityFeed) connectionStates(ctx context.Context, initial bool) error {
+func (f *activityFeed) connectionStates(ctx context.Context) error {
 	states, err := List(ctx, f.workspace)
 	if err != nil {
 		return f.problem("burrow/connections", err)
@@ -143,33 +142,36 @@ func (f *activityFeed) connectionStates(ctx context.Context, initial bool) error
 	if err := f.problem("burrow/connections", nil); err != nil {
 		return err
 	}
-	current := map[string]string{}
+	current := map[string]State{}
 	for _, state := range states {
-		signature := string(valueBytes(state))
-		current[state.Creation] = signature
-		if f.connections[state.Creation] == signature {
+		key := state.Creation
+		if key == "" {
+			key = "name:" + state.Name
+		}
+		current[key] = state
+		if string(valueBytes(f.connections[key])) == string(valueBytes(state)) {
 			continue
 		}
 		kind := "progress"
-		if initial {
+		if !f.connectionsReady {
 			kind = "snapshot"
 		}
 		if err := f.write(Activity{Source: "burrow/connection", Kind: kind, Resource: state.Creation, Target: state.Name, State: state.State, Message: "Observed connection state", Details: state}); err != nil {
 			return err
 		}
 	}
-	for id := range f.connections {
+	for id, state := range f.connections {
 		if _, present := current[id]; !present {
-			if err := f.write(Activity{Source: "burrow/connection", Kind: "result", Resource: id, State: "unavailable", Message: "Connection left the owner inventory; operation evidence records any confirmed closure"}); err != nil {
+			if err := f.write(Activity{Source: "burrow/connection", Kind: "result", Resource: state.Creation, Target: state.Name, State: "unavailable", Message: "Connection left the owner inventory; operation evidence records any confirmed closure"}); err != nil {
 				return err
 			}
 		}
 	}
-	f.connections = current
+	f.connections, f.connectionsReady = current, true
 	return nil
 }
 
-func (f *activityFeed) logs(ctx context.Context, initial bool) error {
+func (f *activityFeed) logs(ctx context.Context) error {
 	info, err := launch.Status(ctx, f.workspace)
 	if err != nil {
 		return f.problem("hovel", err)
@@ -190,7 +192,8 @@ func (f *activityFeed) logs(ctx context.Context, initial bool) error {
 	if err := f.problem("hovel", nil); err != nil {
 		return err
 	}
-	if initial {
+	if !f.logsReady {
+		f.logsReady = true
 		f.sequence = batch.Last
 		return nil
 	}
@@ -290,7 +293,7 @@ func auditActivity(entry launch.AuditEntry) Activity {
 
 func valueBytes(value any) []byte { data, _ := json.Marshal(value); return data }
 
-func (f *activityFeed) runOutput(ctx context.Context, initial bool) error {
+func (f *activityFeed) runOutput(ctx context.Context) error {
 	states, err := Runs(ctx, f.workspace)
 	if err != nil {
 		return f.problem("burrow/runs", err)
@@ -298,6 +301,8 @@ func (f *activityFeed) runOutput(ctx context.Context, initial bool) error {
 	if err := f.problem("burrow/runs", nil); err != nil {
 		return err
 	}
+	initial := !f.runsReady
+	f.runsReady = true
 	present := map[string]bool{}
 	for _, r := range states {
 		present[r.ID] = true
@@ -404,6 +409,9 @@ func (f *activityFeed) transferProgress(ctx context.Context) error {
 		if d.State != "running" {
 			kind = "result"
 		}
+		if !f.transfersReady {
+			kind = "snapshot"
+		}
 		if err := f.write(Activity{Source: "burrow/transfer", Kind: kind, Resource: d.ID, Target: d.Plan.Owner.Name, State: d.State, RunID: d.RunID, Message: d.Plan.Operation + " " + d.Plan.Pattern, Details: d}); err != nil {
 			return err
 		}
@@ -415,6 +423,6 @@ func (f *activityFeed) transferProgress(ctx context.Context) error {
 			}
 		}
 	}
-	f.transfers = current
+	f.transfers, f.transfersReady = current, true
 	return nil
 }

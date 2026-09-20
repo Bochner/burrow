@@ -16,6 +16,16 @@ import pty
 import termios
 
 binary, wheel, decoder = [str(Path(p).resolve()) for p in sys.argv[1:]]
+
+def assert_role(rows, value, color):
+    matches = []
+    for row in rows:
+        line = "".join(c["text"] or " " for c in row)
+        start = line.find(value)
+        if start >= 0:
+            matches.append(row[start:start+len(value)])
+    assert matches and any(all(c["color"] == color for c in cells) for cells in matches), (value, matches)
+
 with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
     root = Path(scratch)
     env = dict(os.environ, HOME=scratch, XDG_CACHE_HOME=str(root / "cache"),
@@ -44,8 +54,8 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
         assert p.returncode == 0, (args, p.stdout, p.stderr)
         return json.loads(p.stdout)
 
-    def follower():
-        p = subprocess.Popen([binary, "--workspace", str(workspace), "follow", "--json"],
+    def follower(structured=True):
+        p = subprocess.Popen([binary, "--workspace", str(workspace), "follow", *(["--json"] if structured else [])],
                              env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         view = {"process": p, "pending": b"", "events": []}
         viewers.append(view)
@@ -72,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                                  env=env, capture_output=True, timeout=10)
         assert missing.returncode != 0 and not list(root.iterdir())
         daemon = cli("--hovel-package", wheel, "workspace", "open")["pid"]
-        a, b = follower(), follower()
+        a, b = follower(), follower(False)
         for view in (a, b):
             wait(view, lambda e: e["kind"] == "ready")
         cli("profile", "create", "watched", "192.0.2.10", "--user", "alice")
@@ -84,6 +94,26 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
         assert cli("workspace", "inspect")["pid"] == daemon
         cli("profile", "create", "still-watching", "192.0.2.11", "--user", "alice")
         wait(b, lambda e: "profile create still-watching" in e.get("message", ""))
+        reviewed = cli("profile", "edit", "watched", "192.0.2.99", "--user", "alice")
+        assert reviewed["review"]
+        wait(b, lambda e: e["kind"] == "review" and e["message"].startswith("profile edit watched"))
+        assert next(p for p in cli("profiles")["profiles"] if p["name"] == "watched")["host"] == "192.0.2.10"
+        duplicate = subprocess.run([binary, "--workspace", str(workspace), "profile", "create", "watched", "192.0.2.99", "--user", "alice"],
+                                   env=env, capture_output=True, timeout=20)
+        assert duplicate.returncode != 0
+        wait(b, lambda e: e["kind"] == "failed" and e["message"].startswith("profile create watched"))
+        recap = cli("connect", "recap", "192.0.2.12", "--user", "alice", "--password", "RECAP-SECRET-CANARY")
+        assert recap["review"] and not cli("connections")
+        wait(b, lambda e: e["kind"] == "review" and e["message"].startswith("connect recap"))
+        assert "RECAP-SECRET-CANARY" not in json.dumps(b["events"])
+        # Unknown reservations retain distinct names without inventing owner IDs.
+        for name in ("lost-left", "lost-right"):
+            (workspace / "burrow" / name).mkdir(mode=0o700)
+            wait(b, lambda e: e["source"] == "burrow/connection" and e.get("target") == name and e["state"] == "lost")
+        (workspace / "burrow" / "lost-left").rmdir()
+        wait(b, lambda e: e["source"] == "burrow/connection" and e.get("target") == "lost-left" and e["state"] == "unavailable")
+        assert [s["name"] for s in cli("connections")] == ["lost-right"]
+        (workspace / "burrow" / "lost-right").rmdir()
         # Read real operation evidence, including unavailable/partial storage.
         refused = subprocess.run([binary, "--workspace", str(workspace), "run", "launch", "missing", "--yes"],
                                  env=env, capture_output=True, timeout=20)
@@ -154,6 +184,16 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                 before = termios.tcgetattr(slave)
                 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
                 terminal_env = env | {"TERM": "xterm-256color", "COLORTERM": "truecolor", "NO_COLOR": "1" if plain else ""}
+                help_result = subprocess.run([binary, "--workspace", str(workspace), "follow", "--help"], env=terminal_env,
+                                             stdin=slave, stdout=slave, stderr=slave, timeout=10)
+                assert help_result.returncode == 0
+                help_output = bytearray()
+                while select.select([outer], [], [], .05)[0]:
+                    help_output.extend(os.read(outer, 65536))
+                help_rows = json.loads(subprocess.run([decoder, str(width), str(height), "--cells"],
+                                       input=help_output, capture_output=True, check=True).stdout)
+                for value, color in (("burrow", "#89b4fa"), ("follow", "#89b4fa"), ("--json", "#89b4fa"), ("PATH", "#f9e2af"), ("Ctrl+C", "#cba6f7")):
+                    assert_role(help_rows,value,"" if plain else color)
                 p = subprocess.Popen([binary, "--workspace", str(workspace), "follow"], env=terminal_env,
                                      stdin=slave, stdout=slave, stderr=slave)
                 output = bytearray()
@@ -185,13 +225,7 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                                       input=output, capture_output=True, check=True).stdout)
                     for value, color in (("192.0.2.11", "#f5c2e7"), ("alice", "#a6e3a1"), ("2222", "#f9e2af"),
                                          ("ERROR", "#f38ba8"), ("host", "#89b4fa")):
-                        matches = []
-                        for row in rows:
-                            line = "".join(c["text"] or " " for c in row)
-                            start = line.find(value)
-                            if start >= 0:
-                                matches.append(row[start:start+len(value)])
-                        assert matches and any(all(c["color"] == ("" if plain else color) for c in cells) for cells in matches), (value, matches)
+                        assert_role(rows,value,"" if plain else color)
                     if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
                         Path(directory, f"activity-{width}x{height}-{plain}.ansi").write_bytes(output)
                         Path(directory, f"activity-{width}x{height}-{plain}.txt").write_text(

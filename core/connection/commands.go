@@ -669,19 +669,13 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	if err := ValidateCommand(w, args); err != nil {
 		return nil, err
 	}
-	if args[0] == "connect" || args[0] == "reconnect" {
-		_, approved, _ := Parse(w, args[1:])
-		if !approved {
-			return executeOperation(ctx, w, args, promptSocket)
-		}
-	}
 	// Capture submitted identity and full safe frontend result, including reviews
 	// and pre-dispatch refusals. Owner records carry asynchronous actual outcomes.
 	if args[0] == "run" && (args[1] == "list" || args[1] == "inspect" || args[1] == "output") {
 		return executeOperation(ctx, w, args, promptSocket)
 	}
 	switch args[0] {
-	case "chain", "run", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
+	case "connect", "reconnect", "profile", "chain", "run", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
 		a, err := launch.BeginAudit(w, commandIdentity(args), "submitted request; see owner result", nil)
 		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove") || (args[0] == "run" && (args[1] == "cancel" || args[1] == "close"))
 		if err != nil && !cleanup {
