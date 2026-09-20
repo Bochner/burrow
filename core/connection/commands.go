@@ -23,7 +23,7 @@ const Help = `chain select CONNECTION             Query live forwards and SOCKS 
 chain http CONNECTION TUNNEL_ID URL [--yes] Review HTTP through exactly that existing tunnel
 chain export CONNECTION TUNNEL_ID URL Export a saved Hovel consumer chain as JSON; no execution
 chain connect NAME HOST --user USER [options] Export a saved Hovel connection chain; no authentication yet
-Connection options: --key PATH, --password, --prompt, --agent PATH, --port NUMBER, --ssh-config PATH, --jump HOST.
+Connection options: --user USER, --key PATH, --password, --prompt, --agent PATH, --port NUMBER, --ssh-config PATH, --jump HOST.
 A confirmed connection chain waits for authentication and registers a live named Burrow connection.
 Requires an already-running OpenSSH/Dropbear server; no deployment. --password takes no secret value.
 TUI connect/export stages a private chain file and opens Hovel with throw ready; Enter reviews.
@@ -32,6 +32,18 @@ Keep that frontend open; its one-use prompt expires after 10 minutes. Unattended
 Existing names are refused; no adoption or automatic reconnect. Close via close NAME.
 Exported chains bind this workspace/build and exact settings; regenerate after changes/upgrades.
 Save CLI JSON to a file, then use hovel throw FILE --workspace PATH --allow-dangerous --json.
+TUI examples (enter in Burrow management, Alt+B):
+  chain connect target 192.168.10.50 --user alice --password
+  chain connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519
+  chain connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519 --prompt
+Enter in Hovel reviews the staged throw; confirm yes, authenticate, then Alt+B after success.
+F1 while typing chain shows examples and every connection option in the TUI.
+CLI example (local shell):
+  burrow --workspace /absolute/workspace chain connect target 192.168.10.50 --user alice --password > /absolute/workspace/connect.chain.json
+Keep that terminal open. In another terminal, review and confirm with the installed Hovel CLI:
+  hovel throw /absolute/workspace/connect.chain.json --workspace /absolute/workspace --daemon-endpoint /absolute/workspace/hoveld.sock --allow-dangerous --json
+For unattended key/agent exports, omit --password/--prompt; JSON prints and the CLI exits.
+--password takes no value and cannot be combined with --key or a nonempty explicit --agent.
 Hovel prompts normally; headless callers need matching confirmation or explicitly choose --now.
 Consumers never create resources. Chain connect is a separate explicit creation operation.
 HTTP is GET only, at most 8 seconds and 1 MiB; no TLS, redirects, credentials or query strings.
@@ -151,17 +163,18 @@ Retry selected failures with get or put using their recorded source/destination;
 Working transfers are not automatically registered Hovel evidence.
 
 profiles                            List saved entries and selected collection
-profile create NAME HOST USER [options] Save settings without connecting
+profile create NAME HOST --user USER [options] Save settings without connecting
 profile select NAME                 Inspect saved settings only
 profile connect NAME [--as LIVE] [--yes] [--prompt] Connect a saved profile
 profile save CONNECTION [--as PROFILE] [--yes] Save authenticated settings
-profile edit NAME HOST USER [options] Replace saved settings (--yes confirms)
+profile edit NAME HOST --user USER [options] Replace saved settings (--yes confirms)
 profile delete NAME [--yes]          Delete settings; retain live resources
 profile collection PATH             Create/open a collection
 profile load PATH                   Open an existing collection; never connect
 profile backup PATH                 Copy collection to a new backup file
 history                             Retained profile management commands
 Profiles keep aliases/overrides and key references, never authentication secrets.
+Create/edit accepts key/agent settings, not --password/--prompt; profile save after a password connection keeps its authentication preference.
 Default template: WORKSPACE/burrow-profiles.json; _example is documentation only.
 All profile writes use the selected file, retained by Hovel across invocations.
 Edit replaces all settings; include options to retain them. Review replies include
@@ -205,8 +218,8 @@ does not prove destination reachability or server forwarding permission.
 Tunnel IDs include an opaque creation identity: complete with Tab or use tunnel list.
 
 connect                             Guided connection entry (terminal)
-connect NAME HOST USER [options]     Create shell-free SSH master
-reconnect NAME HOST USER [options]   Explicitly replace a lost owned connection
+connect NAME HOST --user USER [options] Create shell-free SSH master
+reconnect NAME HOST --user USER [options] Explicitly replace a lost owned connection
 inspect NAME                        State, endpoint and socket identity
 shell NAME                          Open a local interactive SSH terminal
 shells                              List this frontend's shells in the workspace
@@ -221,7 +234,7 @@ Shell exit/close preserves the connection. Frontend quit ends local shells.
 Connection close ends its shells, transfers and tunnels. Shell bytes stay local,
 in memory; they are not Hovel-recorded session I/O or collected evidence.
 
-Required: NAME HOST USER (- uses SSH config user), or:
+Required: NAME HOST --user USER (- uses SSH config user). Positional USER remains accepted, as does:
 connect -ip HOST -port NUMBER -user USER -socket NAME [-ssh-key PATH]
 Named flags may appear in any order; duplicate fields/aliases are refused.
 Legacy -shell and -no-term are unsupported, never silently accepted.
@@ -231,10 +244,14 @@ Options (required fields are shown before optional settings):
 --ssh-config PATH (~/.ssh/config), --jump [USER@]HOST[:PORT][,...],
 --prompt (CLI hidden password/passphrase entry), --password (password-only hidden prompt), --yes (confirm review),
 --review HASH (bind --yes to the exact previously displayed recap).
+Examples (add burrow --workspace PATH when running from a local shell):
+  connect target 192.168.10.50 --user alice --password
+  connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519
+  reconnect target 192.168.10.50 --user alice --password
 Every hop uses UserKnownHostsFile=/dev/null and StrictHostKeyChecking=no.
 There is no host-key approval.
 TUI connects review and prompt interactively; Ctrl+C/Esc cancels the attempt.
-CLI without --yes reviews; --prompt waits for authentication and cleans failure.
+CLI without --yes reviews; --password/--prompt waits for authentication and cleans failure.
 Passwords/passphrases are terminal-only: never put secrets in commands.
 Aliases use OpenSSH HostName/User/Port/IdentityFile/IdentityAgent/ProxyJump.
 ProxyCommand and config forwarding/commands/trust overrides are not imported.
@@ -324,7 +341,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 		if !assigned && name != "yes" && name != "prompt" && name != "password" {
 			i++
 			if i == len(args) {
-				return c, false, fmt.Errorf("missing value for %s; required NAME HOST USER; use help", name)
+				return c, false, fmt.Errorf("missing value for %s; required NAME HOST --user USER; use help", name)
 			}
 			value, assigned = args[i], true
 		}
@@ -346,7 +363,7 @@ func Parse(workspace string, args []string) (Config, bool, error) {
 		options = append(options, "--"+name+"="+value)
 	}
 	if !seen["name"] || !seen["host"] || !seen["user"] {
-		return c, false, fmt.Errorf("required NAME HOST USER (or -socket NAME -ip HOST -user USER); bare connect opens the form")
+		return c, false, fmt.Errorf("required NAME HOST --user USER (or -socket NAME -ip HOST -user USER); bare connect opens the form")
 	}
 	if e = fs.Parse(options); e != nil {
 		return c, false, fmt.Errorf("invalid connection options; use help (secrets are not accepted)")
@@ -811,10 +828,16 @@ func Suggestions(states []State) []string {
 func CommandSuggestions(line string, states []State) []string {
 	args, e := Split(line)
 	if e == nil && len(args) >= 2 && args[0] == "chain" && args[1] == "connect" {
+		sub := strings.TrimLeft(line, " \t")
+		if !strings.HasPrefix(sub, "chain ") && !strings.HasPrefix(sub, "chain\t") {
+			return nil
+		}
+		sub = strings.TrimLeft(sub[len("chain"):], " \t")
+		prefix := line[:len(line)-len(sub)]
 		values := []string{}
-		for _, suggestion := range CommandSuggestions(strings.TrimPrefix(line, "chain "), states) {
+		for _, suggestion := range CommandSuggestions(sub, states) {
 			if strings.HasPrefix(suggestion, "connect ") && !strings.HasSuffix(suggestion, "--yes") && !strings.HasSuffix(suggestion, "-proxy ") {
-				values = append(values, "chain "+suggestion)
+				values = append(values, prefix+suggestion)
 			}
 		}
 		return values

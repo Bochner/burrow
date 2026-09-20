@@ -364,6 +364,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(v, help):
 			m.help = true
+			m.helpOffset = 0
 			return m, nil
 		case key.Matches(v, escape):
 			m.input.ShowSuggestions = false
@@ -662,7 +663,11 @@ func (m ui) View() tea.View {
 			commandWidth = min(commandWidth, max(1, w/2-2))
 			for i := start; i < end; i++ {
 				s := matches[i]
-				command := ansi.Truncate(s, commandWidth, "…")
+				command := s
+				if width := ansi.StringWidth(s); width > commandWidth {
+					// Keep the option/value that distinguishes long suggestions visible.
+					command = "…" + ansi.Cut(s, width-commandWidth+1, width)
+				}
 				line := "  " + m.paint(heading, command+strings.Repeat(" ", max(0, commandWidth-lipgloss.Width(command)))) + "  " + m.paint(secondary, completionDescription(s))
 				line = ansi.Truncate(line, w, "…")
 				if i == selected {
@@ -690,12 +695,49 @@ func (m ui) View() tea.View {
 	return v
 }
 
+const chainHelp = `# HOVEL CHAINS
+chain connect target 192.168.10.50 --user alice --password	Example: SSH password, entered in a hidden field after Hovel confirmation
+chain connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519	Example: use a local private key instead
+chain connect NAME HOST --user USER [options]	Stage connection settings for an already-running OpenSSH/Dropbear server
+Enter these commands in Burrow management (Alt+B).
+Enter in Burrow saves private JSON, switches to Hovel and prepares throw FILE --allow-dangerous.
+Enter in Hovel shows the plan; type yes to confirm. Alt+B returns to the active connection after success.
+An unfinished Hovel command/confirmation is preserved; the staged command remains in Burrow output.
+
+# CHAIN CONNECTION OPTIONS
+--user USER	SSH account name; use an explicit username in copied commands
+--password	Password-only authentication; takes no value and conflicts with --key/--agent
+--key PATH	Local private key; add --prompt for an encrypted key
+--prompt	Enable hidden password/passphrase entry after Hovel confirmation
+--agent PATH	Use an available SSH agent socket
+--port NUMBER	SSH port; defaults to SSH config or 22
+--ssh-config PATH	Local SSH configuration file
+--jump HOST	SSH jump host, optionally USER@HOST:PORT
+Never type a password after --password. Escape in the hidden field cancels authentication.
+Keep Burrow open for a password/passphrase chain; start it within ten minutes.
+Ctrl+C in Hovel cancels a staged interactive chain, including after rejecting its plan.
+No --yes or -proxy on chain connect; Hovel owns confirmation and proxy creation stays explicit.
+
+# EXISTING TUNNEL CHAINS
+chain select CONNECTION	Query current forward/SOCKS identities from the connection owner
+chain http CONNECTION TUNNEL_ID URL	Review HTTP through that existing tunnel; collect metadata and hash
+chain export CONNECTION TUNNEL_ID URL	Stage a private consumer chain and prepare Hovel throw; Enter reviews
+HTTP GET only: 8 seconds, 1 MiB, no redirects, TLS, credentials or query strings.
+Use a fixed forward's destination in URL; SOCKS accepts an explicit hostname.
+No automatic tunnel creation/reconnect. Dropbear upload/start is separate deployment work.
+Standalone CLI prints chain JSON; --password/--prompt keeps its terminal open for private entry.
+Full TUI and CLI walkthroughs: https://bochner.github.io/burrow/spec/chains.html
+`
+
 func (m ui) helpText() string {
 	if m.follow != nil {
 		return strings.ReplaceAll(followHelp, "\\t", "\t")
 	}
 	if m.files != nil {
 		return strings.ReplaceAll(fileHelp, "\\t", "\t")
+	}
+	if words := strings.Fields(m.input.Value()); len(words) > 0 && words[0] == "chain" {
+		return chainHelp
 	}
 	return `# NAVIGATION
 F6 / Shift+F6	Move focus between panels; arrows select, Enter opens
@@ -708,7 +750,11 @@ Ctrl+Shift+V	Paste using your terminal's paste shortcut
 
 # CONNECTIONS & SHELLS
 connect	Open the guided connection form
-connect NAME HOST USER	Connect directly; review first, then authenticate privately
+connect NAME HOST --user USER	Connect directly; review first, then authenticate
+connect target 192.168.10.50 --user alice --password	Example: password-only authentication with hidden entry
+connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519	Example: local private key; add --prompt if encrypted
+--password / --key PATH / --agent PATH	Choose password-only entry, a key, or an SSH agent; --password takes no value
+--port NUMBER / --jump HOST / --ssh-config PATH	Select port, network hops or local SSH configuration
 logs / Ctrl+N	Open workspace log in Vim; Ctrl+N or :q returns; reopen refreshes
 Ctrl+N in SSH/Hovel/Vim	Burrow shortcut, not forwarded to the embedded program
 Ctrl+L	Open Collected output and Activity log tabs; Ctrl+L or :qa returns
@@ -718,7 +764,7 @@ Ctrl+] / Alt+1–9	Return from SSH to management / select a shell
 Alt+←/→	Cycle shells without closing them
 shell-close ID	Close one shell, keeping its connection
 inspect NAME / status	Inspect connection details / verify the daemon
-reconnect NAME HOST USER	Explicitly replace a lost connection
+reconnect NAME HOST --user USER	Explicitly replace a lost connection
 The connection form includes SSH keys, agents, jump hosts and a SOCKS proxy.
 
 # RETAINED COMMANDS
@@ -750,16 +796,7 @@ Stage uploads only after review; --keep retains it, otherwise only owned files a
 Tab completes script options, modes and interpreter examples; select an installed interpreter.
 Output shows the next byte offset. Cancel active runs before close; never put secrets in arguments.
 
-# HOVEL CHAINS
-chain select CONNECTION	Query current forward/SOCKS identities from the connection owner
-chain http CONNECTION TUNNEL_ID URL	Review HTTP through that existing tunnel; collect metadata and hash
-chain export CONNECTION TUNNEL_ID URL	Stage a private chain file and prepare Hovel throw; Enter reviews
-chain connect NAME HOST --user USER [options]	Stage SSH chain, open Hovel; --key PATH or --password (hidden prompt)
-Export CLI JSON to a file, then execute with Hovel throw and its normal confirmation.
-HTTP GET only: 8 seconds, 1 MiB, no redirects, TLS, credentials or query strings.
-Use a fixed forward's destination in URL; SOCKS accepts an explicit hostname.
-No automatic tunnel creation/reconnect. Dropbear upload/start is separate deployment work.
-
+` + chainHelp + `
 # FORWARDING
 tunnel create NAME forward|reverse	Create a local or reverse listener; the prompt guides arguments
 tunc myserver l 8080 localhost 80	Example: local port 8080 reaches port 80 from the SSH server
@@ -775,7 +812,7 @@ The dashboard refreshes automatically, including changes made by external CLI cl
 # SAVED CONNECTIONS & WORKSPACES
 Saved row → Enter	Connect, inspect, edit or delete saved settings
 profile save NAME	Save an active connection's settings, never its passwords
-profile create NAME HOST USER	Save settings without connecting
+profile create NAME HOST --user USER	Save key/agent settings without connecting; use profile save after a password connection
 profile load PATH / profile backup PATH	Open a collection / back up the selected collection
 Alt+N / Alt+W	Create a workspace / open the workspace drawer
 
@@ -829,7 +866,7 @@ func (m ui) helpViewport(w, h int) viewport.Model {
 			if label[0] >= 'A' && label[0] <= 'Z' {
 				styled = m.paint(keywordStyle, label)
 			}
-			if bodyW < 90 {
+			if bodyW < 90 || ansi.StringWidth(label) > 40 {
 				lines = append(lines, styled, "  "+m.paint(secondary, description))
 			} else {
 				column := 42

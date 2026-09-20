@@ -185,7 +185,7 @@ func (m ui) suggestions() []string {
 	if strings.HasPrefix(line, "profile create ") || strings.HasPrefix(line, "profile edit ") {
 		sub := strings.TrimPrefix(strings.TrimPrefix(line, "profile create "), "profile edit ")
 		for _, value := range connection.CommandSuggestions("connect "+sub, nil) {
-			if strings.HasPrefix(value, "connect ") {
+			if strings.HasPrefix(value, "connect ") && !strings.HasSuffix(value, "--password") && !strings.HasSuffix(value, "--prompt") {
 				values = append(values, strings.TrimSuffix(line, sub)+strings.TrimPrefix(value, "connect "))
 			}
 		}
@@ -228,8 +228,9 @@ var completionDescriptions = map[string]string{
 	"profile select": "Inspect saved settings", "profile delete": "Delete saved settings only", "profile connect": "Connect saved SSH profile",
 	"profile load": "Open existing collection", "profile collection": "Create/open collection", "profile backup": "Back up saved collection",
 	"-ip": "SSH host or config alias", "-port": "SSH port", "-user": "SSH username", "-socket": "Connection name", "-ssh-key": "Private-key file path",
+	"--user": "SSH username", "--password": "Password only; hidden prompt, no value",
 	"--key": "Private-key file path", "--agent": "SSH agent socket", "--port": "SSH port", "--ssh-config": "SSH config file",
-	"--jump": "SSH jump host", "--prompt": "Hidden authentication prompt", "--yes": "Confirm reviewed connection",
+	"--jump": "SSH jump host", "--prompt": "Interactive password/key passphrase entry", "--yes": "Confirm reviewed connection",
 	"-proxy": "Local SOCKS proxy (default 9050)",
 }
 
@@ -242,7 +243,7 @@ func completionDescription(value string) string {
 		return description
 	}
 	command := words[0]
-	if (command == "run" || command == "profile" || command == "tunnel" || command == "proxy") && len(words) > 1 {
+	if (command == "chain" || command == "run" || command == "profile" || command == "tunnel" || command == "proxy") && len(words) > 1 {
 		command += " " + words[1]
 	}
 	return completionDescriptions[command]

@@ -7,6 +7,12 @@ import tempfile
 
 binary = str(Path(sys.argv[1]).resolve())
 makefile = str(Path(sys.argv[2]).resolve())
+help_result = subprocess.run([binary, "--help"], capture_output=True, text=True)
+assert help_result.returncode == 0, help_result
+for example in ["chain connect target 192.168.10.50 --user alice --password",
+                "chain connect target 192.168.10.50 --user alice --key",
+                "connect target 192.168.10.50 --user alice --password"]:
+    assert example in help_result.stderr, ("CLI help omitted a concrete example", example)
 for target, expected in {
     "run": 'aspect burrow run -- --workspace "$BURROW_MAKE_WORKSPACE" tui',
     "restart": 'aspect burrow run -- --workspace "$BURROW_MAKE_WORKSPACE" restart --yes',
@@ -110,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["connect", "-ip", "localhost", "-user", "tester", "-socket", "valid", "-ssh-key", "relative"], "absolute"),
         (["connect", "--port", "0", "valid", "localhost", "tester"], "port"),
         (["connect", "valid", "localhost", "tester", "-ip", "other"], "duplicate"),
-        (["connect", "-socket", "valid", "-ip", "localhost"], "NAME HOST USER"),
+        (["connect", "-socket", "valid", "-ip", "localhost"], "NAME HOST --user USER"),
         (["connect", "valid", "localhost", "tester", "-ssh-key", "/tmp/key", "--key", "/tmp/other"], "duplicate"),
         (["connect", "valid", "localhost", "tester", "-no-term"], "invalid connection options"),
         (["connect", "valid", "localhost", "tester", "-proxy", "0"], "port"),

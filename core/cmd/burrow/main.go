@@ -39,7 +39,8 @@ tui opens the management interface (default); quit retains the daemon.
 restart [--yes] retires the workspace's Burrow manager, then opens the current TUI.
 --yes skips restart confirmation and ends the workspace's connections and shells.
 It ends that manager's connections and shells; saved settings, evidence and Hovel remain.
-Inside the interface: status, connections, connect, inspect, shell, reconnect, close, help, quit.
+Inside the interface: status, connections, connect, chain connect, inspect, shell, reconnect, close, help, quit.
+Type chain then F1 for SSH chain examples and options; Alt+B selects Burrow management.
 Linux amd64 only. Cache: $XDG_CACHE_HOME/burrow/hovel/0.4.2 (or ~/.cache).
 Unknown/stale resources require manual investigation; no automatic cleanup.
 `

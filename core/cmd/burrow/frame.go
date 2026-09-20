@@ -1281,6 +1281,7 @@ func (m *frame) menuAction(i int) tea.Cmd {
 		return m.openNew()
 	case 3:
 		m.current().activeUI().help = true
+		m.current().activeUI().helpOffset = 0
 	case 4:
 		return m.openQuit()
 	case 5:

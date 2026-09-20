@@ -59,7 +59,7 @@ func chainURL(raw string) (*url.URL, error) {
 
 func validateChain(w string, args []string) error {
 	if len(args) < 3 {
-		return fmt.Errorf("required: chain select CONNECTION, or chain http|export CONNECTION TUNNEL_ID URL [--yes] [--review HASH]")
+		return fmt.Errorf("required: chain connect NAME HOST --user USER [--password | --key PATH], chain select CONNECTION, or chain http|export CONNECTION TUNNEL_ID URL [--yes] [--review HASH]; use help for examples")
 	}
 	if _, err := launch.ConnectionPath(w, args[2]); err != nil {
 		return err

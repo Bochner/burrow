@@ -122,6 +122,72 @@ func TestAuthenticationPopup(t *testing.T) {
 	}
 }
 
+func TestChainHelpAndCompletion(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/chain-help"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		prefix := "chain connect target 192.168.10.50 --user alice "
+		frameEvent(m, tea.PasteMsg{Content: prefix + "--p"})
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("chain-options-%dx%d-%t", size.X, size.Y, plain))
+			completionRows := strings.Join(strings.Split(screen.String(), "\n")[:size.Y-4], "\n")
+			if !strings.Contains(completionRows, "--password") {
+				t.Fatalf("password completion is offered but invisible at %v (plain=%t): %s", size, plain, screen.String())
+			}
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y-4), "--password", blueColor)
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if m.current().management.input.Value() != prefix+"--password" {
+			t.Fatal("Tab did not retain the full command while completing the password flag")
+		}
+		for _, candidate := range []string{"chain connect ", prefix + "--user ", prefix + "--password"} {
+			if completionDescription(candidate) == "" {
+				t.Fatal("missing completion description", candidate)
+			}
+		}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+			if m.current().management.helpOffset != 0 {
+				t.Fatal("chain help opened below its examples after scrolling previous help")
+			}
+			screen := capturePresentation(t, m, fmt.Sprintf("chain-help-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(screen.String(), "192.168.10.50") || !strings.Contains(screen.String(), "--password") {
+				t.Fatal("F1 does not open a concrete chain password example", size, screen.String())
+			}
+			v := m.current().management.helpViewport(size.X, size.Y)
+			if !strings.Contains(ansi.Strip(v.View()), prefix+"--password") {
+				t.Fatal("chain password example is split across description columns", size)
+			}
+			var pages strings.Builder
+			for {
+				pages.WriteString(ansi.Strip(m.View().Content))
+				before := m.current().management.helpOffset
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+				if before == m.current().management.helpOffset {
+					break
+				}
+			}
+			for _, text := range []string{"--user", "--password", "--key", "--prompt", "--agent", "--port", "--jump", "--ssh-config", "Alt+B", "chain export"} {
+				if !strings.Contains(pages.String(), text) {
+					t.Fatal("chain help omitted an option or workflow", text, size)
+				}
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		}
+		if m.current().management.input.Value() != prefix+"--password" {
+			t.Fatal("chain help changed the draft")
+		}
+	}
+}
+
 func TestChainCommandPresentation(t *testing.T) {
 	for _, plain := range []bool{false, true} {
 		m := newFrame(launch.Info{Workspace: "/tmp/chain-ui"}, plain, launch.Options{})
@@ -132,9 +198,20 @@ func TestChainCommandPresentation(t *testing.T) {
 		if !strings.Contains(strings.Join(u.suggestions(), "\n"), "--user ") {
 			t.Fatal("chain completion omitted explicit --user")
 		}
-		u.input.SetValue("chain connect gateway 192.168.10.50 --user alice ")
-		if !strings.Contains(strings.Join(u.suggestions(), "\n"), "--password") {
-			t.Fatal("chain completion omitted --password")
+		for _, prefix := range []string{"chain ", "  chain ", "chain   "} {
+			line := prefix + "connect gateway 192.168.10.50 --user alice "
+			u.input.SetValue(line)
+			if !strings.Contains(strings.Join(u.suggestions(), "\n"), line+"--password") {
+				t.Fatal("chain completion omitted --password or changed the draft", line)
+			}
+		}
+		for _, line := range []string{"chain connect gateway host --user alice --key /tmp/key ", "chain connect gateway host --user alice --agent /tmp/agent ", "profile create gateway host --user alice ", "profile edit gateway host --user alice "} {
+			u.input.SetValue(line)
+			for _, suggestion := range u.suggestions() {
+				if suggestion == line+"--password" || (strings.HasPrefix(line, "profile ") && suggestion == line+"--prompt") {
+					t.Fatal("completion offered an unsupported authentication option", suggestion)
+				}
+			}
 		}
 		u.connections = []connection.State{{Name: "gateway", State: "connected", Generation: "owner", Proxy: connection.Tunnel{ID: "gateway/" + strings.Repeat("b", 32), State: "listening"}}}
 		u.tunnelError = ""
@@ -1853,7 +1930,7 @@ func TestSharedFormAndHelpRoles(t *testing.T) {
 	m.current().management.help = true
 	screen = capturePresentation(t, m, "help-command-colors")
 	bounds := image.Rect(23, 4, 137, 36)
-	for value, hex := range map[string]string{"NAVIGATION": blueColor, "connect NAME HOST USER": blueColor, "NAME": "#f9e2af", "F6 / Shift+F6": "#cba6f7"} {
+	for value, hex := range map[string]string{"NAVIGATION": blueColor, "connect NAME HOST --user USER": blueColor, "NAME": "#f9e2af", "F6 / Shift+F6": "#cba6f7"} {
 		assertTextRole(t, screen, bounds, value, hex)
 	}
 	if screen.CellAt(65, 7).Content != "M" || screen.CellAt(65, 8).Content != "O" {
