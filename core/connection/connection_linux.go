@@ -25,20 +25,22 @@ type Config struct {
 	identities     []string
 	identitiesOnly bool
 	authOptions    []string
-	Workspace      string `json:"workspace"`
-	Name           string `json:"name"`
-	Host           string `json:"host"`
-	User           string `json:"user"`
-	Port           int    `json:"port"`
-	ProxyPort      int    `json:"proxyPort,omitempty"`
-	Key            string `json:"key,omitempty"`
-	Agent          string `json:"agent,omitempty"`
-	AgentExplicit  bool   `json:"agentExplicit,omitempty"`
-	SSHConfig      string `json:"sshConfig,omitempty"`
-	Jump           string `json:"jump,omitempty"`
-	Prompt         bool   `json:"prompt,omitempty"`
-	PromptSocket   string `json:"promptSocket,omitempty"`
-	Review         string `json:"review,omitempty"`
+	Workspace      string  `json:"workspace"`
+	Name           string  `json:"name"`
+	Host           string  `json:"host"`
+	User           string  `json:"user"`
+	Port           int     `json:"port"`
+	ProxyPort      int     `json:"proxyPort,omitempty"`
+	Key            string  `json:"key,omitempty"`
+	Agent          string  `json:"agent,omitempty"`
+	AgentExplicit  bool    `json:"agentExplicit,omitempty"`
+	SSHConfig      string  `json:"sshConfig,omitempty"`
+	Jump           string  `json:"jump,omitempty"`
+	Prompt         bool    `json:"prompt,omitempty"`
+	PasswordAuth   bool    `json:"passwordAuth,omitempty"`
+	Password       *string `json:"-"` // Frontend memory only; never serialized or retained by an owner.
+	PromptSocket   string  `json:"promptSocket,omitempty"`
+	Review         string  `json:"review,omitempty"`
 }
 type State struct {
 	Proxy          Tunnel `json:"proxy,omitzero"`
@@ -91,6 +93,12 @@ func ShellCommand(ctx context.Context, workspace, name string) (*exec.Cmd, error
 }
 
 func (c Config) Validate() error {
+	if c.PasswordAuth && (c.Key != "" || (c.AgentExplicit && c.Agent != "")) {
+		return fmt.Errorf("choose --password or --key/--agent")
+	}
+	if c.Password != nil && (len(*c.Password) > 4096 || strings.ContainsAny(*c.Password, "\x00\r\n")) {
+		return fmt.Errorf("invalid password: at most 4096 bytes without NUL, CR or LF")
+	}
 	if _, e := launch.ConnectionPath(c.Workspace, c.Name); e != nil {
 		return e
 	}
@@ -187,6 +195,7 @@ type owner struct {
 	fileCancel      context.CancelFunc
 	fileCancelled   map[string]time.Time
 	tunnels         map[string]Tunnel
+	tunnelUse       sync.RWMutex
 	manager         *manager
 	prepared        []byte
 	profile         Profile
@@ -274,7 +283,7 @@ func (s *owner) connect(ctx context.Context) {
 		s.mu.Unlock()
 		return
 	}
-	s.master.Env = []string{"PATH=/usr/bin:/bin", "LANG=C", "SSH_ASKPASS_REQUIRE=force", "SSH_ASKPASS=" + executable, "BURROW_ASKPASS=1", "BURROW_PROMPT_SOCKET=" + s.config.PromptSocket}
+	s.master.Env = []string{"PATH=/usr/bin:/bin", "LANG=C", "SSH_ASKPASS_REQUIRE=force", "SSH_ASKPASS=" + executable, "BURROW_ASKPASS=1", "BURROW_PROMPT_SOCKET=" + s.config.PromptSocket, "BURROW_PASSWORD_PROMPT=" + s.config.User + "@" + s.config.Host + "'s password:"}
 	s.master.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM, Setpgid: true}
 	// Linux parent-death signals follow the spawning thread, not the Go process.
 	runtime.LockOSThread()
@@ -410,6 +419,8 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 	return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, e
 }
 func (s *owner) Close(reason string) (failure error) {
+	s.tunnelUse.Lock()
+	defer s.tunnelUse.Unlock()
 	s.mu.Lock()
 	state := s.state
 	s.mu.Unlock()

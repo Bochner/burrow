@@ -10,12 +10,12 @@ and can keep them running in the retained daemon or close them explicitly.
 General existing-daemon attachment is deferred.
 
 The project is implementing useful LazySSH SSH parity in five approved
-milestones: shells, file transfers, forwarding, saved connections, and user
-scripting through supported Hovel contracts. Linux amd64 is the initial operator
-platform. **MVP 1 (setup, profiles and connections) is complete: the production
-Linux package launches a verified Hovel workspace, manages saved connection
-collections and authenticates real retained OpenSSH connections. Interactive
-shells, forwarding, file workflows, scripts and skills follow in MVP 2 to 5.**
+milestones. Linux amd64 is the initial operator platform. **MVP 1–4 are
+implemented: verified workspace setup, saved connections, retained SSH,
+independent shells, forwarding, file transfers, commands and scripts, live
+output, local automation, Ubuntu Markdown reports, and Hovel chains. MVP 5
+(operator skills and final daily-use acceptance) remains.** Full LazySSH parity
+and a distribution release are not yet claimed.
 
 > **Authorized red-team emulation only.** Use Burrow only in environments you own
 > or are explicitly authorized to assess, with written scope and approvals. See
@@ -59,6 +59,13 @@ distribution release yet. See the
 [proposed Hovel compatibility convention](docs/research/hovel-daemon-compatibility-handoff.md)
 for the deferred upstream handoff and current development boundary.
 
+Continue with [commands and scripts](docs/site/src/content/spec/runs.html),
+[local automation](docs/site/src/content/spec/automation.html),
+[Ubuntu reports](docs/site/src/content/spec/reports.html), and
+[SSH and tunnel chains](docs/site/src/content/spec/chains.html). Chains can
+connect to an already-running SSH server or consume a selected live tunnel;
+server deployment and generic routing remain outside this implementation.
+
 The [prototype evidence guide](docs/research/prototype-evidence.md) indexes the
 preserved proofs, pins, results and commands that preceded the production code.
 
@@ -69,14 +76,16 @@ For human use, the Makefile offers shortcuts (GNU Make must be installed):
 ```sh
 make run                         # defaults to ~/burrow-test
 make run WORKSPACE=/absolute/path # choose another workspace
-make restart                     # confirm retiring the old manager, then reopen
+make restart                     # close connections and shells, then reopen without prompting
 make clean                       # build outputs only; not runtime cleanup
 make check                       # portable checks; no Docker required
 ```
 
-Quit existing Burrow frontends before `make restart`. Type `restart` at its
-prompt to end the selected workspace's retained Burrow manager and all its
-connections/shells. Saved settings, evidence and the Hovel daemon remain;
+Quit existing Burrow frontends before `make restart`. The shortcut passes
+`--yes`, ending the selected workspace's retained Burrow manager and all its
+connections/shells without another prompt. For a confirmation review, use
+`aspect burrow run -- --workspace /absolute/path restart` instead.
+Saved settings, evidence and the Hovel daemon remain;
 reconnect explicitly afterward to create an owner from the current build.
 Restart refuses ambiguous owners and unknown stale reservations rather than
 deleting them. `make clean` clears this checkout's Bazel build outputs, which
@@ -101,20 +110,52 @@ Useful commands:
 | Command | Description |
 | --- | --- |
 | `aspect burrow-check` | Run metadata, documentation, SDK, daemon reuse and production SSH checks; requires Docker and OpenSSH client tools. |
+| `aspect burrow-check preflight` | Run the required release gate, repeating only setup and terminal checks three times; no cached test results or failed-test retries. Hovel #86 diagnostics run separately. |
+| `aspect burrow-check preflight SUITE` | Run one GitHub partition: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow or runs. The Hovel follow-up proofs are excluded from these required partitions. |
+| `aspect burrow-check preflight hovel` | Run the advisory WAL-lock regression and two Docker-backed manager proofs tracked in #86. |
 | `aspect burrow-check ci` | Build production packages and proofs and run portable checks without Docker. |
 | `aspect burrow package` | Build the production Linux amd64 package. |
 | `aspect burrow check` | Run the production frontend, launch, terminal and profile checks. |
-| `aspect burrow ssh-check` | Run production connection acceptance against a digest-pinned disposable OpenSSH Docker server. |
+| `aspect burrow ssh-check` | Run all nine production SSH acceptance partitions against digest-pinned disposable OpenSSH Docker servers. |
 | `aspect build //:research` | Check the research metadata build graph; not SSH behavior or prose. |
 | `aspect burrow-site build` | Build the hermetic Astro documentation book. |
 | `aspect burrow-site check` | Validate generated pages, internal links, assets, and search. |
 | `aspect burrow-site stage` | Materialize the documentation site under `_site/`. |
 
-CI runs the portable `ci` gate, the Docker-backed SSH acceptance lab and site
-staging, then uploads the validated site. Pages promotes that exact artifact
-after successful main-branch CI. The historical transport proof keeps its own
+PR and main CI run ten independent `aspect burrow-check preflight SUITE`
+jobs, each capped at 15 minutes. The required `repository` check runs even
+after failure and succeeds only when every partition succeeds. Full and
+preflight gates allow at most two local test processes; preflight repeats
+setup and terminal checks three times, while the SIGTERM regression already
+exercises 40 cycles inside its unit check. Guided field transitions repeat three
+times inside lifecycle acceptance; each SSH partition runs once.
+A separate **Hovel compatibility** workflow runs the three `hovel-followup`
+targets and reports real failures without blocking the required release gate.
+This is a scoped exception for [#86](https://github.com/Bochner/burrow/issues/86);
+restore those checks to the required gate after an official Hovel fix is pinned
+and verified. `aspect burrow-check` remains the strict full gate, including
+these diagnostics. The portable job stages and uploads `docs-site`. Every job retains logs, XML,
+terminal captures and available phase/daemon logs as `test-results-SUITE` for
+14 days, including after failure. Pages promotes that exact site after
+successful main CI and checks that its commit is still current. Manual Pages
+dispatch also requires a successful Repository run for that exact main commit;
+it downloads the existing artifact without rebuilding or rerunning tests.
+Main requires an up-to-date PR and the passing `repository` check, including for
+admins; the owner separately authorizes merging. See the
+[development guide](docs/site/src/content/spec/development-guide.html) and
+[CI audit evidence](docs/research/mvp4-ci-preflight.md).
+The historical transport proof keeps its own
 host-binary prerequisites documented in
 [its README](core/prototype_transport/README.md).
+
+## Known upstream limitation
+
+The pinned official Hovel v0.4.2 runtime can crash while concurrent clients
+access its SQLite workspace. This can interrupt active connections and runs;
+reconnect remains manual. The release exception does not fix that defect.
+Evidence, a proposed upstream patch, and the required follow-up are tracked in
+[#86](https://github.com/Bochner/burrow/issues/86). Burrow does not ship a custom
+Hovel runtime.
 
 ## Repository layout
 
@@ -126,7 +167,8 @@ and agent instructions. Only areas with actual content are created.
 | `.aspect/` | Repository workflows backed by declared Bazel targets. |
 | `core/cmd/burrow/` | Production Linux frontend: CLI, Charm terminal interface and behavior checks. |
 | `core/launch/` | Verified pinned Hovel setup, workspace launch and daemon operations. |
-| `core/connection/` | The `burrow` Hovel module: retained OpenSSH connections, profiles and SSH config. |
+| `core/connection/` | The `burrow` Hovel module: connections, profiles, forwarding, files, retained runs and chains. |
+| `core/reports/` | Markdown report registration and verified reading through Hovel artifacts. |
 | `core/terminal/` | Embedded terminal host for the Hovel CLI tab. |
 | `core/prototype_*/` | Bounded historical proofs, preserved as evidence rather than production code. |
 | `docs/site/` | Astro Pages source, book content, shared components, and assets. |

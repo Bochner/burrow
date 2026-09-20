@@ -251,11 +251,29 @@ type authFinished struct {
 	err     error
 }
 type authAttempt struct {
+	chain     bool
+	hidden    bool
+	label     string
 	path      string
 	cancel    context.CancelFunc
 	ctx       context.Context
 	questions chan authQuestion
 	done      chan struct{}
+}
+
+func (a *authAttempt) ask(ctx context.Context, p connection.Prompt) ([]byte, error) {
+	q := authQuestion{p, make(chan []byte)}
+	select {
+	case a.questions <- q:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case answer := <-q.answer:
+		return answer, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func waitQuestion(a *authAttempt) tea.Cmd {
@@ -272,6 +290,9 @@ func (m *frame) startAuthentication(args []string) tea.Cmd {
 	path := m.active
 	ctx, cancel := context.WithTimeout(m.terminals.context, 2*time.Minute)
 	a := &authAttempt{path: path, ctx: ctx, cancel: cancel, questions: make(chan authQuestion), done: make(chan struct{})}
+	if c, _, err := connection.Parse(path, args[1:]); err == nil {
+		a.hidden = c.PasswordAuth
+	}
 	m.attempt = a
 	m.form = nil
 	m.modal = "auth"
@@ -280,20 +301,7 @@ func (m *frame) startAuthentication(args []string) tea.Cmd {
 	args = append([]string{}, args...)
 	return tea.Batch(m.authSpinner.Tick, waitQuestion(a), func() tea.Msg {
 		defer close(a.done)
-		result, e := connection.ExecutePrompt(ctx, path, args, func(ctx context.Context, p connection.Prompt) ([]byte, error) {
-			q := authQuestion{p, make(chan []byte)}
-			select {
-			case a.questions <- q:
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-			select {
-			case answer := <-q.answer:
-				return answer, nil
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		})
+		result, e := connection.ExecutePrompt(ctx, path, args, a.ask)
 		cancel()
 		return authFinished{a, result, e}
 	})
@@ -325,13 +333,15 @@ func (m *frame) dismissForm() {
 		m.sizeForm()
 		return
 	}
+	cancelAuth := m.modal == "auth"
 	m.form = nil
 	m.details = nil
 	m.downloadPlan = nil
 	m.downloadMode = nil
+	m.report = nil
 	m.inputEpoch++
 	m.modal = ""
-	if m.attempt != nil {
+	if m.attempt != nil && cancelAuth {
 		m.attempt.cancel()
 		m.current().management.output = "Cancelling authentication; waiting for verified cleanup…"
 	} else if m.commandArgs != nil {
@@ -411,12 +421,19 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		}
 		args := append(append([]string{}, m.commandArgs...), "--yes")
 		m.commandArgs = nil
-		if args[0] == "proxy" || args[0] == "profile" || args[0] == "tunnel" || args[0] == "tunc" || args[0] == "tund" {
+		if args[0] == "chain" || args[0] == "run" || args[0] == "proxy" || args[0] == "profile" || args[0] == "tunnel" || args[0] == "tunc" || args[0] == "tund" {
 			path := m.active
+			parent := m.terminals.context
 			m.modal = ""
+			if connection.RunWaits(args) {
+				m.current().management.output = "Run " + safe(args[2]) + ": waiting for completion and collecting output…"
+			}
 			return m.dispatch(path, func() tea.Msg {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				ctx, cancel := context.WithTimeout(parent, time.Minute)
 				defer cancel()
+				if connection.RunWaits(args) {
+					ctx = parent
+				}
 				result, e := connection.Execute(ctx, path, args)
 				return connectionResult{result, e}
 			})
@@ -437,6 +454,10 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		answer := promptAnswer(completed, m.question.prompt.Secret)
 		q, a := m.question, m.attempt
 		m.question = nil
+		if a.chain {
+			m.modal = ""
+			m.inputEpoch++
+		}
 		return tea.Batch(m.authSpinner.Tick, waitQuestion(a), func() tea.Msg {
 			select {
 			case q.answer <- answer: // Copy belongs to the private transport until it returns.
@@ -481,15 +502,19 @@ type commandReview struct {
 }
 
 func (m *frame) reviewCommand(args []string) tea.Cmd {
-	if m.attempt != nil {
-		return m.updateManagement(m.active, connectionResult{nil, fmt.Errorf("authentication cleanup is still pending; wait before connecting again")})
+	connecting := args[0] == "connect" || args[0] == "reconnect" || (len(args) > 1 && (args[0] == "profile" || args[0] == "chain") && args[1] == "connect")
+	if m.attempt != nil && connecting {
+		return m.updateManagement(m.active, connectionResult{nil, fmt.Errorf("another authentication request is pending; Ctrl+C in Hovel cancels a staged interactive chain; wait for cleanup before connecting again")})
+	}
+	if args[0] == "chain" && (args[1] == "connect" || args[1] == "export") {
+		return m.stageChain(args)
 	}
 	if len(args) == 1 {
 		m.commandArgs = args
 		m.details = &connectDetails{}
 		return m.setForm("connect", "Connect · click a field or use ↑↓ / Tab", detailsForm(m.active, m.details))
 	}
-	if args[0] != "proxy" && args[0] != "close" && args[0] != "profile" && args[0] != "tunnel" && args[0] != "tunc" && args[0] != "tund" {
+	if args[0] != "chain" && args[0] != "run" && args[0] != "proxy" && args[0] != "close" && args[0] != "profile" && args[0] != "tunnel" && args[0] != "tunc" && args[0] != "tund" {
 		_, yes, e := connection.Parse(m.active, args[1:])
 		if e != nil {
 			m.dismissForm()
@@ -500,6 +525,7 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 		}
 	}
 	path := m.active
+	parent := m.terminals.context
 	m.commandArgs = args
 	m.reviewText = ""
 	m.inputEpoch++
@@ -507,7 +533,7 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 	m.modal = "review"
 	m.formTitle = "Resolving exact target…"
 	return m.dispatch(path, func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		ctx, cancel := context.WithTimeout(parent, time.Minute)
 		defer cancel()
 		r := commandReview{epoch: epoch, args: args}
 		if args[0] == "profile" && args[1] == "connect" {
@@ -534,12 +560,18 @@ func (m *frame) reviewCommand(args []string) tea.Cmd {
 			r.target, r.review, r.err = connection.ReviewClose(ctx, path, args[1])
 			return r
 		}
+		if connection.RunWaits(args) {
+			ctx = parent
+		}
 		result, e := connection.Execute(ctx, path, args)
 		r.err = e
 		if e == nil {
 			r.result = result
 			if details, ok := result.(map[string]string); ok {
 				r.review = details["review"]
+				if args[0] == "run" && (args[1] == "now" || args[1] == "survey") && details["id"] != "" {
+					r.args = []string{"run", "launch", details["id"], "--collect"}
+				}
 				if details["digest"] != "" {
 					r.args = append(r.args, "--review", details["digest"])
 				}

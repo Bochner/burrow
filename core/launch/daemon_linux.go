@@ -173,7 +173,15 @@ func inspect(ctx context.Context, workspace string, pid int) (record, Info, erro
 		return empty, info, e
 	}
 	poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
-	if _, e = unix.Poll(poll, 0); e != nil {
+	// Go's preemption signal can interrupt even a zero-timeout poll. Retry
+	// that syscall without restarting identity verification or any operation.
+	for {
+		_, e = unix.Poll(poll, 0)
+		if e != unix.EINTR || ctx.Err() != nil {
+			break
+		}
+	}
+	if e != nil {
 		return empty, info, e
 	}
 	if before != after || poll[0].Revents != 0 {

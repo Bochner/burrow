@@ -96,6 +96,13 @@ with tempfile.TemporaryDirectory(prefix="bf-") as scratch:
         hv("chain", "config", "set", "command", "lls upload 'sub dir'")
         result = hv("throw", "--now", "--allow-dangerous", "--json")
         assert "α.txt" in result or "\\u03b1.txt" in result, result
+        assert run("run", "list") == []
+        run("run", "prepare", "missing", "--", "true", ok=False)
+        assert not list(workspace.glob(".burrow-run-*"))
+        hv("chain", "config", "set", "command", "run list")
+        result = json.loads(hv("throw", "--now", "--allow-dangerous", "--json"))
+        assert result["results"][0]["state"] == "succeeded", result
+        assert result["results"][0]["summary"] == "[]", result
     finally:
         os.kill(info["pid"], signal.SIGTERM)
 print("PASS persistent file roots and contained local navigation")

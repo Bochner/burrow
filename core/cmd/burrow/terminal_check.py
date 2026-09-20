@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
     def screen():
         return subprocess.run([decoder, *map(str, dimensions)], input=output, capture_output=True, timeout=3, check=True).stdout.decode()
 
-    def wait(needle, prompt=False):
+    def wait(needle, prompt=False, absent=None):
         deadline = time.monotonic() + 12
         stable, since = None, time.monotonic()
         while time.monotonic() < deadline:
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
                 stable, since = center, time.monotonic()
             center = [line for line in center if "h0v3l" in line]
             ready = center and re.search(r"h0v3l.*>\s*$", center[-1])
-            if needle in view and (not prompt or ready) and time.monotonic() - since > .25:
+            if needle in view and (absent is None or absent not in view) and (not prompt or ready) and time.monotonic() - since > .25:
                 return view
             assert terminal.poll() is None, (terminal.returncode, view)
         Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"], "terminal-debug").write_bytes(output)
@@ -113,8 +113,23 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         assert re.search(rb"\x1b\[\?100[0236]h", output), "panel selection needs mouse events"
         assert b"\x1b]52;" not in output, "unexpected clipboard operation"
         send("management-draft")
+        send(b"\x0c")
+        wait("No collected command output")
+        for width, height in ((200, 50), (120, 30), (80, 24), (160, 40)):
+            while select.select([master], [], [], .05)[0]:
+                output.extend(os.read(master, 65536))
+            output.clear()
+            dimensions[:] = [width, height]
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
+            os.kill(terminal.pid, signal.SIGWINCH)
+            capture = wait("Collected output")
+            Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"], f"results-empty-{width}x{height}.txt").write_text(capture)
+        send(b"\t")
+        wait("Operator notes")
+        send(b"\x0c")
+        wait("management-draft")
         click(39, 1)
-        wait("h0v3l>")
+        wait("h0v3l")
         view = wait("modules: 1")
         expected = "\n".join(line[28:126].rstrip() for line in view.splitlines()[3:6])
         send(b"\x1b[<0;29;4M\x1b[<32;160;6M\x1b[<0;160;6m")
@@ -139,7 +154,9 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         click(2, 20)
         wait("Workspace name")
         send(b.name + "\t" + str(b.parent) + "\r")
-        wait(str(b))  # active workspace metadata; its SSH status is disconnected
+        # Submission removes the fields, but the pending NEW WORKSPACE dialog
+        # still shows the destination and ignores tab clicks until launch ends.
+        wait(str(b), absent="NEW WORKSPACE")
         click(39, 1)
         wait("h0v3l>")
         command("op create embedded-b", "Operation selected: embedded-b")
@@ -213,6 +230,25 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         send(b"\x04")  # Hovel's actual EOF path, not a Burrow quit binding.
         wait("CLI: exited")
         send(b"\x12")  # Ctrl+R explicitly restarts only the exited CLI.
+        wait("h0v3l", True)
+        send(b"\x1bb\x15")
+        before_plans = json.loads(cli(a, "throw", "list", "--json"))
+        send("chain connect staged 192.0.2.1 --user tester --key /tmp/test-key\r")
+        wait("--allow-dangerous")
+        staged = list(a.glob("connect-staged-*.chain.json"))
+        assert len(staged) == 1 and staged[0].stat().st_mode & 0o777 == 0o600, staged
+        request = json.loads(json.loads(staged[0].read_text())["spec"]["config"]["request"])
+        assert request["settings"]["user"] == "tester", request
+        assert json.loads(cli(a, "throw", "list", "--json")) == before_plans, "handoff submitted without Enter"
+        send(b"\x03")  # discard the prepared command, without executing it
+        wait("h0v3l", True)
+        send("unfinished-draft")
+        wait("unfinished-draft")
+        send(b"\x1bb")
+        send("chain connect second 192.0.2.2 --user tester\r")
+        wait("unfinished-draft")
+        assert len(list(a.glob("connect-second-*.chain.json"))) == 1
+        send(b"\x03")
         wait("h0v3l", True)
         # Daemon loss must not start a replacement or silently retry a tab.
         os.kill(info_a["pid"], signal.SIGTERM)

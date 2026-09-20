@@ -137,7 +137,7 @@ func refreshProfiles(workspace string) tea.Cmd {
 }
 func (m ui) suggestions() []string {
 	if m.files != nil {
-		values := []string{"get ", "mget ", "put ", "transfers", "transfer-cancel ", "downloads", "download-cancel ", "ls ", "cd ", "tree ", "pwd", "local", "local download ", "local upload ", "lcd ", "lcd upload ", "lls ", "lls upload ", "history", "back", "help", "quit"}
+		values := []string{"reports", "report ", "get ", "mget ", "put ", "transfers", "transfer-cancel ", "downloads", "download-cancel ", "ls ", "cd ", "tree ", "pwd", "local", "local download ", "local upload ", "lcd ", "lcd upload ", "lls ", "lls upload ", "history", "back", "help", "quit"}
 		for _, d := range m.downloads.Records {
 			if d.State == "running" {
 				values = append(values, "transfer-cancel "+d.ID)
@@ -147,6 +147,24 @@ func (m ui) suggestions() []string {
 	}
 	line := m.input.Value()
 	values := connection.CommandSuggestions(line, m.connections)
+	values = append(values, "chain select ", "chain http ", "chain export ", "chain connect ")
+	values = append(values, "reports", "report ", "run list", "run prepare ", "run now ", "run survey ")
+	for _, s := range m.connections {
+		if s.State == "connected" && s.Generation != "" {
+			values = append(values, "chain select "+s.Name)
+			if s.Proxy.ID != "" && s.Proxy.State == "listening" {
+				values = append(values, "chain http "+s.Name+" "+s.Proxy.ID+" http://", "chain export "+s.Name+" "+s.Proxy.ID+" http://")
+			}
+			values = append(values, "run prepare "+s.Name+" -- ", "run now "+s.Name+" -- ", "run survey "+s.Name+" --os ubuntu")
+		}
+	}
+	for _, r := range m.runs {
+		for _, verb := range []string{"inspect", "launch", "cancel", "collect", "close"} {
+			values = append(values, "run "+verb+" "+r.ID)
+		}
+		values = append(values, "run output "+r.ID+" stdout 0", "run output "+r.ID+" stderr 0")
+		values = append(values, "run follow "+r.ID, "run follow "+r.ID+" stdout", "run follow "+r.ID+" stderr")
+	}
 	values = append(values, "scp ", "local", "lls ", "lcd ")
 	for _, s := range m.connections {
 		if s.State == "connected" {
@@ -156,6 +174,9 @@ func (m ui) suggestions() []string {
 	if m.tunnelError == "" {
 		for _, t := range m.tunnels {
 			values = append(values, "tunnel remove "+t.ID, "tunnel check "+t.ID, "tund "+t.ID)
+			if t.State == "listening" {
+				values = append(values, "chain http "+t.Connection+" "+t.ID+" http://"+t.Destination+"/", "chain export "+t.Connection+" "+t.ID+" http://"+t.Destination+"/")
+			}
 		}
 	}
 	for _, id := range m.shellIDs {
@@ -164,7 +185,7 @@ func (m ui) suggestions() []string {
 	if strings.HasPrefix(line, "profile create ") || strings.HasPrefix(line, "profile edit ") {
 		sub := strings.TrimPrefix(strings.TrimPrefix(line, "profile create "), "profile edit ")
 		for _, value := range connection.CommandSuggestions("connect "+sub, nil) {
-			if strings.HasPrefix(value, "connect ") {
+			if strings.HasPrefix(value, "connect ") && !strings.HasSuffix(value, "--password") && !strings.HasSuffix(value, "--prompt") {
 				values = append(values, strings.TrimSuffix(line, sub)+strings.TrimPrefix(value, "connect "))
 			}
 		}
@@ -187,6 +208,16 @@ func (m ui) suggestions() []string {
 }
 
 var completionDescriptions = map[string]string{
+	"chain select":  "CONNECTION · authoritative live forwarding identities",
+	"chain http":    "CONNECTION TUNNEL_ID URL · review HTTP and collect result",
+	"chain export":  "CONNECTION TUNNEL_ID URL · stage chain and prepare Hovel throw",
+	"chain connect": "Stage a new SSH connection and open Hovel",
+	"run follow":    "ID [stdout|stderr] [OFFSET] · independent live viewer",
+	"run survey":    "CONNECTION --os ubuntu · review, run and save Markdown report",
+	"reports":       "Browse saved Markdown reports", "report": "ID · open a saved report",
+	"--local":  "Run the tool on the daemon host with selected connection context",
+	"--script": "Local script inside the workspace upload root", "--mode": "Explicit stream, inline or remote stage semantics", "--interpreter": "Absolute interpreter path on the selected execution host", "--stdin": "Independent binary input from the upload root", "--keep": "Keep explicitly staged files", "--timeout": "Execution deadline, such as 30s or 5m", "--budget": "Positive output byte budget per stream",
+	"run now": "CONNECTION [--local] -- COMMAND [ARG...] · review, launch, wait and collect", "run prepare": "CONNECTION -- COMMAND [ARG...] · no execution", "run launch": "Launch once; --collect waits and saves output", "run list": "List retained local/remote runs", "run inspect": "Local/remote status, capture and cleanup", "run output": "Read stdout/stderr at a byte offset", "run cancel": "Request ordinary process-group termination", "run collect": "Register output as Hovel evidence", "run close": "Drop working output; preserve collected evidence",
 	"proxy create": "CONNECTION LISTEN · port or IP:port", "proxy inspect": "Verify SOCKS endpoint and owner identity", "proxy remove": "Remove SOCKS only; preserve connection/L/R",
 	"tunnel create": "CONNECTION forward|reverse LISTEN HOST PORT", "tunc": "CONNECTION l|r LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected listener", "tund": "Remove selected listener", "tunnel check": "Test tunnel connectivity (destination greeting)",
 	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",
@@ -197,8 +228,9 @@ var completionDescriptions = map[string]string{
 	"profile select": "Inspect saved settings", "profile delete": "Delete saved settings only", "profile connect": "Connect saved SSH profile",
 	"profile load": "Open existing collection", "profile collection": "Create/open collection", "profile backup": "Back up saved collection",
 	"-ip": "SSH host or config alias", "-port": "SSH port", "-user": "SSH username", "-socket": "Connection name", "-ssh-key": "Private-key file path",
+	"--user": "SSH username", "--password": "Password only; bare opens hidden entry, optional value supplies it",
 	"--key": "Private-key file path", "--agent": "SSH agent socket", "--port": "SSH port", "--ssh-config": "SSH config file",
-	"--jump": "SSH jump host", "--prompt": "Hidden authentication prompt", "--yes": "Confirm reviewed connection",
+	"--jump": "SSH jump host", "--prompt": "Interactive password/key passphrase entry", "--yes": "Confirm reviewed connection",
 	"-proxy": "Local SOCKS proxy (default 9050)",
 }
 
@@ -211,14 +243,20 @@ func completionDescription(value string) string {
 		return description
 	}
 	command := words[0]
-	if (command == "profile" || command == "tunnel" || command == "proxy") && len(words) > 1 {
+	if (command == "chain" || command == "run" || command == "profile" || command == "tunnel" || command == "proxy") && len(words) > 1 {
 		command += " " + words[1]
 	}
 	return completionDescriptions[command]
 }
 
-func (m ui) forwardingGuidance() string {
+func (m ui) commandGuidance() string {
 	words := strings.Fields(safe(m.input.Value()))
+	if len(words) >= 2 && words[0] == "chain" && words[1] == "connect" {
+		return m.syntax("chain connect NAME HOST --user USER [options]", false) + "\n" +
+			m.paint(secondary, "NAME: your connection label (example: target)") + "\n" +
+			m.paint(accent, "Example (replace host and user):") + "\n" +
+			m.syntax("chain connect target server.example --user alice --password", false)
+	}
 	direction := 2
 	if len(words) >= 2 && words[0] == "tunnel" && words[1] == "create" {
 		direction = 3
@@ -270,6 +308,9 @@ func (m ui) savedConnections(w int) string {
 			if p.Key != "" {
 				auth = p.Key + " + " + auth
 			}
+		}
+		if p.PasswordAuth {
+			auth = "Password"
 		}
 		proxy := "—"
 		if p.ProxyPort != 0 {

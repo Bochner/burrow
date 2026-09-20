@@ -30,6 +30,17 @@ The book publishes only explicit `docs/site` content and assets, not the full
 private research directory or local worktrees. This attribution applies to
 adapted upstream material; it does not select a license for all Burrow code.
 
+## Chain walkthrough diagrams (#62)
+
+The chain walkthrough reuses the inherited `.diagram`, `.flow-diagram`,
+`.flow-step` and semantic state styles without modifying the upstream stylesheet.
+Its original Burrow content follows the numbered workflow and separate-interface
+presentation in Hovel's [chains chapter](https://github.com/vibepwners/hovel/blob/a4cbfdf7769a9551695088c11061e3cabc368e07/docs/site/src/content/spec/chains-runs.html),
+inspected 2026-09-19. Hovel's corresponding VHS tape and declared demo renderer
+were also inspected: they produce terminal recordings separately from the HTML
+diagrams. No Hovel recording is presented as a Burrow execution, and no VHS,
+Chromium, ttyd or ffmpeg runtime dependency is added to the book.
+
 ## Embedded terminal forms (#69)
 
 Huh `charm.land/huh/v2 v2.0.3` (MIT), verified as the latest stable release on

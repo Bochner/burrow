@@ -16,12 +16,14 @@ import (
 )
 
 var toggleLogs = key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("Ctrl+N", "logs / return"))
+var toggleCollected = key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("Ctrl+L", "collected output and activity / return"))
 
 type logsRequested struct{}
 type logView struct {
 	tab, focus string
 	shell      *cliTab
 	file       *ui
+	collected  bool
 }
 
 func (w *workspaceView) restoreLogs(tab *cliTab) {
@@ -42,9 +44,13 @@ func (w *workspaceView) restoreLogs(tab *cliTab) {
 }
 
 func (m *frame) openLogs() tea.Cmd {
+	return m.openLogView(false)
+}
+
+func (m *frame) openLogView(collected bool) tea.Cmd {
 	w := m.current()
 	for _, tab := range w.shells {
-		if tab.logs != nil {
+		if tab.logs != nil && tab.logs.collected == collected {
 			if w.shell != tab || w.tab != "shell" {
 				m.resumeShell(tab)
 				return nil
@@ -60,7 +66,10 @@ func (m *frame) openLogs() tea.Cmd {
 		return nil
 	}
 	tab := &cliTab{id: fmt.Sprint(len(w.shells) + 1), connection: "Logs", pending: true,
-		logs: &logView{w.tab, w.focus, w.shell, w.file}}
+		logs: &logView{tab: w.tab, focus: w.focus, shell: w.shell, file: w.file, collected: collected}}
+	if collected {
+		tab.connection = "Results"
+	}
 	w.shells = append(w.shells, tab)
 	m.resumeShell(tab)
 	workspace, bounds, lifetime, plain := m.active, m.terminalBounds(), m.terminals, m.noColor
@@ -68,7 +77,7 @@ func (m *frame) openLogs() tea.Cmd {
 		if !lifetime.begin() {
 			return cliOpened{tab: tab, err: context.Canceled}
 		}
-		cmd, directory, err := prepareLogViewer(workspace, plain)
+		cmd, directory, err := prepareLogViewer(lifetime.context, workspace, plain, collected)
 		var host *ptyhost.Host
 		if err == nil {
 			host, err = ptyhost.StartWithScrollback(lifetime.context, cmd, bounds.Dx(), bounds.Dy(), 1000)
@@ -83,7 +92,7 @@ func (m *frame) openLogs() tea.Cmd {
 	})
 }
 
-func prepareLogViewer(workspace string, plain bool) (*exec.Cmd, string, error) {
+func prepareLogViewer(ctx context.Context, workspace string, plain, collected bool) (*exec.Cmd, string, error) {
 	vim, err := exec.LookPath("vim")
 	if err != nil {
 		return nil, "", fmt.Errorf("Vim is not installed; install Vim to view logs")
@@ -92,9 +101,57 @@ func prepareLogViewer(workspace string, plain bool) (*exec.Cmd, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	err = writeActivitySnapshot(workspace, dir)
+	if err != nil {
+		if !collected {
+			return nil, dir, err
+		}
+		if err = os.WriteFile(filepath.Join(dir, "notes.log"), []byte("Activity log\nUNAVAILABLE: "+safe(err.Error())+"\n"), 0600); err != nil {
+			return nil, dir, err
+		}
+	}
+	config := logVimrc(plain)
+	files := []string{filepath.Join(dir, "notes.log")}
+	if collected {
+		if err = os.Rename(files[0], filepath.Join(dir, "Activity log")); err != nil {
+			return nil, dir, err
+		}
+		f, err := os.OpenFile(filepath.Join(dir, "Collected output"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			return nil, dir, err
+		}
+		if err = writeCollectedNotes(ctx, workspace, f); err != nil {
+			_, err = fmt.Fprintf(f, "\nUNAVAILABLE: %s\n", safe(err.Error()))
+		}
+		closeErr := f.Close()
+		if err != nil {
+			return nil, dir, err
+		}
+		if closeErr != nil {
+			return nil, dir, closeErr
+		}
+		config += "set showtabline=2 nonumber wrap linebreak breakindent\nset statusline=Burrow\\ results\\ ·\\ Tab\\ switch\\ ·\\ /\\ search\\ ·\\ Ctrl+L/:qa\\ return\nnnoremap <Tab> gt\nnnoremap <S-Tab> gT\n"
+		if !plain {
+			config += "highlight! link TabLine Comment\nhighlight! link TabLineSel burrowName\nhighlight! link TabLineFill Normal\n"
+		}
+		files = []string{filepath.Join(dir, "Collected output"), filepath.Join(dir, "Activity log")}
+	}
+	if err = os.WriteFile(filepath.Join(dir, "vimrc"), []byte(config), 0600); err != nil {
+		return nil, dir, err
+	}
+	args := []string{"-N", "-M", "-u", filepath.Join(dir, "vimrc"), "-i", "NONE", "-n"}
+	if collected {
+		args = append(args, "-p")
+	}
+	cmd := exec.Command(vim, append(append(args, "--"), files...)...)
+	cmd.Dir = dir
+	return cmd, dir, nil
+}
+
+func writeActivitySnapshot(workspace, dir string) error {
 	f, err := os.OpenFile(filepath.Join(dir, "operations.log"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
-		return nil, dir, err
+		return err
 	}
 	err = launch.AuditSnapshot(workspace, f)
 	closeErr := f.Close()
@@ -102,16 +159,16 @@ func prepareLogViewer(workspace string, plain bool) (*exec.Cmd, string, error) {
 		err = closeErr
 	}
 	if err != nil {
-		return nil, dir, fmt.Errorf("log snapshot unavailable: %w", err)
+		return fmt.Errorf("log snapshot unavailable: %w", err)
 	}
 	raw, err := os.Open(filepath.Join(dir, "operations.log"))
 	if err != nil {
-		return nil, dir, err
+		return err
 	}
 	notes, err := os.OpenFile(filepath.Join(dir, "notes.log"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		raw.Close()
-		return nil, dir, err
+		return err
 	}
 	err = writeLogNotes(raw, notes, workspace)
 	raw.Close()
@@ -119,15 +176,7 @@ func prepareLogViewer(workspace string, plain bool) (*exec.Cmd, string, error) {
 	if err == nil {
 		err = closeErr
 	}
-	if err != nil {
-		return nil, dir, err
-	}
-	if err = os.WriteFile(filepath.Join(dir, "vimrc"), []byte(logVimrc(plain)), 0600); err != nil {
-		return nil, dir, err
-	}
-	cmd := exec.Command(vim, "-N", "-M", "-u", filepath.Join(dir, "vimrc"), "-i", "NONE", "-n", "--", filepath.Join(dir, "notes.log"))
-	cmd.Dir = dir
-	return cmd, dir, nil
+	return err
 }
 
 func logVimrc(plain bool) string {
@@ -138,31 +187,53 @@ func logVimrc(plain bool) string {
 		return b.String()
 	}
 	b.WriteString(`
+function! BurrowLogSyntax()
 syntax clear
 syntax case ignore
 syntax match burrowCommand / -- \zs.*/
-syntax match burrowLabel /^  \w\+:/
+syntax match burrowLabel /^  [A-Za-z ][A-Za-z ]*:/
+syntax match burrowSection /^\%(Collected output\|Activity log\|STDOUT\|STDERR\)\>/
 syntax match burrowNumber /\<\d\+\%(\.\d\+\)\?\>/
-syntax match burrowSuccess /\<\%(complete\|completed\|connected\|removed\|closed\)\>/
-syntax match burrowFailure /\<\%(failed\|refused\|lost\|cancelled\|incomplete\|unverified\)\>/
-syntax match burrowPending /\<\%(attempt\|running\|connecting\|unknown\|partial\)\>/
-syntax match burrowNotePath /\%(^  \%(Saved\|Destination\|Partial\): \)\@<=.*/
+syntax match burrowSuccess /\<\%(complete\|completed\|connected\|removed\|closed\|succeeded\|ordinary-group-terminated\)\>/
+syntax match burrowFailure /\<\%(failed\|refused\|lost\|cancelled\|incomplete\|unverified\|unavailable\|timed out\)\>/
+syntax match burrowPending /\<\%(attempt\|running\|connecting\|unknown\|partial\|unconfirmed\|kept\|preview truncated\)\>/
+syntax match burrowNotePath /\%(^  \%(Saved\|Destination\|Partial\|File\|Script\|Staged script\|Program stdin\): \)\@<=.*/
+syntax match burrowScriptMode /\%(^  \%(Mode\|Execution\): \)\@<=.*/
+syntax match burrowInterpreter /\%(^  Interpreter: \)\@<=.*/
+syntax match burrowNumber /\%(^  Timeout: \)\@<=.*/
 syntax match burrowNoteUser /\<[[:alnum:]_.-]\+\ze@/
 syntax match burrowNoteHost /@\zs[[:alnum:].-]\+/
 syntax match burrowNoteName /\%(^  Target: \)\@<=[^ (]\+/
 syntax match burrowNotePort /:\zs\d\+\>/
 syntax match burrowTimestamp /^\d\{4}-\d\d-\d\dT\S\+\ze -- /
+syntax match burrowRunID /\%(^  \%(Run\|Collection\): \)\@<=.*/
+syntax match burrowRunCommand /\%(^  Command: \)\@<=\S\+/
+syntax match burrowRunFlag /\s\zs--\?[[:alnum:]-]\+/
+syntax region burrowRunString start=/'/ end=/'/ oneline
+syntax match burrowRunError /\%(^  \%(Capture\|Audit\|Cleanup\) error: \)\@<=.*/
+syntax match burrowPending /^  PREVIEW TRUNCATED:/
+highlight link burrowSection Statement
+highlight link burrowRunID burrowName
+highlight link burrowRunCommand Statement
+highlight link burrowRunFlag Statement
+highlight link burrowRunString String
+highlight link burrowRunError Error
 highlight link burrowCommand Statement
 highlight link burrowLabel Special
 highlight link burrowNumber Number
 highlight link burrowSuccess String
 highlight link burrowFailure Error
 highlight link burrowNotePath Comment
+highlight link burrowScriptMode burrowType
+highlight link burrowInterpreter burrowKey
 highlight link burrowNoteUser String
 highlight link burrowNoteHost burrowHost
 highlight link burrowNoteName burrowName
 highlight link burrowNotePort burrowPort
 highlight link burrowPending burrowPort
+endfunction
+autocmd BufEnter * call BurrowLogSyntax()
+call BurrowLogSyntax()
 `)
 	for _, role := range []struct {
 		name     string
@@ -170,6 +241,7 @@ highlight link burrowPending burrowPort
 		fallback int
 	}{
 		{"burrowHost", hostStyle, 218}, {"burrowName", accent, 183}, {"burrowPort", warningStyle, 229}, {"burrowType", keywordStyle, 183},
+		{"burrowKey", infoStyle, 116},
 	} {
 		r, g, bl, _ := role.style.GetForeground().RGBA()
 		fmt.Fprintf(&b, "highlight %s guifg=#%02x%02x%02x guibg=%s ctermfg=%d ctermbg=235\n", role.name, r>>8, g>>8, bl>>8, baseColor, role.fallback)

@@ -87,6 +87,11 @@ func (c Config) resolve(ctx context.Context) (Config, error) {
 		}
 	}
 	c.identities = nil
+	if c.PasswordAuth {
+		c.Agent = ""
+		c.authOptions = []string{"PasswordAuthentication yes", "PubkeyAuthentication no", "PreferredAuthentications password"}
+		return c, c.Validate()
+	}
 	if c.Key != "" {
 		identities = []string{c.Key}
 	}
@@ -185,7 +190,13 @@ func (original Config) generated(ctx context.Context) (Config, []byte, error) {
 		}
 		fmt.Fprintf(&b, " IdentityAgent %s\n", strconv.Quote(agent))
 		if i+1 < len(hops) {
-			fmt.Fprintf(&b, " ProxyCommand /usr/bin/ssh -F %s -W %s burrow-hop-%d\n", shellQuote(configPath(c)), shellQuote(fmt.Sprintf("[%s]:%d", hop.Host, hop.Port)), i+1)
+			// Jump descendants must never receive an automatically supplied target password,
+			// even when another hop happens to use the same username and hostname.
+			b.WriteString(" ProxyCommand ")
+			if c.PasswordAuth {
+				b.WriteString("/usr/bin/env BURROW_PASSWORD_PROMPT= ")
+			}
+			fmt.Fprintf(&b, "/usr/bin/ssh -F %s -W %s burrow-hop-%d\n", shellQuote(configPath(c)), shellQuote(fmt.Sprintf("[%s]:%d", hop.Host, hop.Port)), i+1)
 		}
 	}
 	b.WriteString("Host *\n StrictHostKeyChecking no\n UserKnownHostsFile /dev/null\n GlobalKnownHostsFile /dev/null\n UpdateHostKeys no\n CheckHostIP no\n HashKnownHosts no\n ControlMaster no\n ControlPersist no\n ClearAllForwardings yes\n ForwardAgent no\n PermitLocalCommand no\n RequestTTY no\n ConnectTimeout 8\n ServerAliveInterval 2\n ServerAliveCountMax 2\n NumberOfPasswordPrompts 3\n PreferredAuthentications publickey,password\n")
@@ -229,5 +240,8 @@ func (c Config) review(ctx context.Context, verb string) (string, string, error)
 		proxy = fmt.Sprintf("SOCKS4/5 · 127.0.0.1:%d", c.ProxyPort)
 	}
 	text := fmt.Sprintf("SSH command:\n%s\n\n%s %s\nEndpoint: %s@%s:%d\nSOCKS proxy: %s\nJump: %s\nKey: %s\nAgent: %s\n\nHost trust: verification disabled; known-host writes discarded.", strings.Join(args, " "), verb, c.Name, resolved.User, resolved.Host, resolved.Port, proxy, displaySetting(resolved.Jump, "none"), displaySetting(c.Key, "SSH config/default identities"), displaySetting(resolved.Agent, "none"))
+	if c.PasswordAuth {
+		text += "\nAuthentication: password only (private frontend)"
+	}
 	return text, string(config), nil
 }

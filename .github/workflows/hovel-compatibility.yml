@@ -1,0 +1,44 @@
+name: Hovel compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hovel-compatibility-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  hovel:
+    # #86: advisory for this release; restore these tests to the required gate
+    # after upgrading the official runtime and validating the upstream fix.
+    name: Hovel follow-ups (advisory, issue 86)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9
+        with:
+          launcher-version: "2026.33.3"
+          disk-cache: burrow-portable
+          repository-cache: burrow-portable
+      - run: aspect burrow-check preflight hovel
+      - name: Preserve upstream diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-hovel
+          path: |
+            bazel-testlogs/**/test.log
+            bazel-testlogs/**/test.xml
+            bazel-testlogs/**/test.outputs/**
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

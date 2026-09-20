@@ -1,4 +1,4 @@
-# BUILD overlay only; upstream Go sources remain unchanged at c461ba282a8a.
+# BUILD overlay only; upstream Go sources remain unchanged at a4cbfdf7769a.
 load("@rules_go//go:def.bzl", "go_library")
 exports_files(["LICENSE"])
 go_library(

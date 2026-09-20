@@ -23,6 +23,15 @@ go_test(
 )
 
 go_test(
+    name = "hovel_wal_test",
+    srcs = ["online_test.go"],
+    deps = [":launch"],
+    args = ["-wheel", "$(location @hovel_linux_wheel//file)", "-check-wal-lock"],
+    data = ["@hovel_linux_wheel//file"],
+    tags = ["no-sandbox", "hovel-followup"],
+)
+
+go_test(
  name = "audit_test",
  srcs = ["audit_test.go"],
  tags = ["no-sandbox"],

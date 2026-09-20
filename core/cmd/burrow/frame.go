@@ -30,6 +30,9 @@ var openNavigation = key.NewBinding(key.WithKeys("alt+w"))
 const freshFor = 8 * time.Second
 
 type workspaceView struct {
+	followViews           []*ui
+	followSaved           map[string]*ui
+	follow                *ui
 	downloadTimer         timer.Model
 	fileViews             []*ui
 	file                  *ui
@@ -48,6 +51,8 @@ type workspaceView struct {
 // This is presentation state only. All resource snapshots come from Hovel.
 // Explicit paths live for this frontend session; no directory scanning or registry.
 type frame struct {
+	report                           *reportView
+	initialFollow                    []string
 	downloadPlan                     *connection.DownloadPlan
 	downloadMode                     *fileMode
 	contextMenu                      *resourceMenu
@@ -187,6 +192,10 @@ func (m *frame) resize() {
 			u.width, u.height = w.management.width, w.management.height
 			u.input.SetWidth(max(1, u.width-4))
 		}
+		for _, u := range w.followSaved {
+			u.width, u.height = w.management.width, w.management.height
+			u.sizeFollow()
+		}
 		for _, tab := range w.terminals() {
 			if tab != nil && tab.host != nil {
 				r := m.terminalBounds()
@@ -285,8 +294,26 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	switch v := msg.(type) {
 	case tea.KeyPressMsg:
 		u = w.activeUI()
+		if u.files == nil && u.follow == nil && key.Matches(v, enter) && !u.busy {
+			args, err := connection.Split(u.input.Value())
+			if err == nil && len(args) > 1 && args[0] == "run" && args[1] == "follow" {
+				return m.openFollow(args)
+			}
+		}
 		if key.Matches(v, enter) && !u.busy {
 			args, err := connection.Split(u.input.Value())
+			if err == nil && len(args) > 0 && (args[0] == "reports" || args[0] == "report") {
+				if err := connection.ValidateCommand(path, args); err != nil {
+					u.output = "REFUSED: " + safe(err.Error())
+					return nil
+				}
+				u.input.Reset()
+				id := ""
+				if len(args) == 2 {
+					id = args[1]
+				}
+				return m.openReports(id)
+			}
 			if err == nil && len(args) == 1 && (args[0] == "downloads" || args[0] == "transfers") {
 				u.input.Reset()
 				return m.openDownloads()
@@ -339,7 +366,7 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	}
 	model, cmd := u.Update(msg)
 	*u = model.(ui)
-	if u != &w.management && u.files == nil {
+	if u != &w.management && u.files == nil && u.follow == nil {
 		w.fileViews = slices.DeleteFunc(w.fileViews, func(v *ui) bool { return v == u })
 		if w.file == u {
 			w.file, w.tab, w.focus = nil, "", "prompt"
@@ -367,6 +394,9 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 }
 
 func (w *workspaceView) activeUI() *ui {
+	if w.tab == "follow" && w.follow != nil {
+		return w.follow
+	}
 	if w.tab == "files" && w.file != nil {
 		return w.file
 	}
@@ -452,8 +482,16 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.attempt != v.attempt || v.attempt.ctx.Err() != nil {
 			return m, nil
 		}
+		if v.attempt.chain {
+			if m.modal != "" && m.modal != "auth" {
+				// Preserve an independent review; the existing authentication
+				// timeout still bounds how long the private question can wait.
+				return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return v })
+			}
+			m.active = v.attempt.path
+		}
 		m.question = &v.question
-		return m, m.setForm("auth", "SSH authentication", promptForm(v.question.prompt, true))
+		return m, m.setForm("auth", strings.TrimSpace("SSH authentication "+v.attempt.label), promptForm(v.question.prompt, !v.attempt.chain && !v.attempt.hidden))
 	case authFinished:
 		if m.attempt != v.attempt {
 			return m, nil
@@ -463,7 +501,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.dismissForm()
 		}
 		cmd := m.updateManagement(v.attempt.path, connectionResult{v.result, v.err})
-		if v.err == nil {
+		if v.err == nil && !v.attempt.chain {
 			if state, ok := v.result.(connection.State); ok && state.State == "connected" {
 				return m, tea.Batch(cmd, m.dispatch(v.attempt.path, offerSave(v.attempt.path, state.Name)))
 			}
@@ -484,8 +522,20 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 		switch result := v.message.(type) {
+		case chainStaged:
+			return m, m.acceptChain(path, result)
+		case followRead:
+			return m, m.acceptFollow(path, result)
+		case followTick:
+			if u := m.workspaces[path].followUI(result.view); u != nil && result.generation == result.view.generation {
+				result.view.queued = false
+				return m, m.readFollow(path, u)
+			}
+			return m, nil
 		case downloadReviewReady:
 			return m, m.acceptDownloadReview(path, result)
+		case reportsReady:
+			return m, m.acceptReports(path, result)
 		case downloadsReady:
 			return m, m.acceptDownloads(path, result)
 		case timer.TickMsg:
@@ -580,7 +630,11 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.now.Sub(w.observed) >= 3*time.Second {
 				cmd = m.check(m.active)
 			}
-			return m, tea.Batch(cmd, m.tick(), m.showSaveOffer())
+			var following tea.Cmd
+			if w.tab == "follow" && w.follow != nil {
+				following = m.readFollow(m.active, w.follow)
+			}
+			return m, tea.Batch(cmd, following, m.tick(), m.showSaveOffer())
 		case statusRequested:
 			m.workspaces[path].showCheck = true
 			return m, m.check(path)
@@ -656,6 +710,11 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = max(1, v.Height)
 		m.resize()
 		m.sizeForm()
+		if m.initialFollow != nil {
+			args := m.initialFollow
+			m.initialFollow = nil
+			return m, m.openFollow(args)
+		}
 		if m.initialLogs {
 			m.initialLogs = false
 			return m, m.openLogs()
@@ -665,15 +724,21 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.initialShell = ""
 			return m, m.openShell(name)
 		}
-		return m, nil
+		return m, m.resizeReports()
 	case tea.ResumeMsg:
 		return m, tea.RequestWindowSize
 	case tea.ColorProfileMsg:
 		for path := range m.workspaces {
 			m.updateManagement(path, v)
 		}
-		m.noColor = m.current().activeUI().noColor
-		return m, nil
+		m.noColor = m.current().management.noColor
+		for _, w := range m.workspaces {
+			for _, u := range w.followSaved {
+				u.noColor = m.noColor
+				u.sizeFollow()
+			}
+		}
+		return m, m.resizeReports()
 	case tea.MouseMsg:
 		if m.tooSmall() {
 			return m, nil
@@ -721,6 +786,13 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.modalOffset = max(0, m.modalOffset+delta)
 				return m, nil
 			}
+			if m.modal == "reports" {
+				code := tea.KeyDown
+				if delta < 0 {
+					code = tea.KeyUp
+				}
+				return m, m.reportsKey(tea.KeyPressMsg{Code: code})
+			}
 			if m.modal == "downloads" {
 				m.scrollDownloads(delta)
 				return m, nil
@@ -760,6 +832,17 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				u.connectionOffset = max(0, min(max(0, len(u.connections)-u.connectionRows()), u.connectionOffset+delta))
 			}
 			if hit.ID() == "center" {
+				if u := m.current().activeUI(); u.follow != nil {
+					p := &u.follow.previews[u.follow.stream]
+					p.tail = false
+					if delta < 0 {
+						p.viewport.ScrollUp(3)
+					} else {
+						p.viewport.ScrollDown(3)
+					}
+					u.sizeFollow()
+					return m, nil
+				}
 				m.current().activeUI().outputOffset = max(0, m.current().activeUI().outputOffset+delta)
 			}
 			return m, nil
@@ -838,6 +921,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.Matches(v, toggleLogs) {
 			return m, m.openLogs()
 		}
+		if key.Matches(v, toggleCollected) {
+			return m, m.openLogView(true)
+		}
 		if key.Matches(v, showBurrow) {
 			return m, m.activate("burrow")
 		}
@@ -873,6 +959,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.current().tab == "follow" && (m.current().focus == "prompt" || key.Matches(v, escape, quit)) && !key.Matches(v, help, focusNext, openMenu, openNavigation, newWorkspace) {
+			return m, m.followKey(v)
+		}
 		switch {
 		case key.Matches(v, newWorkspace):
 			return m, m.openNew()
@@ -886,7 +975,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(v, focusNext):
 			names := []string{"prompt", "workspaces", "new", "menu", "shells", "tabs", "resources", "saved"}
-			if m.current().activeUI().files != nil {
+			if m.current().activeUI().files != nil || m.current().activeUI().follow != nil {
 				names = names[:6]
 			}
 			for i, name := range names {
@@ -924,7 +1013,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.activate(fmt.Sprintf("shell:%d", m.shellIndex))
 				}
 			case "tabs":
-				if key.Matches(v, enter) && w.tab == "files" {
+				if key.Matches(v, enter) && (w.tab == "files" || w.tab == "follow") {
 					w.focus = "prompt"
 					return m, nil
 				}
@@ -987,7 +1076,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, m.updateManagement(m.active, msg)
 }
 
-var menuActions = []string{"Check daemon", "Metadata", "New workspace", "Keyboard help", "Quit", "Open Hovel CLI", "Close Hovel CLI", "Toggle mouse / text selection"}
+var menuActions = []string{"Check daemon", "Metadata", "New workspace", "Keyboard help", "Quit", "Open Hovel CLI", "Close Hovel CLI", "Toggle mouse / text selection", "Reports"}
 
 func (m *frame) clearRows() {
 	for _, w := range m.workspaces {
@@ -1107,15 +1196,24 @@ func (m *frame) activate(id string) tea.Cmd {
 		}
 		return nil
 	}
+	if strings.HasPrefix(id, "follow-tab:") {
+		i, err := strconv.Atoi(strings.TrimPrefix(id, "follow-tab:"))
+		if err == nil && i >= 0 && i < len(m.current().followViews) {
+			u := m.current().followViews[i]
+			m.selectFollow(u)
+			return m.readFollow(m.active, u)
+		}
+		return nil
+	}
 	switch id {
 	case "previous-shell":
-		if len(m.current().fileViews) > 0 {
+		if len(m.current().fileViews)+len(m.current().followViews) > 0 {
 			m.cycleTab(-1)
 			return nil
 		}
 		m.cycleShell(-1)
 	case "next-shell":
-		if len(m.current().fileViews) > 0 {
+		if len(m.current().fileViews)+len(m.current().followViews) > 0 {
 			m.cycleTab(1)
 			return nil
 		}
@@ -1183,6 +1281,7 @@ func (m *frame) menuAction(i int) tea.Cmd {
 		return m.openNew()
 	case 3:
 		m.current().activeUI().help = true
+		m.current().activeUI().helpOffset = 0
 	case 4:
 		return m.openQuit()
 	case 5:
@@ -1191,10 +1290,15 @@ func (m *frame) menuAction(i int) tea.Cmd {
 		return m.closeCLI()
 	case 7:
 		m.mouseDisabled = !m.mouseDisabled
+	case 8:
+		return m.openReports("")
 	}
 	return nil
 }
 func (m *frame) modalKey(v tea.KeyPressMsg) tea.Cmd {
+	if m.modal == "reports" {
+		return m.reportsKey(v)
+	}
 	if m.modal == "quit" && m.quitClosing {
 		return nil
 	}
@@ -1472,7 +1576,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	}
 	add("burrow", current.management.paint(tabStyle, tabLabel), cx, 1, min(10, cw), 1, 1)
 	add("hovel", current.management.paint(hovelStyle, hovelLabel), cx+10, 1, min(9, cw-10), 1, 1)
-	totalTabs := len(current.shells) + len(current.fileViews)
+	totalTabs := len(current.shells) + len(current.fileViews) + len(current.followViews)
 	if totalTabs > 0 && cw > 19 {
 		available, x := cw-19, cx+19
 		tabWidth := max(5, min(18, available/totalTabs))
@@ -1487,6 +1591,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		if current.tab == "files" {
 			selected = len(current.shells) + slices.Index(current.fileViews, current.file)
 		}
+		if current.tab == "follow" {
+			selected = len(current.shells) + len(current.fileViews) + slices.Index(current.followViews, current.follow)
+		}
 		start := min((selected/count)*count, max(0, totalTabs-count))
 		for i := start; i < min(totalTabs, start+count); i++ {
 			id, text, active := "", "", false
@@ -1494,15 +1601,19 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				tab := current.shells[i]
 				id, text, active = fmt.Sprintf("shell-tab:%d", i), "Shell #"+tab.id, current.tab == "shell" && current.shell == tab
 				if tab.logs != nil {
-					text = "Logs"
+					text = tab.label()
 				}
 				if tab.editor != nil {
 					text = tab.label()
 				}
-			} else {
+			} else if i < len(current.shells)+len(current.fileViews) {
 				j := i - len(current.shells)
 				u := current.fileViews[j]
 				id, text, active = fmt.Sprintf("file-tab:%d", j), "Files "+safe(u.files.state.Name), current.tab == "files" && current.file == u
+			} else {
+				j := i - len(current.shells) - len(current.fileViews)
+				u := current.followViews[j]
+				id, text, active = fmt.Sprintf("follow-tab:%d", j), "Run "+safe(u.follow.id), current.tab == "follow" && current.follow == u
 			}
 			style, marker := secondary, "  "
 			if active {
@@ -1521,7 +1632,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	savedLine := -1
 	profileStart := min(management.profileOffset, max(0, len(management.profiles.Profiles)-management.profileRows()))
 	for y, line := range strings.Split(center, "\n") {
-		if management.files != nil {
+		if management.files != nil || management.follow != nil {
 			break
 		}
 		plain := ansi.Strip(line)
@@ -1549,7 +1660,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	activeLine := -1
 	start := min(management.connectionOffset, max(0, len(management.connections)-management.connectionRows()))
 	for y, line := range strings.Split(center, "\n") {
-		if management.files != nil {
+		if management.files != nil || management.follow != nil {
 			break
 		}
 		plain := ansi.Strip(line)
@@ -1584,6 +1695,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 				status = "SSH: " + safe(tab.label()) + " · local / not recorded"
 				if tab.logs != nil {
 					status = "Logs · read-only snapshot · Ctrl+N / :q returns"
+					if tab.logs.collected {
+						status = "Results · Tab switches · / searches · Ctrl+L / :qa returns"
+					}
 				}
 				statusStyle = accent
 			}
@@ -1603,6 +1717,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			if tab.screen.Exited {
 				status = "CLI: exited"
 				statusStyle = errorStyle
+			}
+			if tab.notice != "" {
+				status = tab.notice
 			}
 			if tab.error != "" {
 				status = tab.error
@@ -1625,6 +1742,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 	footer := "Management · focus: " + current.focus
 	if management.files != nil {
 		footer = "File mode · Ctrl+C cancel/back · F1 help · PgUp/PgDn scroll"
+	}
+	if management.follow != nil {
+		footer = "Live · Tab streams · End follow · Esc close · F1 help"
 	}
 	add("footer", current.management.paint(secondary, footer), cx, h-4, cw, 1, 2)
 	if right > 0 {
@@ -1707,6 +1827,8 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			case "metadata":
 				v := scrollBody(m.metadata(), bw, ph-6, m.modalOffset)
 				text = v.View()
+			case "reports":
+				text = m.reportsContent()
 			case "downloads":
 				v := m.downloadsViewport()
 				text = centered(current.management.paint(accent, "Transfers"), bw) + "\n\n" + v.View()
@@ -1764,6 +1886,9 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			if m.modal == "downloads" {
 				hint = "Esc close · ↑↓ / PgUp/PgDn scroll · transfers reopens"
 			}
+			if m.modal == "reports" {
+				hint = "↑↓ / PgUp/PgDn scroll · Home/End · Enter open · r refresh · Esc back"
+			}
 			if m.modal == "menu" {
 				hint = "↑↓ select · Enter run · Esc close"
 			}
@@ -1784,7 +1909,7 @@ func (m *frame) dialogBounds() image.Rectangle {
 		return image.Rect(x, y, x+width, y+height)
 	}
 	pw, ph := min(76, m.width-4), min(18, m.height-4)
-	if m.modal == "downloads" {
+	if m.modal == "downloads" || m.modal == "reports" {
 		pw, ph = helpSize(m.width, m.height)
 	}
 	if m.modal == "new" {

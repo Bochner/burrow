@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +106,13 @@ func TestAuthenticationPopup(t *testing.T) {
 		if _, cmd := frameEvent(m, m.authSpinner.Tick()); cmd != nil {
 			t.Fatal("dismissed spinner kept ticking")
 		}
+		m.startAuthentication([]string{"connect", "gateway", "example.test", "--user", "tester", "--password", "--yes"})
+		defer m.attempt.cancel()
+		frameEvent(m, authQuestionReady{m.attempt, q})
+		frameEvent(m, tea.PasteMsg{Content: "explicit-password-hidden-canary"})
+		if strings.Contains(m.View().Content, "explicit-password-hidden-canary") || !strings.Contains(m.View().Content, "SSH password") {
+			t.Fatal("explicit --password did not select hidden entry")
+		}
 	}
 	f := promptForm(connection.Prompt{Text: "SSH password:", Secret: true}, false)
 	f.WithWidth(60)
@@ -111,6 +120,423 @@ func TestAuthenticationPopup(t *testing.T) {
 	f.Update(tea.PasteMsg{Content: "synthetic-cli-secret"})
 	if strings.Contains(f.View(), "synthetic-cli-secret") || f.GetFocusedField().GetValue() != "synthetic-cli-secret" {
 		t.Fatal("CLI prompt visibility changed")
+	}
+}
+
+func TestChainHelpAndCompletion(t *testing.T) {
+	for _, line := range []string{"chain connect target host --password 'quoted value' ", "chain connect target host --password=-dash "} {
+		if !slices.Contains(connection.CommandSuggestions(line, nil), line+"--user ") {
+			t.Fatal("password value consumed the missing user positional", line)
+		}
+	}
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/chain-help"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		for stage, line := range []string{"chain connect ", "chain connect target ", "chain connect target server.example "} {
+			frameEvent(m, tea.PasteMsg{Content: line})
+			for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+				frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+				screen := capturePresentation(t, m, fmt.Sprintf("chain-required-%d-%dx%d-%t", stage, size.X, size.Y, plain))
+				popup := strings.Join(strings.Split(screen.String(), "\n")[:size.Y-4], "\n")
+				for _, required := range []string{"NAME", "HOST", "--user", "target"} {
+					if !strings.Contains(popup, required) {
+						t.Fatalf("inline chain guidance omitted %s for %q at %v: %s", required, line, size, popup)
+					}
+				}
+				if !plain {
+					assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y-4), "--user", blueColor)
+				}
+			}
+			values := connection.CommandSuggestions(line, nil)
+			if stage < 2 && len(values) != 0 || stage == 2 && !slices.Equal(values, []string{line + "--user "}) {
+				t.Fatal("chain completion must require name, host and user before optional flags", line, values)
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		prefix := "chain connect target 192.168.10.50 --user alice "
+		frameEvent(m, tea.PasteMsg{Content: prefix + "--p"})
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("chain-options-%dx%d-%t", size.X, size.Y, plain))
+			completionRows := strings.Join(strings.Split(screen.String(), "\n")[:size.Y-4], "\n")
+			if !strings.Contains(completionRows, "--password") {
+				t.Fatalf("password completion is offered but invisible at %v (plain=%t): %s", size, plain, screen.String())
+			}
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y-4), "--password", blueColor)
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if m.current().management.input.Value() != prefix+"--password" {
+			t.Fatal("Tab did not retain the full command while completing the password flag")
+		}
+		for _, candidate := range []string{"chain connect ", prefix + "--user ", prefix + "--password"} {
+			if completionDescription(candidate) == "" {
+				t.Fatal("missing completion description", candidate)
+			}
+		}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+			if m.current().management.helpOffset != 0 {
+				t.Fatal("chain help opened below its examples after scrolling previous help")
+			}
+			screen := capturePresentation(t, m, fmt.Sprintf("chain-help-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(screen.String(), "192.168.10.50") || !strings.Contains(screen.String(), "--password") {
+				t.Fatal("F1 does not open a concrete chain password example", size, screen.String())
+			}
+			v := m.current().management.helpViewport(size.X, size.Y)
+			if !strings.Contains(ansi.Strip(v.View()), prefix+"--password") {
+				t.Fatal("chain password example is split across description columns", size)
+			}
+			var pages strings.Builder
+			for {
+				pages.WriteString(ansi.Strip(m.View().Content))
+				before := m.current().management.helpOffset
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+				if before == m.current().management.helpOffset {
+					break
+				}
+			}
+			for _, text := range []string{"--user", "--password", "--key", "--prompt", "--agent", "--port", "--jump", "--ssh-config", "Alt+B", "chain export"} {
+				if !strings.Contains(pages.String(), text) {
+					t.Fatal("chain help omitted an option or workflow", text, size)
+				}
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		}
+		if m.current().management.input.Value() != prefix+"--password" {
+			t.Fatal("chain help changed the draft")
+		}
+	}
+}
+
+func TestPasswordCommandRecall(t *testing.T) {
+	for _, prefix := range []string{"connect", "reconnect", "chain connect"} {
+		for _, value := range []string{
+			"target host --user tester --password 'inline-secret-canary'",
+			"target --password=inline-secret-canary host --user tester",
+			"target host --password --user tester",
+			"target host --user tester --password=",
+			"target host --user tester --password=-inline-secret-canary",
+			"target host --user tester --password 'inline-secret-canary",
+		} {
+			u := newUI(launch.Info{Workspace: "/tmp/recall"}, true)
+			u.input.SetValue(prefix + " " + value)
+			u.draft = u.input.Value()
+			u.cycleCompletion(false)
+			next, _ := u.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			u = next.(ui)
+			if strings.Contains(strings.Join(u.history, " "), "inline-secret-canary") || u.input.Value() != "" || u.draft != "" || u.completionValue != "" || len(u.completionValues) != 0 {
+				t.Fatal("password survived submission in recall/input/completions")
+			}
+			next, _ = u.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+			u = next.(ui)
+			if strings.HasSuffix(value, "'inline-secret-canary") {
+				if u.input.Value() != "" {
+					t.Fatal("rejected password command entered recall")
+				}
+				continue
+			}
+			want := prefix + " target host --user tester --password"
+			if u.input.Value() != want {
+				t.Fatalf("Up recalled %q, want %q", u.input.Value(), want)
+			}
+			args, err := connection.Split(u.input.Value())
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, _, err := connection.Parse("/tmp/recall", args[len(strings.Fields(prefix)):])
+			if err != nil || !c.PasswordAuth || c.Password != nil {
+				t.Fatal("recalled command must request a fresh hidden password", err)
+			}
+		}
+	}
+}
+
+func TestChainCommandPresentation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/chain-ui"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		u := m.current().management
+		u.input.SetValue("chain connect gateway 192.168.10.50 ")
+		if !strings.Contains(strings.Join(u.suggestions(), "\n"), "--user ") {
+			t.Fatal("chain completion omitted explicit --user")
+		}
+		for _, prefix := range []string{"chain ", "  chain ", "chain   "} {
+			line := prefix + "connect gateway 192.168.10.50 --user alice "
+			u.input.SetValue(line)
+			if !strings.Contains(strings.Join(u.suggestions(), "\n"), line+"--password") {
+				t.Fatal("chain completion omitted --password or changed the draft", line)
+			}
+		}
+		for _, line := range []string{"chain connect gateway host --user alice --key /tmp/key ", "chain connect gateway host --user alice --agent /tmp/agent ", "profile create gateway host --user alice ", "profile edit gateway host --user alice "} {
+			u.input.SetValue(line)
+			for _, suggestion := range u.suggestions() {
+				if suggestion == line+"--password" || (strings.HasPrefix(line, "profile ") && suggestion == line+"--prompt") {
+					t.Fatal("completion offered an unsupported authentication option", suggestion)
+				}
+			}
+		}
+		u.connections = []connection.State{{Name: "gateway", State: "connected", Generation: "owner", Proxy: connection.Tunnel{ID: "gateway/" + strings.Repeat("b", 32), State: "listening"}}}
+		u.tunnelError = ""
+		u.tunnels = []connection.Tunnel{{ID: "gateway/" + strings.Repeat("a", 32), Connection: "gateway", State: "listening", Direction: "L", Destination: "localhost:8080"}}
+		u.input.SetValue("chain http gateway ")
+		found := false
+		for _, suggestion := range u.suggestions() {
+			if strings.Contains(suggestion, u.tunnels[0].ID) && strings.HasPrefix(suggestion, "chain http gateway ") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("chain completion lost live tunnel identity")
+		}
+		line := "chain http gateway " + u.tunnels[0].ID + " http://localhost:8080/"
+		frameEvent(m, tea.PasteMsg{Content: line})
+		// Recap arrives through the existing async review boundary.
+		m.reviewText = "HTTP through existing tunnel\nConnection: gateway\nTunnel: " + u.tunnels[0].ID + "\nURL: http://localhost:8080/\nLimit: 8 seconds; 1 MiB response"
+		m.modal = "review"
+		m.formTitle = "Proceed?"
+		m.form = confirmForm("Proceed?", m.reviewText, "Proceed", "Cancel")
+		m.sizeForm()
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("chain-review-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "Proceed?") {
+				t.Fatal("chain recap lost approval at narrow size")
+			}
+			if size.X >= 160 && !plain {
+				assertTextRole(t, screen, m.dialogBounds(), "Connection:", lavenderColor)
+				assertTextRole(t, screen, m.dialogBounds(), "gateway", lavenderColor)
+				assertTextRole(t, screen, m.dialogBounds(), "http://localhost:8080/", "#f5c2e7")
+			}
+		}
+		if got := u.syntax(line, false); ansi.Strip(got) != line {
+			t.Fatal("chain highlighting changed command")
+		} else if !plain && !strings.Contains(got, "\x1b[") {
+			t.Fatal("chain command lacks semantic colors")
+		}
+		m.current().cli = &cliTab{screen: ptyhost.Snapshot{Screen: "h0v3l> ", Visible: true}}
+		m.current().tab, m.current().focus, m.modal = "hovel", "terminal", ""
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		m.attempt = &authAttempt{path: m.active, ctx: ctx, cancel: cancel, chain: true, label: "gateway · alice@192.168.10.50"}
+		frameEvent(m, authQuestionReady{m.attempt, authQuestion{prompt: connection.Prompt{Text: "SSH password", Secret: true}, answer: make(chan []byte)}})
+		frameEvent(m, tea.PasteMsg{Content: "chain-hidden-canary"})
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			capturePresentation(t, m, fmt.Sprintf("chain-password-%dx%d-%t", size.X, size.Y, plain))
+			view := ansi.Strip(m.View().Content)
+			if strings.Contains(view, "chain-hidden-canary") || !strings.Contains(view, "SSH password") || (plain && m.View().Cursor == nil) {
+				t.Fatalf("chain password visibility or keyboard access changed (%v, plain=%t): %s", size, plain, view)
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if m.modal != "" || m.current().tab != "hovel" || strings.Contains(m.View().Content, "chain-hidden-canary") {
+			t.Fatal("chain password submission did not return to Hovel")
+		}
+	}
+}
+
+func TestLiveOutputNavigation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/live-view"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		frameEvent(m, tea.PasteMsg{Content: "run follow retained-1"})
+		_, cmd := frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if cmd == nil || !strings.Contains(ansi.Strip(m.View().Content), "LIVE OUTPUT") {
+			t.Fatal("follow did not open a responsive live viewer", ansi.Strip(m.View().Content))
+		}
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("live-empty-%dx%d-%t", size.X, size.Y, plain))
+			for _, text := range []string{"LIVE OUTPUT", "retained-1", "stdout", "Connecting"} {
+				if !strings.Contains(ansi.Strip(m.View().Content), text) {
+					t.Fatal("missing viewer identity or truthful initial state", text)
+				}
+			}
+			if !plain {
+				assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y), "LIVE OUTPUT", blueColor)
+			}
+		}
+		// Presentation fixture only; follow_lab exercises these observations
+		// through real SSH, capture failures and independent terminal processes.
+		view := m.current().follow.follow
+		exit := 0
+		chunk := connection.RunOutput{Data: base64.StdEncoding.EncodeToString([]byte("partial")), NextOffset: 7,
+			State: "exited", RemoteExit: &exit, Budget: 7, Stored: 7, Received: 14,
+			OutputError: "output storage budget exceeded; partial evidence available"}
+		frameEvent(m, m.dispatch(m.active, func() tea.Msg { return followRead{view: view, chunk: chunk} })())
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("live-incomplete-%dx%d-%t", size.X, size.Y, plain))
+			for _, text := range []string{"INCOMPLETE", "exit 0", "partial", "7/7 B"} {
+				if !strings.Contains(screen.String(), text) {
+					t.Fatal("live capture outcome hidden", text)
+				}
+			}
+			if !plain {
+				bounds := image.Rect(0, 0, size.X, size.Y)
+				for text, color := range map[string]string{"retained-1": "#b4befe", "stdout": "#94e2d5", "INCOMPLETE": "#f38ba8", "7/7 B": "#fab387"} {
+					assertTextRole(t, screen, bounds, text, color)
+				}
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if !strings.Contains(ansi.Strip(m.View().Content), "stderr") {
+			t.Fatal("stream switch unavailable while read pending")
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+		if !strings.Contains(ansi.Strip(m.View().Content), "LIVE OUTPUT HELP") {
+			t.Fatal("contextual live help missing")
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF6})
+		frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+		if strings.Contains(ansi.Strip(m.View().Content), "LIVE OUTPUT") || !strings.Contains(ansi.Strip(m.View().Content), "COMMAND OUTPUT") {
+			t.Fatal("closing viewer did not return to management")
+		}
+	}
+}
+
+func TestRunReviewPresentation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/run-ui"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		m.current().management.input.SetValue("run launch retained-1")
+		_, dispatch := frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if dispatch == nil {
+			t.Fatal("run launch did not dispatch")
+		}
+		frameEvent(m, dispatch())
+		if m.modal != "review" {
+			t.Fatal("run launch did not enter the shared review flow", m.modal)
+		}
+		m.reviewText = "Launch run retained-1 on gateway.\nCommand: /bin/echo 'untrusted \\u001b]52;c;data'\nOutput budget: 268435456 bytes per stream."
+		m.setForm("review", "Review exact target", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("run-review-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "retained-1") {
+				t.Fatal("run identity hidden during review")
+			}
+			if !plain && size.X >= 120 {
+				assertTextRole(t, screen, m.dialogBounds().Inset(1), "Command:", "#b4befe")
+			}
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		if m.modal != "" {
+			t.Fatal("run review could not be cancelled")
+		}
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		for _, verb := range []string{"prepare", "now", "launch", "inspect", "cancel", "collect", "close", "output"} {
+			m.reviewText = "Command: run " + verb + " retained-1"
+			m.setForm("review", "Review command", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+			screen := capturePresentation(t, m, "run-command-"+verb+fmt.Sprint(plain))
+			if !plain {
+				assertTextRole(t, screen, m.dialogBounds(), "run", blueColor)
+				assertTextRole(t, screen, m.dialogBounds(), verb, blueColor)
+				assertTextRole(t, screen, m.dialogBounds(), "retained-1", lavenderColor)
+			}
+			m.dismissForm()
+		}
+		m.current().management.input.Reset()
+		frameEvent(m, tea.PasteMsg{Content: "run prepare gateway --script check.sh --mode stag"})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if !strings.Contains(m.current().management.input.Value(), "--mode stage") {
+			t.Fatal("script mode completion unavailable")
+		}
+		m.reviewText = "Run: retained-1\nScript: /uploads/check.sh\nInterpreter: /bin/sh\nMode: stage\nScript snapshot: 42 bytes; SHA256 abc\nInput snapshot: 256 bytes; SHA256 def\nExecution timeout: 30s; requests cancellation\nStaged script: /tmp/burrow-script.X/script\nKeep: retain staged files"
+		m.setForm("review", "Review script", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("script-review-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "retained-1") {
+				t.Fatal("script review identity hidden")
+			}
+			if !plain && size.X >= 120 {
+				assertTextRole(t, screen, m.dialogBounds(), "/uploads/check.sh", "#a6adc8")
+				assertTextRole(t, screen, m.dialogBounds(), "/bin/sh", "#94e2d5")
+				assertTextRole(t, screen, m.dialogBounds(), "stage", "#cba6f7")
+				assertTextRole(t, screen, m.dialogBounds(), "42 bytes", "#fab387")
+				assertTextRole(t, screen, m.dialogBounds(), "256 bytes", "#fab387")
+				assertTextRole(t, screen, m.dialogBounds(), "30s", "#fab387")
+			}
+		}
+		m.dismissForm()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		frameEvent(m, connectionResult{result: map[string]string{
+			"launchRunID": "execution-1", "outputError": "capture failed", "auditError": "audit incomplete", "cleanupError": "cleanup refused", "cancellation": "unconfirmed; no signal", "state": "transport-or-completion-unknown", "stageCleanup": "failed; unrelated files preserved", "timeout": "30s",
+		}})
+		screen := capturePresentation(t, m, fmt.Sprint("run-result-", plain))
+		for value, hex := range map[string]string{"execution-1": lavenderColor, "capture failed": "#f38ba8", "audit incomplete": "#f38ba8", "cleanup refused": "#f38ba8", "unconfirmed; no signal": "#f9e2af", "transport-or-completion-unknown": "#f9e2af", "failed; unrelated files preserved": "#f38ba8", "30s": "#fab387"} {
+			if plain {
+				if !strings.Contains(m.View().Content, value) {
+					t.Fatal("NO_COLOR hid run result", value)
+				}
+			} else {
+				assertTextRole(t, screen, m.selectionBounds(), value, hex)
+			}
+		}
+	}
+}
+
+func TestLocalRunPresentation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/local-ui"}, plain, launch.Options{})
+		defer m.terminals.close()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		frameEvent(m, tea.PasteMsg{Content: "run now gateway --loc"})
+		frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if !strings.Contains(m.current().management.input.Value(), "--local ") {
+			t.Fatal("local execution flag completion unavailable")
+		}
+		for _, suggestion := range connection.CommandSuggestions("run now gateway --local --mode ", nil) {
+			if strings.Contains(suggestion, "stage") {
+				t.Fatal("local completion offers unsupported remote staging", suggestion)
+			}
+		}
+		m.reviewText = "Run: retained-local\nExecution: local (on the daemon host)\nConnection: gateway\nCommand: /bin/sh /uploads/tool.sh\nWorking directory: /tmp/local-ui\nSocket: /tmp/local-ui/master\nSSH config: /tmp/local-ui/ssh_config"
+		m.setForm("review", "Review local run", confirmForm("Proceed?", "", "Proceed", "Cancel"))
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("local-review-%dx%d-%t", size.X, size.Y, plain))
+			if !strings.Contains(ansi.Strip(m.View().Content), "local (on the daemon host)") {
+				t.Fatal("local execution location hidden")
+			}
+			if !plain && size.X >= 120 {
+				assertTextRole(t, screen, m.dialogBounds(), "local (on the daemon host)", "#cba6f7")
+			}
+		}
+		m.dismissForm()
+		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+		for _, state := range []string{"local-start-failed", "local-signaled"} {
+			frameEvent(m, connectionResult{result: map[string]string{"state": state, "cancellation": "local-group-terminated; remote termination unconfirmed"}})
+			screen := capturePresentation(t, m, fmt.Sprintf("local-result-%s-%t", state, plain))
+			if plain {
+				if !strings.Contains(m.View().Content, state) || !strings.Contains(m.View().Content, "remote termination unconfirmed") {
+					t.Fatal("NO_COLOR hid local failure or cancellation uncertainty")
+				}
+			} else {
+				assertTextRole(t, screen, m.selectionBounds(), state, "#f38ba8")
+				assertTextRole(t, screen, m.selectionBounds(), "local-group-terminated; remote termination unconfirmed", "#f9e2af")
+			}
+		}
+		u := m.current().management
+		u.width = 80
+		exit := 3
+		u.follow = &runView{id: "retained-local"}
+		u.follow.status[0] = connection.RunOutput{Execution: "local", LocalExit: &exit, State: "exited", OutputComplete: true}
+		if text := ansi.Strip(u.followHeader()); !strings.Contains(text, "local exit 3") || strings.Contains(text, "remote exit") {
+			t.Fatal("viewer mislabels the local result", text)
+		}
 	}
 }
 
@@ -1574,7 +2000,7 @@ func TestSharedFormAndHelpRoles(t *testing.T) {
 	m.current().management.help = true
 	screen = capturePresentation(t, m, "help-command-colors")
 	bounds := image.Rect(23, 4, 137, 36)
-	for value, hex := range map[string]string{"NAVIGATION": blueColor, "connect NAME HOST USER": blueColor, "NAME": "#f9e2af", "F6 / Shift+F6": "#cba6f7"} {
+	for value, hex := range map[string]string{"NAVIGATION": blueColor, "connect NAME HOST --user USER": blueColor, "NAME": "#f9e2af", "F6 / Shift+F6": "#cba6f7"} {
 		assertTextRole(t, screen, bounds, value, hex)
 	}
 	if screen.CellAt(65, 7).Content != "M" || screen.CellAt(65, 8).Content != "O" {
@@ -1629,6 +2055,21 @@ func TestHelpQuickReference(t *testing.T) {
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyHome})
 			if u.helpOffset != 0 {
 				t.Fatal("Home did not return to top")
+			}
+			var pages strings.Builder
+			for {
+				pages.WriteString(ansi.Strip(m.View().Content))
+				pages.WriteByte('\n')
+				before := u.helpOffset
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+				if u.helpOffset == before {
+					break
+				}
+			}
+			for _, verb := range []string{"prepare", "launch", "list", "inspect", "output", "cancel", "collect", "close"} {
+				if !strings.Contains(pages.String(), "run "+verb) {
+					t.Fatal("F1 help hides retained command", verb, size, plain)
+				}
 			}
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 			if u.help || u.input.Value() != "connect draft" {
@@ -1777,11 +2218,20 @@ func TestSavedProfilesPresentation(t *testing.T) {
 			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 			prefix := fmt.Sprintf("%dx%d-profiles-%t", size[0], size[1], plain)
 			capturePresentation(t, m, prefix+"-empty")
-			list := connection.Collection{Path: "/tmp/homelab.json", Revision: strings.Repeat("a", 64), Profiles: []connection.Profile{{Name: "nas", Host: "192.168.1.20", User: "alice", Port: 2222, Key: "/home/alice/.ssh/key", Jump: "bastion"}, {Name: "router", Host: "192.168.1.1", User: "admin", Port: 22}}}
+			list := connection.Collection{Path: "/tmp/homelab.json", Revision: strings.Repeat("a", 64), Profiles: []connection.Profile{{Name: "nas", Host: "192.168.1.20", User: "alice", Port: 2222, Key: "/home/alice/.ssh/key", Jump: "bastion"}, {Name: "router", Host: "192.168.1.1", User: "admin", Port: 22, PasswordAuth: true, AgentExplicit: true}}}
 			m.updateManagement(m.active, profilesReady{collection: list})
 			before := capturePresentation(t, m, prefix+"-populated")
 			if !strings.Contains(ansi.Strip(m.View().Content), "SAVED CONNECTIONS") {
 				t.Fatal("missing saved table")
+			}
+			if size[0] == 200 {
+				view := ansi.Strip(m.View().Content)
+				if !strings.Contains(view, "Password") || strings.Contains(view, "Agent off") || strings.Contains(view, "Config/agent") {
+					t.Fatal("password-only profile lost its authentication method", view)
+				}
+				if !plain {
+					assertTextRole(t, before, m.selectionBounds(), "Password", "#94e2d5")
+				}
 			}
 			// Actual row layers and selection retain field alignment and never run I/O.
 			m.activate("profile:0")
@@ -1923,36 +2373,38 @@ func TestSaveOfferWaitsForWorkspaceAndDialog(t *testing.T) {
 }
 
 func TestLogViewerRestoresContext(t *testing.T) {
-	for _, tabName := range []string{"", "files", "shell", "hovel"} {
-		m := newFrame(launch.Info{Workspace: "/tmp/log-context"}, true, launch.Options{})
-		defer m.terminals.close()
-		frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
-		w := m.current()
-		original := &cliTab{connection: "gateway", id: "1"}
-		w.shells = []*cliTab{original}
-		w.shell = original
-		w.tab, w.focus = tabName, "prompt"
-		if tabName == "shell" || tabName == "hovel" {
-			w.focus = "terminal"
-		}
-		w.management.input.SetValue("unfinished command")
-		focus := w.focus
-		_, cmd := frameEvent(m, tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
-		if cmd == nil || w.shell.logs == nil || w.tab != "shell" {
-			t.Fatal("Ctrl+N did not open logs", tabName)
-		}
-		viewer := w.shell
-		viewer.pending = false
-		// Exercise normal terminal exit through the same event path as :q.
-		m.terminalResult(m.active, cliScreen{viewer, ptyhost.Snapshot{Exited: true}})
-		if w.tab != tabName || w.focus != focus || w.shell != original || w.management.input.Value() != "unfinished command" {
-			t.Fatal("viewer lost previous context", tabName, w.tab, w.focus)
-		}
-		if strings.Contains(logVimrc(true), "highlight") || strings.Contains(logVimrc(true), "syntax match") {
-			t.Fatal("NO_COLOR syntax enabled")
-		}
-		if !strings.Contains(logVimrc(false), "highlight burrowTimestamp guifg="+baseColor+" guibg="+blueColor) {
-			t.Fatal("timestamp contrast missing")
+	for _, shortcut := range []rune{'n', 'l'} {
+		for _, tabName := range []string{"", "files", "shell", "hovel"} {
+			m := newFrame(launch.Info{Workspace: "/tmp/log-context"}, true, launch.Options{})
+			defer m.terminals.close()
+			frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+			w := m.current()
+			original := &cliTab{connection: "gateway", id: "1"}
+			w.shells = []*cliTab{original}
+			w.shell = original
+			w.tab, w.focus = tabName, "prompt"
+			if tabName == "shell" || tabName == "hovel" {
+				w.focus = "terminal"
+			}
+			w.management.input.SetValue("unfinished command")
+			focus := w.focus
+			_, cmd := frameEvent(m, tea.KeyPressMsg{Code: shortcut, Mod: tea.ModCtrl})
+			if cmd == nil || w.shell.logs == nil || w.tab != "shell" {
+				t.Fatalf("Ctrl+%c did not open the viewer from %s", shortcut, tabName)
+			}
+			viewer := w.shell
+			viewer.pending = false
+			// Exercise normal terminal exit through the same event path as :q.
+			m.terminalResult(m.active, cliScreen{viewer, ptyhost.Snapshot{Exited: true}})
+			if w.tab != tabName || w.focus != focus || w.shell != original || w.management.input.Value() != "unfinished command" {
+				t.Fatal("viewer lost previous context", tabName, w.tab, w.focus)
+			}
+			if strings.Contains(logVimrc(true), "highlight") || strings.Contains(logVimrc(true), "syntax match") {
+				t.Fatal("NO_COLOR syntax enabled")
+			}
+			if !strings.Contains(logVimrc(false), "highlight burrowTimestamp guifg="+baseColor+" guibg="+blueColor) {
+				t.Fatal("timestamp contrast missing")
+			}
 		}
 	}
 }
@@ -1967,6 +2419,26 @@ func TestLogVimRenderedColors(t *testing.T) {
   COMPLETE · 2/2 files · 1.0 KiB · 2s elapsed
   Files: 2 completed · 0 failed · 0 cancelled
   Saved: /downloads/data
+
+2026-09-19T14:00:00Z -- collected command
+  Command: ps -elf
+  Script: /uploads/check.sh
+  Execution: local tool on daemon host
+  Mode: stage
+  Interpreter: /bin/sh
+  Stage cleanup: kept
+  Timeout: 30s
+  Outcome: SUCCEEDED (exit 0)
+  Capture: INCOMPLETE
+  Run: retained-1
+  Collection: collection-1
+  Cancellation: unconfirmed; master unavailable
+  Capture error: disk full
+STDOUT · 123 stored / 456 received bytes
+  File: /workspace/artifacts/output
+    UID PID COMMAND
+    root 1 init
+  PREVIEW TRUNCATED: first 123 of 456 saved bytes
 `
 	for _, plain := range []bool{false, true} {
 		dir := t.TempDir()
@@ -1995,9 +2467,14 @@ func TestLogVimRenderedColors(t *testing.T) {
 		}
 		screen := vt.NewEmulator(160, 40)
 		screen.Write([]byte(strings.ReplaceAll(snap.Screen, "\n", "\r\n")))
-		for text, want := range map[string]string{"gateway": "#b4befe", "tester": "#a6e3a1", "192.0.2.10": "#f5c2e7", "2222": "#f9e2af", "COMPLETE": "#a6e3a1", "failed": "#f38ba8", "/downloads/data": "#a6adc8"} {
+		for text, want := range map[string]string{"gateway": "#b4befe", "tester": "#a6e3a1", "192.0.2.10": "#f5c2e7", "2222": "#f9e2af", "COMPLETE": "#a6e3a1", "failed": "#f38ba8", "/downloads/data": "#a6adc8",
+			"/uploads/check.sh": "#a6adc8", "stage": "#cba6f7", "local tool on daemon host": "#cba6f7", "/bin/sh": "#94e2d5", "kept": "#f9e2af", "30s": "#fab387",
+			"ps -elf": blueColor, "-elf": blueColor, "SUCCEEDED": "#a6e3a1", "INCOMPLETE": "#f38ba8", "retained-1": lavenderColor, "collection-1": lavenderColor, "unconfirmed": "#f9e2af", "disk full": "#f38ba8", "STDOUT": blueColor, "123": "#fab387", "PREVIEW TRUNCATED": "#f9e2af", "/workspace/artifacts/output": "#a6adc8"} {
 			if !plain {
-				assertTextRole(t, screen, image.Rect(0, 1, 160, 6), text, want)
+				assertTextRole(t, screen, image.Rect(0, 1, 160, 26), text, want)
+			}
+			if !strings.Contains(screen.String(), text) {
+				t.Fatal("viewer text lost", text, plain)
 			}
 		}
 		if !strings.Contains(screen.String(), "2026-09-13T14:00:00-04:00 -- mget /data/*") {

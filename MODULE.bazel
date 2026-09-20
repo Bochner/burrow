@@ -28,7 +28,8 @@ npm.npm_translate_lock(
 )
 use_repo(npm, "npm")
 
-# Published v0.4.2 resolves to the Hovel source pin below; GitHub asset digest.
+# Latest published runtime v0.4.2 (c461ba282a8a); GitHub asset digest.
+# SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 http_file(
@@ -48,6 +49,28 @@ http_file(
     urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/vim-9.2.1091-r0.apk"],
 )
 
+# Dropbear interoperability fixture only, Alpine 3.24 x86_64 (MIT).
+# aports e56a1d711fb2dd69206223dcdfd609d91d40ad02; shared libraries ISC.
+# Executed inside the digest-pinned OpenSSH lab image, never installed on hosts.
+http_file(
+    name = "chain_lab_dropbear",
+    downloaded_file_path = "dropbear.apk",
+    sha256 = "cba11fe37aa85d7259ae44d494544e869bb58879e35124d0ba33b32c3b1201d7",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/dropbear-2026.91-r0.apk"],
+)
+http_file(
+    name = "chain_lab_utmps",
+    downloaded_file_path = "utmps.apk",
+    sha256 = "497f0f1cb51f0e6c1acc338fded0dc7722b1d43ea17bdb749f0d556794f8b2d8",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/utmps-libs-0.1.3.3-r0.apk"],
+)
+http_file(
+    name = "chain_lab_skalibs",
+    downloaded_file_path = "skalibs.apk",
+    sha256 = "3301f6ccbeaea49cdd966c7e636898a8612fb8fe964a15f24f6d204b3944c3f3",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/skalibs-libs-2.15.0.0-r0.apk"],
+)
+
 # Disposable external SDK proof, pinned to the research baseline.
 bazel_dep(name = "rules_go", version = "0.61.1")
 bazel_dep(name = "gazelle", version = "0.51.3")
@@ -59,16 +82,25 @@ go_sdk.download(version = "1.26.5")
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//core/prototype_sdk:go.mod")
 use_repo(go_deps, "com_github_charmbracelet_colorprofile", "com_github_charmbracelet_x_ansi", "com_github_charmbracelet_x_term", "com_github_charmbracelet_x_vt", "com_github_pkg_sftp", "land_charm_bubbles_v2", "land_charm_bubbletea_v2", "land_charm_lipgloss_v2", "org_golang_x_crypto", "org_golang_x_sys")
-use_repo(go_deps, "com_github_charmbracelet_ultraviolet", "land_charm_huh_v2")
+use_repo(go_deps, "com_github_charmbracelet_ultraviolet", "land_charm_huh_v2", "land_charm_glamour_v2")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Workflow syntax/expression checks: rhysd/actionlint v1.7.12, MIT;
+# SHA256 from the upstream GitHub release asset (Linux amd64 operator baseline).
+http_archive(
+    name = "actionlint",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"],
+    sha256 = "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+    build_file_content = "exports_files([\"actionlint\"])",
+)
 
 http_archive(
     name = "hovel_sdk",
     build_file = "//core/prototype_sdk:hovel.BUILD.bazel",
     patch_cmds = ["rm sdk/go/hovel/BUILD.bazel"],
-    sha256 = "c2233e71fa79473555863b5d0b8381ccf5902877fb6d341825f60a6e12a1e722",
-    strip_prefix = "hovel-c461ba282a8aecc7aa3a079a4613bf5e2640c388",
+    sha256 = "9080e5060787f4ba5ee6715611e10112af2af316318369b748c9f566c1f3b6e9",
+    strip_prefix = "hovel-a4cbfdf7769a9551695088c11061e3cabc368e07",
     type = "tar.gz",
-    urls = ["https://codeload.github.com/vibepwners/hovel/tar.gz/c461ba282a8aecc7aa3a079a4613bf5e2640c388"],
+    urls = ["https://codeload.github.com/vibepwners/hovel/tar.gz/a4cbfdf7769a9551695088c11061e3cabc368e07"],
 )

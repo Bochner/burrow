@@ -143,6 +143,16 @@ func (m ui) syntax(line string, reference bool) string {
 		switch {
 		case index == 0 && word == "burrow":
 			style = heading
+		case len(fields) > 0 && (fields[0] == "run" || fields[0] == "chain") && index < 2:
+			style = heading
+		case len(fields) > 0 && fields[0] == "chain" && (index == 2 || (index == 3 && (fields[1] == "http" || fields[1] == "export"))):
+			style = accent
+		case strings.HasPrefix(word, "http://"):
+			style = hostStyle
+		case len(fields) > 1 && fields[0] == "chain" && fields[1] == "connect" && index == 3:
+			style = hostStyle
+		case prior == "--user" || prior == "-user":
+			style = successStyle
 		case word == "/usr/bin/ssh":
 			style = heading
 		case prior == "-o":
@@ -157,6 +167,8 @@ func (m ui) syntax(line string, reference bool) string {
 			return strings.Replace(token, word, m.endpoint(word), 1)
 		case reference && strings.IndexFunc(word, unicode.IsLetter) >= 0 && strings.ToUpper(word) == word && word != "F1" && word != "F6":
 			style = warningStyle
+		case len(fields) > 1 && fields[0] == "run" && fields[1] != "list" && index == 2:
+			style = accent
 		case connectionIndex >= 0 && index == connectionIndex:
 			style = accent
 		case connectionIndex >= 0 && index == connectionIndex+1:
@@ -282,6 +294,13 @@ func (m ui) semanticText(text string) string {
 		if field && !strings.ContainsAny(label, "/@") {
 			style := fieldStyle(strings.ToUpper(label))
 			styled := m.paint(style, value)
+			if label == "Command" || label == "Output budget" {
+				styled = m.syntax(value, false)
+			}
+			if label == "Script snapshot" || label == "Input snapshot" || label == "Execution timeout" {
+				quantity, _, _ := strings.Cut(value, ";")
+				styled = m.paint(numberStyle, quantity) + m.paint(style, value[len(quantity):])
+			}
 			if label == "Endpoint" || label == "Jump" || label == "Listen" || label == "Destination" || label == "Remote listener" || label == "Local destination" || label == "Local listener" || label == "Remote destination" {
 				styled = m.endpoint(value)
 			}
@@ -336,8 +355,38 @@ func (m ui) styledOutput() string {
 					continue
 				case "direction":
 					style = keywordStyle
-				case "name", "id", "generation", "creation", "runID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "error":
+				case "url":
+					style = hostStyle
+				case "connection", "connectionCreation":
+					style = accent
+				case "name", "id", "generation", "creation", "runID", "launchRunID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "cleanupScope", "error", "outputError", "auditError", "cleanupError":
 					style = fieldStyle(strings.ToUpper(field))
+					if token == `""` {
+						style = secondary
+					}
+				case "path", "stagePath":
+					style = secondary
+				case "mode", "execution":
+					style = keywordStyle
+				case "localSignal":
+					style = errorStyle
+				case "interpreter":
+					style = infoStyle
+				case "timeout":
+					style = numberStyle
+				case "cancellation", "stageCleanup", "staging":
+					style = secondary
+					if strings.Contains(token, "unconfirmed") {
+						style = warningStyle
+					} else if strings.HasPrefix(token, `"failed`) {
+						style = errorStyle
+					} else if token == `"pending"` || token == `"kept"` || token == `"not-started"` {
+						style = warningStyle
+					} else if token == `"removed"` || token == `"ready"` {
+						style = successStyle
+					} else if token == `"ordinary-group-terminated"` {
+						style = successStyle
+					}
 				case "state", "status":
 					var state string
 					_ = json.Unmarshal([]byte(token), &state)
@@ -366,9 +415,9 @@ func connectionStyle(state string) lipgloss.Style {
 	switch state {
 	case "connected", "active", "running", "listening", "traffic-observed":
 		return successStyle
-	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable":
+	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable", "staging-failed", "timed-out", "local-start-failed", "local-signaled":
 		return errorStyle
-	case "connecting", "reconnecting", "opening", "closing":
+	case "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown":
 		return warningStyle
 	default:
 		return secondary
@@ -387,6 +436,10 @@ func (m *frame) commandHelp() string {
 	keys := []key.Binding{showHovel, binding("Ctrl+P", "menu"), binding("F1", "help"), binding("Ctrl+C", "quit")}
 	if m.current().activeUI().files != nil {
 		keys = []key.Binding{binding("back", "management"), binding("Ctrl+C", "cancel/back"), binding("F1", "help"), binding("PgUp/PgDn", "scroll"), showHovel}
+	}
+	if m.current().activeUI().follow != nil {
+		keys = []key.Binding{binding("Esc/Ctrl+C", "close viewer"), binding("Tab", "streams"), binding("End", "follow"), binding("PgUp/PgDn", "scroll"), binding("F1", "help"), showBurrow}
+		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 	}
 	selection := binding("Alt+S", "native selection")
 	if m.mouseDisabled {
@@ -428,23 +481,25 @@ var infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
 
 func fieldStyle(header string) lipgloss.Style {
 	switch header {
-	case "NAME", "ID", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUNID", "SESSION":
+	case "NAME", "ID", "TUNNEL", "WORKSPACE", "CONNECTION", "GENERATION", "CREATION", "RUN", "RUNID", "LAUNCHRUNID", "SESSION", "BURROW_CONNECTION":
 		return accent
-	case "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION":
+	case "ACTION":
+		return heading
+	case "URL", "HOST", "HOSTNAME", "IP", "REMOTE", "JUMP", "LISTEN", "LISTENER", "DESTINATION", "BURROW_SSH_HOST":
 		return hostStyle
 	case "USER", "USERNAME", "OWNER", "GROUP":
 		return successStyle
 	case "PORT", "LOCAL PORT", "OVERWRITE":
 		return warningStyle
-	case "KEY", "AGENT", "SHELL", "PROXY", "SOCKS PROXY":
+	case "KEY", "AGENT", "SHELL", "PROXY", "SOCKS PROXY", "INTERPRETER":
 		return infoStyle
-	case "TERM", "TYPE", "PERMISSIONS":
+	case "TERM", "TYPE", "PERMISSIONS", "MODE", "EXECUTION", "LANG":
 		return keywordStyle
 	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
 		return numberStyle
-	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "SOURCE", "DESTINATION PATH":
+	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "CLEANUPSCOPE", "SOURCE", "DESTINATION PATH", "SCRIPT", "STAGED SCRIPT", "PROGRAM STDIN", "WORKING DIRECTORY", "BURROW_WORKSPACE", "BURROW_SOCKET", "BURROW_SSH_CONFIG", "PATH":
 		return secondary
-	case "ERROR":
+	case "ERROR", "OUTPUTERROR", "AUDITERROR", "CLEANUPERROR":
 		return errorStyle
 	default:
 		return pageStyle

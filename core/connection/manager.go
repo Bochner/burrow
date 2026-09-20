@@ -26,11 +26,12 @@ const managerKind = "burrow-manager-v1"
 const buildMismatch = "installed Burrow module build differs from the requesting frontend; run burrow status to register this build; nothing was dispatched"
 
 type managerIdentity struct {
-	Session    string `json:"session"`
-	Generation string `json:"generation"`
-	Workspace  string `json:"workspace"`
-	OwnerPID   int    `json:"ownerPID"`
-	RunID      string `json:"runID"`
+	PasswordAuth bool   `json:"passwordAuth,omitempty"`
+	Session      string `json:"session"`
+	Generation   string `json:"generation"`
+	Workspace    string `json:"workspace"`
+	OwnerPID     int    `json:"ownerPID"`
+	RunID        string `json:"runID"`
 }
 
 type managerRequest struct {
@@ -115,7 +116,7 @@ func (m *manager) Close(string) error {
 }
 
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "download-review", ReadOnly: true}, {Name: "downloads", ReadOnly: true}, {Name: "download-cancel"}, {Name: "download", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
+	return []hovel.PayloadCommand{{Name: "chain-inventory", ReadOnly: true}, {Name: "tunnel-http", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "download-review", ReadOnly: true}, {Name: "downloads", ReadOnly: true}, {Name: "download-cancel"}, {Name: "download", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
 }
 
 func (m *manager) inventory() ([]State, error) {
@@ -148,6 +149,12 @@ func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 	}
 	if req.Command == "files" {
 		return m.filesCommand(req)
+	}
+	if req.Command == "chain-inventory" {
+		return m.chainInventory(req)
+	}
+	if req.Command == "tunnel-http" {
+		return m.consumeTunnel(req)
 	}
 	if req.Command == "download-review" || req.Command == "downloads" || req.Command == "download-cancel" {
 		return m.downloadCommand(req)
@@ -311,7 +318,14 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 	if ctx.InputString("command", "") != "" || ctx.InputString("connection", "") != "" {
 		return hovel.Result{}, fmt.Errorf("manager action excludes legacy connection and profile commands")
 	}
+	if strings.HasPrefix(ctx.InputString("action", ""), "run-") {
+		return runAdapter(ctx, w)
+	}
 	switch ctx.InputString("action", "") {
+	case "chain-connect":
+		return chainConnectAdapter(ctx, w)
+	case "tunnel-http":
+		return tunnelHTTPAdapter(ctx, w)
 	case "download":
 		raw := ctx.InputString("request", "")
 		r, err := decodeDownload(raw)
@@ -351,7 +365,7 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 		if e != nil {
 			return hovel.Result{}, e
 		}
-		m := &manager{managerIdentity: managerIdentity{Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, connections: map[string]*owner{}, log: ctx.Log}
+		m := &manager{managerIdentity: managerIdentity{PasswordAuth: true, Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, connections: map[string]*owner{}, log: ctx.Log}
 		ref, e := ctx.OpenSession(m, hovel.WithName("Burrow manager"), hovel.WithKind(managerKind))
 		if e != nil {
 			dir.Close()
@@ -401,7 +415,7 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 	}
 	var found managerIdentity
 	for _, ref := range refs.Sessions {
-		if ref.ModuleID != "burrow@0.1.0" || ref.Kind == "connection" || ref.State == "closed" {
+		if ref.ModuleID != "burrow@0.1.0" || ref.Kind == "connection" || ref.Kind == runKind || ref.State == "closed" {
 			continue
 		}
 		if ref.Kind != managerKind {
@@ -533,6 +547,9 @@ func connectManaged(ctx context.Context, c Config, preview string) (State, error
 	if e != nil {
 		return State{}, e
 	}
+	if e := passwordManagerCompatible(c, id); e != nil {
+		return State{}, e
+	}
 	if id.Session == "" {
 		generation := rand.Text()
 		if e = managerThrow(ctx, c.Workspace, map[string]string{"action": "activate", "generation": generation}, &id); e != nil {
@@ -568,6 +585,24 @@ func connectManaged(ctx context.Context, c Config, preview string) (State, error
 		return State{}, fmt.Errorf("connection result identity changed; inspect before retrying")
 	}
 	return state, nil
+}
+
+func passwordManagerCompatible(c Config, id managerIdentity) error {
+	if c.PasswordAuth && id.Session != "" && !id.PasswordAuth {
+		return fmt.Errorf("retained manager does not support password authentication from this frontend; inspect connections, then explicitly review burrow restart in this workspace; nothing was dispatched")
+	}
+	return nil
+}
+
+func checkPasswordManager(ctx context.Context, c Config) error {
+	if !c.PasswordAuth {
+		return nil
+	}
+	id, err := findManager(ctx, c.Workspace)
+	if err != nil {
+		return err
+	}
+	return passwordManagerCompatible(c, id)
 }
 
 // CloseInventory rechecks the manager's whole review under its admission lock.

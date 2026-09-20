@@ -1,0 +1,274 @@
+<!-- burrow-doc: {"title":"SSH and tunnel chains","group":"Foundations","order":153,"description":"Create a Burrow SSH connection from a confirmed Hovel chain, or consume an exactly selected live tunnel."} -->
+<article>
+<h1>SSH and tunnel chains</h1>
+<p>Hovel chains can establish a named SSH connection in Burrow or make a bounded HTTP request through an existing forward. Both operations use the single <code>burrow@0.1.0</code> module, its retained connection owner and Hovel's normal planning, confirmation and artifact contracts.</p>
+<p>Each export currently contains one configured operation. Connection creation and existing-tunnel consumption are separate flows; Burrow does not generate an upload → start server → connect → create tunnels pipeline.</p>
+<nav aria-label="Chain walkthrough contents"><p><strong>Jump to:</strong> <a href="#connection-flow">connection flow</a> · <a href="#consumer-flow">consumer flow</a> · <a href="#tui-connect">TUI SSH handoff</a> · <a href="#tui-walkthrough">TUI HTTP</a> · <a href="#cli-connect">CLI Dropbear</a> · <a href="#cli-password">CLI password</a> · <a href="#embedded-walkthrough">embedded Hovel</a> · <a href="#cli-http">CLI HTTP/export</a> · <a href="#route-walkthroughs">L/R/SOCKS examples</a> · <a href="#headless">headless execution</a> · <a href="#cleanup">cleanup and troubleshooting</a></p></nav>
+<h2 id="connection-flow">What happens when a chain creates an SSH connection?</h2>
+<figure class="diagram" aria-label="Connection creation proceeds from export through Hovel confirmation to retained SSH ownership."><figcaption>Connection creation · control flow</figcaption><ol class="flow-diagram vertical">
+<li class="flow-step">1. Operator exports connection settings with chain connect. No SSH authentication yet.</li>
+<li class="flow-step warning">2. Hovel plans the saved chain. Operator confirms; dangerous-module and launch-key policies apply.</li>
+<li class="flow-step">3. The local burrow module validates the workspace, build, resolved SSH settings and unused connection name.</li>
+<li class="flow-step strong">4. The retained workspace manager starts a local OpenSSH master. The target's running OpenSSH or Dropbear server authenticates it.</li>
+<li class="flow-step ready">5. Burrow observes connected state, registers the connection and returns its identity. Hovel saves a connection artifact.</li>
+<li class="flow-step ready">6. The chain ends. The manager and SSH connection remain available in Burrow.</li>
+</ol></figure>
+<p>The target needs its SSH server and account; it does not need Hovel or Burrow installed. The module runs locally, and the retained manager owns the local SSH client. Hovel's automation chain is distinct from an SSH jump-host chain. Use the existing <code>--jump [USER@]HOST[:PORT][,...]</code> option when the connection needs network hops.</p>
+<h2 id="consumer-flow">What happens when a chain uses a tunnel?</h2>
+<figure class="diagram" aria-label="Existing-tunnel HTTP consumption requires exact selection and confirmation before traffic, then retains shared forwarding."><figcaption>Existing tunnel · selection, traffic and evidence</figcaption><ol class="flow-diagram vertical">
+<li class="flow-step">1. chain select asks the connection owner for current forwarding identities, including SOCKS.</li>
+<li class="flow-step warning">2. Review connection, complete tunnel ID, direction, listener, destination and URL. Cancel sends no HTTP request.</li>
+<li class="flow-step">3. The confirmed consumer rechecks the owner, connection creation, tunnel creation, SSH master and actual listener.</li>
+<li class="flow-step strong">4. One bounded HTTP GET travels through that existing L, R or D route.</li>
+<li class="flow-step ready">5. Hovel stores selection, status, byte count and response digest. Response bodies and headers are discarded.</li>
+<li class="flow-step ready">6. The request ends. The SSH connection and shared forwarding remain running.</li>
+</ol></figure>
+<p><code>chain select</code> and export do not send the HTTP request. They do verify existing resources; for reverse tunnels this can query remote listener metadata through the existing master. A missing or changed resource causes refusal, never a replacement login or silently selected same-port listener.</p>
+<h2>New TUI commands</h2>
+<p>Enter these in Burrow's management command line. The standalone CLI accepts the same commands after <code>burrow --workspace PATH</code>.</p>
+<table><thead><tr><th>Command</th><th>What happens</th></tr></thead><tbody>
+<tr><td><code>chain connect NAME HOST --user USER [options]</code></td><td>Stage a private JSON file, switch to Hovel and prepare its throw command. Enter reviews the plan; authentication starts after Hovel confirmation.</td></tr>
+<tr><td><code>chain select CONNECTION</code></td><td>Read the selected connection owner's live forward and SOCKS inventory, including complete creation IDs.</td></tr>
+<tr><td><code>chain http CONNECTION TUNNEL_ID URL</code></td><td>Review and execute one HTTP request through that existing tunnel, then show the result.</td></tr>
+<tr><td><code>chain export CONNECTION TUNNEL_ID URL</code></td><td>Stage the selected consumer chain and prepare its Hovel throw, without sending the HTTP request.</td></tr>
+</tbody></table>
+<p>Tab completion suggests connection options, current connections and complete tunnel IDs. Type <code>chain</code> and press <kbd>F1</kbd> for connection examples and the full option reference. After <code>chain connect target 192.168.10.50 --user alice </code>, type <code>--p</code> to see <code>--password</code>, <code>--port</code> and <code>--prompt</code>; <kbd>Tab</kbd> selects the highlighted completion. <code>--password [PASSWORD]</code> is omitted when a key or agent has already been selected. A supplied value is consumed as the password, leaving later options available.</p>
+<p>In the TUI, connect/export creates a mode-0600 file such as <code>connect-target-123456789.chain.json</code> in the active workspace. It switches to Hovel and leaves <code>throw /absolute/workspace/connect-target-123456789.chain.json --allow-dangerous</code> ready to submit. The CLI continues to print JSON for redirection and agents. The management command line does not interpret shell redirection.</p>
+<h2>Create a connection from a chain</h2>
+<p>The target must already run an SSH server, such as OpenSSH or Dropbear. Its account must accept the selected key, agent or password authentication. Exporting a chain resolves and records non-secret connection settings without authenticating:</p>
+<pre data-lang="Shell"><code>burrow --workspace /absolute/workspace chain connect target target.example --user tester \
+  --port 2222 --key /absolute/path/to/private-key &gt; connect.chain.json
+hovel throw connect.chain.json --workspace /absolute/workspace \
+  --daemon-endpoint /absolute/workspace/hoveld.sock --allow-dangerous --json</code></pre>
+<p>Use Burrow's installed Hovel executable, or enter the equivalent <code>throw /absolute/connect.chain.json --allow-dangerous --json</code> in the workspace's <a href="embedded-terminal.html">embedded Hovel CLI</a>. Confirm the plan. Headless execution needs an existing matching confirmation or an explicitly selected <code>--now</code>; that option does not bypass dangerous-module or launch-key restrictions. JSON mode does not promise JSON-only failure output.</p>
+<p>An unattended key/agent chain waits up to 30 seconds for authentication; a private password/passphrase frontend uses the existing two-minute authentication limit. Success returns the connection's name, session, owner generation and creation identity. The live connection appears in Burrow's management inventory and supports its normal commands:</p>
+<p>The execution path is: confirmed Hovel throw → local base Burrow module → retained workspace connection manager → local OpenSSH client/master → target SSH server. Hovel and Burrow do not need to run on the target. The manager owns the SSH connection, so completion of the throw or quitting the TUI with Keep running does not end that connection.</p>
+<pre data-lang="Burrow management"><code>inspect target
+shell target
+run now target -- /usr/bin/id
+close target</code></pre>
+<p>The connection remains available after the chain finishes. Closing it ends Burrow's master and dependent resources; it does not stop or uninstall the target's pre-existing SSH server. Authentication failure or timeout attempts cleanup of that exact connection and reports uncertainty if cleanup cannot be confirmed. Existing names and unknown reservations are refused, including replay of a chain while its connection is still live. Reconnect remains explicit.</p>
+<p><code>chain connect</code> also accepts <code>--password</code>, <code>--prompt</code>, <code>--agent</code>, <code>--ssh-config</code> and <code>--jump</code>. Both <code>--password</code> and <code>--password PASSWORD</code> select password-only authentication for the target. Bare <code>--password</code> opens a hidden prompt after Hovel confirmation; <code>--password PASSWORD</code> supplies the value automatically without a password popup. Use <code>--key PATH --prompt</code> for an encrypted key. Implicit proxy creation remains excluded. Private keys remain local; exported chains contain paths and authentication preferences, never key contents or passwords. The existing owner-approved LazySSH host-trust settings apply. Export again if the resolved SSH configuration or Burrow build changes.</p>
+<p>A Dropbear deployment provider is not required to connect to a running server. Preparing a binary, uploading it, configuring authorization, launching it and owning its remote cleanup are separate deployment work, requiring an existing authorized delivery/execution path. Dropbear alone does not supply initial target access, and a bare Dropbear server needs an external SFTP server for Burrow's file workflows. The current compatibility check proves SSH authentication and command execution, not all Dropbear deployment, PTY or file combinations.</p>
+<h2>Choose and consume an existing tunnel</h2>
+<p>Create the connection and <a href="forwarding.html">forward or SOCKS proxy</a> first. Select the connection, then query its authoritative live inventory. In the following examples, replace <code>gateway/CREATION</code> with a complete ID returned by selection or Tab completion:</p>
+<pre data-lang="Burrow management"><code>chain select gateway
+chain http gateway gateway/CREATION http://internal.example:8080/health
+chain export gateway gateway/CREATION http://internal.example:8080/health</code></pre>
+<p><code>chain http</code> presents a review. The TUI uses its existing confirmation dialog; Escape cancels without a request. The CLI returns a digest: repeat with <code>--review DIGEST --yes</code> to bind approval to that exact selection. <code>chain export</code> stages and prepares Hovel in the TUI; the CLI returns JSON for redirection. Both export paths preserve the exact selection without sending the HTTP request.</p>
+<table><thead><tr><th>Forward</th><th>HTTP route</th><th>URL</th></tr></thead><tbody>
+<tr><td>Local (L)</td><td>The owner dials the existing local listener; SSH reaches its fixed remote destination.</td><td>Host and port must match that fixed destination.</td></tr>
+<tr><td>Reverse (R)</td><td>An OpenSSH <code>-W</code> channel asks the SSH server to connect to its own reverse listener, which forwards back to the local destination.</td><td>Host and port must match the fixed destination on the SSH client side.</td></tr>
+<tr><td>SOCKS (D)</td><td>The owner uses the existing SOCKS5 listener, delegating hostname resolution to the SSH server.</td><td>An explicit hostname or IP destination selected for this request.</td></tr>
+</tbody></table>
+<p>The reverse path requires the existing server forwarding permissions and verified Linux listener exposure. It needs no remote Python or HTTP client. Loopback defaults and explicitly requested bind addresses are preserved; wildcard listeners are contacted through the corresponding loopback address. Inventory and use recheck the retained master and listener. Server-forced reverse exposure remains subject to the existing post-allocation observation and cleanup limitation.</p>
+<h2>Results and lifetime</h2>
+<p>The HTTP operation supports one GET over plain HTTP, an eight-second consumer context and at most 1 MiB of response body; preflight and cleanup also use bounded owner checks. It does not follow redirects, inherit ambient HTTP proxies, accept proxy credentials, or support authenticated requests, query strings or TLS. All request fields are recorded: never place secrets in URL paths. A complete HTTP exchange records the actual status, including 3xx/4xx/5xx; that establishes transport success, not application health.</p>
+<p>Hovel stores a JSON artifact with the exact non-secret tunnel selection, request URL, run correlation, HTTP status, byte count and response SHA256. Body and header contents are discarded. Timeout, malformed/incomplete response or a body over the bound produces a failed result. Failure to store evidence must not be reported as successful collection. Inspect artifacts through Hovel after the operation, including when a caller disconnected after dispatch; do not automatically retry a request whose outcome is uncertain.</p>
+<p>Selection binds workspace, manager session/generation, connection creation and tunnel creation. Removing and recreating the same port produces a different ID. Missing selections, changed identities, removed tunnels, closed connections and master loss fail without login, provisioning or fallback. Concurrent consumers retain shared forwarding; ending a consumer or its frontend does not remove it. Explicit listener removal or connection close waits for admitted bounded consumers, then performs the existing cleanup. Collected artifacts survive teardown.</p>
+<p>This is the accepted owner-mediated HTTP consumer, not transparent routing of arbitrary Hovel modules or a generic Mesh bridge. Direct same-user manipulation of control sockets remains outside the owner's inventory contract. The pinned public session-command workaround from issue #34 remains nonblocking; session commands themselves do not certify throw approval. Use the confirmed chain/module route for execution.</p>
+<h2 id="tui-connect">Walkthrough · From Burrow to Hovel to active SSH</h2>
+<p><strong>Starting point:</strong> an SSH server is already listening at <code>192.168.10.50:22</code>. You have its account username and either a local private key or its password. Open the intended workspace in Burrow. The following commands belong in the Burrow management prompt.</p>
+<p>The inline popup shows <code>chain connect NAME HOST --user USER [options]</code> and a complete example while you type. <code>target</code> is an example connection name; choose your own label, then enter the SSH host and username. Completion offers the required username before optional flags.</p>
+<figure class="diagram" aria-label="The TUI stages the chain, selects Hovel context, prepares an unsubmitted throw, and returns an observed SSH connection after confirmation."><figcaption>Your keyboard path</figcaption><ol class="flow-diagram vertical">
+<li class="flow-step">Burrow: chain connect target 192.168.10.50 --user alice --password</li>
+<li class="flow-step">Burrow saves private JSON and switches to Hovel. It selects burrow / burrow-chain when needed, then fills in throw FILE --allow-dangerous.</li>
+<li class="flow-step warning">You press Enter. Hovel displays its plan. You type yes to confirm.</li>
+<li class="flow-step">For a password or encrypted key, Burrow opens its hidden authentication field. Enter submits the secret privately; Escape cancels the attempt.</li>
+<li class="flow-step ready">Hovel shows the run result. A successful connection result means Burrow observed the SSH master connected.</li>
+<li class="flow-step ready">Alt+B: the active SSH connection is available. Use shell target to open a terminal.</li>
+</ol></figure>
+<ol>
+<li><p>Choose the account and authentication explicitly. Port 22 is the default; including it can make a copied example clearer:</p><pre data-lang="Burrow management"><code>chain connect target 192.168.10.50 --user alice --port 22 --password</code></pre><p>For a key instead:</p><pre data-lang="Burrow management"><code>chain connect target 192.168.10.50 --user alice --port 22 --key ~/.ssh/id_ed25519</code></pre><p>These are alternatives for the same connection name. Do not run both while that name is occupied. The older positional username remains accepted for existing scripts; <code>--user</code> is the recommended form.</p></li>
+<li><p>Press Enter in Burrow. It resolves the settings, writes a unique private chain file and switches to the existing Hovel tab, opening one if needed. This stage performs local preparation only. It does not contact the target to authenticate.</p></li>
+<li><p>At an empty Hovel command prompt, Burrow selects the local <code>burrow</code> operation and <code>burrow-chain</code> context if necessary. These selections make Hovel's live chain logs visible. It then prepares a command like:</p><pre data-lang="Embedded Hovel CLI"><code>throw /absolute/workspace/connect-target-123456789.chain.json --allow-dangerous</code></pre><p>The filename is generated, so yours will differ. There is no <code>--now</code> or <code>--json</code> in this TUI command. Burrow does not submit the throw or answer its confirmation.</p></li>
+<li><p>Press Enter in Hovel. Read its normal plan, including the endpoint, username, authentication settings and module. Type <code>yes</code> at Hovel's confirmation if it matches your intention. Any Hovel launch-key policy still applies.</p></li>
+<li><p>With bare <code>--password</code>, a hidden Burrow field appears only when SSH asks. Its title identifies the connection and account. Type the password and press Enter. The dialog closes and Hovel remains visible while authentication finishes. Passwords are excluded from terminal output, command history, JSON, logs and artifacts. The target uses password authentication even if a default key or agent is available. Jump hosts retain their own configured authentication.</p></li>
+<li><p>Wait for Hovel's result. Read whether the module succeeded; a throw finishing alone is not proof that every step succeeded. For a successful connection result, press <kbd>Alt+B</kbd> to see <code>target</code> in Active SSH Connections. Use:</p><pre data-lang="Burrow management"><code>inspect target
+shell target</code></pre><p>The connection is daemon-owned. It stays available after the chain finishes or you quit Burrow with Keep running.</p></li>
+</ol>
+<details><summary>What if Hovel already contains a command or confirmation?</summary><p>Burrow stages the JSON and switches to Hovel, preserving that input. It displays “Hovel input retained” and leaves the complete throw command in Burrow's command output, reachable with <kbd>Alt+B</kbd>. Finish or cancel the existing Hovel interaction before entering the staged command. Typing while Hovel is starting also cancels the automatic prefill. An exited CLI requires its normal explicit restart; no command is replayed automatically.</p></details>
+<details><summary>How long is a password chain usable?</summary><p>A password/passphrase export references a one-use private frontend endpoint. Keep the exporting Burrow process open and start the confirmed chain within ten minutes. Authentication then uses Burrow's existing two-minute prompt limit. Closing the frontend or cancelling the secret field cancels that exact pending authentication and attempts cleanup; inspect the result if cleanup is uncertain. A completed connection survives frontend exit. Regenerate an expired or already-used password chain. One pending interactive chain is supported per TUI at a time. After rejecting a Hovel plan, press <kbd>Ctrl+C</kbd> in Hovel to cancel its waiting private frontend before staging another interactive chain. Lists and independent connection/tunnel controls remain available while it waits.</p></details>
+<p>For encrypted keys, use <code>chain connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519 --prompt</code>. For unencrypted keys or a ready agent, omit <code>--prompt</code>. To supply the password automatically, enter <code>chain connect target 192.168.10.50 --user alice --password PASSWORD</code>, replacing the placeholder. Hovel still reviews and confirms the staged throw. Inline text is visible while typed; Up recalls the command with bare <code>--password</code>, without the supplied value.</p>
+
+<h2 id="tui-walkthrough">Walkthrough 1 · Review and run a request in the TUI</h2>
+<p><strong>Starting point:</strong> the active workspace contains a connected SSH connection named <code>target</code>, and its SSH server can reach an HTTP service at <code>internal.example:8080</code>. Replace the example destination with your own. These commands go in Burrow's management prompt.</p>
+<ol>
+<li><p>Press <kbd>Alt+B</kbd> to select Burrow. Create a local forward using the existing command:</p><pre data-lang="Burrow management"><code>tunnel create target forward 18080 internal.example 8080</code></pre><p>Review the connection, local listener and remote destination. Choose Proceed and press Enter. Escape or Cancel creates nothing. If the intended forward already exists, use it instead of creating a duplicate.</p></li>
+<li><p>Read the current selection:</p><pre data-lang="Burrow management"><code>chain select target</code></pre><p>Find the <code>L</code> entry whose listener is <code>127.0.0.1:18080</code> and destination is <code>internal.example:8080</code>. Copy its complete ID or use Tab completion in the next command. <code>CREATION_ID</code> below is a placeholder, not a literal value.</p></li>
+<li><p>Request an HTTP review:</p><pre data-lang="Burrow management"><code>chain http target target/CREATION_ID http://internal.example:8080/health</code></pre><p>The URL names the fixed destination, not the local listener. The recap includes connection, full tunnel ID, direction, bind, destination, URL and limits. No GET has been sent yet.</p></li>
+<li><p>Try Escape to cancel. Submit the command again, move focus from Cancel to Proceed with Tab or the arrow keys, and press Enter. Approval is bound to that exact reviewed selection.</p></li>
+<li><p>Read the result in command output. Use <kbd>PgUp</kbd>/<kbd>PgDn</kbd> to scroll. Inspect <code>state</code>, <code>statusCode</code>, <code>bytes</code> and <code>sha256</code>. Run <code>inspect target</code> and <code>chain select target</code> to confirm that the connection and forward remain.</p></li>
+</ol>
+<p><strong>Expected outcome:</strong> one GET through the selected forward, a Hovel result artifact, and a still-running SSH connection and listener. A complete HTTP 404 or 500 establishes transport completion, not application health. <kbd>F1</kbd> opens help; NO_COLOR retains controls and text.</p>
+
+<h2 id="cli-connect">Walkthrough 2 · Connect to running Dropbear from the shell CLI</h2>
+<p><strong>Starting point:</strong> Dropbear already listens on your target, an existing account accepts your key, and the connection name <code>target</code> is unused. The same steps apply to OpenSSH. Replace the documentation address <code>192.0.2.10</code>, sample account and paths before running commands.</p>
+<p>Set these variables in your local shell, not in either application prompt. The key or unlocked agent must be accessible to the daemon.</p>
+<pre data-lang="Local shell"><code>CHAIN_WORKSPACE=/home/operator/burrow-lab
+CHAIN_KEY=/home/operator/.ssh/lab_ed25519
+CHAIN_HOVEL="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.2/hovel"
+burrow --workspace "$CHAIN_WORKSPACE" status</code></pre>
+<h3>Export without authenticating</h3>
+<pre data-lang="Local shell"><code>burrow --workspace "$CHAIN_WORKSPACE" chain connect target 192.0.2.10 --user tester \
+  --port 2222 --key "$CHAIN_KEY" &gt; "$CHAIN_WORKSPACE/connect-target.chain.json"</code></pre>
+<p>This writes the configured chain, resolved SSH settings and review digest. It does not authenticate, upload Dropbear, configure an account or start the server. Inspect the generated file; it contains paths and configuration, never private-key contents or passwords.</p>
+<h3>Review and execute in Hovel</h3>
+<pre data-lang="Local shell · interactive confirmation"><code>"$CHAIN_HOVEL" throw "$CHAIN_WORKSPACE/connect-target.chain.json" \
+  --workspace "$CHAIN_WORKSPACE" \
+  --daemon-endpoint "$CHAIN_WORKSPACE/hoveld.sock" \
+  --allow-dangerous --json</code></pre>
+<p>Read Hovel's plan and answer its confirmation prompt. <code>--allow-dangerous</code> permits the base module's capability classification; it does not itself approve execution. Launch-key requirements remain in force. Without confirmation no connection is created.</p>
+<p>After approval, Burrow verifies the workspace, build and resolved SSH settings, refuses an existing name reservation, obtains the retained manager and starts SSH. It waits up to 30 seconds for observed connected state. A dispatch acknowledgement alone is not success.</p>
+<h3>Find and use the registered connection</h3>
+<pre data-lang="Local shell"><code>burrow --workspace "$CHAIN_WORKSPACE" connections
+burrow --workspace "$CHAIN_WORKSPACE" inspect target
+burrow --workspace "$CHAIN_WORKSPACE" shell target</code></pre>
+<p>Inspection should show <code>connected</code>. A TUI on the same workspace also displays the connection: use <code>shell target</code> or the existing reviewed <code>run now target -- /usr/bin/id</code> there. The chain creates a connection; opening a shell is a separate action.</p>
+<p><strong>Expected outcome:</strong> Hovel retains a connection artifact and Burrow owns a live SSH master. Dropbear remains independently running. Replaying the creation chain against the reserved name fails instead of adopting or reconnecting it.</p>
+
+<h2 id="embedded-walkthrough">Walkthrough 3 · Use the embedded Hovel CLI</h2>
+<p><strong>Starting point:</strong> a saved chain file exists. If you already executed the connection example, export one with an unused name or use an HTTP export from the next walkthrough. Replaying an occupied connection name is deliberately refused.</p>
+<ol>
+<li><p>Open the same workspace in Burrow. Press <kbd>Alt+H</kbd> or click Hovel. Its embedded CLI is bound to this workspace.</p></li>
+<li><p>For manual entry, select an operation and chain so Hovel accepts the throw and displays its live logs. Generated exports use the name <code>burrow-chain</code>:</p><pre data-lang="Embedded Hovel CLI"><code>op use burrow
+chain create burrow-chain
+chain use burrow-chain</code></pre><p>The automatic TUI handoff prepares and selects this context for you. If the chain already exists, select it with <code>chain use</code>.</p></li>
+<li><p>Enter the Hovel command directly, without a leading <code>hovel</code>:</p><pre data-lang="Embedded Hovel CLI"><code>throw /home/operator/burrow-lab/connect-target.chain.json --allow-dangerous --json</code></pre></li>
+<li><p>Review and confirm in Hovel. Burrow does not answer the prompt on your behalf. Satisfy any additional launch-key requirements through Hovel.</p></li>
+<li><p>After the result, press <kbd>Alt+B</kbd>. Use <code>inspect target</code> for connection creation, or <code>chain select target</code> to inspect the still-running resources after an HTTP chain.</p></li>
+<li><p>Return with <kbd>Alt+H</kbd> and inspect evidence:</p><pre data-lang="Embedded Hovel CLI"><code>artifact list --json</code></pre><p>Match the artifact's <code>runId</code> to the throw's run. The inventory includes its stored path. Artifacts remain after connection teardown.</p></li>
+</ol>
+<table><thead><tr><th>Prompt</th><th>Example</th><th>What interprets it?</th></tr></thead><tbody>
+<tr><td>Burrow management</td><td><code>chain http target ID URL</code></td><td>Burrow commands, review and completion.</td></tr>
+<tr><td>Embedded Hovel</td><td><code>throw /absolute/health.chain.json --allow-dangerous --json</code></td><td>Hovel commands and Hovel confirmation.</td></tr>
+<tr><td>Local shell</td><td><code>burrow --workspace PATH chain export … &gt; health.chain.json</code></td><td>Shell variables, quoting and redirection around the standalone Burrow CLI.</td></tr>
+</tbody></table>
+<p>The <a href="#tui-connect">automatic TUI handoff</a> saves and prepares these commands for you. Use manual entry when a chain file already exists or Hovel has an unfinished draft. A <code>&gt; file.json</code> suffix in management does not save output. Closing the embedded CLI does not prove an already-dispatched throw was cancelled; inspect history before repeating it.</p>
+
+<h2 id="cli-password">Walkthrough · Password authentication from the CLI</h2>
+<p>This keeps JSON output usable by scripts while a human supplies the secret through a controlling terminal. Use two local terminals on the same machine and workspace. A key/agent export exits after printing JSON; a password/passphrase export stays open until the confirmed chain's authentication finishes or is cancelled.</p>
+<ol>
+<li><p>In terminal A, export the chain and keep this process open:</p><pre data-lang="Terminal A"><code>umask 077
+burrow --workspace /absolute/workspace chain connect target 192.168.10.50 \
+  --user alice --port 22 --password &gt; /absolute/workspace/password.chain.json</code></pre><p>Stderr reports that JSON is ready. Nothing has authenticated yet. Stdout contains only the chain JSON.</p></li>
+<li><p>In terminal B, run the exported chain with the pinned Hovel executable. Review and confirm normally:</p><pre data-lang="Terminal B"><code>HOVEL_BIN="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.2/hovel"
+"$HOVEL_BIN" throw /absolute/workspace/password.chain.json \
+  --workspace /absolute/workspace --daemon-endpoint /absolute/workspace/hoveld.sock \
+  --allow-dangerous --json</code></pre></li>
+<li><p>Terminal A shows the hidden password field after Hovel confirms. Enter the password there. Terminal B receives the chain result; terminal A exits after authentication. Cancellation uses <kbd>Ctrl+C</kbd> in terminal A.</p></li>
+<li><p>Check the live connection:</p><pre data-lang="Local shell"><code>burrow --workspace /absolute/workspace inspect target</code></pre><p>The JSON should show <code>state: connected</code>. Reopen the TUI on that workspace, or run another supported Burrow command against <code>target</code>.</p></li>
+</ol>
+<h3>Automatic password with no controlling terminal</h3>
+<p><code>PASSWORD</code> below is a placeholder. The server and account must already exist. In process A, export using a supplied value; leave that process alive:</p>
+<pre data-lang="Process A · local shell"><code>umask 077
+burrow --workspace /absolute/workspace chain connect target 192.168.10.50 \
+  --user alice --port 22 --password PASSWORD &gt; /absolute/workspace/password.chain.json</code></pre>
+<p>Wait for “Chain JSON exported” on stderr before starting process B. After reviewing the generated operation, an unattended caller can explicitly approve its throw:</p>
+<pre data-lang="Process B · local shell"><code>HOVEL_BIN="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.2/hovel"
+"$HOVEL_BIN" throw /absolute/workspace/password.chain.json \
+  --workspace /absolute/workspace --daemon-endpoint /absolute/workspace/hoveld.sock \
+  --allow-dangerous --now --json</code></pre>
+<p>No password popup or controlling terminal is required. Process A exits when authentication completes; stdout remains only chain JSON and status goes to stderr. The broker is one-use and expires after ten minutes. Keep process A alive until the result arrives. A saved file cannot recreate the password after that process exits. Explicit Hovel approval is still required; supplying the password does not approve a connection.</p>
+<p>Quote passwords containing spaces. Use <code>--password=VALUE</code> for a leading dash or an empty password. Values are limited to 4,096 bytes without NUL, CR or LF. They stay in frontend memory and out of Burrow command history, logs, previews, saved profiles, Hovel config/artifacts and child process arguments/environment. Literal CLI passwords remain visible in the original process arguments and may enter the invoking shell's history. Inline TUI commands are visible while typed. In the TUI, Up recalls the connection command with a bare <code>--password</code> flag for fresh hidden entry; supplied password values are never recalled. Choose the bare flag for hidden entry.</p>
+<p>The automatic value answers only the target's password request, once. Wrong passwords fail and attempt exact-owner cleanup. Jump hosts keep their configured authentication; if a jump asks for a password or passphrase, the automatic target value is refused. Use available jump keys/agents or bare interactive entry. Direct CLI connections also accept <code>connect NAME HOST --user USER --password PASSWORD --yes</code>; omit <code>--yes</code> for a passive review.</p>
+
+<h2 id="cli-http">Walkthrough 4 · CLI review and reusable HTTP export</h2>
+<p><strong>Starting point:</strong> <code>target</code> and its forward from walkthrough 1 remain live. Run these commands in your shell using the variables from walkthrough 2:</p>
+<pre data-lang="Local shell"><code>burrow --workspace "$CHAIN_WORKSPACE" chain select target
+CHAIN_TUNNEL='target/REPLACE_WITH_COMPLETE_CREATION_ID'
+burrow --workspace "$CHAIN_WORKSPACE" chain http target "$CHAIN_TUNNEL" \
+  http://internal.example:8080/health</code></pre>
+<p>Read the returned <code>review</code> and copy its <code>digest</code>. No GET has been sent. Bind approval to the exact recap:</p>
+<pre data-lang="Local shell"><code>CHAIN_REVIEW='REPLACE_WITH_RETURNED_DIGEST'
+burrow --workspace "$CHAIN_WORKSPACE" chain http target "$CHAIN_TUNNEL" \
+  http://internal.example:8080/health --review "$CHAIN_REVIEW" --yes</code></pre>
+<p><code>--yes</code> alone explicitly approves the current request; <code>--review</code> also binds it to your earlier recap. Changed selection or request inputs invalidate the digest. This follows the same Hovel planning, owner dispatch and artifact path as the TUI.</p>
+<p>Export the current operation for a later Hovel throw:</p>
+<pre data-lang="Local shell"><code>burrow --workspace "$CHAIN_WORKSPACE" chain export target "$CHAIN_TUNNEL" \
+  http://internal.example:8080/health &gt; "$CHAIN_WORKSPACE/health.chain.json"
+
+"$CHAIN_HOVEL" throw "$CHAIN_WORKSPACE/health.chain.json" \
+  --workspace "$CHAIN_WORKSPACE" \
+  --daemon-endpoint "$CHAIN_WORKSPACE/hoveld.sock" \
+  --allow-dangerous --json</code></pre>
+<p>Export verifies resources without sending the GET. Confirming the throw sends a new request and produces a new artifact. Alternatively, run <code>throw /home/operator/burrow-lab/health.chain.json --allow-dangerous --json</code> in embedded Hovel.</p>
+<p><strong>Expected outcome:</strong> a reusable operation while its exact resources remain live. It is not a reconnection recipe. Recreating the same listener port produces a different ID and invalidates the old export.</p>
+
+<h2 id="route-walkthroughs">Walkthrough 5 · Follow local, reverse and SOCKS traffic</h2>
+<p><strong>Local</strong> means the Burrow/SSH-client machine. <strong>Remote</strong> means the SSH-server machine. These examples assume the HTTP services already exist; none of these commands starts a service.</p>
+<h3>Local forward: a fixed service reachable from the SSH server</h3>
+<pre data-lang="Burrow management"><code>tunnel create target forward 18080 internal.example 8080
+chain select target
+chain http target target/LOCAL_CREATION_ID http://internal.example:8080/health</code></pre>
+<figure class="diagram" aria-label="Local HTTP traverses the existing local listener and SSH connection to the fixed remote service."><figcaption>L · response returns along the same stream</figcaption><ol class="flow-diagram vertical">
+<li class="flow-step">Burrow HTTP consumer on the local machine</li><li class="flow-step">Verified existing listener 127.0.0.1:18080</li><li class="flow-step strong">Existing SSH connection to the server</li><li class="flow-step ready">Server connects to the fixed destination internal.example:8080</li>
+</ol></figure>
+<p>The URL must name <code>internal.example:8080</code>, not <code>127.0.0.1:18080</code>. Changing the URL does not retarget this forward. Its path selects the HTTP resource at the fixed destination.</p>
+<h3>Reverse forward: a local service reached from the remote listener</h3>
+<p>Suppose a service already listens on <code>127.0.0.1:8080</code> on the Burrow machine. Request a random high reverse port on the server:</p>
+<pre data-lang="Burrow management"><code>tunnel create target reverse 0 127.0.0.1 8080
+chain select target
+chain http target target/REVERSE_CREATION_ID http://127.0.0.1:8080/health</code></pre>
+<figure class="diagram" aria-label="Reverse consumption opens a server-origin connection to the selected remote listener and returns through the reverse forward to the local service."><figcaption>R · remote-origin traffic to the local destination</figcaption><ol class="flow-diagram vertical">
+<li class="flow-step">Local consumer prepares a GET for the fixed local destination</li><li class="flow-step strong">OpenSSH -W through the existing master asks the server to connect to its selected reverse listener</li><li class="flow-step">The existing remote listener accepts that connection at its assigned port</li><li class="flow-step">The reverse forward carries the stream back over SSH</li><li class="flow-step ready">Local service 127.0.0.1:8080 receives the request</li>
+</ol></figure>
+<p>The URL uses destination port <code>8080</code>, not the allocated remote listener port. A direct request to the local HTTP service would not prove the reverse route. The server must permit the diagnostic forwarding channel and expose verified Linux listener metadata. No remote Python or HTTP client is installed.</p>
+<h3>SOCKS: choose each destination and resolve names remotely</h3>
+<pre data-lang="Burrow management"><code>proxy create target 1080
+chain select target
+chain http target target/SOCKS_CREATION_ID http://internal.example:8080/health</code></pre>
+<figure class="diagram" aria-label="SOCKS hostname mode carries the reviewed hostname to the SSH server for resolution and connection."><figcaption>D · hostname resolution belongs to the SSH server</figcaption><ol class="flow-diagram vertical">
+<li class="flow-step">Local consumer supplies the reviewed hostname and port in SOCKS5 hostname mode</li><li class="flow-step">Verified connection-owned SOCKS listener 127.0.0.1:1080</li><li class="flow-step strong">Existing SSH connection to the server</li><li class="flow-step ready">Server resolves internal.example and connects to port 8080</li>
+</ol></figure>
+<p>SOCKS has no fixed destination, so each reviewed URL may choose a different host and port. Failure does not fall back to local DNS or an ambient HTTP proxy. Use the complete SOCKS creation ID from <code>chain select</code>; the displayed proxy port alone is not its identity.</p>
+
+<h2 id="headless">Walkthrough 6 · Explicit headless approval and evidence</h2>
+<p>After inspecting the exported operation, you may deliberately choose a noninteractive throw:</p>
+<pre data-lang="Local shell"><code>"$CHAIN_HOVEL" throw "$CHAIN_WORKSPACE/health.chain.json" \
+  --workspace "$CHAIN_WORKSPACE" \
+  --daemon-endpoint "$CHAIN_WORKSPACE/hoveld.sock" \
+  --allow-dangerous --now --json &gt; "$CHAIN_WORKSPACE/health.throw.json" \
+  2&gt; "$CHAIN_WORKSPACE/health.throw.err"
+CHAIN_STATUS=$?</code></pre>
+<p><code>--now</code> is an explicit approval choice recorded by Hovel, not a bypass of dangerous-module or launch-key restrictions. A matching existing confirmation is another Hovel route. Without either, JSON mode may still print an interactive prompt and fail at EOF.</p>
+<p>Keep stdout, stderr and the process status. Check status first, then the Hovel step's <code>state</code>, then parse its <code>summary</code>. For HTTP, inspect the result's <code>state</code> and actual <code>statusCode</code>; process success is not an application-health assertion. Failure output is not universally JSON. See <a href="automation.html">Local tools and automation</a> for the surrounding result-handling contract.</p>
+<details><summary>What is in the exported file?</summary><p>The file has Hovel's API version, <code>kind: Chain</code>, metadata, configured mode, one step using <code>module:burrow@0.1.0</code>, a local target label and string configuration. The default exported name is <code>burrow-chain</code>. The local label executes the module locally; the SSH endpoint is in connection settings.</p><p>Connection exports use <code>action: chain-connect</code>, workspace, build, settings, resolved SSH configuration and digest. HTTP exports use <code>action: tunnel-http</code>, workspace, build, manager session/generation, complete tunnel binding, URL and digest. Generate these fields through Burrow instead of hand-editing IDs. Changed build, settings or resources may require another export.</p></details>
+<details open><summary>How to read HTTP evidence</summary><p>A <code>tunnel-http</code> artifact contains consumer <code>runID</code>, exact <code>selection</code>, <code>url</code>, <code>state</code>, <code>statusCode</code>, <code>bytes</code> and a <code>sha256</code> for a complete bounded response. Selection includes connection creation, manager session/generation and the tunnel's creation run. Response bodies and headers are discarded.</p><p>A complete 302 is recorded without following Location. A complete 404/500 can have <code>state: succeeded</code> because the exchange completed. Timeout, incomplete response or a body over 1 MiB fails and receives a failed audit outcome. Refusal before traffic can produce a Hovel error without an HTTP artifact. Evidence-storage failure must not be treated as successful collection.</p></details>
+<p>Request URLs are limited to 2,048 bytes and exclude credentials, query strings and fragments. Request fields are recorded, so paths must not contain secrets. Responses are bounded to 1 MiB of body and 32 KiB of headers; there is no automatic decompression. Only plain HTTP GET is supported, with no custom authentication or TLS.</p>
+
+<h2 id="cleanup">Walkthrough 7 · Cleanup and troubleshooting</h2>
+<pre data-lang="Burrow management"><code>chain select target
+tunnel remove target/CREATION_ID
+inspect target
+chain select target</code></pre>
+<p>Review and confirm removal. It waits for admitted bounded consumers on the connection, then removes that listener. Siblings remain usable. To end the whole connection, run <code>close target</code> and confirm separately. Use <code>proxy remove target</code> for the connection-owned SOCKS proxy.</p>
+<table><thead><tr><th>Event</th><th>Effect</th><th>What remains?</th></tr></thead><tbody>
+<tr><td>Cancel review</td><td>No new connection or HTTP request.</td><td>Existing resources.</td></tr>
+<tr><td>HTTP completes or fails</td><td>The bounded request/client stream ends.</td><td>SSH connection, listeners and evidence.</td></tr>
+<tr><td>Caller disconnects / Keep-running quit</td><td>The frontend ends; an unattended dispatched throw may finish. Pending private authentication is cancelled.</td><td>Completed daemon-owned connections and evidence.</td></tr>
+<tr><td>Remove one tunnel</td><td>Wait for admitted consumers; remove selected listener.</td><td>Connection, sibling listeners and evidence.</td></tr>
+<tr><td>Close connection</td><td>Wait for consumers; close its owned SSH resources.</td><td>Target's pre-existing SSH server and historical evidence.</td></tr>
+<tr><td>Master loss</td><td>Consumers fail without another login.</td><td>Evidence; recovery is explicit.</td></tr>
+<tr><td>Same-port recreation</td><td>New creation ID; old chains refuse replacement.</td><td>Old evidence and the separately created replacement.</td></tr>
+</tbody></table>
+<details open><summary>Retained manager does not support password authentication</summary><p>Restarting only the TUI can leave an older connection manager running. Burrow checks its advertised password support before staging or dispatch, independently of the executable hash. Inspect the same workspace, then explicitly review retirement if intended:</p><pre data-lang="Local shell"><code>burrow --workspace /absolute/workspace connections
+burrow --workspace /absolute/workspace restart</code></pre><p>The restart review covers that manager and its connections, including connections added concurrently. Confirm only when you intend to close them. An empty inventory means it currently owns no connections. The daemon, saved settings, evidence and separate retained script sessions remain. Avoid <code>make restart</code> for inspection: it supplies <code>--yes</code>. Reopen Burrow and stage a fresh chain after retirement; no failed connection is retried automatically. A Hovel throw marked completed can still contain a failed module; inspect the step's state.</p></details>
+<details><summary>Connection name already reserved</summary><p>Inspect the name. Use the intended existing connection, choose another unused name, or explicitly close/recover the old resource before creating another. Unknown reservations require investigation; the chain will not force-delete or adopt them.</p></details>
+<details><summary>Saved chain now refuses its selection</summary><p>Check workspace, build, manager and complete creation IDs. Owner restart, connection recreation, tunnel recreation or changed resolved SSH settings can invalidate the export. Re-establish resources explicitly and export again. A matching port is insufficient.</p></details>
+<details><summary>SSH works but HTTP fails</summary><p>Check direction, fixed destination, service availability and forwarding permissions. SOCKS names must resolve from the SSH server. Reverse consumption also needs the server-origin channel and readable Linux listener metadata. Inspect time/response limits and Hovel's failure before retrying.</p></details>
+<details><summary>Caller disappeared or evidence storage failed</summary><p>Do not infer cancellation. Inspect Hovel history, artifacts and current resource state in the same workspace. Traffic may have happened without the caller receiving its result. Repeating an HTTP chain sends another GET.</p></details>
+<details><summary>Hovel reports “database is locked”</summary><p>The pinned Hovel CLI can refuse simultaneous startup against one workspace's SQLite store. This was observed during the concurrency check. Inspect throw history and current Burrow state before an explicit retry; no automatic retry is added. Starting the second CLI after the first request is admitted avoids racing their initial store setup while still allowing the actual requests to overlap.</p></details>
+<figure class="diagram" aria-label="Dropbear deployment is separate from the implemented connection chain and later Burrow operations."><figcaption>The larger Dropbear goal</figcaption><ol class="flow-diagram vertical">
+<li class="flow-step warning">Separate deployment capability: existing authorized delivery/execution access → prepare binary → upload → configure authorization, host keys and listener → start and own server cleanup</li><li class="flow-step strong">Implemented here: confirmed Hovel connection chain → running Dropbear endpoint → registered Burrow connection</li><li class="flow-step ready">Existing Burrow workflows: inspect, shell, commands, explicit forwarding and supported selected-tunnel HTTP requests</li>
+</ol></figure>
+<p>Closing the Burrow connection does not stop or uninstall Dropbear. The compatibility check proves authentication, registration, command execution and cleanup; it does not establish every Dropbear PTY/file/forwarding combination. A bare server does not imply SFTP availability.</p>
+
+<h2>Checks and provenance</h2>
+<pre data-lang="Aspect"><code>aspect burrow chains-check
+aspect burrow-check ci
+aspect burrow-check
+aspect burrow-site check</code></pre>
+<p>The focused disposable lab covers real selected L/R/SOCKS hostname traffic, confirmation rejection, concurrent consumers, caller disconnect, stale same-port identities, removal, master loss and retained evidence. The SSH handoff checks cover real key/password TUI chains, Hovel confirmation, hidden secret entry, cancellation cleanup, Alt+B ownership and CLI password JSON export, inline TUI/headless passwords, target/jump isolation, wrong-password cleanup and exclusion of supplied secrets from downstream state. The portable manager compatibility check exercises refusal before staging/dispatch while preserving compatible exports and explicit close. It uses the existing digest-pinned OpenSSH image and declared SHA256-pinned Alpine 3.24 x86_64 packages: Dropbear 2026.91-r0 (MIT), utmps 0.1.3.3-r0 and skalibs 2.15.0.0-r0 (ISC). These packages are fixtures, not Burrow runtime dependencies or distributed target payloads; their exact URLs, hashes and package provenance are recorded in <code>MODULE.bazel</code>. The container owns fixture-server cleanup.</p>
+<p>The owner explicitly added chain-originated connection creation to issue #62 on 2026-09-19. It remains a distinct operation: the existing-tunnel consumer never provisions or reconnects. Uploading or starting Dropbear remains outside this change.</p>
+</article>

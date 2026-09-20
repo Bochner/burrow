@@ -60,7 +60,16 @@ func targetLabel(s State) string {
 func commandIdentity(args []string) string {
 	// Only call after validation; never render rejected unknown options (secrets).
 	var quoted []string
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") && optionName(arg) == "password" {
+			if strings.Contains(arg, "=") {
+				arg = "--password=<redacted>"
+			} else if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				arg = "--password=<redacted>"
+				i++
+			}
+		}
 		if strings.ContainsAny(arg, " \t\r\n\"\\") {
 			b, _ := json.Marshal(arg)
 			arg = string(b)
@@ -68,4 +77,29 @@ func commandIdentity(args []string) string {
 		quoted = append(quoted, arg)
 	}
 	return strings.Join(quoted, " ")
+}
+
+// RecallCommand retains validated connection settings without a supplied password.
+// Move the bare flag last so it cannot consume a following positional on replay.
+func RecallCommand(args []string) string {
+	if len(args) == 0 || (args[0] != "connect" && args[0] != "reconnect" && !(len(args) > 1 && args[0] == "chain" && args[1] == "connect")) {
+		return CommandLine(args)
+	}
+	public := make([]string, 0, len(args))
+	password := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") && optionName(arg) == "password" {
+			password = true
+			if !strings.Contains(arg, "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+			}
+			continue
+		}
+		public = append(public, arg)
+	}
+	if password {
+		public = append(public, "--password")
+	}
+	return CommandLine(public)
 }

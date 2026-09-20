@@ -39,7 +39,8 @@ tui opens the management interface (default); quit retains the daemon.
 restart [--yes] retires the workspace's Burrow manager, then opens the current TUI.
 --yes skips restart confirmation and ends the workspace's connections and shells.
 It ends that manager's connections and shells; saved settings, evidence and Hovel remain.
-Inside the interface: status, connections, connect, inspect, shell, reconnect, close, help, quit.
+Inside the interface: status, connections, connect, chain connect, inspect, shell, reconnect, close, help, quit.
+Type chain then F1 for SSH chain examples and options; Alt+B selects Burrow management.
 Linux amd64 only. Cache: $XDG_CACHE_HOME/burrow/hovel/0.4.2 (or ~/.cache).
 Unknown/stale resources require manual investigation; no automatic cleanup.
 `
@@ -142,6 +143,10 @@ func run(args []string) error {
 		if (command == "shell" || command == "logs") && !term.IsTerminal(os.Stdin.Fd()) {
 			return fmt.Errorf("shell requires terminal input; use inspect NAME for JSON")
 		}
+		following := command == "run" && len(args) > 1 && args[1] == "follow"
+		if following && !term.IsTerminal(os.Stdin.Fd()) {
+			return fmt.Errorf("run follow requires a terminal; use run output ID stdout|stderr OFFSET for bounded JSON reads")
+		}
 		defer launch.Phase("cli:" + command)()
 		interrupt, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -161,6 +166,11 @@ func run(args []string) error {
 			m.initialLogs = true
 			return terminal(m, m.noColor)
 		}
+		if following {
+			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
+			m.initialFollow = args
+			return terminal(m, m.noColor)
+		}
 		if command == "shell" {
 			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
 			m.initialShell = args[1]
@@ -170,12 +180,33 @@ func run(args []string) error {
 		if e != nil {
 			return e
 		}
+		if args[0] == "chain" && args[1] == "connect" {
+			c, _, err := connection.Parse(o.Workspace, args[2:])
+			if err != nil {
+				return err
+			}
+			if c.Prompt {
+				return promptChainCLI(interrupt, o.Workspace, args, noColor)
+			}
+		}
 		if args[0] == "connect" || args[0] == "reconnect" {
 			interactive := wizard
 			if len(args) > 1 {
 				c, yes, err := connection.Parse(o.Workspace, args[1:])
 				if err != nil {
 					return err
+				}
+				if c.Password != nil {
+					var result any
+					if yes {
+						result, err = connection.ExecutePrompt(interrupt, o.Workspace, args, nil)
+					} else {
+						result, err = connection.Execute(ctx, o.Workspace, args)
+					}
+					if err != nil {
+						return err
+					}
+					return printResult(result, noColor)
 				}
 				interactive = c.Prompt || (!yes && term.IsTerminal(os.Stdin.Fd()))
 			}
@@ -186,6 +217,9 @@ func run(args []string) error {
 				}
 				return printResult(a.result, noColor)
 			}
+		}
+		if connection.RunWaits(args) {
+			ctx = interrupt
 		}
 		result, e := connection.Execute(ctx, o.Workspace, args)
 		if e != nil {

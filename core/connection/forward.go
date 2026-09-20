@@ -355,6 +355,18 @@ func (m *manager) tunnelCommand(req hovel.PayloadCommandRequest) (hovel.PayloadC
 	if m.closed || len(req.Args) < 1 || req.Args[0] != m.Generation {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("exact manager generation required")
 	}
+	var s *owner
+	if len(req.Args) == 3 && (req.Command == "unforward" || req.Command == "tunnel-check") {
+		s = m.connections[req.Args[1]]
+		if s == nil {
+			return hovel.PayloadCommandResult{}, fmt.Errorf("tunnel connection unavailable")
+		}
+		if req.Command == "unforward" {
+			// Give verification its full deadline after admitted readers finish.
+			s.tunnelUse.Lock()
+			defer s.tunnelUse.Unlock()
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := launch.VerifyReservation(ctx, m.Workspace, m.dir); err != nil {
@@ -373,10 +385,6 @@ func (m *manager) tunnelCommand(req hovel.PayloadCommandRequest) (hovel.PayloadC
 		slices.SortFunc(list, func(a, b Tunnel) int { return strings.Compare(a.ID, b.ID) })
 		value = list
 	} else if len(req.Args) == 3 && (req.Command == "unforward" || req.Command == "tunnel-check") {
-		s := m.connections[req.Args[1]]
-		if s == nil {
-			return hovel.PayloadCommandResult{}, fmt.Errorf("tunnel connection unavailable")
-		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		t, ok := s.tunnels[req.Args[2]]

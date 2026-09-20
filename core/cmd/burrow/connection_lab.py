@@ -12,6 +12,7 @@ import signal
 import pty
 import select
 import shlex
+import shutil
 import sqlite3
 import socket
 import struct
@@ -27,10 +28,22 @@ from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
 from core.cmd.burrow.files_lab import file_checks, load_checks, file_ui
+from core.cmd.burrow.runs_lab import run_checks, run_ui
+from core.cmd.burrow.follow_lab import follow_checks
+from core.cmd.burrow.automation_lab import automation_checks
+from core.cmd.burrow.reports_lab import report_checks
+from core.cmd.burrow.chains_lab import chain_checks, dropbear_check, connection_chain_ui
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("paths", nargs=6, metavar="PATH")
+parser.add_argument("paths", nargs=10, metavar="PATH")
+parser.add_argument("--lifecycle-check", action="store_true", help="check connection management, SOCKS, authentication and failure ownership")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
+parser.add_argument("--runs-check", action="store_true", help="check retained remote command lifecycle only")
+parser.add_argument("--follow-check", action="store_true", help="check independent live output readers and viewers")
+parser.add_argument("--reports-check", action="store_true", help="check Ubuntu survey, artifacts and independent report reader")
+parser.add_argument("--chains-check", action="store_true", help="check production selected-tunnel chain traffic")
+parser.add_argument("--scripts-check", action="store_true", help="check script inputs and staging through retained runs")
+parser.add_argument("--automation-check", action="store_true", help="check selected local tools and supported Hovel automation")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
 parser.add_argument("--files-check", action="store_true", help="check real SFTP browsing only")
 parser.add_argument("--forward-check", action="store_true", help="check real local forwarding only")
@@ -41,7 +54,7 @@ parser.add_argument("--prompt-check", action="store_true", help="check private p
 parser.add_argument("--auth-check", action="store_true", help="check private prompts, cancellation and rejected passwords only")
 args = parser.parse_args()
 smoke = args.smoke
-binary, wheel, image_file, screen_check, legacy_binary, vim_apk = [str(Path(p).resolve()) for p in args.paths]
+binary, wheel, image_file, screen_check, legacy_binary, vim_apk, survey_script, dropbear_apk, utmps_apk, skalibs_apk = [str(Path(p).resolve()) for p in args.paths]
 image = Path(image_file).read_text().strip()
 started = stage_started = time.monotonic()
 
@@ -55,7 +68,10 @@ def interrupted(signum, _frame):
     raise SystemExit(f"acceptance interrupted by signal {signum}")
 for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
     signal.signal(signum, interrupted)
-signal.alarm(1200 if args.measure else 600)
+# Routine acceptance is partitioned; the explicit composed diagnostic has a
+# larger budget. Individual transition bounds apply equally to both.
+partition = any((args.lifecycle_check, args.files_check, args.reverse_check, args.shell_check, args.chains_check, args.reports_check, args.automation_check, args.follow_check, args.runs_check))
+signal.alarm(1200 if args.measure else 600 if partition else 1800)
 
 def command(*args, env=None, ok=True):
     p = subprocess.run(list(map(str, args)), env=env, capture_output=True, text=True, timeout=60)
@@ -73,8 +89,12 @@ def wait(check):
 
 with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
     root = Path(scratch)
+    # Frontends and retained modules must keep the same build even if the
+    # shared checkout is rebuilt while this disposable lab is running.
+    binary = str(shutil.copy2(binary, root / "burrow"))
     env = {k: v for k, v in os.environ.items() if not k.startswith(("HOVEL_", "SSH_"))}
     env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
+    env["AUTOMATION_SECRET_CANARY"] = "AUTOMATION-NOT-A-CREDENTIAL"
     daemons = []
     children = []
     forward_evidence = []
@@ -175,12 +195,58 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
-        if args.files_check or not (smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check):
+        if args.chains_check:
+            handoff_workspace = root / "hc"
+            daemons.append(burrow(handoff_workspace, "status")["pid"])
+            connection_chain_ui(binary, env, screen_check, handoff_workspace, burrow, port, key, container, hovel)
+            chain_checks(burrow, w, first, hovel, env, hv, options, binary, screen_check)
+            dropbear_workspace = root / "db"
+            daemons.append(burrow(dropbear_workspace, "status")["pid"])
+            dropbear_check(burrow, w, dropbear_workspace, first, hovel, env, container, command, key, [dropbear_apk, utmps_apk, skalibs_apk])
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        if args.reports_check:
+            report_checks(burrow, w, first, hv, binary, env, screen_check, survey_script)
+            burrow(w, "close", "gateway", "--yes")
+            retained = burrow(w, "reports")
+            assert retained, "connection close lost reports"
+            assert burrow(w, "report", retained[0]["id"])["markdown"], "closed connection report unreadable"
+            raise SystemExit(0)
+        if args.automation_check:
+            automation_checks(burrow, w, first, hovel, env, hv, options)
+            run_ui(binary, env, screen_check, burrow, w, first["name"], local=True)
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        if args.follow_check:
+            follow_checks(burrow, w, first, container, command, hv, binary, env, screen_check)
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        if args.runs_check or args.scripts_check:
+            run_checks(burrow, w, first, container, command, hv, binary, env, screen_check, scripts_only=args.scripts_check)
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        if not (args.lifecycle_check or smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check or args.files_check):
+            handoff_workspace = root / "hc"
+            daemons.append(burrow(handoff_workspace, "status")["pid"])
+            connection_chain_ui(binary, env, screen_check, handoff_workspace, burrow, port, key, container, hovel)
+            burrow(w, "connect", "runs", "127.0.0.1", "tester", *options)
+            run_owner = wait(lambda: state_is(w, "runs", "connected"))
+            chain_checks(burrow, w, run_owner, hovel, env, hv, options, binary, screen_check)
+            dropbear_workspace = root / "db"
+            daemons.append(burrow(dropbear_workspace, "status")["pid"])
+            dropbear_check(burrow, w, dropbear_workspace, run_owner, hovel, env, container, command, key, [dropbear_apk, utmps_apk, skalibs_apk])
+            report_checks(burrow, w, run_owner, hv, binary, env, screen_check, survey_script)
+            automation_checks(burrow, w, run_owner, hovel, env, hv, options)
+            run_ui(binary, env, screen_check, burrow, w, run_owner["name"], local=True)
+            follow_checks(burrow, w, run_owner, container, command, hv, binary, env, screen_check)
+            run_checks(burrow, w, run_owner, container, command, hv, binary, env, screen_check)
+            burrow(w, "close", "runs", "--yes")
+            timing("retained remote runs")
+        if args.files_check or not (args.lifecycle_check or smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check):
             file_checks(burrow, w, first, container, command)
             file_ui(binary, env, screen_check, w)
             load_checks(burrow, w, container, command, options, binary, env, screen_check)
         if args.files_check:
-            audit_cleanup_checks(burrow, root, options, daemons)
             burrow(w, "close", "gateway", "--yes")
             retained = burrow(w, "downloads")
             os.kill(first["ownerPID"], signal.SIGKILL)
@@ -190,17 +256,17 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             assert {d["id"] for d in durable["records"]} == {d["id"] for d in retained["records"]}
             print("PASS durable download outcomes/totals after retained owner loss", flush=True)
             raise SystemExit(0)
-        if not smoke and not args.proxy_check and not args.shell_check and not args.forward_check:
+        if not args.lifecycle_check and not smoke and not args.proxy_check and not args.shell_check and not args.forward_check:
             forward_evidence.append(reverse_checks(binary, env, screen_check, burrow, w, first, options, container, command))
         if args.reverse_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
-        if not smoke and not args.proxy_check:
+        if not args.lifecycle_check and not smoke and not args.proxy_check:
             forward_evidence.append(forward_checks(binary, env, screen_check, burrow, w, first, options, container, command))
         if args.forward_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
-        if not smoke and not args.proxy_check:
+        if not args.lifecycle_check and not smoke and not args.proxy_check:
             # Extract only the declared executable, never APK paths or scripts.
             with tarfile.open(vim_apk, "r:gz", ignore_zeros=True) as archive:
                 vim = root / "vim"
@@ -211,6 +277,21 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         if args.shell_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
+        if args.lifecycle_check:
+            # Keep actual transfer evidence through reconnect, TUI quit and owner
+            # loss without repeating the independent files acceptance suite.
+            command("docker", "exec", container, "sh", "-c",
+                    "printf 'lifecycle evidence\\n' > /tmp/burrow-lifecycle.txt")
+            review = burrow(w, "scp", "gateway", "get", "/tmp/burrow-lifecycle.txt")
+            transfer = burrow(w, "scp", "gateway", "get", "/tmp/burrow-lifecycle.txt",
+                              "--review", review["digest"], "--yes")
+            def downloaded():
+                result = burrow(w, "downloads", transfer["id"])
+                return result if result["state"] != "running" else None
+            result = wait(downloaded)
+            assert result["state"] == "complete", result
+            assert (w / "burrow-files/downloads/burrow-lifecycle.txt").read_bytes() == b"lifecycle evidence\n"
+            assert result["files"][0]["bytes"] == len(b"lifecycle evidence\n"), result
         # Real SOCKS5 negotiation reaches the container's loopback SSH service,
         # including remote DNS. No proxy implementation or extra tool dependency.
         with socket.socket() as held:
@@ -782,6 +863,14 @@ launch:
         timing("failure ownership and evidence")
         print("PASS production key/agent auth, trust, cancellation, ownership, cross-workspace isolation, loss/reconnect, bounded logs and truthful close", flush=True)
     finally:
+        timing("acceptance before cleanup")
+        # Preserve daemon failures even if fixture teardown itself fails.
+        # These are disposable test workspaces, never the operator's workspace.
+        if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
+            if (root / "phases.jsonl").exists():
+                shutil.copy2(root / "phases.jsonl", Path(directory) / "phases.jsonl")
+            for log in root.glob("*/burrow-launch.log"):
+                shutil.copy2(log, Path(directory) / (log.parent.name + "-daemon.log"))
         for child in children:
             child.terminate()
             child.wait(timeout=10)
@@ -800,7 +889,7 @@ launch:
             except FileNotFoundError:
                 return True
         wait(lambda: all(exited(pid) for pid in daemons))
-        if forward_evidence or full_evidence:
+        if forward_evidence or full_evidence or (partition and daemons):
             with closing(sqlite3.connect(w / "workspace.db")) as db:
                 assert db.execute("pragma integrity_check").fetchone() == ("ok",)
                 for tunnel in forward_evidence:
@@ -810,7 +899,7 @@ launch:
                     request = json.loads(plans[0]["chainConfig"]["request"])["tunnel"]
                     for field in ("id", "direction", "listen", "destination"):
                         assert request[field] == tunnel[field], (field, request, tunnel)
-                if full_evidence:
+                if full_evidence or partition:
                     plans = [json.loads(r[0]) for r in db.execute("select plan_json from throw_plans")]
                     assert plans and all(p["confirmationId"] for p in plans)
                     assert db.execute("select count(*) from throw_confirmations").fetchone()[0] >= len(plans)

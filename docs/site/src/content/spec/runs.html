@@ -1,0 +1,157 @@
+<!-- burrow-doc: {"title":"Commands and scripts","group":"Foundations","order":149,"description":"Retained SSH runs with explicit script inputs, staging, cleanup and collection."} -->
+<article>
+<h1>Commands and scripts</h1>
+<p>Run a command or script on an existing SSH connection, inspect its progress and save stdout and stderr as Hovel evidence. The TUI and CLI use the same workflow. Choose how the script reaches the target explicitly: stream its source, pass a small script inline, or stage a private remote file.</p>
+<p>A run belongs to a retained Hovel session under the single <code>burrow@0.1.0</code> module. Prepare it against an explicitly selected live connection, review its command and per-stream storage budget, then launch that same run. Preparing never executes remote code. Repeating launch returns the original run and never repeats its remote action. Leaving the command view, quitting Burrow with Keep running, or losing the launch caller does not cancel it.</p>
+<h2 id="tui-workflow">Run a script from the TUI</h2>
+<ol>
+<li><a href="connections.html">Connect</a> to the target. The examples below assume a live connection named <code>gateway</code>.</li>
+<li>Enter <code>local</code> in the management prompt to see the workspace's <a href="files.html">upload root</a>. Save the example script and any input file there using your local editor. The default is <code>WORKSPACE/burrow-files/uploads</code>; a configured root takes precedence. Script paths start at this root, independently of the file browser's current directory.</li>
+<li>Enter one of the <code>run now</code> commands below in the management prompt. <kbd>Tab</kbd> completes connection names, script flags, modes and common interpreter paths. Choose the script path and arguments explicitly; there is no separate script-picker dialog.</li>
+<li>Review the target, arguments, script and stdin snapshot sizes and hashes, mode, interpreter, output budget, and any staging path, keep setting or timeout. Confirm to launch and collect. <kbd>Escape</kbd> cancels the review and leaves a prepared run without executing it.</li>
+<li>After collection, press <kbd>Ctrl+L</kbd> for <strong>Collected output</strong>. Read stdout, stderr, the exit outcome and any staging cleanup result. <kbd>Tab</kbd> switches to <strong>Activity log</strong>; <kbd>Ctrl+L</kbd> returns to management.</li>
+</ol>
+<p>Use <code>run list</code> to find retained IDs, <code>run inspect ID</code> for full details, and <code>run cancel ID</code> to review a cancellation. <code>ID</code> in examples means the actual ID returned for your run. Leaving the view does not cancel execution.</p>
+<h2>Commands</h2>
+<p>For a single-command workflow, enter <code>run now gateway -- ps -elf</code>. The connection name selects an already connected target. Burrow prepares a fresh run, inspects its immutable request and presents one review covering launch and collection. Confirming launches that exact run, waits for completion and collects stdout, stderr and the result into Hovel evidence. Open Ctrl+L Results to read the formatted output; Tab switches to workspace activity. A nonzero remote exit still collects output and remains visible as failure.</p>
+<p>For explicit approval without a dialog, use <code>run now gateway --yes -- ps -elf</code>. Optional <code>--budget BYTES</code> and Burrow's <code>--yes</code> go before <code>--</code>; everything after it belongs to the remote command. Without <code>--yes</code>, the CLI returns the prepared <code>id</code>, review digest and exact <code>confirm</code> command. That continuation uses <code>run launch ID --collect</code> to wait and collect the same run. Cancelling a TUI review leaves an inert prepared run available to inspect, launch or close. Each new <code>run now</code> invocation creates another run; use the existing ID when retrying. An error after preparation reports the ID to inspect before retrying. Stopping the wait or quitting with Keep running does not cancel remote execution; use <code>run inspect ID</code> and <code>run collect ID</code> to recover its output. The wait has no default deadline, and does not block sibling workspace commands.</p>
+<pre data-lang="Burrow management"><code>run prepare gateway -- /usr/bin/id
+run prepare gateway --budget 104857600 -- /bin/sh -c 'printf "hello\n"; exit 7'
+run list
+run inspect ID
+run launch ID
+run output ID stdout 0
+run output ID stderr 0
+run cancel ID
+run collect ID
+run close ID</code></pre>
+<p>Use these commands in Burrow's management prompt or after <code>burrow --workspace /absolute/workspace</code> on the CLI. Tab completes live connection names and retained run IDs. Launch, cancel, collect and close show a review in the TUI; Escape dismisses it without executing the action. CLI review returns a digest: repeat the unchanged command with <code>--review DIGEST --yes</code> to approve. An explicit CLI <code>--yes</code> also confirms without a separate review round trip. The review binds the action, retained ID, exact connection creation, command and budget.</p>
+<p>Command arguments are passed literally, including spaces, quotes, empty strings and Unicode. Use an explicit <code>/bin/sh -c</code> when shell expansion or redirection is intended. NUL arguments and invocations over the 64 KiB quoted argument budget are refused. Execution uses the selected existing OpenSSH master, without a remote Python requirement, fresh-login fallback or default execution timeout. A missing or changed master requires a new explicit connection and run.</p>
+<p>Commands and arguments are nonsecret inputs: they appear in reviews, process arguments and Hovel's retained requests. Never put passwords, tokens or other secrets in them. Output can itself contain sensitive evidence; keep the workspace private and apply Hovel's artifact retention policy.</p>
+<p>The existing workspace <a href="logs.html">operation log</a> records submitted commands and retained execution outcomes. Launch refuses target work when its attempt cannot be saved. Cancellation and close still proceed when logging fails and report that failure. Inspect's <code>auditError</code> preserves a completion-log failure separately from remote exit and output capture. Stream bytes remain in their files and Hovel artifacts, rather than being duplicated into operation notes.</p>
+<h2 id="script-inputs">Script source and program input</h2>
+<p>Use the same prepare/launch or <code>run now</code> workflow for scripts. Local script and standard-input paths resolve inside the workspace's configured upload root; relative paths start there. Traversal, links escaping the root and special files are refused. Preparation creates private snapshots, recording their paths, sizes and SHA256 hashes in the review. Editing the original files afterward does not change the prepared run. Each input is limited to 256 MiB; this is a production snapshot bound, separate from the configurable output budget. Contents are not copied into histories or Hovel request records. A script can itself print sensitive data into captured output.</p>
+<table><thead><tr><th>Mode</th><th>Source delivery</th><th>Independent stdin</th></tr></thead><tbody>
+<tr><td>stream</td><td>Shell source feeds the selected interpreter through <code>-s --</code>. Burrow creates no remote script file.</td><td>Unavailable: source owns stdin. Supplying <code>--stdin</code>, even an empty file, is refused.</td></tr>
+<tr><td>inline</td><td>The selected shell receives source through <code>-c</code>. Source is visible in SSH process arguments and must not contain secrets. Source and quoted invocation must fit 64 KiB; there is no automatic fallback to staging.</td><td><code>--stdin PATH</code> supplies independent binary bytes.</td></tr>
+<tr><td>stage</td><td>After confirmed launch, upload a private script file and pass its path to the selected interpreter.</td><td><code>--stdin PATH</code> supplies independent binary bytes.</td></tr>
+<tr><td>Existing remote script</td><td>Use the ordinary command after <code>--</code>, such as <code>/bin/sh /opt/admin/check.sh</code>. Burrow never removes that file.</td><td><code>--stdin PATH</code> supplies independent binary bytes.</td></tr>
+</tbody></table>
+<p>Select an absolute interpreter path installed on the target. Stream and inline modes require a shell supporting the shown switches; stage mode can use another installed interpreter. Runs are noninteractive and do not inherit another shell's current directory, environment or changed identity. Tab completes live connections, run IDs, script options, modes and common interpreter examples. Paths can be discovered through the existing local file browser.</p>
+<h3>Example: stream a script with literal arguments</h3>
+<p>Save this as <code>check.sh</code> in the upload root. It prints each argument exactly as received:</p>
+<pre data-lang="check.sh · shell"><code>printf '&lt;%s&gt;\n' "$@"</code></pre>
+<p>Enter this single line in Burrow's management prompt, then confirm the review:</p>
+<pre data-lang="Burrow management"><code>run now gateway --script check.sh --mode stream --interpreter /bin/sh -- 'My Documents' 'café' '$(hostname)' ''</code></pre>
+<p>The collected stdout is:</p>
+<pre data-lang="Expected stdout"><code>&lt;My Documents&gt;
+&lt;café&gt;
+&lt;$(hostname)&gt;
+&lt;&gt;</code></pre>
+<p>The space, Unicode characters, command-substitution text and empty argument survive unchanged. <code>$(hostname)</code> is printed literally. Everything after <code>--</code> is a script argument, including text that looks like a Burrow option. Source occupies stdin in stream mode; a script that needs its own input must use inline or stage mode.</p>
+<h3>Example: supply program stdin without a remote file</h3>
+<p>Save the following two files in the upload root. The script takes a report name as its first argument and reads independent data from stdin:</p>
+<pre data-lang="summarize.sh · shell"><code>printf 'report: %s\n' "$1"
+while IFS= read -r item; do
+  printf 'item: %s\n' "$item"
+done</code></pre>
+<pre data-lang="inventory.txt · text"><code>oak
+pine
+</code></pre>
+<p>Keep the final newline in the input file so the shell loop reads both lines. Run the small, nonsecret script inline:</p>
+<pre data-lang="Burrow management"><code>run now gateway --script summarize.sh --mode inline --interpreter /bin/sh --stdin inventory.txt -- weekly</code></pre>
+<pre data-lang="Expected stdout"><code>report: weekly
+item: oak
+item: pine</code></pre>
+<p>The script source and stdin are separate: the shell receives the source through <code>-c</code>, while <code>inventory.txt</code> supplies its input stream. Burrow also accepts binary stdin, including NUL bytes; whether those bytes are meaningful depends on your script or program. Inline source is visible in SSH process arguments and must contain no secrets. It is not stored as source text in Burrow's recorded request.</p>
+<h3>Example: stage the same script explicitly</h3>
+<p>Use the same files and arguments with <code>--mode stage</code>:</p>
+<pre data-lang="Burrow management"><code>run now gateway --script summarize.sh --mode stage --interpreter /bin/sh --stdin inventory.txt -- weekly</code></pre>
+<p>The expected stdout is the same. The review additionally shows an unpredictable remote path under <code>/tmp/burrow-script.*/script</code>. Confirmation creates the private directory, uploads the source, executes it with the chosen interpreter, and attempts cleanup. A successful example reports <code>remoteExit: 0</code>, <code>staging: ready</code> and <code>stageCleanup: removed</code>. Staging is useful when the interpreter needs a filename or the source exceeds the inline limit; Burrow never selects it automatically.</p>
+<h3>Example: execute an existing remote script</h3>
+<p>If an administrator has already installed <code>/opt/admin/summarize.sh</code> on the target, invoke it as an ordinary command. Only the optional input file is local:</p>
+<pre data-lang="Burrow management"><code>run now gateway --stdin inventory.txt -- /bin/sh /opt/admin/summarize.sh weekly</code></pre>
+<p>Burrow neither uploads nor removes that remote script. Its contents and any changes to it remain the target's responsibility; it is not a local source snapshot.</p>
+<h3>Use the same workflow from your local shell</h3>
+<p>Prefix commands with the executable and workspace. These backslash continuations are for your local shell; enter management-prompt examples as single lines. This command prepares and returns a review without starting the script:</p>
+<pre data-lang="Local shell"><code>burrow --workspace /absolute/workspace run now gateway \
+  --script summarize.sh --mode stage --interpreter /bin/sh \
+  --stdin inventory.txt -- weekly</code></pre>
+<p>Review the returned details, then run its exact <code>confirm</code> command with the same executable/workspace prefix. It launches and collects the prepared ID. Repeating the original <code>run now</code> command prepares another run. To authorize launch and collection directly, include Burrow's <code>--yes</code> before <code>--</code>:</p>
+<pre data-lang="Local shell · explicit approval"><code>burrow --workspace /absolute/workspace run now gateway \
+  --script summarize.sh --mode stage --interpreter /bin/sh \
+  --stdin inventory.txt --yes -- weekly</code></pre>
+<h2 id="staging-cleanup">Explicit staging and cleanup</h2>
+<p>Staging creates a new unpredictable <code>/tmp/burrow-script.*/script</code> path, shown in the prepared review. Its directory is <code>0700</code> and its file <code>0600</code>. Existing paths are refused. Staging uses ordinary Linux shell tools: <code>/bin/sh</code>, <code>mkdir</code>, <code>stat</code>, <code>cat</code>, <code>rm</code> and <code>rmdir</code>, with GNU/BusyBox syntax. It installs no helper or Python runtime. A staging attempt is bounded to eight seconds and cleanup to four seconds; slow or lost acknowledgements remain explicit failures or uncertainty.</p>
+<p>By default, completion, nonzero exit and confirmed ordinary-group cancellation remove only the staged file with its acknowledged identity, then its private directory if empty. Replaced files, symlinks and unrelated directory contents are preserved. <code>--keep</code> explicitly retains staging, including after failure or cancellation; it never implies that a script's own file changes are undone. Cleanup verifies the selected master again and never reconnects. Lost execution observation, uncertain ownership or unavailable transport leave cleanup unconfirmed. Stronger process containment and post-loss cleanup recovery remain later work.</p>
+<p>Inspect and collected results expose <code>input</code> snapshots, <code>staging</code>, <code>stageCleanup</code> and <code>timedOut</code> alongside remote exit, capture and collection outcomes. A staging failure does not launch the script; retrying that run's launch cannot repeat staging. Prepare a new run explicitly after investigating. Cleanup failures remain visible even when script execution and collection succeeded. Remote staging cleanup is separate from closing the run's private local snapshots and output; registered evidence survives both.</p>
+<p>To retain the staged script deliberately, add <code>--keep</code> before <code>--</code>:</p>
+<pre data-lang="Burrow management"><code>run now gateway --script summarize.sh --mode stage --interpreter /bin/sh --stdin inventory.txt --keep -- weekly</code></pre>
+<p>The result reports <code>stageCleanup: kept</code> and the reviewed path remains available for manual inspection. This applies after failure or cancellation too. Closing the run removes its owned local working files, not a remote file you explicitly chose to keep.</p>
+<table><thead><tr><th>Observed result</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>remoteExit: 7</code>, <code>stageCleanup: removed</code></td><td>The script failed with exit code 7, and its staged source was removed. Captured stdout and stderr remain collectible.</td></tr>
+<tr><td><code>remoteExit: 0</code>, <code>stageCleanup: failed; …</code></td><td>The script completed successfully, but cleanup could not safely remove everything. Inspect the stage path; replaced files and unrelated contents are preserved.</td></tr>
+<tr><td><code>stageCleanup: unconfirmed; …</code></td><td>Burrow cannot prove cleanup, for example after master loss. Do not infer that the file was removed or the remote process stopped.</td></tr>
+<tr><td><code>state: staging-failed</code></td><td>The source upload or acknowledgement failed. The script was not launched; inspect staging and cleanup separately before preparing another run.</td></tr>
+</tbody></table>
+<h2>Output and outcomes</h2>
+<p>Each run captures separate binary stdout and stderr in private <code>0600</code> files under a private <code>WORKSPACE/.burrow-run-*</code> directory. The default budget is 256 MiB per stream, visible in every review and configurable at prepare time using a positive byte count. Capture keeps draining independently of terminal views. A budget, write or sync failure marks output incomplete while preserving available bytes and any known remote exit.</p>
+<p><code>run output</code> reads up to 32 KiB from the supplied byte offset and returns <code>data</code> as base64 and <code>nextOffset</code>. Each response includes the same capture snapshot's <code>state</code>, <code>remoteExit</code>, <code>budgetPerStream</code>, <code>storedBytes</code>, <code>receivedBytes</code>, <code>outputComplete</code> and <code>outputError</code>. Byte counts in this response describe the selected stream. Reads neither move another reader's position nor collect evidence. This chunk bound is separate from the storage budget.</p>
+<p>Inspect reports the execution state, <code>remoteExit</code>, <code>outputComplete</code>, <code>outputError</code>, and byte counts. The two-element <code>receivedBytes</code> and <code>storedBytes</code> arrays are stdout then stderr. A nonzero remote exit is a known result, independently of collection. SSH exit 255, a missing launch prefix, transport loss and incomplete observation remain <code>transport-or-completion-unknown</code>; Burrow does not invent a remote exit. A successful local SSH stop is not proof of remote termination.</p>
+<h2>Follow live output</h2>
+<pre data-lang="Burrow management"><code>run follow ID
+run follow ID stderr
+run follow ID stdout 32768</code></pre>
+<p><code>run follow ID [stdout|stderr] [OFFSET]</code> opens an independent live output tab. The default stream is stdout. An explicit nonnegative byte offset resets that stream's preview; otherwise reopening preserves its position and scroll state in this frontend. The same command after <code>burrow --workspace /absolute/workspace</code> opens the viewer from a terminal. For pipes, agents or Hovel operations, use bounded <code>run output</code> reads and retain <code>nextOffset</code> for each stream.</p>
+<table><thead><tr><th>Control</th><th>Behavior</th></tr></thead><tbody>
+<tr><td><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></td><td>Switch stdout and stderr, each with its own position.</td></tr>
+<tr><td>Arrows, <kbd>PgUp</kbd>, <kbd>PgDn</kbd>, <kbd>Home</kbd>, mouse wheel</td><td>Scroll and pause following. The preview stays still while capture continues and status updates.</td></tr>
+<tr><td><kbd>End</kbd></td><td>Resume from the next unread byte and follow the latest output as the viewer catches up.</td></tr>
+<tr><td><kbd>Alt+B</kbd></td><td>Return to management, leaving the viewer tab available. Background tabs stop polling.</td></tr>
+<tr><td><kbd>Esc</kbd> / <kbd>Ctrl+C</kbd></td><td>Close this viewer only. Reopen with <code>run follow ID</code> to restore its position.</td></tr>
+<tr><td><kbd>F1</kbd></td><td>Open contextual help; Escape restores the same view.</td></tr>
+</tbody></table>
+<p>The viewer holds at most 32 KiB of original bytes per stream as its current preview. Its displayed byte range makes omitted earlier output explicit; full captured bytes remain available within the run's storage budget. Viewer positions and previews are frontend memory and end with that frontend. A new frontend can resume from an explicit offset. Each frontend reads independently, and opening, switching, closing or disconnecting a viewer never launches, cancels or collects a run.</p>
+<p>All reads run asynchronously, with one request in flight per viewer. Input, help and resize remain usable during output bursts. Control characters, bidirectional controls and invalid binary bytes are escaped for management display; a split UTF-8 character waits for its remaining bytes, and any incomplete final byte is escaped after execution ends. Original capture and collected artifacts are unchanged. The header distinguishes execution status, remote exit and capture completeness, including visible budget/write failures and collectible partial output. “Complete” capture is not collection. Unavailable owners are shown as unverified; viewing never reconnects SSH or starts a replacement run. An older retained owner without the live status response is refused by the viewer; bounded <code>run output</code> remains available.</p>
+<h2>Cancellation and close</h2>
+<p>Optional <code>--timeout 30s</code> (or another positive Go-style duration such as <code>5m</code>) starts at execution launch, after any staging. It requests the same ordinary-group cancellation as manual cancel and records <code>timedOut</code>. A timeout does not prove remote termination: inspect the cancellation and cleanup results. Stopping the foreground wait does not trigger this timeout or cancel a run.</p>
+<pre data-lang="Burrow management"><code>run prepare gateway --script summarize.sh --mode stage --interpreter /bin/sh --stdin inventory.txt --timeout 30s -- weekly
+run launch ID
+run inspect ID
+run cancel ID
+run collect ID
+run close ID</code></pre>
+<p>These are separate lifecycle actions, not a sequence to paste blindly. Replace <code>ID</code> with the prepared run's ID. Launch confirms execution; cancel is needed only while a run is active. Collect saves available output after completion or cancellation, and close releases the working files. The example script normally finishes before 30 seconds; a longer-running script would trigger the requested timeout.</p>
+<p>Cancel before launch records <code>cancelled-before-launch</code>. For a running command on Linux, Burrow checks the remote leader's PID, process group and <code>/proc</code> start time over the same master, sends TERM to that ordinary process group and checks for remaining live members. Sibling runs and the shared connection remain available. The result distinguishes observed ordinary-group termination from unconfirmed cancellation. A process that ignores TERM is not silently escalated to KILL.</p>
+<p>Identity checks and signalling are not atomic. A mismatched or missing leader, unavailable master, descendants that leave the group, and cleanup after owner loss remain refused or explicitly unconfirmed. This is ordinary process-group cancellation, not a containment guarantee. Targets without compatible Linux process metadata can execute commands, but cancellation cannot establish this identity. Do not infer that every descendant stopped from an ordinary-group result.</p>
+<p>Close refuses an active run: cancel explicitly first. Closing removes only the run's original working output; unrelated replacement files or directories are preserved and cleanup uncertainty is reported. It leaves registered Hovel artifacts intact.</p>
+<h2>Collection and owner loss</h2>
+<p>After collecting, press <kbd>Ctrl+L</kbd> to read the <strong>Collected output</strong> tab with colored command metadata and separate stdout/stderr previews. <kbd>Tab</kbd> switches to the workspace <strong>Activity log</strong>; <kbd>Ctrl+L</kbd> returns. The viewer includes artifacts from closed runs and refreshes when reopened. Previews are limited to 64 KiB per stream with full local paths for the original files. Hovel stores these files under <code>WORKSPACE/artifacts/sha256/</code>.</p>
+<p>After completion or cancellation, explicitly collect stdout, stderr and a JSON result through Hovel's <code>FileArtifact</code> and JSON artifact contracts. Partial output is collectible. The CLI reports <code>collection: succeeded</code> only after Hovel has persisted the artifacts. Failed collection does not change the remote exit or remove working files; retry collection against the same ID. Repeated collection creates another Hovel result referencing the retained bytes. Inspect Hovel's artifact inventory using the returned collection <code>runID</code>; the original execution throw remains <code>launchRunID</code>.</p>
+<p>Uncollected output can be lost on module or daemon failure. There is no run adoption, automatic relaunch, recovery scan or separate Burrow job database. Abandoned private working directories may remain for manual investigation; their presence does not prove execution or completeness. Successfully registered artifacts follow Hovel retention and survive run close and owner failure.</p>
+<h2>Ubuntu reports</h2>
+<p><code>run survey CONNECTION --os ubuntu</code> uses this same review, execution and collection path for a built-in inventory preset. Open <code>reports</code> for its independent Markdown reader; see <a href="reports.html">Ubuntu surveys and reports</a>.</p>
+<h2>Local tools</h2>
+<p>Add <code>--local</code> before <code>--</code> to run a tool on the daemon host with an explicitly selected connection. See <a href="automation.html">local tools and automation</a> for socket/config context, local exit and cancellation semantics, and working saved Hovel chains.</p>
+<h2>Hovel interface</h2>
+<p>The base module's <code>command</code> setting accepts the same run operations and returns structured JSON in the throw result summary. <code>run follow</code> is terminal navigation built on the shared <code>run output</code> operation, not an unbounded protocol stream. Hovel throws require <code>--allow-dangerous</code>. Prepare creates a <code>burrow-run-v1</code> session. Its typed inspect/output controls observe retained state; launch/cancel controls act on that exact session. Raw privileged session controls are not an independent confirmation mechanism. Use the reviewed Burrow command flow for approvals and collection; its existing workspace dispatch lock serializes collection and close through artifact persistence.</p>
+<h2>Common refusals and recovery</h2>
+<table><thead><tr><th>Message or condition</th><th>What to do</th></tr></thead><tbody>
+<tr><td>Stream mode owns stdin</td><td>Remove <code>--stdin</code> for a script that needs no input, or explicitly choose inline or stage mode.</td></tr>
+<tr><td>Source path refused or outside the upload root</td><td>Use <code>local</code> to check the configured upload root, place the file inside it, and provide its path relative to that root. Use an ordinary readable file.</td></tr>
+<tr><td>Inline source or quoted invocation exceeds 64 KiB</td><td>Shorten arguments or explicitly choose stream or stage. Burrow does not silently upload the source.</td></tr>
+<tr><td>Selected master missing or changed</td><td>Inspect the old run's recorded outcome first. Reconnect explicitly and prepare a new run if another execution is intended; reconnecting does not recover or repeat the old run.</td></tr>
+<tr><td>Collection failed</td><td>Keep the same ID and retry <code>run collect ID</code>. Do not use another <code>run now</code> merely to recover output: that would execute the script again.</td></tr>
+</tbody></table>
+<h2>Verification and provenance</h2>
+<pre data-lang="Aspect checks"><code>aspect burrow scripts-check
+aspect burrow runs-check
+aspect burrow follow-check
+aspect burrow-check ci
+aspect burrow-check
+aspect burrow-site check</code></pre>
+<p>The real disposable SSH lab checks retained execution after caller loss, duplicate launch, nonzero exit, exact binary output beyond preview size, storage budgets and actual write failure, cancellation of an ordinary leader and child while preserving a sibling, escaped descendants, missing master, owner loss, failed/repeated collection and artifact persistence. It also drives the terminal review, contextual completion, escaped output and keep-running quit. Portable checks cover invalid input, the public Hovel command surface, and narrow/no-color review presentation.</p>
+<p>The focused follow gate checks live output before completion, concurrent resumable readers beyond the preview, capture failure metadata, independent real terminal viewers, viewer disconnect/reopen, paused scrolling, responsive keys during a burst, safe split/binary output, resize and no-color operation, and byte-exact collection after viewing. It is also part of the full SSH gate. LazySSH's pinned <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/plugin_manager.py">streaming plugin runner</a> and <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/tests/test_plugin_manager.py">stdout/stderr tests</a> inform this workflow. Intentional differences are binary-safe byte offsets and viewer-independent retained capture, rather than line-oriented readers tied to a local plugin process.</p>
+<p>The implementation traces <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/plugins/enumerate.py">LazySSH's remote command execution</a> and <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/tests/test_enumerate_summary.py">its tests</a> at the pinned upstream commit. It preserves existing-master execution and separate command streams. Intentional differences are retained run ownership, reviewed launch/collection, binary file capture with visible budgets, safe process-group cancellation, and removal of the proof's implicit timeout. Terminal presentation follows the current Catppuccin standard.</p>
+<p>Script behavior also traces <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/plugins/upload_exec.py">LazySSH upload/execute</a>, <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/plugin_manager.py">its plugin runner</a> and <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/tests/test_plugin_manager.py">argument/output tests</a>. Burrow preserves useful source, interpreter, argument, timeout and keep controls through the shared Hovel run lifecycle. It replaces recursive staging-directory cleanup with verified file removal and empty-directory removal. Legacy plugin compatibility and payload generation remain outside scope; local-tool execution and saved-chain automation are described in <a href="automation.html">their own chapter</a>. The focused script gate covers actual SSH snapshots, binary stdin, staging, keep, nonzero exits, cancellation, timeout, replacement/collision refusal, containment, secret exclusion, collected viewing and master-loss uncertainty.</p>
+</article>

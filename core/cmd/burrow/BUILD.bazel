@@ -3,6 +3,17 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 py_test(
+    name = "manager_compatibility_test",
+    srcs = ["manager_compatibility_check.py"],
+    main = "manager_compatibility_check.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :legacy_module)", "$(location //core/connection:hovel-module.yaml)"],
+    data = [":burrow", "@hovel_linux_wheel//file", ":legacy_module", "//core/connection:hovel-module.yaml"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)
+
+py_test(
     name = "files_test",
     srcs = ["files_check.py"],
     main = "files_check.py",
@@ -32,16 +43,28 @@ py_test(
     data = [":burrow", "//:Makefile"],
     legacy_create_init = 0,
 )
-py_test(
-    name = "connection_lab",
-    srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "latency_lab.py", "shell_lab.py", "forward_lab.py", "files_lab.py"],
+[py_test(
+    name = name,
+    srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "latency_lab.py", "shell_lab.py", "forward_lab.py", "files_lab.py", "runs_lab.py", "follow_lab.py", "automation_lab.py", "reports_lab.py", "chains_lab.py"],
     main = "connection_lab.py",
-    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)", "$(location @shell_lab_vim//file)"],
-    data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check", ":legacy_module", "@shell_lab_vim//file"],
-    tags = ["local", "external"],
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)", "$(location @shell_lab_vim//file)", "$(location //core/connection:survey_ubuntu.sh)", "$(location @chain_lab_dropbear//file)", "$(location @chain_lab_utmps//file)", "$(location @chain_lab_skalibs//file)"] + (["--" + suite + "-check"] if suite else []),
+    data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check", ":legacy_module", "@shell_lab_vim//file", "//core/connection:survey_ubuntu.sh", "@chain_lab_dropbear//file", "@chain_lab_utmps//file", "@chain_lab_skalibs//file"],
+    tags = ["local", "external"] + (["acceptance", "acceptance-" + suite] if suite else ["manual"]),
     size = "large",
+    timeout = "long" if suite else "eternal",
     legacy_create_init = 0,
-)
+) for name, suite in [
+    ("connection_lab", ""),  # Explicit composed diagnostic; routine checks use the complete partitions.
+    ("ssh_lifecycle_test", "lifecycle"),
+    ("ssh_files_test", "files"),
+    ("ssh_reverse_test", "reverse"),
+    ("ssh_shell_test", "shell"),
+    ("ssh_chains_test", "chains"),
+    ("ssh_reports_test", "reports"),
+    ("ssh_automation_test", "automation"),
+    ("ssh_follow_test", "follow"),
+    ("ssh_runs_test", "runs"),
+]]
 
 go_binary(
     name = "legacy_module",
@@ -53,12 +76,12 @@ go_binary(
 go_binary(
     name = "burrow",
     visibility = ["//core/prototype_manager:__pkg__"],
-    srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "downloads_ui.go"],
+    srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go"],
     deps = [
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
-        "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
+        "//core/launch", "//core/connection", "//core/reports", "@land_charm_glamour_v2//:glamour", "@land_charm_glamour_v2//ansi", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",
         "@land_charm_bubbles_v2//help", "@land_charm_bubbles_v2//key", "@land_charm_lipgloss_v2//:lipgloss",
         "@land_charm_lipgloss_v2//table", "@land_charm_lipgloss_v2//tree", "@com_github_charmbracelet_x_ansi//:ansi",
@@ -74,7 +97,7 @@ pkg_tar(
 go_binary(
     name = "screen_check",
     srcs = ["screen_check.go"],
-    deps = ["@com_github_charmbracelet_x_vt//:vt"],
+    deps = ["@com_github_charmbracelet_x_vt//:vt", "@com_github_charmbracelet_ultraviolet//:ultraviolet"],
     testonly = True,
 )
 py_test(
@@ -90,12 +113,12 @@ py_test(
 
 go_test(
     name = "interaction_test",
-    srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "downloads_ui.go", "frame_test.go", "presentation_test.go", "auth_signal_test.go"],
+    srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go", "frame_test.go", "presentation_test.go", "auth_signal_test.go", "reports_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
         "//core/terminal", "@com_github_charmbracelet_ultraviolet//:ultraviolet",
-        "//core/launch", "//core/connection", "@hovel_sdk//:hovel",
+        "//core/launch", "//core/connection", "//core/reports", "@land_charm_glamour_v2//:glamour", "@land_charm_glamour_v2//ansi", "@hovel_sdk//:hovel",
         "@land_charm_bubbletea_v2//:bubbletea", "@land_charm_bubbles_v2//textinput", "@land_charm_bubbles_v2//viewport",
         "@land_charm_bubbles_v2//help", "@land_charm_bubbles_v2//key", "@land_charm_lipgloss_v2//:lipgloss",
         "@land_charm_lipgloss_v2//table", "@land_charm_lipgloss_v2//tree", "@com_github_charmbracelet_x_ansi//:ansi",

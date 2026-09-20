@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,6 +52,20 @@ type tunnelList struct {
 	err     error
 }
 
+type runList struct {
+	runs []connection.Run
+	err  error
+}
+
+func refreshRuns(workspace string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		runs, err := connection.Runs(ctx, workspace)
+		return runList{runs, err}
+	}
+}
+
 func refreshTunnels(workspace string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -78,6 +93,8 @@ func connectionTimer() tea.Cmd {
 }
 
 type ui struct {
+	follow                        *runView
+	runs                          []connection.Run
 	downloads                     connection.Downloads
 	downloadObserved              bool
 	downloadError                 string
@@ -192,10 +209,17 @@ func terminal(m *frame, noColor bool) (failure error) {
 	return e
 }
 func (m ui) Init() tea.Cmd {
-	return tea.Batch(m.input.Focus(), refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace))
+	return tea.Batch(m.input.Focus(), refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace), refreshRuns(m.info.Workspace))
 }
 func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case runList:
+		m.runs = nil
+		if v.err == nil {
+			m.runs = v.runs
+		}
+		m.input.SetSuggestions(m.suggestions())
+		return m, nil
 	case fileResult:
 		m.acceptFiles(v)
 		return m, nil
@@ -214,7 +238,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.SetSuggestions(m.suggestions())
 		return m, nil
 	case connectionTick:
-		return m, tea.Batch(refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace))
+		return m, tea.Batch(refreshConnections(m.info.Workspace), refreshProfiles(m.info.Workspace), refreshRuns(m.info.Workspace))
 	case profilesReady:
 		if v.err != nil {
 			m.profileError = "UNAVAILABLE · " + safe(v.err.Error())
@@ -261,8 +285,18 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				lines[i] = safe(lines[i])
 			}
 			m.output = strings.Join(lines, "\n")
+			if chunk, ok := v.result.(connection.RunOutput); ok {
+				data, err := base64.StdEncoding.DecodeString(chunk.Data)
+				if err == nil {
+					lines := strings.Split(string(data), "\n")
+					for i := range lines {
+						lines[i] = safe(lines[i])
+					}
+					m.output = fmt.Sprintf("Output · next byte offset %d\n", chunk.NextOffset) + strings.Join(lines, "\n")
+				}
+			}
 		}
-		return m, tea.Batch(refreshProfiles(m.info.Workspace), refreshTunnels(m.info.Workspace))
+		return m, tea.Batch(refreshProfiles(m.info.Workspace), refreshTunnels(m.info.Workspace), refreshRuns(m.info.Workspace))
 	case tea.WindowSizeMsg:
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
@@ -330,6 +364,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(v, help):
 			m.help = true
+			m.helpOffset = 0
 			return m, nil
 		case key.Matches(v, escape):
 			m.input.ShowSuggestions = false
@@ -377,6 +412,9 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.historyIndex = len(m.history)
 			m.input.Reset()
+			m.input.SetSuggestions(nil)
+			m.completionValues = nil
+			m.completionValue, m.draft = "", ""
 			switch command {
 			case "logs":
 				m.input.Reset()
@@ -409,7 +447,7 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.output = "REFUSED: " + safe(e.Error())
 					return m, nil
 				}
-				m.history = append(m.history, command)
+				m.history = append(m.history, connection.RecallCommand(args))
 				m.historyIndex = len(m.history)
 				m.busy = true
 				workspace := m.info.Workspace
@@ -421,6 +459,9 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return shellRequested{args[1]} }
 				}
 				m.output = "Running reviewed command through Hovel…"
+				if (args[0] == "chain" && args[1] != "select") || (args[0] == "run" && (args[1] == "survey" || args[1] == "now" || args[1] == "launch" || args[1] == "cancel" || args[1] == "collect" || args[1] == "close")) {
+					return m, func() tea.Msg { return authenticationRequested{args: args} }
+				}
 				if (args[0] == "proxy" && args[1] != "inspect") || args[0] == "tunc" || (args[0] == "tund" && len(args) == 2) || (args[0] == "tunnel" && (args[1] == "create" || (args[1] == "remove" && len(args) == 3))) || args[0] == "connect" || args[0] == "reconnect" || (args[0] == "close" && len(args) == 2) || (args[0] == "profile" && (args[1] == "connect" || args[1] == "edit" || args[1] == "delete" || args[1] == "save")) {
 					return m, func() tea.Msg { return authenticationRequested{args: args} }
 				}
@@ -572,18 +613,22 @@ func (m ui) View() tea.View {
 	var b strings.Builder
 
 	bodyW := w
-	content := m.savedConnections(bodyW) + "\n\n" +
-		m.activeConnections(bodyW) + "\n\n" + m.localForwards(bodyW)
-	if m.demo {
-		content = m.demoResources(bodyW)
-	}
-	// Reserve command output space even when endpoint text wraps in the table.
-	content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-7)))
-	outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
-	start := min(m.outputOffset, len(outputLines)-1)
-	content += "\n\n" + m.paint(heading, "COMMAND OUTPUT") + "\n" + strings.Join(outputLines[start:], "\n")
-	if m.files != nil {
+	var content string
+	if m.follow != nil {
+		content = m.followContent()
+	} else if m.files != nil {
 		content = m.fileContent(bodyW)
+	} else {
+		content = m.savedConnections(bodyW) + "\n\n" +
+			m.activeConnections(bodyW) + "\n\n" + m.localForwards(bodyW)
+		if m.demo {
+			content = m.demoResources(bodyW)
+		}
+		// Reserve command output space even when endpoint text wraps in the table.
+		content = fit(content, bodyW, min(lipgloss.Height(content), max(0, h-7)))
+		outputLines := strings.Split(ansi.Wrap(m.styledOutput(), bodyW, ""), "\n")
+		start := min(m.outputOffset, len(outputLines)-1)
+		content += "\n\n" + m.paint(heading, "COMMAND OUTPUT") + "\n" + strings.Join(outputLines[start:], "\n")
 	}
 	b.WriteString(fit(content, w, max(0, h-3)))
 	footer := "F1 help · Tab completion · Ctrl+C quit"
@@ -594,6 +639,12 @@ func (m ui) View() tea.View {
 	if m.files != nil {
 		prompt = "╭─ scp › " + safe(m.files.state.Name) + " › " + safe(m.files.remote)
 		footer = "F1 help · Tab completion · back management · Ctrl+C cancel/back"
+	}
+	if m.follow != nil {
+		b.WriteString("\n" + m.paint(secondary, "↑↓/PgUp/PgDn scroll · End follow · Tab streams") + "\n" + m.paint(secondary, "Esc close viewer · Alt+B management · F1 help"))
+		v := tea.NewView(fit(b.String(), w, h))
+		v.AltScreen = true
+		return v
 	}
 	b.WriteString("\n" + m.paint(secondary, footer) + "\n" + m.paint(accent, prompt) + "\n" + m.input.View())
 	base := fit(b.String(), w, h)
@@ -615,7 +666,11 @@ func (m ui) View() tea.View {
 			commandWidth = min(commandWidth, max(1, w/2-2))
 			for i := start; i < end; i++ {
 				s := matches[i]
-				command := ansi.Truncate(s, commandWidth, "…")
+				command := s
+				if width := ansi.StringWidth(s); width > commandWidth {
+					// Keep the option/value that distinguishes long suggestions visible.
+					command = "…" + ansi.Cut(s, width-commandWidth+1, width)
+				}
 				line := "  " + m.paint(heading, command+strings.Repeat(" ", max(0, commandWidth-lipgloss.Width(command)))) + "  " + m.paint(secondary, completionDescription(s))
 				line = ansi.Truncate(line, w, "…")
 				if i == selected {
@@ -624,7 +679,7 @@ func (m ui) View() tea.View {
 				rows = append(rows, line)
 			}
 		}
-		if hint := m.forwardingGuidance(); hint != "" {
+		if hint := m.commandGuidance(); hint != "" {
 			rows = append(rows, ansi.Wrap(hint, w, ""))
 		}
 		if len(rows) > 0 {
@@ -643,9 +698,56 @@ func (m ui) View() tea.View {
 	return v
 }
 
+const chainHelp = `# HOVEL CHAINS
+chain connect target 192.168.10.50 --user alice --password	Example: SSH password, entered in a hidden field after Hovel confirmation
+chain connect target 192.168.10.50 --user alice --password PASSWORD	Example: supply the target password automatically; PASSWORD is a placeholder
+chain connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519	Example: use a local private key instead
+chain connect NAME HOST --user USER [options]	Stage connection settings for an already-running OpenSSH/Dropbear server
+Enter these commands in Burrow management (Alt+B).
+Enter in Burrow saves private JSON, switches to Hovel and prepares throw FILE --allow-dangerous.
+Enter in Hovel shows the plan; type yes to confirm. Alt+B returns to the active connection after success.
+An unfinished Hovel command/confirmation is preserved; the staged command remains in Burrow output.
+
+# CHAIN CONNECTION OPTIONS
+--user USER	SSH account name; use an explicit username in copied commands
+--password [PASSWORD]	Bare: hidden popup; with value: automatic target password. Conflicts with --key/--agent
+--key PATH	Local private key; add --prompt for an encrypted key
+--prompt	Enable hidden password/passphrase entry after Hovel confirmation
+--agent PATH	Use an available SSH agent socket
+--port NUMBER	SSH port; defaults to SSH config or 22
+--ssh-config PATH	Local SSH configuration file
+--jump HOST	SSH jump host, optionally USER@HOST:PORT
+Quote spaces; --password=VALUE allows a leading dash or empty value. Escape cancels hidden entry.
+Inline text is visible while typed; supplied values stay out of Burrow recall, logs and saved JSON.
+Up recalls the connection command with bare --password for fresh hidden entry.
+CLI literals are visible in original argv and may enter shell history. Bare --password hides entry.
+Automatic values answer the target once; jump hosts need keys/agents or interactive entry.
+Keep Burrow open for any password/passphrase chain; its one-use broker expires after ten minutes.
+Older retained managers may require an explicit reviewed restart after inspecting connections.
+Ctrl+C in Hovel cancels a staged interactive chain, including after rejecting its plan.
+No --yes or -proxy on chain connect; Hovel owns confirmation and proxy creation stays explicit.
+
+# EXISTING TUNNEL CHAINS
+chain select CONNECTION	Query current forward/SOCKS identities from the connection owner
+chain http CONNECTION TUNNEL_ID URL	Review HTTP through that existing tunnel; collect metadata and hash
+chain export CONNECTION TUNNEL_ID URL	Stage a private consumer chain and prepare Hovel throw; Enter reviews
+HTTP GET only: 8 seconds, 1 MiB, no redirects, TLS, credentials or query strings.
+Use a fixed forward's destination in URL; SOCKS accepts an explicit hostname.
+No automatic tunnel creation/reconnect. Dropbear upload/start is separate deployment work.
+Standalone CLI prints chain JSON; --password/--prompt keeps its broker alive.
+Supplied passwords need no TTY; Hovel still requires confirmation or explicit --now.
+Full TUI and CLI walkthroughs: https://bochner.github.io/burrow/spec/chains.html
+`
+
 func (m ui) helpText() string {
+	if m.follow != nil {
+		return strings.ReplaceAll(followHelp, "\\t", "\t")
+	}
 	if m.files != nil {
 		return strings.ReplaceAll(fileHelp, "\\t", "\t")
+	}
+	if words := strings.Fields(m.input.Value()); len(words) > 0 && words[0] == "chain" {
+		return chainHelp
 	}
 	return `# NAVIGATION
 F6 / Shift+F6	Move focus between panels; arrows select, Enter opens
@@ -658,17 +760,53 @@ Ctrl+Shift+V	Paste using your terminal's paste shortcut
 
 # CONNECTIONS & SHELLS
 connect	Open the guided connection form
-connect NAME HOST USER	Connect directly; review first, then authenticate privately
+connect NAME HOST --user USER	Connect directly; review first, then authenticate
+connect target 192.168.10.50 --user alice --password	Example: password-only authentication with hidden entry
+connect target 192.168.10.50 --user alice --key ~/.ssh/id_ed25519	Example: local private key; add --prompt if encrypted
+--password [PASSWORD] / --key PATH / --agent PATH	Choose hidden/automatic password entry, a key, or an SSH agent
+--port NUMBER / --jump HOST / --ssh-config PATH	Select port, network hops or local SSH configuration
 logs / Ctrl+N	Open workspace log in Vim; Ctrl+N or :q returns; reopen refreshes
 Ctrl+N in SSH/Hovel/Vim	Burrow shortcut, not forwarded to the embedded program
+Ctrl+L	Open Collected output and Activity log tabs; Ctrl+L or :qa returns
+Tab / Shift+Tab in results	Switch tabs; / searches; reopen refreshes both snapshots
 shell NAME / resume ID	Open a shell / return to an existing frontend-local shell
 Ctrl+] / Alt+1–9	Return from SSH to management / select a shell
 Alt+←/→	Cycle shells without closing them
 shell-close ID	Close one shell, keeping its connection
 inspect NAME / status	Inspect connection details / verify the daemon
-reconnect NAME HOST USER	Explicitly replace a lost connection
+reconnect NAME HOST --user USER	Explicitly replace a lost connection
 The connection form includes SSH keys, agents, jump hosts and a SOCKS proxy.
 
+# RETAINED COMMANDS
+reports / Menu → Reports	Browse saved reports; Enter opens, Esc returns without changing context
+report ID	Open one saved Markdown report; no execution or collection
+run survey NAME --os ubuntu	Review read-only Ubuntu probes, run and save a report
+run prepare NAME -- COMMAND [ARG...]	Prepare on an already connected SSH target; returns a run ID
+run prepare NAME -- ps -elf	Example: prepare a remote process listing without executing yet
+run now NAME -- ps -elf	Review once, launch, wait and collect; view output with Ctrl+L
+run now NAME --yes -- COMMAND [ARG...]	Explicitly skip review; put Burrow options before --
+run now NAME --local -- /usr/bin/tool [ARG...]	Review a local tool using selected socket/config context
+run prepare NAME --script PATH --mode MODE --interpreter PATH -- [ARG...]	Prepare a local script snapshot; mode is stream, inline or stage
+run now NAME --script check.sh --mode stream --interpreter /bin/sh --	Review, execute and collect a local shell script
+run now NAME --stdin data.bin -- /bin/sh /opt/check.sh	Existing remote script with independent binary input
+run launch ID [--collect]	Launch once; --collect waits and saves output; Tab completes IDs
+run list	List retained runs in this workspace
+run inspect ID	Inspect execution status, output completeness and storage budget
+run output ID stdout|stderr OFFSET	Read a safely displayed preview; start with offset 0
+run follow ID [stdout|stderr] [OFFSET]	Open live output; Tab streams, End follow, Esc closes viewer only
+run cancel ID	Review cancellation of the run's ordinary process group; local stop proves no remote cleanup
+run collect ID	Review saving completed or partial output as Hovel evidence
+run close ID	Review removal of working output; collected evidence remains
+Use the id returned by prepare. Leaving the view does not cancel execution.
+Optional prepare setting: --budget BYTES before -- (default 256 MiB per stream).
+Scripts and --stdin files come from the workspace upload root (256 MiB per input).
+Stream owns stdin. Inline exposes source in argv (64 KiB limit); never use secrets.
+Stage uploads only after review; --keep retains it, otherwise only owned files are removed.
+--timeout 30s requests cancellation; failed/unconfirmed staging cleanup remains visible.
+Tab completes script options, modes and interpreter examples; select an installed interpreter.
+Output shows the next byte offset. Cancel active runs before close; never put secrets in arguments.
+
+` + chainHelp + `
 # FORWARDING
 tunnel create NAME forward|reverse	Create a local or reverse listener; the prompt guides arguments
 tunc myserver l 8080 localhost 80	Example: local port 8080 reaches port 80 from the SSH server
@@ -684,7 +822,7 @@ The dashboard refreshes automatically, including changes made by external CLI cl
 # SAVED CONNECTIONS & WORKSPACES
 Saved row → Enter	Connect, inspect, edit or delete saved settings
 profile save NAME	Save an active connection's settings, never its passwords
-profile create NAME HOST USER	Save settings without connecting
+profile create NAME HOST --user USER	Save key/agent settings without connecting; use profile save after a password connection
 profile load PATH / profile backup PATH	Open a collection / back up the selected collection
 Alt+N / Alt+W	Create a workspace / open the workspace drawer
 
@@ -738,7 +876,7 @@ func (m ui) helpViewport(w, h int) viewport.Model {
 			if label[0] >= 'A' && label[0] <= 'Z' {
 				styled = m.paint(keywordStyle, label)
 			}
-			if bodyW < 90 {
+			if bodyW < 90 || ansi.StringWidth(label) > 40 {
 				lines = append(lines, styled, "  "+m.paint(secondary, description))
 			} else {
 				column := 42
