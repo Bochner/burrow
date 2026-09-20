@@ -43,16 +43,28 @@ py_test(
     data = [":burrow", "//:Makefile"],
     legacy_create_init = 0,
 )
-py_test(
-    name = "connection_lab",
+[py_test(
+    name = name,
     srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "latency_lab.py", "shell_lab.py", "forward_lab.py", "files_lab.py", "runs_lab.py", "follow_lab.py", "automation_lab.py", "reports_lab.py", "chains_lab.py"],
     main = "connection_lab.py",
-    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)", "$(location @shell_lab_vim//file)", "$(location //core/connection:survey_ubuntu.sh)", "$(location @chain_lab_dropbear//file)", "$(location @chain_lab_utmps//file)", "$(location @chain_lab_skalibs//file)"],
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)", "$(location @shell_lab_vim//file)", "$(location //core/connection:survey_ubuntu.sh)", "$(location @chain_lab_dropbear//file)", "$(location @chain_lab_utmps//file)", "$(location @chain_lab_skalibs//file)"] + (["--" + suite + "-check"] if suite else []),
     data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check", ":legacy_module", "@shell_lab_vim//file", "//core/connection:survey_ubuntu.sh", "@chain_lab_dropbear//file", "@chain_lab_utmps//file", "@chain_lab_skalibs//file"],
-    tags = ["local", "external"],
+    tags = ["local", "external"] + (["acceptance", "acceptance-" + suite] if suite else ["manual"]),
     size = "large",
+    timeout = "long" if suite else "eternal",
     legacy_create_init = 0,
-)
+) for name, suite in [
+    ("connection_lab", ""),  # Explicit composed diagnostic; routine checks use the complete partitions.
+    ("ssh_lifecycle_test", "lifecycle"),
+    ("ssh_files_test", "files"),
+    ("ssh_reverse_test", "reverse"),
+    ("ssh_shell_test", "shell"),
+    ("ssh_chains_test", "chains"),
+    ("ssh_reports_test", "reports"),
+    ("ssh_automation_test", "automation"),
+    ("ssh_follow_test", "follow"),
+    ("ssh_runs_test", "runs"),
+]]
 
 go_binary(
     name = "legacy_module",
@@ -85,7 +97,7 @@ pkg_tar(
 go_binary(
     name = "screen_check",
     srcs = ["screen_check.go"],
-    deps = ["@com_github_charmbracelet_x_vt//:vt"],
+    deps = ["@com_github_charmbracelet_x_vt//:vt", "@com_github_charmbracelet_ultraviolet//:ultraviolet"],
     testonly = True,
 )
 py_test(

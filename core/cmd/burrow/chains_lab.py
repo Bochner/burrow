@@ -29,7 +29,7 @@ def chain_checks(burrow, workspace, connection, hovel, env, hv, connect_options,
                 release.wait(6)
             if self.path == "/slow":
                 active.append(threading.get_ident())
-                time.sleep(7)
+                release.wait(30)
             data = canary.encode() if self.path == "/secret" else body
             if self.path == "/large":
                 data = b"x" * ((1 << 20) + 1)
@@ -173,19 +173,48 @@ def chain_checks(burrow, workspace, connection, hovel, env, hv, connect_options,
         assert burrow(workspace, "inspect", name)["masterPID"] == connection["masterPID"]
         chain_ui(binary, env, decoder, workspace, name, replacement["id"], url, requests)
         print("PASS concurrent consumers, frontend disconnect, bounded capture, secret exclusion and stale creation refusal", flush=True)
-        chain.write_text(json.dumps(burrow(workspace, "chain", "export", name, replacement["id"], url.replace("/check", "/slow"))))
+        slow_url = url.replace("/check", "/slow")
+        chain.write_text(json.dumps(burrow(workspace, "chain", "export", name, replacement["id"], slow_url)))
         active.clear()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        release.clear()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             consumer = pool.submit(throw, "--allow-dangerous", "--now")
-            deadline = time.monotonic() + 15
-            while not active and time.monotonic() < deadline:
-                time.sleep(.02)
-            assert active, "slow consumer never started"
-            started = time.monotonic()
-            removed = burrow(workspace, "tunnel", "remove", replacement["id"], "--yes")
-            assert removed["state"] == "removed" and time.monotonic() - started > 5, removed
-            completed = consumer.result(timeout=15)
-            assert json.loads(completed.stdout)["results"][0]["state"] == "succeeded", completed
+            try:
+                deadline = time.monotonic() + 15
+                while not active and time.monotonic() < deadline:
+                    time.sleep(.02)
+                assert active, "slow consumer never started"
+                removal = pool.submit(burrow, workspace, "tunnel", "remove", replacement["id"], "--yes")
+                # Hold the admitted consumer past the five-second verification
+                # deadline. Start that wait with removal, not server admission.
+                try:
+                    removal.result(timeout=6)
+                except concurrent.futures.TimeoutError:
+                    pass
+                else:
+                    raise AssertionError("removal completed before the consumer was released")
+                # Keep the response blocked until the admitted consumer reaches
+                # its own bounded deadline. Releasing after six seconds leaves
+                # too little of its eight-second budget for loaded CI runners.
+                completed = consumer.result(timeout=15)
+                assert completed.returncode == 0, completed
+                record = json.loads(completed.stdout)["results"][0]
+                assert record["state"] == "failed", record
+                consumed = json.loads(record["summary"])
+                assert consumed["runID"], consumed
+                assert consumed == {
+                    "runID": consumed["runID"], "selection": replacement,
+                    "url": slow_url, "state": "failed", "statusCode": 0, "bytes": 0,
+                    "detail": "selected tunnel HTTP request failed, timed out or exceeded 1 MiB; no response content retained",
+                }, consumed
+            finally:
+                release.set()
+            removed = removal.result(timeout=15)
+            assert removed["state"] == "removed", removed
+            artifacts = json.loads(hv("artifact", "list", "--json"))
+            timeout_artifacts = [a for a in artifacts if a["runId"] == consumed["runID"]]
+            assert len(timeout_artifacts) == 1, timeout_artifacts
+            assert json.loads((workspace / timeout_artifacts[0]["path"]).read_text()) == consumed
         assert burrow(workspace, "chain", "http", name, proxy["id"], url, "--yes")["state"] == "succeeded"
         print("PASS removal waits for a slow consumer, then removes only its listener", flush=True)
         burrow(workspace, "proxy", "remove", name, "--yes")

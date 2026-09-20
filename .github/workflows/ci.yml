@@ -8,19 +8,68 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: repository-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  repository:
-    runs-on: ubuntu-latest
+  checks:
+    name: ${{ matrix.suite }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [portable, lifecycle, files, reverse, shell, chains, reports, automation, follow, runs]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0; matches Hovel
+        with:
+          persist-credentials: false
       - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9; matches Hovel
-      # Portable production checks and proofs. Full SSH acceptance uses Docker.
-      - run: aspect burrow-check ci
-      - run: aspect burrow ssh-check
+        with:
+          launcher-version: "2026.33.3"
+          # Docs/support and SSH populate different dependency sets; the SSH
+          # partitions share their compiled application and download caches.
+          disk-cache: ${{ matrix.suite == 'portable' && 'burrow-portable' || 'burrow-ssh' }}
+          repository-cache: ${{ matrix.suite == 'portable' && 'burrow-portable' || 'burrow-ssh' }}
+      # Each declared acceptance partition runs once; known UI races repeat.
+      - run: aspect burrow-check preflight "${{ matrix.suite }}"
       - run: aspect burrow-site stage
+        if: matrix.suite == 'portable'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1; matches Hovel
+        if: matrix.suite == 'portable'
         with:
           name: docs-site
           path: _site
           include-hidden-files: true
           if-no-files-found: error
+          retention-days: 14
+      - name: Preserve test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-${{ matrix.suite }}
+          path: |
+            bazel-testlogs/**/test.log
+            bazel-testlogs/**/test.xml
+            bazel-testlogs/**/test.outputs/**
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  repository:
+    name: repository
+    if: ${{ always() }}
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require every verification partition
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+        run: test "$CHECKS_RESULT" = success

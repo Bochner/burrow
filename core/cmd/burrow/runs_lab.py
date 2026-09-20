@@ -519,16 +519,23 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
     output = bytearray()
     dimensions = [160, 40]
 
-    def wait(needle):
+    def wait(needle, *also):
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             if select.select([outer], [], [], .05)[0]:
                 output.extend(os.read(outer, 65536))
             screen = subprocess.run([decoder, *map(str, dimensions)], input=output, capture_output=True, check=True).stdout.decode()
-            if needle in screen:
+            if all(value in screen for value in (needle, *also)):
                 return screen
             assert frontend.poll() is None, screen
         raise AssertionError((needle, screen))
+
+    def finish():
+        deadline = time.monotonic() + 10
+        while frontend.poll() is None and time.monotonic() < deadline:
+            if select.select([outer], [], [], .05)[0]:
+                output.extend(os.read(outer, 65536))
+        assert frontend.poll() is not None, "frontend exit stalled"
 
     try:
         wait(connection)
@@ -572,7 +579,7 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
         os.write(outer, ("run launch " + run_id + "\r").encode())
         wait("Proceed?")
         os.write(outer, b"\t\r")
-        wait('"launchRunID"')
+        wait('"launchRunID"', '"id": "' + run_id + '"')
         if local:
             os.write(outer, ("run follow " + run_id + "\r").encode())
             wait("running · local")
@@ -589,7 +596,7 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
         pending, = [r for r in burrow(workspace, "run", "list") if r["id"] not in before_now]
         assert pending["state"] == "prepared" and pending["command"] == ["printf", "%s", "--yes"]
         os.write(outer, b"\t\r")
-        wait('"launchRunID"')
+        wait('"launchRunID"', '"id": "' + pending["id"] + '"')
         assert {r["id"] for r in burrow(workspace, "run", "list")} == before_now | {pending["id"]}
         deadline = time.monotonic() + 10
         while burrow(workspace, "run", "inspect", pending["id"])["state"] == "running":
@@ -616,7 +623,7 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
         os.write(outer, ("run launch " + cancelled["id"] + " --collect\r").encode())
         wait("Proceed?")
         os.write(outer, b"\t\r")
-        wait('"launchRunID"')
+        wait('"launchRunID"', '"id": "' + cancelled["id"] + '"')
         completed = burrow(workspace, "run", "inspect", cancelled["id"])
         if local:
             assert completed["localExit"] == 7 and completed["remoteExit"] is None, completed
@@ -626,13 +633,13 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
         os.write(outer, b"quit\r")
         wait("Keep running")
         os.write(outer, b"\r")
-        frontend.wait(timeout=10)
+        finish()
         assert frontend.returncode == 0 and termios.tcgetattr(slave) == before
         assert burrow(workspace, "run", "inspect", run_id)["state"] == "running"
     finally:
         if frontend.poll() is None:
             frontend.terminate()
-            frontend.wait(timeout=5)
+            finish()
         os.close(outer)
         os.close(slave)
         burrow(workspace, "run", "cancel", run_id, "--yes")

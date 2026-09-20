@@ -64,6 +64,7 @@ When editing the Pages book, components, assets, or deployment workflow, read
 - `aspect help`: discover the checked-in workflows.
 - `aspect burrow-check`: metadata, documentation, SDK, daemon reuse and production SSH gate; requires Docker and OpenSSH client tools.
 - `aspect burrow-check ci`: builds production packages and proofs and runs portable checks without Docker.
+- `aspect burrow-check preflight`: the GitHub gate; runs all routine tests uncached, including nine SSH partitions, and repeats the setup/terminal race checks three times without failed-test retries.
 - `aspect burrow ssh-check`: production connection acceptance against a declared, digest-pinned disposable OpenSSH Docker server.
 - `aspect burrow-site check`: generated book, links/assets, and search checks.
 - `aspect burrow-site stage`: materialize declared site output under `_site/`.
@@ -74,9 +75,9 @@ pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
 
 Work in the user's current checkout. When creating a branch, switch that
 checkout to it and stay on it until the owner explicitly requests a PR and merge.
-The next implementation branch is `mvp3`, starting with issue #53 after the
-MVP 2 milestone PR merges into `main`. Keep all MVP work and commits
-local on this shared branch until the entire milestone is done.
+Keep each MVP's work and commits local on its shared milestone branch until
+the entire milestone is done. MVP 4 uses `mvp4`; its implementation is complete
+and its PR is being prepared. PR authorization does not authorize merging.
 Do not push, create a PR, or merge until the owner explicitly requests it;
 completion of a ticket or milestone does not authorize any of these actions.
 Use this shared branch across the milestone's tickets; each MVP milestone

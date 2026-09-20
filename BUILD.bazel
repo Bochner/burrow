@@ -1,4 +1,18 @@
-# Research metadata only. Application targets follow the SDK-consumption decision.
+load("@rules_python//python:defs.bzl", "py_test")
+
+_WORKFLOWS = glob([".github/workflows/*.yml", ".github/workflows/*.yaml"], allow_empty = True)
+
+py_test(
+    name = "workflow_test",
+    size = "small",
+    srcs = [".github/check_workflows.py"],
+    main = ".github/check_workflows.py",
+    args = ["$(location @actionlint//:actionlint)"] + ["$(location %s)" % path for path in _WORKFLOWS],
+    data = ["@actionlint//:actionlint"] + _WORKFLOWS,
+    legacy_create_init = 0,
+)
+
+# This target checks the metadata build graph, not document accuracy.
 exports_files(["Makefile"])
 filegroup(
     name = "research",

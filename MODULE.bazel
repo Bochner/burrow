@@ -28,7 +28,8 @@ npm.npm_translate_lock(
 )
 use_repo(npm, "npm")
 
-# Published v0.4.2 resolves to the Hovel source pin below; GitHub asset digest.
+# Latest published runtime v0.4.2 (c461ba282a8a); GitHub asset digest.
+# SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 http_file(
@@ -85,12 +86,21 @@ use_repo(go_deps, "com_github_charmbracelet_ultraviolet", "land_charm_huh_v2", "
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# Workflow syntax/expression checks: rhysd/actionlint v1.7.12, MIT;
+# SHA256 from the upstream GitHub release asset (Linux amd64 operator baseline).
+http_archive(
+    name = "actionlint",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"],
+    sha256 = "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+    build_file_content = "exports_files([\"actionlint\"])",
+)
+
 http_archive(
     name = "hovel_sdk",
     build_file = "//core/prototype_sdk:hovel.BUILD.bazel",
     patch_cmds = ["rm sdk/go/hovel/BUILD.bazel"],
-    sha256 = "c2233e71fa79473555863b5d0b8381ccf5902877fb6d341825f60a6e12a1e722",
-    strip_prefix = "hovel-c461ba282a8aecc7aa3a079a4613bf5e2640c388",
+    sha256 = "9080e5060787f4ba5ee6715611e10112af2af316318369b748c9f566c1f3b6e9",
+    strip_prefix = "hovel-a4cbfdf7769a9551695088c11061e3cabc368e07",
     type = "tar.gz",
-    urls = ["https://codeload.github.com/vibepwners/hovel/tar.gz/c461ba282a8aecc7aa3a079a4613bf5e2640c388"],
+    urls = ["https://codeload.github.com/vibepwners/hovel/tar.gz/a4cbfdf7769a9551695088c11061e3cabc368e07"],
 )

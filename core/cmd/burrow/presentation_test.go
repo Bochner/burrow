@@ -2218,11 +2218,20 @@ func TestSavedProfilesPresentation(t *testing.T) {
 			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 			prefix := fmt.Sprintf("%dx%d-profiles-%t", size[0], size[1], plain)
 			capturePresentation(t, m, prefix+"-empty")
-			list := connection.Collection{Path: "/tmp/homelab.json", Revision: strings.Repeat("a", 64), Profiles: []connection.Profile{{Name: "nas", Host: "192.168.1.20", User: "alice", Port: 2222, Key: "/home/alice/.ssh/key", Jump: "bastion"}, {Name: "router", Host: "192.168.1.1", User: "admin", Port: 22}}}
+			list := connection.Collection{Path: "/tmp/homelab.json", Revision: strings.Repeat("a", 64), Profiles: []connection.Profile{{Name: "nas", Host: "192.168.1.20", User: "alice", Port: 2222, Key: "/home/alice/.ssh/key", Jump: "bastion"}, {Name: "router", Host: "192.168.1.1", User: "admin", Port: 22, PasswordAuth: true, AgentExplicit: true}}}
 			m.updateManagement(m.active, profilesReady{collection: list})
 			before := capturePresentation(t, m, prefix+"-populated")
 			if !strings.Contains(ansi.Strip(m.View().Content), "SAVED CONNECTIONS") {
 				t.Fatal("missing saved table")
+			}
+			if size[0] == 200 {
+				view := ansi.Strip(m.View().Content)
+				if !strings.Contains(view, "Password") || strings.Contains(view, "Agent off") || strings.Contains(view, "Config/agent") {
+					t.Fatal("password-only profile lost its authentication method", view)
+				}
+				if !plain {
+					assertTextRole(t, before, m.selectionBounds(), "Password", "#94e2d5")
+				}
 			}
 			// Actual row layers and selection retain field alignment and never run I/O.
 			m.activate("profile:0")

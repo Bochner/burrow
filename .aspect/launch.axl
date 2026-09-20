@@ -31,7 +31,7 @@ def _impl(ctx: TaskContext) -> int:
     commands = {
         "run": ["run", "//core/cmd/burrow:burrow", "--"] + ctx.args.options,
         "check": ["test", "//core/cmd/burrow:setup_test", "//core/cmd/burrow:connection_test", "//core/cmd/burrow:profile_test", "//core/cmd/burrow:interaction_test", "//core/launch:online_test", "//core/launch:digest_test", "//core/launch:audit_test", "//core/terminal:host_test", "//core/cmd/burrow:terminal_test"],
-        "ssh-check": ["test", "//core/cmd/burrow:connection_lab"],
+        "ssh-check": ["test", "--bazel-flag=--build_tests_only", "--bazel-flag=--nocache_test_results", "--bazel-flag=--test_tag_filters=acceptance", "//..."],
         "shell-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--shell-check"],
         "files-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--files-check"],
         "runs-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--runs-check"],

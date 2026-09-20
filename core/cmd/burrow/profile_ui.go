@@ -309,6 +309,9 @@ func (m ui) savedConnections(w int) string {
 				auth = p.Key + " + " + auth
 			}
 		}
+		if p.PasswordAuth {
+			auth = "Password"
+		}
 		proxy := "—"
 		if p.ProxyPort != 0 {
 			proxy = fmt.Sprint(p.ProxyPort)

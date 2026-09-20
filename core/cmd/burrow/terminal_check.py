@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
     def screen():
         return subprocess.run([decoder, *map(str, dimensions)], input=output, capture_output=True, timeout=3, check=True).stdout.decode()
 
-    def wait(needle, prompt=False):
+    def wait(needle, prompt=False, absent=None):
         deadline = time.monotonic() + 12
         stable, since = None, time.monotonic()
         while time.monotonic() < deadline:
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
                 stable, since = center, time.monotonic()
             center = [line for line in center if "h0v3l" in line]
             ready = center and re.search(r"h0v3l.*>\s*$", center[-1])
-            if needle in view and (not prompt or ready) and time.monotonic() - since > .25:
+            if needle in view and (absent is None or absent not in view) and (not prompt or ready) and time.monotonic() - since > .25:
                 return view
             assert terminal.poll() is None, (terminal.returncode, view)
         Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"], "terminal-debug").write_bytes(output)
@@ -154,7 +154,9 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         click(2, 20)
         wait("Workspace name")
         send(b.name + "\t" + str(b.parent) + "\r")
-        wait(str(b))  # active workspace metadata; its SSH status is disconnected
+        # Submission removes the fields, but the pending NEW WORKSPACE dialog
+        # still shows the destination and ignores tab clicks until launch ends.
+        wait(str(b), absent="NEW WORKSPACE")
         click(39, 1)
         wait("h0v3l>")
         command("op create embedded-b", "Operation selected: embedded-b")

@@ -22,8 +22,16 @@ Run `aspect burrow-site check` after changes, and `aspect burrow-site stage` to
 materialize the artifact. All tools are declared Bazel inputs; update JS locks
 through the Bazel-managed pnpm target via Aspect. No CDN/runtime network assets.
 
-CI uploads the checked `_site/` as `docs-site`; Pages promotes that exact artifact
-from successful main CI. Manual dispatch repeats the same gate. Repository
+CI runs ten `aspect burrow-check preflight SUITE` jobs: portable, lifecycle,
+files, reverse, shell, chains, reports, automation, follow and runs. Each has a
+15-minute cap; the required `repository` aggregate succeeds only when all ten
+succeed. The
+portable job also stages the checked `_site/` and uploads it as `docs-site`.
+Pages promotes that exact artifact from successful main CI. Manual dispatch
+finds a successful Repository run for its exact main commit and promotes the
+existing artifact; it does not rebuild or rerun checks. Both paths skip
+deployment if main has advanced. Site artifacts and each job's
+`test-results-SUITE` diagnostics are retained for 14 days. Repository
 privacy alone does not make a Pages site private: confirm intended publication
 visibility before enabling Pages. Never stage the repository or research tree
 as the public site.

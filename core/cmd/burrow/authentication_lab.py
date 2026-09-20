@@ -68,6 +68,12 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
                 while True:
                     data=read()
                     screen=subprocess.run([screen_check,str(size[1]),str(size[0])],input=data,capture_output=True,check=True).stdout
+                    # Every details label is visible before its field receives
+                    # focus. Match the software cursor in the decoded screen;
+                    # the standalone form keeps its terminal cursor at the footer.
+                    if b"Connection details" in screen:
+                        screen = subprocess.run([screen_check, str(size[1]), str(size[0]), "--input-line"],
+                                                input=data, capture_output=True, check=True).stdout
                     if needle.encode() in screen and (needle!=previous or needle.encode() in data[offset:]):
                         if not secret_prompt or not termios.tcgetattr(slave)[3] & termios.ECHO:
                             break
@@ -237,10 +243,12 @@ def authentication_matrix(binary, workspace, root, env, container, port, key, fi
     answers = [("Host / IP", b"127.0.0.1\r"), ("SSH port", str(port).encode()+b"\r"),
                ("Username", b"tester\r"), ("Connection name", b"guided\r"),
                ("SSH key path", b"\r"), ("SOCKS proxy port", b"\r"), ("Jump host", b"\r"), ("Agent socket", b"\r"),
-               ("SSH config path", b"\r"), ("Proceed?", b"\t\r"),
+               ("SSH config path", b"\r"), ("Proceed?", b"\t"), ("[› Connect]", b"\r"),
                ("SSH password", secret.encode()+b"\r")]
-    terminal(["--no-color", "connect"], answers, size=(24, 80), terminal_env={k:v for k,v in env.items() if k != "NO_COLOR"})
-    burrow(workspace, "close", "guided", "--yes")
+    # Repeat the actual focus transition race, not the entire SSH fixture.
+    for _ in range(3):
+        terminal(["--no-color", "connect"], answers, size=(24, 80), terminal_env={k:v for k,v in env.items() if k != "NO_COLOR"})
+        burrow(workspace, "close", "guided", "--yes")
     terminal(["connect", "review-cancel", "127.0.0.1", "tester", "--port", port, "--prompt"],
              [("Proceed?", b"\r")], success=False)
     assert not (workspace / "burrow/review-cancel").exists()
