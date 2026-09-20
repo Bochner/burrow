@@ -5,26 +5,30 @@ def _impl(ctx: TaskContext) -> int:
     if mode not in ["full", "ci", "preflight"]:
         print("expected full, ci or preflight")
         return 2
-    if suite not in ["all", "portable", "lifecycle", "files", "reverse", "shell", "chains", "reports", "automation", "follow", "runs"] or (mode != "preflight" and suite != "all"):
-        print("optional preflight suite: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow or runs")
+    if suite not in ["all", "portable", "lifecycle", "files", "reverse", "shell", "chains", "reports", "automation", "follow", "runs", "hovel"] or (mode != "preflight" and suite != "all"):
+        print("optional preflight suite: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow, runs or hovel")
         return 2
     # Discover every declared test; adding a target must not require updating
     # a second, hand-maintained list. Release checks execute rather than cache-hit.
-    tests = ["test", "--bazel-flag=--build_tests_only", "--bazel-flag=--nocache_test_results", "--bazel-flag=--flaky_test_attempts=1", "--bazel-flag=--noruns_per_test_detects_flakes", "--bazel-flag=--runs_per_test=1", "--bazel-flag=--test_tag_filters=-manual"]
+    tests = ["test", "--bazel-flag=--build_tests_only", "--bazel-flag=--nocache_test_results", "--bazel-flag=--flaky_test_attempts=1", "--bazel-flag=--noruns_per_test_detects_flakes", "--bazel-flag=--runs_per_test=1"]
+    filters = ["-manual"]
     tests += ["--bazel-flag=--local_test_jobs=2"]
     if mode == "preflight":
         # Repeat actual race surfaces, not every long-running SSH scenario.
         tests += ["--bazel-flag=--runs_per_test=//core/cmd/burrow:(setup|terminal)_test$@3"]
+        # #86 release exception: upstream diagnostics stay visible in their own
+        # workflow. Full mode still fails on every known upstream regression.
+        filters += ["hovel-followup" if suite == "hovel" else "-hovel-followup"]
     commands = []
     if suite in ["all", "portable"]:
         commands.append(["build", "//core/cmd/burrow:package", "//:research", "//core/prototype_sdk:package", "//core/prototype_sdk:frontend", "//core/prototype_transport:package", "//core/prototype_agent:burrow", "//core/prototype_terminal:terminal", "//core/prototype_manager:burrow", "//core/prototype_manager:baseline"])
     if mode == "ci":
-        tests += ["--bazel-flag=--test_tag_filters=-external"]
+        filters += ["-external"]
     elif suite == "portable":
-        # Includes the two short Docker-backed manager proofs.
-        tests += ["--bazel-flag=--test_tag_filters=-acceptance"]
-    elif suite != "all":
-        tests += ["--bazel-flag=--test_tag_filters=acceptance-" + suite]
+        filters += ["-acceptance"]
+    elif suite not in ["all", "hovel"]:
+        filters += ["acceptance-" + suite]
+    tests += ["--bazel-flag=--test_tag_filters=" + ",".join(filters)]
     commands.append(tests + ["//..."])
     for command in commands:
         status = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait()
@@ -34,6 +38,6 @@ def _impl(ctx: TaskContext) -> int:
 
 burrow_check = task(
     args = {"mode": args.positional(default = ["full"], minimum = 0, maximum = 2)},
-    summary = "Run all checks (full), checks without Docker (ci), or uncached acceptance with focused race repetitions (preflight [suite]).",
+    summary = "Run all checks (full), checks without Docker (ci), the release gate (preflight [suite]), or advisory upstream diagnostics (preflight hovel).",
     implementation = _impl,
 )

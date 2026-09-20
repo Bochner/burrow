@@ -110,8 +110,9 @@ Useful commands:
 | Command | Description |
 | --- | --- |
 | `aspect burrow-check` | Run metadata, documentation, SDK, daemon reuse and production SSH checks; requires Docker and OpenSSH client tools. |
-| `aspect burrow-check preflight` | Run the full gate, repeating only setup and terminal checks three times; no cached test results or failed-test retries. |
-| `aspect burrow-check preflight SUITE` | Run one GitHub partition: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow or runs. The portable partition includes two Docker-backed manager proofs. |
+| `aspect burrow-check preflight` | Run the required release gate, repeating only setup and terminal checks three times; no cached test results or failed-test retries. Hovel #86 diagnostics run separately. |
+| `aspect burrow-check preflight SUITE` | Run one GitHub partition: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow or runs. The Hovel follow-up proofs are excluded from these required partitions. |
+| `aspect burrow-check preflight hovel` | Run the advisory WAL-lock regression and two Docker-backed manager proofs tracked in #86. |
 | `aspect burrow-check ci` | Build production packages and proofs and run portable checks without Docker. |
 | `aspect burrow package` | Build the production Linux amd64 package. |
 | `aspect burrow check` | Run the production frontend, launch, terminal and profile checks. |
@@ -128,7 +129,12 @@ preflight gates allow at most two local test processes; preflight repeats
 setup and terminal checks three times, while the SIGTERM regression already
 exercises 40 cycles inside its unit check. Guided field transitions repeat three
 times inside lifecycle acceptance; each SSH partition runs once.
-The portable job stages and uploads `docs-site`. Every job retains logs, XML,
+A separate **Hovel compatibility** workflow runs the three `hovel-followup`
+targets and reports real failures without blocking the required release gate.
+This is a scoped exception for [#86](https://github.com/Bochner/burrow/issues/86);
+restore those checks to the required gate after an official Hovel fix is pinned
+and verified. `aspect burrow-check` remains the strict full gate, including
+these diagnostics. The portable job stages and uploads `docs-site`. Every job retains logs, XML,
 terminal captures and available phase/daemon logs as `test-results-SUITE` for
 14 days, including after failure. Pages promotes that exact site after
 successful main CI and checks that its commit is still current. Manual Pages
@@ -141,6 +147,15 @@ admins; the owner separately authorizes merging. See the
 The historical transport proof keeps its own
 host-binary prerequisites documented in
 [its README](core/prototype_transport/README.md).
+
+## Known upstream limitation
+
+The pinned official Hovel v0.4.2 runtime can crash while concurrent clients
+access its SQLite workspace. This can interrupt active connections and runs;
+reconnect remains manual. The release exception does not fix that defect.
+Evidence, a proposed upstream patch, and the required follow-up are tracked in
+[#86](https://github.com/Bochner/burrow/issues/86). Burrow does not ship a custom
+Hovel runtime.
 
 ## Repository layout
 

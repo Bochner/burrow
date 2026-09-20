@@ -4,8 +4,12 @@ Burrow is the Go successor to Bochner's LazySSH, for homelab SSH management
 and authorized penetration-testing engagements. It fits Hovel's extension and
 development conventions as Hovel evolves. MVP 1 (setup, profiles and
 connections), MVP 2 (shells and forwarding), and MVP 3 (file workflows)
-are merged. MVP 4 (scripts, reports and chains) is complete on its milestone
-branch and preparing for review; merge remains owner-controlled.
+are merged. MVP 4 (scripts, reports and chains) is implemented; MVP 5 remains
+follow-on work. The owner approved releasing MVP 4 with Hovel compatibility
+issue [#86](https://github.com/Bochner/burrow/issues/86) as a known limitation:
+three upstream diagnostics are advisory, while all production acceptance,
+normal startup and documentation checks remain required. Merge remains
+owner-controlled.
 
 ## Established scope
 

@@ -13,7 +13,7 @@ py_test(
     main = "check.py",
     args = ["$(location :burrow)", "$(location //core/cmd/burrow:burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :baseline)", "--consumer"],
     data = [":burrow", "//core/cmd/burrow:burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":baseline"],
-    tags = ["local", "external"],
+    tags = ["local", "external", "hovel-followup"],
     size = "large",
     legacy_create_init = 0,
 )
@@ -23,7 +23,7 @@ py_test(
     srcs = ["check.py", "latency.py"],
     args = ["$(location :burrow)", "$(location //core/cmd/burrow:burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :baseline)"],
     data = [":burrow", "//core/cmd/burrow:burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":baseline"],
-    tags = ["local", "external"],
+    tags = ["local", "external", "hovel-followup"],
     size = "large",
     legacy_create_init = 0,
 )

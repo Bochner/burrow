@@ -25,8 +25,11 @@ through the Bazel-managed pnpm target via Aspect. No CDN/runtime network assets.
 CI runs ten `aspect burrow-check preflight SUITE` jobs: portable, lifecycle,
 files, reverse, shell, chains, reports, automation, follow and runs. Each has a
 15-minute cap; the required `repository` aggregate succeeds only when all ten
-succeed. The
-portable job also stages the checked `_site/` and uploads it as `docs-site`.
+succeed. The separate Hovel compatibility workflow runs the three #86
+`hovel-followup` targets as advisory diagnostics; failures remain visible but
+do not block Repository or Pages. Restore them to the required gate after an
+official fixed runtime is pinned and verified. The strict default full gate
+still includes them. The portable job also stages the checked `_site/` and uploads it as `docs-site`.
 Pages promotes that exact artifact from successful main CI. Manual dispatch
 finds a successful Repository run for its exact main commit and promotes the
 existing artifact; it does not rebuild or rerun checks. Both paths skip

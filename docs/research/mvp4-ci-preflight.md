@@ -311,3 +311,33 @@ patch is retained here for handoff. v0.4.1 has the same descriptor-lifetime
 defect, and no supported storage configuration or daemon-only artifact reader
 was found in the inspected public interfaces. The official runtime pin remains
 unchanged.
+
+
+## Owner-approved release exception for #86
+
+After the audit, the owner requested deployment to main and Pages without a
+custom Hovel runtime. The owner explicitly approved the scoped exception, including the known
+risk of interrupted live sessions, and authorized merge and Pages publication
+after the required checks pass. It moves only three diagnostic
+targets to a separate, visibly failing Hovel compatibility workflow:
+
+- `//core/launch:hovel_wal_test` (the extracted WAL assertion; normal first
+  launch and cache reuse stay in required `online_test`).
+- `//core/prototype_manager:check`.
+- `//core/prototype_manager:consumer_check`.
+
+All nine production SSH partitions and every other required test remain in
+Repository. Main protection and the exact-main-artifact Pages promotion stay
+unchanged. `aspect burrow-check preflight hovel` runs the advisory diagnostics;
+the strict default full gate continues to include them. No failed-test retries
+or custom runtime are introduced. Return all three targets to the required
+gate after an official fixed runtime is pinned and verified under #86.
+
+Hosted run [35489842429](https://github.com/Bochner/burrow/actions/runs/35489842429)
+at `526570e492712125826edc5f9bdaf64e07ef4854` took 5m02s from first job start
+through the required aggregate. All nine SSH partitions passed; portable
+passed 23 of 26 targets and failed the WAL assertion plus both manager proofs.
+The preserved manager daemon logs prove both manager failures in that run
+were SIGBUS crashes in SQLite `_walIndexAppend` during `SaveOperatorSession`,
+before final direct SQL evidence inspection. The earlier first-run manager
+failure remains unattributed because its daemon stack was not retained.

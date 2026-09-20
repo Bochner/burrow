@@ -15,6 +15,7 @@ import (
 )
 
 var wheel = flag.String("wheel", "", "declared pinned Hovel wheel")
+var checkWALLock = flag.Bool("check-wal-lock", false, "also run the Hovel WAL regression tracked in #86")
 
 type pinnedDownload struct{ requests int }
 
@@ -57,6 +58,9 @@ func TestFirstOnlineWorkspace(t *testing.T) {
 	cached, err := launch.Open(ctx, launch.Options{Workspace: info.Workspace, Offline: true})
 	if err != nil || cached.PID != info.PID || transport.requests != 1 {
 		t.Fatalf("cache reuse: %+v, %v", cached, err)
+	}
+	if !*checkWALLock {
+		return
 	}
 	// SQLite's Unix WAL lifetime lock prevents another public Hovel client
 	// from truncating shared memory while this daemon still maps it. Query
