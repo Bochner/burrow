@@ -180,6 +180,9 @@ func ProfileConnect(ctx context.Context, w string, args []string) ([]string, err
 			if options["as"] != "" {
 				p.Name = options["as"]
 			}
+			if options["review"] != "" {
+				args = append(args, "--review", options["review"])
+			}
 			return append(p.Args(), args[3:]...), nil
 		}
 	}
@@ -449,7 +452,7 @@ func profileOptions(w string, args []string) ([]string, map[string]string, error
 	out := append([]string{}, args[:3]...)
 	for i := 3; i < len(args); i++ {
 		name, value, assigned := strings.Cut(strings.TrimPrefix(args[i], "--"), "=")
-		if !strings.HasPrefix(args[i], "--") || (name != "as" && name != "revision" && name != "collection") {
+		if !strings.HasPrefix(args[i], "--") || (name != "as" && name != "revision" && name != "collection" && name != "review") {
 			out = append(out, args[i])
 			continue
 		}
@@ -467,7 +470,11 @@ func profileOptions(w string, args []string) ([]string, map[string]string, error
 		if old := options[name]; old != "" && old != value {
 			return nil, nil, fmt.Errorf("conflicting profile option")
 		}
-		if name == "as" {
+		if name == "review" {
+			if args[1] != "connect" || len(value) != 64 || strings.Trim(value, "0123456789abcdef") != "" {
+				return nil, nil, fmt.Errorf("--review requires profile connect and a SHA256 review digest")
+			}
+		} else if name == "as" {
 			if args[1] != "save" && args[1] != "connect" {
 				return nil, nil, fmt.Errorf("--as requires save or connect")
 			}

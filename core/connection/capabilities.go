@@ -107,14 +107,14 @@ var commandOperations = []Operation{
 	op("connection.inspect", "inspect", "inspect NAME", "inspect target", "Inspect one connection and its ownership", "name", "State", inspectEffect, noReview, "core/connection/commands.go", "core/cmd/burrow/manager_lab.py"),
 	op("connection.connect", "connect", "connect NAME HOST --user USER [OPTIONS]", "connect target 192.0.2.10 --user alice", "Create a shell-free SSH master; bare connect opens a human form", connectionInputs, "ConnectionReview", "After approval authenticates and creates a retained connection; may initialize the workspace manager. SSH host keys are not verified under the accepted host-trust policy.", confirmReview, "core/connection/commands.go", "core/cmd/burrow/authentication_lab.py"),
 	op("connection.reconnect", "reconnect", "reconnect NAME HOST --user USER [OPTIONS]", "reconnect target 192.0.2.10 --user alice", "Explicitly replace a lost owned connection", connectionInputs, "ConnectionReview", "After approval closes the lost owned resource and attempts a fresh connection; refuses active or unknown ownership.", confirmReview, "core/connection/commands.go", "core/cmd/burrow/manager_lab.py"),
-	op("connection.close", "close", "close NAME [--yes]", "close target", "Close all resources owned by a connection", "name yes", "CloseReview", "Ends owned shells, transfers and tunnels; saved settings and artifacts survive.", "Review then --yes; CLI has no digest flag for close. TUI binds the reviewed owner identity.", "core/connection/commands.go", "core/cmd/burrow/connection_lab.py"),
+	op("connection.close", "close", "close NAME [--yes] [--review HASH]", "close target", "Close all resources owned by a connection", "name yes review", "CloseReview", "Ends owned shells, transfers and tunnels; saved settings and artifacts survive.", "Review then --yes; --review HASH binds the exact workspace, owner, creation, observed state and tunnel revision. TUI binds the same identity.", "core/connection/commands.go", "core/cmd/burrow/workspace_lab.py"),
 	op("profile.list", "profiles", "profiles", "profiles", "List settings and selected collection", "", "Collection", inspectEffect, noReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.select", "profile select", "profile select NAME", "profile select target", "Read saved settings without connecting", "name", "Profile", inspectEffect, noReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.create", "profile create", "profile create NAME HOST --user USER [OPTIONS]", "profile create target 192.0.2.10 --user alice", "Save new non-secret connection settings", "name host user profile-options", "ProfileChange", "Writes the selected collection; never connects or saves passwords.", noReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.edit", "profile edit", "profile edit NAME HOST --user USER [OPTIONS]", "profile edit target 192.0.2.10 --user alice", "Replace all saved settings", "name host user profile-options", "ProfileChange", "Replaces settings in the selected collection; omitted options reset to defaults.", "Review then --revision HASH --collection PATH --yes to bind approval; live resources remain.", "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.delete", "profile delete", "profile delete NAME [--revision HASH] [--collection PATH] [--yes]", "profile delete target", "Delete saved settings", "name profile-review", "ProfileChange", "Removes one saved entry; live resources and artifacts remain.", "Review then --revision HASH --collection PATH --yes to bind approval.", "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.save", "profile save", "profile save CONNECTION [--as NAME] [--revision HASH] [--collection PATH] [--yes]", "profile save target", "Save authenticated settings", "connection as profile-review", "ProfileChange", "Saves the connection's non-secret settings to the selected collection.", "New entry writes immediately. Replacement requires review and --yes; revision/collection can bind approval.", "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
-	op("profile.connect", "profile connect", "profile connect NAME [--as NAME] [--prompt] [--yes]", "profile connect target", "Connect using selected saved settings", "name as prompt yes", "ConnectionReview", "Expands saved settings into the same reviewed connection flow.", confirmReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
+	op("profile.connect", "profile connect", "profile connect NAME [--as NAME] [--prompt] [--yes] [--review HASH]", "profile connect target", "Connect using selected saved settings", "name as prompt yes review", "ConnectionReview", "Expands saved settings into the same reviewed connection flow; --review binds the resolved settings, including the selected name, before authentication.", confirmReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.collection", "profile collection", "profile collection PATH", "profile collection /absolute/workspace/team.json", "Create or open a selected collection", "path", "Collection", "Creates a template if missing and persists collection selection; never connects.", noReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.load", "profile load", "profile load PATH", "profile load /absolute/workspace/team.json", "Select an existing saved collection", "path", "Collection", "Persists selection; missing collections fail; never connects.", noReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.backup", "profile backup", "profile backup PATH", "profile backup /absolute/workspace/team.backup.json", "Back up the selected collection", "path", "Backup", "Creates a new private file; refuses an existing destination.", noReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
@@ -213,7 +213,7 @@ func ResultSchemas() map[string]any {
 		"Download": Download{}, "Downloads": Downloads{}, "DownloadPlan": DownloadPlan{},
 		"Run": Run{}, "Runs": []Run{}, "RunOutput": RunOutput{},
 		"Reports": []reports.Entry{}, "Document": reports.Document{}, "ChainSelection": chainSelection{},
-		"TunnelHTTP": tunnelHTTPResult{}, "Workspace": launch.Info{}, "Strings": []string{},
+		"TunnelHTTP": tunnelHTTPResult{}, "Workspace": launch.Info{}, "Strings": []string{}, "ManagerReview": ManagerReview{},
 	}
 	out := map[string]any{}
 	for name, value := range values {
@@ -240,7 +240,7 @@ func ResultSchemas() map[string]any {
 	tunnelReview["properties"].(map[string]any)["digest"] = map[string]string{"type": "string"}
 	unions := map[string][]any{
 		"ConnectionReview":  {review, ref("State")},
-		"CloseReview":       {object("review"), object("state", "name")},
+		"CloseReview":       {review, object("state", "name")},
 		"ProfileChange":     {object("review", "revision", "collection"), object("state", "name", "collection")},
 		"TunnelReview":      {tunnelReview, ref("Tunnel"), object("id", "state", "detail")},
 		"Proxy":             {ref("Tunnel"), object("state", "connection")},
@@ -261,7 +261,7 @@ func ResultSchemas() map[string]any {
 
 var resultDescriptions = map[string]string{
 	"ConnectionReview":  "Review object {review:string,digest:string} or State after confirmation. Interactive authentication may show a private prompt before State.",
-	"CloseReview":       "{review:string} before approval; {state:'closed',name:string} after close.",
+	"CloseReview":       "{review:string,digest:string} before approval; {state:'closed',name:string} after close. --review binds the exact creation, state and tunnel revision.",
 	"ProfileChange":     "Replacement review {review:string,revision:string,collection:string}; success {state:string,name:string,collection:string}.",
 	"TunnelReview":      "Create review {review:string,digest:string}; confirmed creation returns Tunnel. Remove review {review:string}; confirmed removal returns {id:string,state:'removed',detail:string}.",
 	"TunnelCheck":       "{id:string,state:string,detail:string}; state describes the observed check, not guaranteed destination availability.",

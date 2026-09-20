@@ -3,6 +3,17 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 py_test(
+    name = "workspace_test",
+    srcs = ["workspace_check.py"],
+    main = "workspace_check.py",
+    args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)"],
+    data = [":burrow", "@hovel_linux_wheel//file"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)
+
+py_test(
     name = "capabilities_test",
     srcs = ["capabilities_check.py"],
     main = "capabilities_check.py",
@@ -54,7 +65,7 @@ py_test(
 )
 [py_test(
     name = name,
-    srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "latency_lab.py", "shell_lab.py", "forward_lab.py", "files_lab.py", "runs_lab.py", "follow_lab.py", "automation_lab.py", "reports_lab.py", "chains_lab.py"],
+    srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "workspace_lab.py", "latency_lab.py", "shell_lab.py", "forward_lab.py", "files_lab.py", "runs_lab.py", "follow_lab.py", "automation_lab.py", "reports_lab.py", "chains_lab.py"],
     main = "connection_lab.py",
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)", "$(location @shell_lab_vim//file)", "$(location //core/connection:survey_ubuntu.sh)", "$(location @chain_lab_dropbear//file)", "$(location @chain_lab_utmps//file)", "$(location @chain_lab_skalibs//file)"] + (["--" + suite + "-check"] if suite else []),
     data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check", ":legacy_module", "@shell_lab_vim//file", "//core/connection:survey_ubuntu.sh", "@chain_lab_dropbear//file", "@chain_lab_utmps//file", "@chain_lab_skalibs//file"],
@@ -85,7 +96,7 @@ go_binary(
 go_binary(
     name = "burrow",
     visibility = ["//core/prototype_manager:__pkg__", "//core/prototype_sessions:__pkg__", "//docs/site:__pkg__", "//docs/tools/docs:__pkg__"],
-    srcs = ["capabilities.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go"],
+    srcs = ["capabilities.go", "workspace.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go"],
     deps = [
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",
@@ -123,7 +134,7 @@ py_test(
 
 go_test(
     name = "interaction_test",
-    srcs = ["capabilities.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go", "frame_test.go", "presentation_test.go", "auth_signal_test.go", "reports_test.go"],
+    srcs = ["capabilities.go", "workspace.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go", "frame_test.go", "presentation_test.go", "auth_signal_test.go", "reports_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",
         "@org_golang_x_sys//unix", "@land_charm_huh_v2//:huh",

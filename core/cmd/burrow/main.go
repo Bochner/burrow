@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -22,6 +23,8 @@ import (
 
 const usage = `Burrow — verified Hovel workspace
 Usage: burrow --workspace /absolute/workspace [options] [status|tui|COMMAND]
+       burrow --workspace /absolute/workspace workspace open|inspect|restart|retire
+       burrow workspace list PATH [PATH...]
        burrow capabilities [ID]
        burrow --demo [--no-color]
 
@@ -36,6 +39,12 @@ Options:
   --help                Show this help without starting anything
 
 status opens/reuses the workspace and prints verified daemon identity as JSON.
+workspace open does the same setup; workspace inspect only verifies an existing daemon.
+workspace list inspects only the supplied paths; no global workspace registry exists.
+workspace restart/retire returns a JSON review; --yes --review HASH confirms that manager.
+Both retire the entire owner, including concurrent additions, without opening a TUI.
+restart also registers the current build; next approved connect starts a manager.
+Workspace routes emit JSON results and JSON errors on stderr (exit 1).
 capabilities prints the versioned JSON operation contract without initializing anything.
 tui opens the management interface (default); quit retains the daemon.
 restart [--yes] retires the workspace's Burrow manager, then opens the current TUI.
@@ -60,20 +69,20 @@ func safe(s string) string {
 }
 
 // Human terminals share the TUI's semantic renderer; pipes remain JSON-only.
-func printResult(result any, noColor bool) error {
-	if !term.IsTerminal(os.Stdout.Fd()) {
-		return json.NewEncoder(os.Stdout).Encode(result)
+func printResult(output *os.File, result any, noColor bool) error {
+	if !term.IsTerminal(output.Fd()) {
+		return json.NewEncoder(output).Encode(result)
 	}
 	body, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return err
 	}
 	m := ui{output: string(body), noColor: noColor || os.Getenv("NO_COLOR") != ""}
-	_, err = lipgloss.Fprintln(os.Stdout, m.styledOutput())
+	_, err = lipgloss.Fprintln(output, m.styledOutput())
 	return err
 }
 
-func run(args []string) error {
+func run(args []string) (failure error) {
 	if os.Getenv("BURROW_ASKPASS") == "1" {
 		if len(args) != 1 || term.IsTerminal(os.Stdout.Fd()) {
 			return fmt.Errorf("invalid authentication helper invocation")
@@ -91,8 +100,13 @@ func run(args []string) error {
 	var o launch.Options
 	var noColor, demo bool
 	var loadPath string
+	var workspaceSelections int
 	fs.StringVar(&loadPath, "load", "", "open saved collection without connecting")
-	fs.StringVar(&o.Workspace, "workspace", "", "explicit canonical workspace (required)")
+	fs.Func("workspace", "explicit canonical workspace (required except discovery)", func(path string) error {
+		workspaceSelections++
+		o.Workspace = path
+		return nil
+	})
 	fs.StringVar(&o.Package, "hovel-package", "", "pinned wheel file")
 	fs.BoolVar(&o.Offline, "offline", false, "verified cache only")
 	fs.BoolVar(&demo, "demo", false, "sample-data UI preview")
@@ -107,10 +121,29 @@ func run(args []string) error {
 	if fs.NArg() > 0 && fs.Arg(0) == "capabilities" {
 		return capabilities(fs, fs.Args()[1:])
 	}
+	operation := ""
+	if fs.Arg(0) == "close" {
+		operation = "connection.close"
+	} else if fs.Arg(0) == "profile" && fs.Arg(1) == "connect" {
+		operation = "profile.connect"
+	}
+	if operation != "" {
+		defer func() {
+			if failure != nil {
+				failure = &commandError{Operation: operation, Workspace: o.Workspace, Code: "operation_failed", Message: failure.Error()}
+			}
+		}()
+	}
 	if noColor {
 		if e := os.Setenv("NO_COLOR", "1"); e != nil {
 			return e
 		}
+	}
+	if fs.NArg() > 0 && fs.Arg(0) == "workspace" {
+		return workspaceCommand(o, fs.Args()[1:], workspaceSelections, loadPath, demo)
+	}
+	if workspaceSelections > 1 {
+		return fmt.Errorf("select exactly one workspace with --workspace PATH")
 	}
 	if demo {
 		if fs.NArg() > 0 {
@@ -211,7 +244,7 @@ func run(args []string) error {
 					if err != nil {
 						return err
 					}
-					return printResult(result, noColor)
+					return printResult(os.Stdout, result, noColor)
 				}
 				interactive = c.Prompt || (!yes && term.IsTerminal(os.Stdin.Fd()))
 			}
@@ -220,7 +253,7 @@ func run(args []string) error {
 				if e := a.Run(); e != nil {
 					return e
 				}
-				return printResult(a.result, noColor)
+				return printResult(os.Stdout, a.result, noColor)
 			}
 		}
 		if connection.RunWaits(args) {
@@ -230,7 +263,7 @@ func run(args []string) error {
 		if e != nil {
 			return e
 		}
-		return printResult(result, noColor)
+		return printResult(os.Stdout, result, noColor)
 	}
 	if fs.NArg() > 1 && !restartApproved {
 		return fmt.Errorf("status and tui take no arguments")
@@ -295,7 +328,12 @@ func openWorkspace(ctx context.Context, options launch.Options) (launch.Info, er
 
 func main() {
 	if e := run(os.Args[1:]); e != nil {
-		fmt.Fprintln(os.Stderr, "Burrow: "+safe(e.Error()))
+		var problem *commandError
+		if errors.As(e, &problem) {
+			_ = printResult(os.Stderr, map[string]any{"error": problem}, false)
+		} else {
+			fmt.Fprintln(os.Stderr, "Burrow: "+safe(e.Error()))
+		}
 		os.Exit(1)
 	}
 }

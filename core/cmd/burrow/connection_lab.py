@@ -24,6 +24,7 @@ import time
 
 from core.cmd.burrow.authentication_lab import authentication_matrix
 from core.cmd.burrow.manager_lab import manager_checks, audit_cleanup_checks
+from core.cmd.burrow.workspace_lab import workspace_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
@@ -37,6 +38,7 @@ from core.cmd.burrow.chains_lab import chain_checks, dropbear_check, connection_
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=10, metavar="PATH")
 parser.add_argument("--lifecycle-check", action="store_true", help="check connection management, SOCKS, authentication and failure ownership")
+parser.add_argument("--workspace-check", action="store_true", help="check headless lifecycle with a separate observing TUI")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--runs-check", action="store_true", help="check retained remote command lifecycle only")
 parser.add_argument("--follow-check", action="store_true", help="check independent live output readers and viewers")
@@ -151,6 +153,11 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             measure(binary,root,env,container,port,key,command,wait)
             raise SystemExit(0)
         options = ["--key", str(key), "--port", str(port), "--yes"]
+        if args.workspace_check or args.lifecycle_check or not any(vars(args)[name] for name in vars(args) if name != "paths"):
+            workspace_checks(binary, env, screen_check, root, w, burrow, wait, options, daemons)
+            timing("headless workspace lifecycle")
+            if args.workspace_check:
+                raise SystemExit(0)
         phases = root / "phases.jsonl"
         env["BURROW_PHASE_TRACE"] = str(phases)
         def state_is(w, name, expected):

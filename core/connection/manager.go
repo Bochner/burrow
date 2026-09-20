@@ -433,26 +433,63 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 	return found, nil
 }
 
-// RestartManager retires one verified retained owner, not the Hovel daemon.
-// Approval covers that entire owner, including concurrently added connections.
-// Unknown reservations and legacy owners require manual investigation.
-func RestartManager(ctx context.Context, w string, confirm func([]State) bool) error {
+// ManagerReview is an observation, not a second owner registry. Approval covers
+// the whole owner, including concurrent additions, as in the interactive restart.
+type ManagerReview struct {
+	Action      string          `json:"action"`
+	State       string          `json:"state"`
+	Digest      string          `json:"digest"`
+	Review      string          `json:"review"`
+	Workspace   launch.Info     `json:"workspace"`
+	Owner       managerIdentity `json:"owner"`
+	Connections []State         `json:"connections"`
+}
+
+func ReviewManager(ctx context.Context, w, action string) (ManagerReview, error) {
+	r := ManagerReview{Action: action, State: "review"}
+	if action != "restart" && action != "retire" {
+		return r, fmt.Errorf("expected manager restart or retire")
+	}
+	var err error
+	r.Workspace, err = launch.Status(ctx, w)
+	if err != nil {
+		return r, err
+	}
 	id, err := findManager(ctx, w)
 	if err != nil {
-		return err
+		return r, err
 	}
 	states, err := List(ctx, w)
 	if err != nil {
-		return err
+		return r, err
 	}
 	for _, state := range states {
 		if id.Session == "" || state.Session != id.Session || state.Generation != id.Generation {
-			return fmt.Errorf("unverified or legacy resources remain; close them explicitly before restart")
+			return r, fmt.Errorf("unverified or legacy resources remain; close them explicitly before retirement")
 		}
 	}
-	if !confirm(states) {
-		return fmt.Errorf("restart cancelled; resources retained")
+	r.Owner, r.Connections = id, states
+	r.Review = "Retire this entire workspace manager, including concurrently added connections. Connections lists the pre-action observation, not an exhaustive cleanup inventory. Ends its connections, shells, transfers and tunnels. Saved settings, collected evidence, separate retained runs and Hovel remain. Reconnect explicitly afterward."
+	if action == "restart" {
+		r.Review += " Registers the current Burrow build for subsequent operations; no TUI, manager or SSH connection is started."
 	}
+	// Bind the action and exact daemon/manager incarnation. Live connection state
+	// is informative: approval explicitly covers this entire owner's lifetime.
+	b, _ := json.Marshal(struct {
+		Action    string
+		Workspace launch.Info
+		Owner     managerIdentity
+	}{action, r.Workspace, id})
+	r.Digest = digest(string(b))
+	return r, nil
+}
+
+func RetireManager(ctx context.Context, w string, expected ManagerReview) error {
+	review, err := ReviewManager(ctx, w, expected.Action)
+	if err != nil || review.Digest != expected.Digest {
+		return fmt.Errorf("manager changed or became unverified; review retirement again")
+	}
+	id := review.Owner
 	current, err := findManager(ctx, w)
 	if err != nil || current != id {
 		return fmt.Errorf("manager changed or became unverified; review restart again")
@@ -468,7 +505,22 @@ func RestartManager(ctx context.Context, w string, confirm func([]State) bool) e
 	if err != nil || current.Session != "" {
 		return fmt.Errorf("a retained manager remains or cleanup is unverified; close other frontends and inspect before retrying")
 	}
+	if states, err := List(ctx, w); err != nil || len(states) != 0 {
+		return fmt.Errorf("manager cleanup unverified; inspect reservations before retrying")
+	}
 	return nil
+}
+
+// RestartManager preserves the interactive confirmation through the same seam.
+func RestartManager(ctx context.Context, w string, confirm func([]State) bool) error {
+	review, err := ReviewManager(ctx, w, "restart")
+	if err != nil {
+		return err
+	}
+	if !confirm(review.Connections) {
+		return fmt.Errorf("restart cancelled; resources retained")
+	}
+	return RetireManager(ctx, w, review)
 }
 
 // Isolated request chains preserve the reviewed binding across independent frontends.

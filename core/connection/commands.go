@@ -167,7 +167,7 @@ Working transfers are not automatically registered Hovel evidence.
 profiles                            List saved entries and selected collection
 profile create NAME HOST --user USER [options] Save settings without connecting
 profile select NAME                 Inspect saved settings only
-profile connect NAME [--as LIVE] [--yes] [--prompt] Connect a saved profile
+profile connect NAME [--as LIVE] [--yes] [--prompt] [--review HASH] Connect reviewed saved settings
 profile save CONNECTION [--as PROFILE] [--yes] Save authenticated settings
 profile edit NAME HOST --user USER [options] Replace saved settings (--yes confirms)
 profile delete NAME [--yes]          Delete settings; retain live resources
@@ -227,7 +227,7 @@ shell NAME                          Open a local interactive SSH terminal
 shells                              List this frontend's shells in the workspace
 resume ID                           Resume a local shell by ID
 shell-close [ID]                     Close ID, or the last selected local shell
-close NAME [--yes]                   Review/close all owned connection resources
+close NAME [--yes] [--review HASH]    Review/close the exact owned connection
 Shells reuse a verified master; no fresh login or authentication fallback.
 Ctrl+] returns to management, keeping the shell; Ctrl+C reaches SSH.
 Select a Shells entry or use resume ID to return; shell-close ends only that client.
@@ -489,9 +489,18 @@ func ValidateCommand(workspace string, args []string) error {
 		if err != nil || id == 0 || strconv.FormatUint(id, 10) != args[1] {
 			return fmt.Errorf("shell ID must be a positive decimal integer; use shells")
 		}
-	case "inspect", "close", "shell":
-		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && (args[0] != "close" || args[2] != "--yes")) {
-			return fmt.Errorf("expected %s NAME%s", args[0], map[string]string{"close": " [--yes]"}[args[0]])
+	case "close":
+		if len(args) < 2 {
+			return fmt.Errorf("expected close NAME [--yes] [--review HASH]")
+		}
+		if _, _, err := closeOptions(args[2:]); err != nil {
+			return err
+		}
+		_, e := launch.ConnectionPath(workspace, args[1])
+		return e
+	case "inspect", "shell":
+		if len(args) != 2 {
+			return fmt.Errorf("expected %s NAME", args[0])
 		}
 		_, e := launch.ConnectionPath(workspace, args[1])
 		return e
@@ -611,6 +620,22 @@ func closeReview(s State) string {
 	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access, including shells, transfers and tunnels; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.Name)
 }
 
+func closeOptions(args []string) (bool, string, error) {
+	fs := flag.NewFlagSet("close", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	yes := fs.Bool("yes", false, "confirm selected close")
+	review := fs.String("review", "", "exact connection review digest")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || (*review != "" && (len(*review) != 64 || strings.Trim(*review, "0123456789abcdef") != "")) {
+		return false, "", fmt.Errorf("expected close NAME [--yes] [--review HASH]")
+	}
+	return *yes, *review, nil
+}
+
+func closeDigest(w string, s State) string {
+	b, _ := json.Marshal([]any{w, s.Name, s.Session, s.Generation, s.Creation, s.MasterPID, s.Socket, s.SocketInode, s.State, s.TunnelRevision})
+	return digest(string(b))
+}
+
 // ReviewClose binds the displayed consequence to the exact observed owner.
 func ReviewClose(ctx context.Context, w, name string) (State, string, error) {
 	s, e := selected(ctx, w, name)
@@ -626,7 +651,7 @@ func CloseReviewed(ctx context.Context, w string, expected State) (any, error) {
 	if e != nil {
 		return nil, e
 	}
-	if current.Session != expected.Session || current.Generation != expected.Generation || current.Creation != expected.Creation || current.MasterPID != expected.MasterPID || current.Socket != expected.Socket || current.SocketInode != expected.SocketInode || current.State != expected.State || current.TunnelRevision != expected.TunnelRevision {
+	if closeDigest(w, current) != closeDigest(w, expected) {
 		return nil, fmt.Errorf("connection changed after review; inspect and review close again")
 	}
 	if e := closeOwned(ctx, w, expected); e != nil {
@@ -757,14 +782,14 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		if e != nil {
 			return nil, e
 		}
-		review := closeReview(s)
-		if len(args) == 2 {
-			return map[string]string{"review": review}, nil
+		yes, review, _ := closeOptions(args[2:])
+		if !yes {
+			return map[string]string{"review": closeReview(s), "digest": closeDigest(w, s)}, nil
 		}
-		if e = closeOwned(ctx, w, s); e != nil {
-			return nil, e
+		if review != "" && review != closeDigest(w, s) {
+			return nil, fmt.Errorf("connection changed after review; inspect and review close again")
 		}
-		return map[string]string{"state": "closed", "name": s.Name}, nil
+		return CloseReviewed(ctx, w, s)
 	}
 	c, yes, e := Parse(w, args[1:])
 	if e != nil {

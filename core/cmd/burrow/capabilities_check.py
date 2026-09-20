@@ -29,6 +29,11 @@ with tempfile.TemporaryDirectory(prefix="burrow-api-") as scratch:
         for name in op["inputs"]:
             assert name in contract["inputs"], (op["id"], name)
     assert operations["workspace.open"]["effects"].startswith("Initializes")
+    for name in ("open", "inspect", "list", "restart", "retire"):
+        assert operations["workspace." + name]["agent"]["status"] == "supported"
+    assert "--review HASH" in operations["profile.connect"]["agent"]["syntax"]
+    assert "--review HASH" in operations["connection.close"]["agent"]["syntax"]
+    assert contract["errors"]["workspace"]["encoding"] == "JSON/stderr"
     assert operations["shell.resume"]["agent"]["status"] == "unsupported"
     assert operations["logs.view"]["agent"]["status"] == "terminal-only"
     assert contract["errors"]["encoding"] == "text/stderr"
@@ -45,7 +50,10 @@ with tempfile.TemporaryDirectory(prefix="burrow-api-") as scratch:
                 for token in op["agent"]["example"][1:]]
         route = subprocess.run([binary, *argv], env=env, capture_output=True,
                                text=True, timeout=15)
-        assert route.returncode == 1 and route.stderr == baseline.stderr, (op["id"], route, baseline)
+        error = route.stderr
+        if op["id"] in ("connection.close", "profile.connect"):
+            error = "Burrow: " + json.loads(error)["error"]["message"] + "\n"
+        assert route.returncode == 1 and error == baseline.stderr, (op["id"], route, baseline)
     for verb in ("prepare", "now"):
         assert any("-- [ARG...]" in variant for variant in operations[f"run.{verb}"]["agent"]["variants"])
         script = subprocess.run([binary, "--workspace", workspace, "run", verb, "target",
