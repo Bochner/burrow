@@ -116,7 +116,7 @@ this audit, not successful execution on GitHub. See
 | 1 | Enforce the gate before merging. | Initial [branch protection](https://api.github.com/repos/Bochner/burrow/branches/main/protection) was absent and [rulesets](https://api.github.com/repos/Bochner/burrow/rulesets) were empty. With subsequent explicit owner authorization, the audit enabled required `repository` status from GitHub Actions (app ID `15368`), strict up-to-date checking, administrator enforcement and PRs (zero required review approvals). Merge remains owner-controlled. |
 | 1 | Publish the checked artifact with least privilege. | Pages now downloads the originating successful CI run's artifact, requires a same-repository `main` push, restricts manual deployment to an existing successful run of the exact `main` commit, separates build/deploy permissions, and checks the source SHA against current `main` before deployment. |
 | 2 | Control local test contention. | Preflight limits local test execution to two jobs; CI runs independent acceptance partitions on separate runners. This bounds competing tests; it does not emulate CPU speed or cap every subprocess. |
-| 2 | Preserve failure evidence. | CI uploads test logs, XML and undeclared test outputs with `always()` and 14-day retention; the site artifact also has 14-day retention. Check the first hosted artifact to confirm all repeated-run logs are present. |
+| 2 | Preserve failure evidence. | CI uploads test logs, XML and undeclared test outputs with `always()` and 14-day retention; the site artifact also has 14-day retention. The first hosted artifact was downloaded and contains logs/XML for all three setup and terminal repetitions. |
 | 2 | Pin and check pipeline code. | Actions remain SHA-pinned; launcher version and Ubuntu major release are explicit; checkouts do not retain credentials. A digest-pinned actionlint target checks workflow syntax/expressions through Aspect. |
 | 3 | Keep performance machinery proportional. | Native GitHub matrix jobs provide parallelism; no new remote execution service, release workflow or automatic rerun service is needed. Adopt Hovel's larger cache/timing machinery only after measured need. |
 
@@ -241,3 +241,73 @@ Docker service or deployment service will behave identically. A successful PR
 check proves verification on that PR revision; Pages deployment remains a
 separate post-merge operation with its own result. No finite number of repeats
 proves that an intermittent failure is impossible.
+
+## First hosted rehearsal and runtime blockers
+
+Upstream handoff: [Hovel SQLite lock lifetime, issue #86](https://github.com/Bochner/burrow/issues/86).
+
+[PR #85 run 35488920596](https://github.com/Bochner/burrow/actions/runs/35488920596)
+tested `f7390d2d7c47c05b6ba4647c64b86d9b25cc1b0b`. All ten matrix jobs started
+concurrently. Eight SSH partitions passed; reports and portable failed. The
+required aggregate failed as intended. From the first job start to aggregate
+completion took 5m42s, including initial compilation and downloads. The longest
+successful job, runs, took 5m36s. These are observed durations, not a successful
+full gate or a promise about future runs. Downloaded artifacts contain every
+setup/terminal repetition's log and XML, terminal captures, and the reports
+daemon log and phase trace.
+
+The reports daemon log records a fatal SIGBUS in modernc SQLite's WAL-index
+write during `SaveOperatorSession`. A separate, deterministic check in
+`//core/launch:online_test` queries the Unix WAL lifetime lock from outside the
+daemon process. The pinned v0.4.2 runtime fails it in 0.3 seconds: the live
+daemon has no lock on shared-memory byte 128. Hovel's `openDatabase` closes
+independent database and sidecar file descriptors after opening SQLite and
+establishing WAL. POSIX close releases the process's locks for that inode,
+without SQLite knowing. SQLite explicitly documents this
+[descriptor-close hazard](https://www.sqlite.org/howtocorrupt.html#_posix_advisory_locks_canceled_by_a_separate_thread_doing_close_).
+The lock loss is reproduced; the exact truncating process in the hosted SIGBUS
+was not traced, and the earlier unlogged daemon exit remains unattributed.
+
+The [prepared Hovel patch](hovel-wal-lock-fix.patch) retains those security anchors with the cached database,
+closes the SQL pool before closing anchors, and serializes close against reopen.
+Its new subprocess lock regression fails on the original source and passes
+with the patch. Hovel's SQLite normal and race suites both pass. This is a
+runtime change: attached Hovel artifact/plan readers and embedded completion
+still open the workspace database through supported public interfaces.
+Updating Burrow's SDK pin cannot deliver the fix; a verified runtime containing
+it is required before declaring this milestone ready.
+
+The composed local diagnostic additionally reproduced an interrupted daemon
+identity check. Injecting `EINTR` into Linux `ppoll` with strace reproduced the
+same refusal in the existing online-launch test. Retrying only the interrupted
+zero-timeout syscall passes that injection, preserving the pidfd, peer and
+before/after identity checks. The runnable diagnostic is:
+
+```sh
+aspect test --bazel-flag=--nocache_test_results \
+  '--bazel-flag=--run_under=/usr/bin/strace -f -o /tmp/burrow-ppoll.trace -e inject=ppoll:error=EINTR:when=1' \
+  //core/launch:online_test
+```
+
+Strace is a host diagnostic, not an undeclared requirement of the normal gate.
+The newly added WAL-lock assertion still fails on the published runtime after
+the EINTR correction; the injection pass preceded that additional assertion.
+
+Portable failed at two concurrent submissions in the manager proof with a
+generic Hovel-operation failure. Its original fixture did not retain daemon
+or throw diagnostics, so that failure is not assigned the SQLite or EINTR cause
+without evidence. The fixture now preserves them after daemon shutdown and
+moves its final SQL evidence read after all writers exit. Three uncached
+two-CPU repetitions passed after the EINTR correction, and the consumer,
+launch-audit and launch-digest checks also passed. Hovel formatting passed; its full repository gate and release validation have not been run for this handoff patch. These results do not convert
+the failed hosted run into a pass. PR #85 remains draft pending the runtime fix
+and successful verification of the final revision.
+
+The owner requested Burrow-hosted upstream tracking and subsequently held the
+proposed custom runtime while alternatives were evaluated. No patched wheel,
+runtime override, release, upstream PR or upstream message was published. The
+Hovel reference checkout is restored to its clean updated revision; the tested
+patch is retained here for handoff. v0.4.1 has the same descriptor-lifetime
+defect, and no supported storage configuration or daemon-only artifact reader
+was found in the inspected public interfaces. The official runtime pin remains
+unchanged.

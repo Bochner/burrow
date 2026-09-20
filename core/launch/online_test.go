@@ -58,4 +58,19 @@ func TestFirstOnlineWorkspace(t *testing.T) {
 	if err != nil || cached.PID != info.PID || transport.requests != 1 {
 		t.Fatalf("cache reuse: %+v, %v", cached, err)
 	}
+	// SQLite's Unix WAL lifetime lock prevents another public Hovel client
+	// from truncating shared memory while this daemon still maps it. Query
+	// from this separate process; do not acquire or change any database lock.
+	shared, err := os.OpenFile(filepath.Join(info.Workspace, "workspace.db-shm"), os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shared.Close()
+	lock := syscall.Flock_t{Type: syscall.F_WRLCK, Whence: 0, Start: 128, Len: 1}
+	if err := syscall.FcntlFlock(shared.Fd(), syscall.F_GETLK, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if lock.Type != syscall.F_RDLCK || int(lock.Pid) != info.PID {
+		t.Fatalf("live Hovel daemon %d has lost SQLite WAL lifetime lock: type=%d owner=%d", info.PID, lock.Type, lock.Pid)
+	}
 }

@@ -1,0 +1,197 @@
+Hovel SQLite WAL descriptor lifetime fix
+Base: a4cbfdf7769a9551695088c11061e3cabc368e07
+Upstream source: https://github.com/vibepwners/hovel (Apache-2.0).
+Prepared for owner handoff; not applied to Burrow's published runtime.
+
+diff --git a/core/internal/adapters/storage/sqlite/BUILD.bazel b/core/internal/adapters/storage/sqlite/BUILD.bazel
+index 812f778..4dec5db 100644
+--- a/core/internal/adapters/storage/sqlite/BUILD.bazel
++++ b/core/internal/adapters/storage/sqlite/BUILD.bazel
+@@ -74,6 +74,7 @@ go_test(
+         "pki_stamp_store_test.go",
+         "pki_store_test.go",
+         "store_cache_test.go",
++        "store_lock_linux_test.go",
+         "store_test.go",
+     ],
+     embed = [":sqlite"],
+@@ -95,6 +96,7 @@ go_test(
+         "migrations_test.go",
+         "pki_store_test.go",
+         "store_cache_test.go",
++        "store_lock_linux_test.go",
+         "store_test.go",
+     ],
+     embed = [":sqlite"],
+diff --git a/core/internal/adapters/storage/sqlite/store.go b/core/internal/adapters/storage/sqlite/store.go
+index 9888e70..35cb91a 100644
+--- a/core/internal/adapters/storage/sqlite/store.go
++++ b/core/internal/adapters/storage/sqlite/store.go
+@@ -46,15 +46,21 @@ func (s Store) Ensure(ctx context.Context) error {
+ func (s Store) Close() error {
+ 	path := s.Path()
+ 	connMu.Lock()
++	defer connMu.Unlock()
+ 	db, ok := connCache[path]
+ 	if ok {
+ 		delete(connCache, path)
+ 	}
+-	connMu.Unlock()
+ 	if !ok {
+ 		return nil
+ 	}
+-	return db.Close()
++	// Keep reopen serialized until every old descriptor is closed: closing any
++	// descriptor for an inode releases this process's POSIX locks on that inode.
++	err := db.sql.Close()
++	for _, file := range db.anchors {
++		err = errors.Join(err, file.Close())
++	}
++	return err
+ }
+ 
+ func (s Store) SaveOperatorSession(ctx context.Context, state operatorsession.PersistedState) error {
+@@ -205,7 +211,7 @@ func (s Store) ListEvents(ctx context.Context, filter event.Filter) ([]event.Eve
+ 	return ListEvents(ctx, db, filter)
+ }
+ 
+-// connCache holds one long-lived *sql.DB per database file. Opening a fresh
++// connCache holds one long-lived database handle per database file. Opening a fresh
+ // connection pool and re-running migrations on every operation is both slow and
+ // needlessly destructive; the daemon owns a single workspace for its lifetime,
+ // so the handle is opened, configured, and migrated exactly once per path.
+@@ -216,9 +222,14 @@ func (s Store) ListEvents(ctx context.Context, filter event.Filter) ([]event.Eve
+ // call retries with a fresh context.
+ var (
+ 	connMu    sync.Mutex
+-	connCache = map[string]*sql.DB{}
++	connCache = map[string]*anchoredDatabase{}
+ )
+ 
++type anchoredDatabase struct {
++	sql     *sql.DB
++	anchors []*os.File
++}
++
+ // open returns the shared *sql.DB for this workspace. Callers must NOT close the
+ // returned handle; it is owned by the cache and reused across operations.
+ //
+@@ -233,17 +244,17 @@ func (s Store) open(ctx context.Context) (*sql.DB, error) {
+ 	connMu.Lock()
+ 	defer connMu.Unlock()
+ 	if db, ok := connCache[path]; ok {
+-		return db, nil
++		return db.sql, nil
+ 	}
+ 	db, err := openDatabase(ctx, s.workspacePath, path)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	connCache[path] = db
+-	return db, nil
++	return db.sql, nil
+ }
+ 
+-func openDatabase(ctx context.Context, workspacePath, dbPath string) (*sql.DB, error) {
++func openDatabase(ctx context.Context, workspacePath, dbPath string) (*anchoredDatabase, error) {
+ 	if err := os.MkdirAll(workspacePath, 0o755); err != nil {
+ 		return nil, err
+ 	}
+@@ -254,14 +265,21 @@ func openDatabase(ctx context.Context, workspacePath, dbPath string) (*sql.DB, e
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	defer func() { logSQLiteError("close anchored sqlite database file", anchoredFile.Close()) }()
++	keepAnchors := false
++	defer func() {
++		if !keepAnchors {
++			logSQLiteError("close anchored sqlite database file", anchoredFile.Close())
++		}
++	}()
+ 	anchoredSidecars, err := prepareSQLiteSidecars(dbPath)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	defer func() {
+-		for _, sidecar := range anchoredSidecars {
+-			logSQLiteError("close anchored sqlite sidecar", sidecar.Close())
++		if !keepAnchors {
++			for _, sidecar := range anchoredSidecars {
++				logSQLiteError("close anchored sqlite sidecar", sidecar.Close())
++			}
+ 		}
+ 	}()
+ 	db, err := sql.Open("sqlite", dbPath)
+@@ -305,7 +323,11 @@ func openDatabase(ctx context.Context, workspacePath, dbPath string) (*sql.DB, e
+ 		closeErr := db.Close()
+ 		return nil, errors.Join(err, closeErr)
+ 	}
+-	return db, nil
++	// SQLite already holds WAL locks. Closing an independently opened anchor
++	// now would silently drop them, allowing another process to truncate live
++	// shared memory. Retain anchors until the SQL pool has closed.
++	keepAnchors = true
++	return &anchoredDatabase{sql: db, anchors: append(anchoredSidecars, anchoredFile)}, nil
+ }
+ 
+ var sqliteSidecarSuffixes = [...]string{"-wal", "-shm"}
+diff --git a/core/internal/adapters/storage/sqlite/store_lock_linux_test.go b/core/internal/adapters/storage/sqlite/store_lock_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/core/internal/adapters/storage/sqlite/store_lock_linux_test.go
+@@ -0,0 +1,55 @@
++package sqlite
++
++import (
++	"os"
++	"os/exec"
++	"strconv"
++	"syscall"
++	"testing"
++)
++
++func TestWALLifetimeLock(t *testing.T) {
++	store := NewStore(t.TempDir())
++	if _, err := store.open(t.Context()); err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() {
++		if err := store.Close(); err != nil {
++			t.Error(err)
++		}
++	})
++	executable, err := os.Executable()
++	if err != nil {
++		t.Fatal(err)
++	}
++	probe := exec.Command(executable, "-test.run=^TestWALLifetimeLockProbe$")
++	probe.Env = append(os.Environ(), "HOVEL_TEST_WAL="+store.Path()+"-shm", "HOVEL_TEST_WAL_OWNER="+strconv.Itoa(os.Getpid()))
++	if output, err := probe.CombinedOutput(); err != nil {
++		t.Fatalf("WAL lifetime lock probe: %v\n%s", err, output)
++	}
++}
++
++func TestWALLifetimeLockProbe(t *testing.T) {
++	path := os.Getenv("HOVEL_TEST_WAL")
++	if path == "" {
++		t.Skip("subprocess probe")
++	}
++	file, err := os.OpenFile(path, os.O_RDWR, 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer file.Close()
++	// Query SQLite's Unix WAL lifetime lock from another process. Taking an
++	// exclusive lock here would allow another client to truncate live mappings.
++	lock := syscall.Flock_t{Type: syscall.F_WRLCK, Start: 128, Len: 1}
++	if err := syscall.FcntlFlock(file.Fd(), syscall.F_GETLK, &lock); err != nil {
++		t.Fatal(err)
++	}
++	owner, err := strconv.Atoi(os.Getenv("HOVEL_TEST_WAL_OWNER"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if lock.Type != syscall.F_RDLCK || int(lock.Pid) != owner {
++		t.Fatalf("live SQLite owner %d lost WAL lifetime lock: type=%d owner=%d", owner, lock.Type, lock.Pid)
++	}
++}

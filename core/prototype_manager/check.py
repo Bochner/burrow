@@ -1,12 +1,14 @@
 """Disposable #71 public throws/session controls and real loopback SSH proof."""
 import base64
 import concurrent.futures
+from contextlib import closing
 import hashlib
 import http.client
 import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -36,6 +38,13 @@ def wait(check):
             return result
         time.sleep(.03)
     raise AssertionError("bounded transition timed out")
+
+
+def ended(pid):
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] == "Z"
+    except (FileNotFoundError, ProcessLookupError):
+        return True
 
 
 def rpc(w, method, data, ok=True):
@@ -75,6 +84,7 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
     daemons = []
     container = None
     agent = None
+    full_evidence = False
     try:
         container = command("docker", "run", "-d", "--rm", "--publish", "127.0.0.1::2222",
                             "--env", "USER_NAME=tester", "--env", "PASSWORD_ACCESS=true", "--env", "PUBLIC_KEY_FILE=/client.pub",
@@ -284,11 +294,8 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
         twin=submit(other,other_owner,"first")[0]
         twin=wait(lambda:connected(other,other_owner,twin["id"]))
         print("PASS quit keep/cancel/changed-review refusal/verified close across two workspaces",flush=True)
-        # Inspect actual persisted evidence; no invented plan or payload records.
-        with sqlite3.connect(w/"workspace.db") as db:
-            plans=[json.loads(r[0]) for r in db.execute("select plan_json from throw_plans")]
-            assert plans and all(p["confirmationId"] for p in plans)
-            assert db.execute("select count(*) from throw_confirmations").fetchone()[0]>=len(plans)
+        # Inspect persisted confirmation evidence after all daemon writers exit.
+        full_evidence = True
         for file in root.rglob("*"):
             if file.is_file() and not file.is_symlink():
                 assert secret.encode() not in file.read_bytes(),file
@@ -297,9 +304,6 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
         lost=[submit(w,owner,name)[0] for name in ["lost1","lost2"]]
         lost=[wait(lambda s=s:connected(w,owner,s["id"])) for s in lost]
         os.kill(owner["ownerPID"],signal.SIGKILL)
-        def ended(pid):
-            try:return Path(f"/proc/{pid}/stat").read_text().rsplit(")",1)[1].split()[0]=="Z"
-            except (FileNotFoundError,ProcessLookupError):return True
         for state in lost:wait(lambda:ended(state["pid"]))
         control(w,owner,"list",ok=False)
         run(proof,"activate",w,env=env,ok=False)
@@ -316,3 +320,17 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
             try:os.kill(pid,signal.SIGTERM)
             except ProcessLookupError:pass
         if container:command("docker","rm","-f",container)
+        wait(lambda: all(ended(pid) for pid in daemons))
+        if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
+            for log in root.glob("*/burrow-launch.log"):
+                shutil.copy2(log, Path(directory) / (log.parent.name + "-daemon.log"))
+            for database in root.glob("*/workspace.db"):
+                with closing(sqlite3.connect(database)) as db:
+                    throws = [json.loads(row[0]) for row in db.execute("select throw_json from throw_records")]
+                Path(directory, database.parent.name + "-throws.json").write_text(json.dumps(throws, indent=2))
+        if full_evidence:
+            with closing(sqlite3.connect(w / "workspace.db")) as db:
+                assert db.execute("pragma integrity_check").fetchone() == ("ok",)
+                plans = [json.loads(r[0]) for r in db.execute("select plan_json from throw_plans")]
+                assert plans and all(p["confirmationId"] for p in plans)
+                assert db.execute("select count(*) from throw_confirmations").fetchone()[0] >= len(plans)
