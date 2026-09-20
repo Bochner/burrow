@@ -75,7 +75,7 @@ go_binary(
 
 go_binary(
     name = "burrow",
-    visibility = ["//core/prototype_manager:__pkg__"],
+    visibility = ["//core/prototype_manager:__pkg__", "//core/prototype_sessions:__pkg__"],
     srcs = ["main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go"],
     deps = [
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",
@@ -96,6 +96,7 @@ pkg_tar(
 )
 go_binary(
     name = "screen_check",
+    visibility = ["//core/prototype_sessions:__pkg__"],
     srcs = ["screen_check.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt", "@com_github_charmbracelet_ultraviolet//:ultraviolet"],
     testonly = True,

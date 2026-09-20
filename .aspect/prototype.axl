@@ -1,6 +1,8 @@
 def _impl(ctx: TaskContext) -> int:
     root = ctx.std.env.aspect_root_dir()
     commands = {
+        "sessions-check": ["test", "//core/prototype_sessions:check"],
+        "sessions-format": ["run", "@rules_go//go", "--", "fmt", root + "/core/prototype_sessions/main.go", root + "/core/prototype_sessions/control.go"],
         "consumer-check": ["test", "//core/prototype_manager:consumer_check"],
         "manager-latency": ["run", "//core/prototype_manager:latency", "--"] + ctx.args.hovel,
         "manager-check": ["test", "//core/prototype_manager:check"],
@@ -28,7 +30,7 @@ def _impl(ctx: TaskContext) -> int:
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected consumer-check, manager-check, manager-latency, manager-format, deps, scripts-check, terminal, terminal-check, terminal-format, vt-check, check, package, integration, frontend, interaction, setup, reuse, agent, agent-discovery, agent-install, transport, transport-format, lab, or live")
+        print("expected sessions-check, sessions-format, consumer-check, manager-check, manager-latency, manager-format, deps, scripts-check, terminal, terminal-check, terminal-format, vt-check, check, package, integration, frontend, interaction, setup, reuse, agent, agent-discovery, agent-install, transport, transport-format, lab, or live")
         return 2
     status = ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait()
     return status.code or 0
