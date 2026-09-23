@@ -1431,6 +1431,25 @@ func TestForwardJSONRoles(t *testing.T) {
 	}
 }
 
+func TestSkillInstallJSONRoles(t *testing.T) {
+	m := newUI(launch.Info{}, false)
+	m.output = `{"destination":"/home/operator/.agents/skills","path":"/skills/burrow","backup":"/backups/previous","name":"burrow","state":"applied"}`
+	styled := m.styledOutput()
+	if ansi.Strip(styled) != m.output {
+		t.Fatal("skill result text changed")
+	}
+	screen := vt.NewEmulator(200, 2)
+	defer screen.Close()
+	_, _ = screen.Write([]byte(styled))
+	for _, role := range []struct{ text, color string }{{"/home/operator/.agents/skills", subtextColor}, {"/skills/burrow", subtextColor}, {"/backups/previous", subtextColor}, {`"burrow"`, lavenderColor}, {"applied", "#a6e3a1"}} {
+		assertTextRole(t, screen, image.Rect(0, 0, 200, 2), role.text, role.color)
+	}
+	m.noColor = true
+	if m.styledOutput() != m.output {
+		t.Fatal("NO_COLOR changed skill results")
+	}
+}
+
 func TestConciseSSHRecap(t *testing.T) {
 	t.Setenv("TMPDIR", "/tmp") // Real private evidence storage, with a short SSH socket path.
 	workspace := t.TempDir()

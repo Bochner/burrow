@@ -350,6 +350,10 @@ func (m ui) styledOutput() string {
 			} else {
 				switch field {
 				case "listen", "destination", "requestedListen":
+					if strings.HasPrefix(token, `"/`) {
+						style = secondary
+						break
+					}
 					b.WriteString(m.paint(secondary, `"`) + m.endpoint(token[1:len(token)-1]) + m.paint(secondary, `"`))
 					end = at[1]
 					continue
@@ -364,7 +368,7 @@ func (m ui) styledOutput() string {
 					if token == `""` {
 						style = secondary
 					}
-				case "path", "stagePath":
+				case "path", "stagePath", "backup", "source", "provenance", "upstream":
 					style = secondary
 				case "mode", "execution":
 					style = keywordStyle
@@ -413,11 +417,11 @@ func scrollBody(text string, width, height, offset int) viewport.Model {
 
 func connectionStyle(state string) lipgloss.Style {
 	switch state {
-	case "connected", "active", "running", "listening", "traffic-observed":
+	case "applied", "unchanged", "connected", "active", "running", "listening", "traffic-observed":
 		return successStyle
 	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable", "staging-failed", "timed-out", "local-start-failed", "local-signaled":
 		return errorStyle
-	case "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown":
+	case "planned", "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown":
 		return warningStyle
 	default:
 		return secondary

@@ -35,6 +35,8 @@ with tempfile.TemporaryDirectory(prefix="burrow-api-") as scratch:
     assert "--review HASH" in operations["connection.close"]["agent"]["syntax"]
     assert contract["errors"]["workspace"]["encoding"] == "JSON/stderr"
     assert operations["shell.resume"]["agent"]["status"] == "unsupported"
+    assert operations["installation.skills"]["agent"]["status"] == "supported"
+    assert operations["installation.skills"]["result"] == "SkillInstallation"
     assert operations["logs.view"]["agent"]["status"] == "terminal-only"
     assert operations["logs.follow"]["agent"]["status"] == "supported"
     assert operations["logs.follow"]["result"] == "Activity"

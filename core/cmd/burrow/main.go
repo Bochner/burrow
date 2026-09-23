@@ -27,6 +27,7 @@ Usage: burrow --workspace /absolute/workspace [options] [status|tui|COMMAND]
        burrow --workspace /absolute/workspace follow [--json]
        burrow workspace list PATH [PATH...]
        burrow capabilities [ID]
+       burrow agent install claude|codex|opencode --scope user|project [--dry-run]
        burrow --demo [--no-color]
 
 Required:
@@ -47,6 +48,7 @@ Both retire the entire owner, including concurrent additions, without opening a 
 restart also registers the current build; next approved connect starts a manager.
 Workspace routes emit JSON results and JSON errors on stderr (exit 1).
 capabilities prints the versioned JSON operation contract without initializing anything.
+agent install installs bundled standalone skills offline; --source PATH selects a trusted local bundle.
 tui opens the management interface (default); quit retains the daemon.
 follow streams new shared activity with normal scrollback; --json or a pipe emits NDJSON.
 It requires an existing daemon. Ctrl+C ends only the viewer; no approvals or SSH reconnects.
@@ -123,6 +125,9 @@ func run(args []string) (failure error) {
 	}
 	if fs.NArg() > 0 && fs.Arg(0) == "capabilities" {
 		return capabilities(fs, fs.Args()[1:])
+	}
+	if fs.Arg(0) == "agent" {
+		return agentCommand(fs, fs.Args()[1:], noColor)
 	}
 	operation := ""
 	if fs.Arg(0) == "close" {
