@@ -272,8 +272,13 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
     # A direct SDK close can physically succeed while its audit fails. The
     # closed broker record must still expose the live owner's cleanup result.
     audited, remote_audited = create()
+    audit_control = private("claim", {}, shell=audited)
     log.chmod(0o400)
     try:
+        private("input", {"token": audit_control["token"], "data": "YQ=="}, shell=audited, ok=False)
+        released = private("release", {"token": audit_control["token"]}, shell=audited)
+        assert released["released"] and released["auditError"] and released["requestID"], released
+        assert burrow(w, "session", "inspect", "gateway", audited["id"])["controller"] == ""
         assert rpc("CloseSession", {"SessionID": audited["id"]})[0] != 200
         wait(lambda: not remote_live(remote_audited))
         seen = burrow(w, "session", "inspect", "gateway", audited["id"])

@@ -310,7 +310,12 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         log.chmod(0o400)
         try:
             command("exit", "audit incomplete")
-            assert burrow(workspace, "session", "inspect", "gateway", audited["id"])["auditError"]
+            refused = burrow(workspace, "session", "inspect", "gateway", audited["id"])
+            assert refused["auditError"] and refused["state"] == "running", refused
+            # Unaudited input is refused; detach explicitly before cleanup.
+            background()
+            wait("Shell detached")
+            assert burrow(workspace, "session", "inspect", "gateway", audited["id"])["controller"] == ""
         finally:
             log.chmod(0o600)
         burrow(workspace, "session", "close", "gateway", audited["id"], "--yes", ok=False)

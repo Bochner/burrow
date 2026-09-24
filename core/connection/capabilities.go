@@ -218,6 +218,9 @@ func init() {
 		case "session.create", "session.list", "session.inspect", "session.close", "session.claim", "session.takeover", "session.input", "session.resize", "session.release", "session.observe", "session.snapshot":
 			op.Human = "Headless CLI: " + strings.TrimPrefix(op.Agent.Syntax, "burrow --workspace PATH ") + "; TUI shell tabs attach to these same retained sessions"
 			op.Scope = "Explicit workspace, connection name and opaque Hovel shell ID; connection creation and manager generation are verified."
+			if privateShellCommand(strings.TrimPrefix(op.ID, "session.")) {
+				op.Effects += " Owner operation notes record only identity, controller changes, input counts and provider results. requestID correlates with follow; auditError reports incomplete persistence without losing a successful claim token or accepted prefix. Release proceeds if logging is unavailable."
+			}
 		case "run.prepare", "run.now":
 			verb := strings.TrimPrefix(op.ID, "run.")
 			yes := ""
@@ -268,6 +271,8 @@ func ResultSchemas() map[string]any {
 	for name, value := range values {
 		out[name] = jsonShape(reflect.TypeOf(value))
 	}
+	out["ShellControl"].(map[string]any)["description"] = "Provider result, never command completion. requestID correlates with owner operation notes and follow events. A nonempty auditError preserves the actual result/token after persistence failure; inspect before continuing, never automatically resend input."
+	out["Activity"].(map[string]any)["description"] = "Independent observation, not a terminal transcript. Shared controls use source=burrow/shell-control, id=owner requestID, resourceID=shell ID, connectionID=connection creation and actor=available controller label (not authenticated identity). Details distinguish submittedBytes and providerResult.acceptedBytes; shell/run exits remain separate."
 	for _, name := range []string{"ShellReview", "ConnectionReview", "CloseReview", "ProfileChange", "TunnelReview", "TunnelCheck", "Proxy", "ProxyReview", "DownloadReview", "TransferInventory", "RunReview", "HTTPReview", "Backup", "SavedChain", "Terminal", "Inventory"} {
 		out[name] = map[string]any{"description": resultDescriptions[name]}
 	}

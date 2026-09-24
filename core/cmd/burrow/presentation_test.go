@@ -1389,6 +1389,37 @@ func TestForwardArgumentGuidance(t *testing.T) {
 	}
 }
 
+func TestSharedActivityPresentation(t *testing.T) {
+	event := connection.Activity{Time: "12:00:00", Source: "burrow/shell-control", Kind: "result", State: "completed", Resource: "shell-one", Connection: "connection-one", Actor: "agent-one", ID: "request-one", Message: "Provider input result", Details: map[string]any{"submittedBytes": 17, "providerResult": map[string]any{"acceptedBytes": 17}}}
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			text := activityText(event, plain)
+			screen := vt.NewEmulator(size.X, size.Y)
+			screen.WriteString(strings.ReplaceAll(text, "\n", "\r\n"))
+			for _, value := range []string{"shell-one", "connection-one", "agent-one", "request-one", "submittedBytes", "acceptedBytes"} {
+				if !strings.Contains(screen.String(), value) {
+					t.Fatal("activity lost identity or input/result distinction", value, size, plain)
+				}
+			}
+			if plain {
+				if strings.Join(strings.Fields(text), " ") != strings.Join(strings.Fields(ansi.Strip(activityText(event, false))), " ") || strings.Contains(text, "\x1b") {
+					t.Fatal("NO_COLOR changed activity text or leaked escapes")
+				}
+			} else {
+				for _, value := range []string{"shell-one", "connection-one", "agent-one", "request-one"} {
+					assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y), value, "#b4befe")
+				}
+				assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y), "17", "#fab387")
+			}
+			screen.Close()
+		}
+	}
+	event.Actor = "agent\x1b]52;c;hostile\a"
+	if text := activityText(event, true); strings.Contains(text, "\x1b") || !strings.Contains(text, `\u001b`) {
+		t.Fatal("unsafe actor text reached terminal")
+	}
+}
+
 func TestSemanticOutput(t *testing.T) {
 	m := newUI(launch.Info{}, false)
 	m.output = `{"name":"gateway","port":22,"count":-2.5e-3,"active":true,"missing":null,"items":[false],"session":"session-one","detail":"Master verified","error":"refused","controller":"agent-one","synchronization":"out-of-sync","recoveryError":"snapshot too large","inputError":"write failed"}`

@@ -188,8 +188,9 @@
       "targets": [
         "//core/cmd/burrow:ssh_follow_test"
       ],
-      "scope": "Independent offset readers, binary output, truthful capture state and PTY follow.",
+      "scope": "Independent offset readers, binary output, truthful capture state and PTY follow; shared-shell CLI/TUI/follower identity, controller changes, private operation results, gaps, selected close and owner loss.",
       "capabilities": [
+        "logs.follow",
         "run.follow",
         "run.output"
       ]

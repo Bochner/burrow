@@ -57,6 +57,7 @@ capabilities prints the versioned JSON operation contract without initializing a
 agent install installs bundled standalone skills offline; --source PATH selects a trusted local bundle.
 tui opens the management interface (default); quit retains the daemon.
 follow streams new shared activity with normal scrollback; --json or a pipe emits NDJSON.
+Shared shell lifecycle and control results are included; input counts never establish command completion.
 It requires an existing daemon. Ctrl+C ends only the viewer; no approvals or SSH reconnects.
 restart [--yes] retires the workspace's Burrow manager, then opens the current TUI.
 --yes skips restart confirmation and ends the workspace's connections and shells.

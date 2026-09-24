@@ -528,7 +528,11 @@ func (s *retainedShell) RunPayloadCommand(req hovel.PayloadCommandRequest) (hove
 	if privateShellCommand(req.Command) || req.Command == "observe" || req.Command == "snapshot" {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		value, err := s.sharedCommand(req)
+		command := s.sharedCommand
+		if privateShellCommand(req.Command) {
+			command = s.controlCommand
+		}
+		value, err := command(req)
 		if err != nil {
 			return hovel.PayloadCommandResult{}, err
 		}
@@ -664,6 +668,9 @@ func (s *retainedShell) start(runID string) error {
 	s.record.Detail = "retained SSH shell; one explicit controller, independent observers; controller label does not assert liveness"
 	ok = true
 	go s.drain(master)
+	if err := s.audit.Record("running", s.record); err != nil {
+		s.record.AuditError = err.Error()
+	}
 	return nil
 }
 

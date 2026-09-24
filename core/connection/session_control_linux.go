@@ -42,6 +42,8 @@ type ShellInput struct {
 	Data  []byte `json:"data"`
 }
 type ShellControl struct {
+	RequestID     string `json:"requestID,omitempty"`
+	AuditError    string `json:"auditError,omitempty"`
 	Generation    uint64 `json:"generation"`
 	Controller    string `json:"controller"`
 	Token         string `json:"token,omitempty"`
@@ -96,7 +98,8 @@ func decodeShellRequest(raw string, value any) error {
 }
 
 // SessionCommand carries private input through the public Hovel extension.
-// Unlike Execute, neither its request nor its token-bearing result is audited.
+// Unlike Execute, its private request/result never enters frontend audit notes.
+// The owner records only allowlisted control metadata at the shared boundary.
 func SessionCommand(ctx context.Context, w string, args []string, input io.Reader) (any, error) {
 	if err := ValidateCommand(w, args); err != nil {
 		return nil, err
@@ -156,6 +159,60 @@ func observeShell(ctx context.Context, w string, args []string) (ShellOutput, er
 		return ShellOutput{}, fmt.Errorf("invalid shell observation")
 	}
 	return output, nil
+}
+
+// Called under the shell lock. Reuse operation notes, not the SDK's finite log
+// budget or another event store. Never pass the private request to the writer.
+func (s *retainedShell) controlCommand(req hovel.PayloadCommandRequest) (any, error) {
+	evidence := map[string]any{
+		"id": s.record.ID, "connectionID": s.record.Connection.Creation,
+		"connectionName": s.record.Connection.Name, "runID": s.record.RunID,
+		"operation":        "session " + req.Command,
+		"controllerBefore": s.record.Controller, "generationBefore": s.record.ControlGeneration,
+	}
+	var input struct {
+		Token string `json:"token"`
+		Data  []byte `json:"data"`
+	}
+	if len(req.InputData) <= shellRequestLimit && json.Unmarshal([]byte(req.InputData), &input) == nil {
+		if req.Command == "input" {
+			evidence["submittedBytes"] = len(input.Data)
+		}
+		if s.token != "" && input.Token == s.token {
+			evidence["actor"] = s.record.Controller
+		}
+	}
+	audit, beginErr := launch.BeginAudit(s.record.Workspace, "session "+req.Command, targetLabel(s.record.Connection), evidence)
+	if beginErr != nil && req.Command != "release" {
+		s.record.AuditError = beginErr.Error()
+		return nil, fmt.Errorf("shell control refused before execution: %w", beginErr)
+	}
+	value, failure := s.sharedCommand(req)
+	control, _ := value.(ShellControl)
+	control.RequestID = audit.ID
+	if failure == nil {
+		if req.Command == "claim" || req.Command == "takeover" {
+			evidence["actor"] = control.Controller
+		}
+		public := control
+		public.Token = ""
+		evidence["providerResult"] = public
+	}
+	evidence["controller"], evidence["generation"] = s.record.Controller, s.record.ControlGeneration
+	state := "completed"
+	if failure != nil {
+		state = "failed"
+		evidence["error"] = failure.Error()
+	}
+	auditErr := errors.Join(beginErr, audit.Record(state, evidence))
+	if auditErr != nil {
+		s.record.AuditError, control.AuditError = auditErr.Error(), auditErr.Error()
+	}
+	if failure != nil {
+		return nil, errors.Join(failure, auditErr)
+	}
+	// Preserve the claim token and accepted prefix if only persistence failed.
+	return control, nil
 }
 
 // Called while holding the same lock as launch, close, output and geometry.

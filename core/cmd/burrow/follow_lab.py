@@ -117,15 +117,16 @@ def activity_checks(burrow, workspace, connection, container, command, hv, binar
     consoles = []
     run_id = None
     new_connection = False
+    loss_daemon = None
 
-    def console(args, plain=False):
+    def console(args, plain=False, selected_workspace=workspace):
         outer, slave = pty.openpty()
         before = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         def controlling():
             os.setsid()
             fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-        p = subprocess.Popen([binary, "--workspace", str(workspace), *args],
+        p = subprocess.Popen([binary, "--workspace", str(selected_workspace), *args],
                              env=env | {"NO_COLOR": "1" if plain else "", "COLORTERM": "truecolor"},
                              stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
         view = {"process": p, "outer": outer, "slave": slave, "before": before, "output": bytearray()}
@@ -148,8 +149,8 @@ def activity_checks(burrow, workspace, connection, container, command, hv, binar
             time.sleep(.05)
         raise AssertionError((needle, text))
 
-    def start():
-        p = subprocess.Popen([binary, "--workspace", str(workspace), "follow", "--json"],
+    def start(selected_workspace=workspace):
+        p = subprocess.Popen([binary, "--workspace", str(selected_workspace), "follow", "--json"],
                              env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         view = {"process": p, "pending": b"", "events": []}
         viewers.append(view)
@@ -178,6 +179,105 @@ def activity_checks(burrow, workspace, connection, container, command, hv, binar
         a, b = start(), start()
         for view in viewers:
             wait(view, lambda e: e["kind"] == "ready")
+        shell = burrow(workspace, "session", "create", connection["name"], "--yes")
+        observed = wait(a, lambda e: e["source"] == "burrow/shell" and e.get("resourceID") == shell["id"])
+        assert observed["details"]["connection"]["creation"] == connection["creation"], observed
+        def private(action, request, selected=shell, ok=True):
+            result = subprocess.run([binary, "--workspace", str(workspace), "session", action,
+                                     connection["name"], selected["id"], "--request-stdin"],
+                                    input=json.dumps(request), capture_output=True, text=True, env=env, timeout=15)
+            assert (result.returncode == 0) == ok, (action, result.stdout, result.stderr)
+            return json.loads(result.stdout if ok else result.stderr)
+
+        agent = private("claim", {"label": "feed-agent"})
+        tokens = [agent["token"]]
+        claimed = wait(a, lambda e: e["source"] == "burrow/shell-control" and e.get("operation") == "session claim" and e["kind"] == "result")
+        assert claimed["id"] == agent["requestID"] and claimed["actor"] == "feed-agent", claimed
+        assert claimed["connectionID"] == connection["creation"] and claimed["resourceID"] == shell["id"], claimed
+        def result_event(view, result):
+            event = wait(view, lambda e: e.get("id") == result["requestID"] and e["kind"] == "result")
+            assert event["source"] == "burrow/shell-control" and event["workspacePath"] == str(workspace), event
+            assert event["connectionID"] == connection["creation"] and event["resourceID"] == shell["id"], event
+            assert event["runID"] == shell["runID"], event
+            submitted = wait(view, lambda e: e.get("id") == result["requestID"] and e["kind"] == "submitted")
+            assert "providerResult" not in submitted["details"], submitted
+            return event
+
+        os.write(tui["outer"], f'shell {connection["name"]} {shell["id"]}\r'.encode())
+        screen(tui, b"OBSERVE")
+        payload = b"printf 'FOLLOW-SHELL-%s\\n' visible # PRIVATE-KEYSTROKE-CANARY\n"
+        accepted = private("input", {"token": agent["token"], "data": base64.b64encode(payload).decode()})
+        screen(tui, b"FOLLOW-SHELL-visible")
+        for view in (a, b):
+            event = result_event(view, accepted)
+            assert event["details"]["submittedBytes"] == len(payload), event
+            assert event["details"]["providerResult"]["acceptedBytes"] == len(payload), event
+            assert "remoteExit" not in json.dumps(event) and "exitCode" not in json.dumps(event), event
+        first_read = burrow(workspace, "session", "observe", connection["name"], shell["id"])
+        second_read = burrow(workspace, "session", "observe", connection["name"], shell["id"])
+        assert b"FOLLOW-SHELL-visible" in base64.b64decode(first_read["data"])
+        assert base64.b64decode(second_read["data"]).startswith(base64.b64decode(first_read["data"]))
+        replacement = private("takeover", {"generation": agent["generation"], "label": "feed-replacement"})
+        tokens.append(replacement["token"])
+        changed = result_event(a, replacement)
+        assert changed["details"]["controllerBefore"] == "feed-agent" and changed["actor"] == "feed-replacement"
+        private("input", {"token": agent["token"], "data": "YQ=="}, ok=False)
+        refused = wait(a, lambda e: e["source"] == "burrow/shell-control" and e["kind"] == "failed" and e.get("operation") == "session input")
+        assert "actor" not in refused and "providerResult" not in refused["details"], refused
+        resized = private("resize", {"token": replacement["token"], "columns": 97, "rows": 31})
+        assert result_event(a, resized)["details"]["providerResult"]["columns"] == 97
+        # Reopening a follower neither releases control nor replays input events.
+        a["process"].send_signal(signal.SIGINT)
+        assert a["process"].wait(timeout=5) == 0
+        a = start()
+        current = wait(a, lambda e: e["source"] == "burrow/shell" and e.get("resourceID") == shell["id"])
+        assert current["kind"] == "snapshot" and current["details"]["controller"] == "feed-replacement", current
+        assert current["details"]["controlGeneration"] == replacement["generation"]
+        geometry = private("input", {"token": replacement["token"], "data": base64.b64encode(b"stty size\n").decode()})
+        result_event(a, geometry)
+        screen(tui, b"31 97")
+        released = private("release", {"token": replacement["token"]})
+        assert result_event(a, released)["details"]["providerResult"]["released"]
+        state = burrow(workspace, "session", "inspect", connection["name"], shell["id"])
+        assert state["state"] == "running" and state["controller"] == "" and (state["columns"], state["rows"]) == (97, 31)
+        # Pause only one follower while the owner drops bounded terminal history.
+        agent = private("claim", {"label": "feed-gap"})
+        tokens.append(agent["token"])
+        b["process"].send_signal(signal.SIGSTOP)
+        try:
+            flood = b"head -c 100000 /dev/zero | tr '\\000' '\\007'; printf 'SHELL-GAP-%s\\n' end\n"
+            flooded = private("input", {"token": agent["token"], "data": base64.b64encode(flood).decode()})
+            result_event(a, flooded)
+            screen(tui, b"SHELL-GAP-end")
+            wait(a, lambda e: e["source"] == "burrow/shell" and e.get("resourceID") == shell["id"] and e["kind"] == "gap" and e["details"]["dropped"] > 0)
+        finally:
+            b["process"].send_signal(signal.SIGCONT)
+        wait(b, lambda e: e["source"] == "burrow/shell" and e.get("resourceID") == shell["id"] and e["kind"] == "gap" and e["details"]["dropped"] > 0)
+        # A timeout is observation loss, not confirmed closure or erased identity.
+        os.kill(shell["ownerPID"], signal.SIGSTOP)
+        try:
+            gap = wait(a, lambda e: e["source"] == "burrow/shell" and e.get("resourceID") == shell["id"] and e["state"] == "unavailable")
+            assert gap["kind"] == "gap" and gap["connectionID"] == connection["creation"] and gap["runID"] == shell["runID"], gap
+        finally:
+            os.kill(shell["ownerPID"], signal.SIGCONT)
+        wait(a, lambda e: e["source"] == "burrow/shell" and e.get("resourceID") == shell["id"] and e["kind"] == "resumed")
+        # Selected close retains the sibling and master; authoritative notes
+        # carry close evidence even after Hovel removes the selected session.
+        sibling = burrow(workspace, "session", "create", connection["name"], "--yes")
+        burrow(workspace, "session", "close", connection["name"], shell["id"], "--yes")
+        closed = wait(a, lambda e: e["source"] == "burrow/audit" and e.get("resourceID") == shell["id"] and e["state"] == "closed")
+        assert closed["connectionID"] == connection["creation"] and "reaped" in closed["details"]["cleanup"], closed
+        assert burrow(workspace, "session", "inspect", connection["name"], sibling["id"])["state"] == "running"
+        assert burrow(workspace, "inspect", connection["name"])["masterPID"] == connection["masterPID"]
+        burrow(workspace, "session", "close", connection["name"], sibling["id"], "--yes")
+        os.write(tui["outer"], b"\x1d")
+        # Routine events and existing notes contain neither private requests nor
+        # echoed terminal bytes; both the visible and base64 forms stay absent.
+        drain()
+        evidence = json.dumps(a["events"] + b["events"]).encode() + bytes(human["output"]) + (workspace / "burrow-logs/operations.log").read_bytes()
+        for secret in tokens + ["PRIVATE-KEYSTROKE-CANARY", "FOLLOW-SHELL-visible", base64.b64encode(payload).decode()]:
+            assert secret.encode() not in evidence, "private shell data leaked to routine activity"
+        print("PASS shared-shell follower identity, CLI controls, independent TUI, request results, gaps and selected close", flush=True)
         burrow(workspace, "profile", "save", connection["name"], "--as", "feed-target")
         burrow(workspace, "profile", "connect", "feed-target", "--as", "activity-host", "--yes")
         new_connection = True
@@ -247,6 +347,24 @@ def activity_checks(burrow, workspace, connection, container, command, hv, binar
         burrow(workspace, "close", "activity-host", "--yes")
         new_connection = False
         wait(b, lambda e: e.get("state") == "closed" and "activity-host" in json.dumps(e))
+        # Destructive module loss uses an isolated workspace, preserving the
+        # other suites' connection and its deliberately strict cleanup contract.
+        loss_workspace = workspace.parent / "follow-loss"
+        loss_daemon = burrow(loss_workspace, "--offline", "workspace", "open")["pid"]
+        burrow(loss_workspace, "profile", "load", str(workspace / "burrow-profiles.json"))
+        burrow(loss_workspace, "profile", "connect", "feed-target", "--as", "lost", "--yes")
+        loss_view = start(loss_workspace)
+        wait(loss_view, lambda e: e["source"] == "burrow/connection" and e.get("state") == "connected")
+        lost_shell = burrow(loss_workspace, "session", "create", "lost", "--yes")
+        loss_tui = console(["shell", "lost", lost_shell["id"]], selected_workspace=loss_workspace)
+        screen(loss_tui, b"OBSERVE")
+        wait(loss_view, lambda e: e["source"] == "burrow/shell" and e.get("resourceID") == lost_shell["id"])
+        os.kill(lost_shell["ownerPID"], signal.SIGKILL)
+        lost = wait(loss_view, lambda e: e["source"] == "burrow/shell" and e["state"] == "unavailable")
+        assert lost["kind"] == "gap" and lost["resourceID"] == lost_shell["id"] and lost["connectionID"] == lost_shell["connection"]["creation"], lost
+        screen(loss_tui, b"out-of-sync")
+        assert burrow(loss_workspace, "inspect", "lost")["masterPID"] == lost_shell["connection"]["masterPID"]
+        print("PASS follower and TUI expose owner loss without inventing close or reconnect", flush=True)
         print("PASS workspace activity: review, real stdout/stderr, independent viewers, nonzero exit and collection", flush=True)
     finally:
         command("docker", "exec", container, "touch", "/tmp/burrow-activity-release")
@@ -269,6 +387,8 @@ def activity_checks(burrow, workspace, connection, container, command, hv, binar
         for view in consoles:
             os.close(view["outer"])
             os.close(view["slave"])
+        if loss_daemon:
+            os.kill(loss_daemon, signal.SIGTERM)
         if new_connection:
             burrow(workspace, "close", "activity-host", "--yes")
         if run_id:

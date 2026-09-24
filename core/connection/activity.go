@@ -27,6 +27,8 @@ type Activity struct {
 	RunID      string `json:"runID,omitempty"`
 	Chain      string `json:"chain,omitempty"`
 	Resource   string `json:"resourceID,omitempty"`
+	Connection string `json:"connectionID,omitempty"`
+	Actor      string `json:"actor,omitempty"` // Controller label, not an authenticated upstream identity.
 	Target     string `json:"target,omitempty"`
 	State      string `json:"state,omitempty"`
 	Sequence   uint64 `json:"sequence,omitempty"`
@@ -64,7 +66,9 @@ type activityFeed struct {
 	runs                                                   map[string]*activityRun
 	transfers                                              map[string]string
 	connections                                            map[string]State
+	shells                                                 map[string]Shell
 	logsReady, runsReady, connectionsReady, transfersReady bool
+	shellsReady                                            bool
 }
 
 func (f *activityFeed) write(e Activity) error {
@@ -104,11 +108,11 @@ func FollowActivity(ctx context.Context, workspace string, emit func(Activity) e
 	if err != nil {
 		return err
 	}
-	f := activityFeed{workspace: workspace, emit: emit, daemon: info, problems: map[string]string{}, runs: map[string]*activityRun{}, transfers: map[string]string{}, connections: map[string]State{}}
+	f := activityFeed{workspace: workspace, emit: emit, daemon: info, problems: map[string]string{}, runs: map[string]*activityRun{}, transfers: map[string]string{}, connections: map[string]State{}, shells: map[string]Shell{}}
 	initial := true
 	for {
 		for _, read := range []func(context.Context) error{
-			f.logs, f.notes, f.runOutput, f.connectionStates, f.transferProgress,
+			f.logs, f.notes, f.runOutput, f.connectionStates, f.shellStates, f.transferProgress,
 		} {
 			poll, cancel := context.WithTimeout(ctx, 3*time.Second)
 			err := read(poll)
@@ -121,7 +125,7 @@ func FollowActivity(ctx context.Context, workspace string, emit func(Activity) e
 			} // Only a consumer/write error ends the feed.
 		}
 		if initial {
-			if err := f.write(Activity{Source: "follower", Kind: "ready", State: "connected", Message: "Following new workspace activity; earlier history is not replayed. Shared interactive shell bytes are unavailable.", Details: info}); err != nil {
+			if err := f.write(Activity{Source: "follower", Kind: "ready", State: "connected", Message: "Following new workspace activity; earlier history is not replayed. Shared shell control results are not command completion; keystrokes and terminal bytes are excluded. Controller labels are not authenticated actors; Hovel supplies no caller/request identity for retained controls.", Details: info}); err != nil {
 				return err
 			}
 			initial = false
@@ -132,6 +136,69 @@ func FollowActivity(ctx context.Context, workspace string, emit func(Activity) e
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
+}
+
+func (f *activityFeed) shellStates(ctx context.Context) error {
+	refs, err := shellRefs(ctx, f.workspace)
+	if err != nil {
+		return f.problem("burrow/shells", err)
+	}
+	current := map[string]Shell{}
+	for _, ref := range refs {
+		if ref.ModuleID != "burrow@0.1.0" || ref.Kind != shellKind {
+			continue
+		}
+		state, err := shellState(ctx, f.workspace, ref)
+		if err != nil {
+			return f.problem("burrow/shells", err)
+		}
+		previous, seen := f.shells[state.ID]
+		if state.State == "unavailable" && seen {
+			// Failed observation is not a new empty identity or reset counters.
+			state = previous
+			state.State, state.Detail = "unavailable", "owner unavailable; all other fields are last observed; remote outcome and cleanup unconfirmed"
+		}
+		current[state.ID] = state
+		if seen && string(valueBytes(previous)) == string(valueBytes(state)) {
+			continue
+		}
+		e := Activity{Source: "burrow/shell", Kind: "progress", Resource: state.ID, Connection: state.Connection.Creation, RunID: state.RunID, Target: state.Connection.Name, State: state.State, Message: "Observed retained shell state; SSH channel exit is not a structured command result", Details: state}
+		if !f.shellsReady {
+			e.Kind = "snapshot"
+		}
+		if state.State == "unavailable" {
+			e.Kind, e.Message = "gap", "Shell owner observation unavailable; last identity retained, remote outcome and cleanup unconfirmed; no reconnect"
+			e.Connection, e.RunID = previous.Connection.Creation, previous.RunID
+		} else if seen && previous.State == "unavailable" {
+			e.Kind, e.Message = "resumed", "Shell owner observation resumed; intermediate states may be missing"
+		}
+		if state.Dropped > previous.Dropped {
+			gap := e
+			gap.Kind, gap.Message = "gap", "Shell byte history was dropped; routine activity contains no terminal transcript; use session snapshot for a current display"
+			if err := f.write(gap); err != nil {
+				return err
+			}
+		}
+		if state.AuditError != "" && state.AuditError != previous.AuditError {
+			gap := e
+			gap.Kind, gap.Message = "gap", "Shell operation evidence is incomplete: "+state.AuditError
+			if err := f.write(gap); err != nil {
+				return err
+			}
+		}
+		if err := f.write(e); err != nil {
+			return err
+		}
+	}
+	for id, state := range f.shells {
+		if _, present := current[id]; !present {
+			if err := f.write(Activity{Source: "burrow/shell", Kind: "gap", Resource: id, Connection: state.Connection.Creation, RunID: state.RunID, Target: state.Connection.Name, State: "unavailable", Message: "Shell left the Hovel registry; consult owner operation evidence for confirmed closure; unread terminal history is unavailable"}); err != nil {
+				return err
+			}
+		}
+	}
+	f.shells, f.shellsReady = current, true
+	return f.problem("burrow/shells", nil)
 }
 
 func (f *activityFeed) connectionStates(ctx context.Context) error {
@@ -287,6 +354,20 @@ func auditActivity(entry launch.AuditEntry) Activity {
 	}
 	if e.Kind != "submitted" && text("state") != "" {
 		e.State = text("state")
+	}
+	if strings.HasPrefix(entry.Action, "session ") {
+		e.RunID, e.Connection = text("runID"), text("connectionID")
+		var state State
+		if json.Unmarshal(value["connection"], &state) == nil && state.Creation != "" {
+			e.Connection, e.Target = state.Creation, state.Name
+		}
+		if strings.HasPrefix(text("operation"), "session ") {
+			e.Source, e.Operation, e.Actor, e.Target = "burrow/shell-control", text("operation"), text("actor"), text("connectionName")
+			e.Message = e.Operation + ": provider operation result; input acceptance is not command completion"
+			if e.Kind == "submitted" {
+				e.Message = e.Operation + ": submitted to shell owner; execution not yet confirmed"
+			}
+		}
 	}
 	return e
 }

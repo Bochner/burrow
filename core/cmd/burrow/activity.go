@@ -27,7 +27,7 @@ func activityCommand(workspace string, args []string, noColor bool) error {
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			m := ui{noColor: noColor || os.Getenv("NO_COLOR") != "" || !term.IsTerminal(os.Stdout.Fd())}
-			help := m.paint(heading, "Usage:") + " " + m.syntax("burrow --workspace PATH", true) + " " + m.paint(heading, "follow") + " " + m.syntax("[--json]", true) + "\n" + m.syntax("Follow new workspace activity. Ctrl+C stops only the viewer. Pipes emit NDJSON; terminals use Burrow colors.", false)
+			help := m.paint(heading, "Usage:") + " " + m.syntax("burrow --workspace PATH", true) + " " + m.paint(heading, "follow") + " " + m.syntax("[--json]", true) + "\n" + m.syntax("Follow new workspace activity. Ctrl+C stops only the viewer. Pipes emit NDJSON; terminals use Burrow colors.\nShared shell lifecycle, controller changes and provider results are included. Input counts are not command results; keystrokes and terminal bytes are excluded.", false)
 			_, err = lipgloss.Fprintln(os.Stdout, help)
 			return err
 		}
@@ -130,7 +130,7 @@ func activityText(e connection.Activity, noColor bool) string {
 	if e.Target != "" {
 		text += "  " + m.paint(secondary, "Target: ") + m.paint(accent, safe(e.Target))
 	}
-	for _, field := range []struct{ label, value string }{{"Operation", e.Operation}, {"Chain", e.Chain}, {"Run", e.RunID}, {"Correlation", e.ID}} {
+	for _, field := range []struct{ label, value string }{{"Connection", e.Connection}, {"Controller label", e.Actor}, {"Operation", e.Operation}, {"Chain", e.Chain}, {"Run", e.RunID}, {"Correlation", e.ID}} {
 		if field.value != "" {
 			text += "\n  " + m.paint(secondary, field.label+": ") + m.paint(accent, safe(field.value))
 		}
