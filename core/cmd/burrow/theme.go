@@ -456,7 +456,7 @@ func (m *frame) commandHelp() string {
 	}
 	if m.terminalFocused() {
 		if m.current().tab == "shell" {
-			keys = []key.Binding{binding("Ctrl+]", "management"), numberedShell, previousShell, binding("Ctrl+C", "interrupt"), binding("drag", "select text")}
+			keys = []key.Binding{binding("Ctrl+]", "detach"), takeShellControl, numberedShell, previousShell, binding("Ctrl+C", "interrupt"), binding("drag", "select text")}
 			return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 		}
 		keys = []key.Binding{showBurrow, binding("drag", "select text"), selection, binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
@@ -499,7 +499,7 @@ func fieldStyle(header string) lipgloss.Style {
 		return infoStyle
 	case "TERM", "TYPE", "PERMISSIONS", "MODE", "EXECUTION", "LANG":
 		return keywordStyle
-	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
+	case "SHELLS", "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
 		return numberStyle
 	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "CLEANUPSCOPE", "SOURCE", "DESTINATION PATH", "SCRIPT", "STAGED SCRIPT", "PROGRAM STDIN", "WORKING DIRECTORY", "BURROW_WORKSPACE", "BURROW_SOCKET", "BURROW_SSH_CONFIG", "PATH":
 		return secondary

@@ -1,4 +1,6 @@
 """Real SSH shell through the production command and controlling terminal seams."""
+import base64
+import json
 import fcntl
 import os
 from pathlib import Path
@@ -43,18 +45,16 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
 
     def command(text, expected):
         send(text + "\r")
-        return wait(expected)
+        screen = wait(expected)
+        if text.startswith("resume "):
+            send(b"\x1bt")
+            screen = wait("CONTROL")
+        return screen
 
+    active_name = "gateway"
     def shell_children():
-        result = []
-        for task in Path(f"/proc/{frontend.pid}/task").iterdir():
-            for pid in (task / "children").read_text().split():
-                try:
-                    if Path(f"/proc/{pid}/exe").resolve() == Path("/usr/bin/ssh").resolve():
-                        result.append(int(pid))
-                except FileNotFoundError:
-                    pass
-        assert result, "no frontend-owned SSH client"
+        result = [s["pid"] for s in burrow(workspace, "session", "list", active_name) if s["state"] == "running"]
+        assert result, "no owner-retained SSH client"
         return result
 
     def child():
@@ -93,8 +93,92 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
                                 env=env, stdin=slave, stdout=slave, stderr=slave,
                                 preexec_fn=controlling)
     try:
-        wait("local / not recorded")
+        wait("CONTROL")
+        retained = burrow(workspace, "session", "list", "gateway")
+        assert len(retained) == 1 and retained[0]["controller"].startswith("tui-"), retained
         command("printf 'INITIAL='; stty size", "INITIAL=35 98")
+        shared_id = retained[0]["id"]
+        # Temporary owner unavailability must not discard this attachment's
+        # token or convert an unconfirmed release into successful detach.
+        os.kill(retained[0]["ownerPID"], signal.SIGSTOP)
+        try:
+            wait("out-of-sync")
+        finally:
+            os.kill(retained[0]["ownerPID"], signal.SIGCONT)
+        wait("snapshot-current")
+        wait("CONTROL")
+        assert burrow(workspace, "session", "inspect", "gateway", shared_id)["controlGeneration"] == retained[0]["controlGeneration"]
+        os.kill(retained[0]["ownerPID"], signal.SIGSTOP)
+        try:
+            wait("out-of-sync")
+            background()
+            wait("Release UNCONFIRMED")
+        finally:
+            os.kill(retained[0]["ownerPID"], signal.SIGCONT)
+        send("resume 1\r")
+        wait("snapshot-current")
+        send(b"\x1bt")  # Explicit recovery after the unconfirmed release.
+        wait("SSH: gateway #1 · CONTROL · snapshot-current")
+
+        def private(action, request, ok=True):
+            result = subprocess.run([binary, "--workspace", str(workspace), "session",
+                                     action, "gateway", shared_id, "--request-stdin"],
+                                    input=json.dumps(request), capture_output=True, text=True,
+                                    env=env, timeout=10)
+            assert (result.returncode == 0) == ok, (action, result.stdout, result.stderr)
+            return json.loads(result.stdout if ok else result.stderr)
+
+        def agent_input(token, data):
+            return private("input", {"token": token, "data": base64.b64encode(data).decode()})
+
+        current = burrow(workspace, "session", "inspect", "gateway", shared_id)
+        agent = private("takeover", {"generation": current["controlGeneration"], "label": "agent-one",
+                                     "columns": 93, "rows": 27})
+        wait("OBSERVE")
+        agent_input(agent["token"], b"printf 'AGENT_%s\\n' WATCHED\n")
+        wait("AGENT_WATCHED")
+        # An observer's keyboard and local dimensions must not affect the owner.
+        send("OBSERVER_MUST_NOT_WRITE\r")
+        resize(120, 30)
+        wait("OBSERVE")
+        observed = burrow(workspace, "session", "snapshot", "gateway", shared_id)
+        assert (observed["shell"]["columns"], observed["shell"]["rows"]) == (93, 27)
+        assert "OBSERVER_MUST_NOT_WRITE" not in observed["screen"]["text"]
+        resize(160, 40)
+        send(b"\x1bt")
+        wait("CONTROL")
+        private("input", {"token": agent["token"], "data": "YQ=="}, ok=False)
+        command("printf 'TAKEN_%s\\n' BACK", "TAKEN_BACK")
+        # A paused viewer misses history; recovery uses the owner's complete
+        # screen, including the alternate buffer and cursor.
+        current = burrow(workspace, "session", "inspect", "gateway", shared_id)
+        agent = private("takeover", {"generation": current["controlGeneration"], "label": "agent-gap"})
+        wait("OBSERVE")
+        os.kill(frontend.pid, signal.SIGSTOP)
+        try:
+            agent_input(agent["token"], b"printf '\\033[?1049h\\033[2J\\033[HKEPT-SCREEN'; head -c 100000 /dev/zero | tr '\\000' '\\007'; printf '\\033[3;5HRECOVERED-SCREEN'\n")
+            deadline = time.monotonic() + 10
+            while burrow(workspace, "session", "inspect", "gateway", shared_id)["dropped"] == 0:
+                assert time.monotonic() < deadline
+                time.sleep(.05)
+        finally:
+            os.kill(frontend.pid, signal.SIGCONT)
+        wait("RECOVERED-SCREEN")
+        assert "KEPT-SCREEN" in view()
+        wait("Output gap recovered")
+        assert burrow(workspace, "session", "snapshot", "gateway", shared_id)["screen"]["alternate"]
+        agent_input(agent["token"], b"printf '\\033[?1049l'\n")
+        wait("TAKEN_BACK")
+        # Failed snapshots remain visibly out of sync until a real reset succeeds.
+        oversized = b"stty -echo; printf '\\033]8;;'; head -c 300000 /dev/zero | tr '\\000' a; printf '\\033\\\\LINK\\033]8;;\\033\\\\'; stty echo\n"
+        agent_input(agent["token"], oversized)
+        wait("out-of-sync")
+        agent_input(agent["token"], b"printf '\\033[?25l\\033cAFTER-RESET'\n")
+        wait("AFTER-RESET")
+        wait("snapshot-current")
+        send(b"\x1bt")
+        wait("CONTROL")
+        print("PASS TUI/headless takeover both ways, observer isolation, independent dimensions and gap/snapshot recovery", flush=True)
         first_transport = transport()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 0, 0, 0))
         os.kill(frontend.pid, signal.SIGWINCH)
@@ -127,7 +211,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         command("shell gateway", "SSH: gateway #2")
         assert transport() == first_transport, "second shell created a new SSH transport"
         background()
-        wait("Local SSH shell started")
+        wait("Shell detached")
         assert "Running reviewed command through Hovel" not in view()
         command("resume 2", "SSH: gateway #2")
         clients = shell_children()
@@ -192,20 +276,45 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         command("resume 1", "BACKGROUND_COMPLETED")
         same_master()
         background()
-        command("shell-close 2", "Local SSH shell closed (gateway #2)")
+        wait("Shell detached")
+        send("resume 1\r")
+        wait("OBSERVE")
+        send(b"\x1b[5;2~" * 3)  # Queued navigation must preserve every page.
+        wait("History 102/1000")
+        send(b"\x1b[1;2H")  # Observer-local history, no controller claim.
+        wait("History 1000/1000")
+        wait("snapshot-history")
+        assert "background-" in view()
+        history = burrow(workspace, "session", "snapshot", "gateway", shared_id, "1000")
+        assert history["screen"]["historyLines"] == history["screen"]["scrollOffset"] == 1000
+        assert not history["screen"]["visible"] and history["shell"]["controller"] == ""
+        send(b"\x1b[1;2F")
+        wait("BACKGROUND_COMPLETED")
+        background()
+        command("shell-close 2", "Retained SSH shell closed (gateway #2)")
         command("shell gateway", "SSH: gateway #2")
         assert transport() == first_transport, "reopened shell created a new SSH transport"
         background()
         command("shells", "Shell gateway #2")
-        command("shell-close 2", "Local SSH shell closed (gateway #2)")
-        command("shell-close", "Local SSH shell closed (gateway #1)")
+        command("shell-close 2", "Retained SSH shell closed (gateway #2)")
+        command("shell-close", "Retained SSH shell closed (gateway #1)")
         assert not Path(f"/proc/{client}").exists(), "shell client not reaped"
         assert "ACTIVE SSH CONNECTIONS" in view()
         same_master()
-        command("shell gateway", "local / not recorded")
-        command("exit", "Local SSH shell exited")
+        command("shell gateway", "CONTROL")
+        command("exit", "Retained SSH shell exited")
         same_master()
-        command("shell gateway", "local / not recorded")
+        command("shell gateway", "CONTROL")
+        audited = next(s for s in burrow(workspace, "session", "list", "gateway") if s["state"] == "running")
+        log = workspace / "burrow-logs/operations.log"
+        log.chmod(0o400)
+        try:
+            command("exit", "audit incomplete")
+            assert burrow(workspace, "session", "inspect", "gateway", audited["id"])["auditError"]
+        finally:
+            log.chmod(0o600)
+        burrow(workspace, "session", "close", "gateway", audited["id"], "--yes", ok=False)
+        command("shell gateway", "CONTROL")
         client = child()
         while select.select([outer], [], [], 0)[0]:
             os.read(outer, 65536)
@@ -213,19 +322,73 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         dimensions[:] = [120, 30]
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
         os.kill(frontend.pid, signal.SIGWINCH)
-        wait("local / not recorded")
+        wait("CONTROL")
         command("printf 'RESIZED='; stty size", "RESIZED=25 68")
-        send(b"\x1bb")  # Management, with the frontend-local client still alive.
+        # Selecting the workspace backgrounds without releasing control.
+        send(b"\x1b[<0;5;4M\x1b[<0;5;4m")
         wait("ACTIVE SSH CONNECTIONS")
+        owned = next(s for s in burrow(workspace, "session", "list", "gateway") if s["pid"] == client)
+        assert owned["controller"] == f"tui-{frontend.pid}"
+        send(b"\x03")
+        wait("Keep running")
+        send(b"\x1b")
+        wait("ACTIVE SSH CONNECTIONS")
+        assert burrow(workspace, "session", "inspect", "gateway", owned["id"])["controller"] == owned["controller"]
         send(b"\x03")
         wait("Keep running")
         send(b"\r")
         assert frontend.wait(timeout=10) == 0
-        assert not Path(f"/proc/{client}").exists(), "quit leaked shell client"
+        assert Path(f"/proc/{client}").exists(), "Keep running ended retained shell"
+        assert all(s["controller"] == "" for s in burrow(workspace, "session", "list", "gateway") if s["state"] == "running")
         assert termios.tcgetattr(slave) == before
         view()
         assert b"\x1b[?1049l" in output and b"\x1b[?25h" in output
         same_master()
+        retained = next(s for s in burrow(workspace, "session", "list", "gateway") if s["state"] == "running")
+        shared_id = retained["id"]
+        output.clear()
+        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", "gateway", shared_id],
+                                    env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+        wait("OBSERVE")
+        wait("RESIZED=25 68")
+        assert burrow(workspace, "session", "inspect", "gateway", shared_id)["pid"] == client
+        send(b"\x1bt")
+        wait("CONTROL")
+        command("printf 'REATTACHED_%s\\n' SAME", "REATTACHED_SAME")
+        # Abrupt frontend disappearance preserves the shell and descriptive
+        # claim. The next frontend observes until explicit generation takeover.
+        frontend.kill()
+        frontend.wait(timeout=10)
+        gone = burrow(workspace, "session", "inspect", "gateway", shared_id)
+        assert gone["pid"] == client and gone["controller"] == f"tui-{frontend.pid}"
+        termios.tcsetattr(slave, termios.TCSANOW, before)  # SIGKILL cannot restore a tty.
+        output.clear()
+        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", "gateway", shared_id],
+                                    env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+        wait("OBSERVE")
+        wait("REATTACHED_SAME")
+        send(b"\x1bt")
+        wait("CONTROL")
+        command("printf 'AFTER_KILL_%s\\n' SAME", "AFTER_KILL_SAME")
+        current = burrow(workspace, "session", "inspect", "gateway", shared_id)
+        agent = private("takeover", {"generation": current["controlGeneration"], "label": "agent-keep"})
+        wait("OBSERVE")
+        background()
+        send(b"\x03")
+        wait("Keep running")
+        send(b"\x1b")
+        wait("ACTIVE SSH CONNECTIONS")
+        assert burrow(workspace, "session", "inspect", "gateway", shared_id)["controller"] == "agent-keep"
+        send(b"\x03")
+        wait("Keep running")
+        send(b"\r")
+        assert frontend.wait(timeout=10) == 0
+        assert termios.tcgetattr(slave) == before
+        assert burrow(workspace, "session", "inspect", "gateway", shared_id)["controller"] == "agent-keep"
+        agent_input(agent["token"], b"printf 'AGENT_STILL_CONTROLS\\n'\n")
+        for s in burrow(workspace, "session", "list", "gateway"):
+            burrow(workspace, "session", "close", "gateway", s["id"], "--yes")
+        print("PASS observer scrollback, retained reattach, frontend disappearance, cancel and Keep running preserve another controller", flush=True)
     finally:
         if frontend.poll() is None:
             frontend.terminate()
@@ -237,6 +400,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
     saved = (workspace / "burrow-profiles.json").read_bytes()
     for loss in ("close", "master", "frontend"):
         name = "shell-" + loss
+        active_name = name
         burrow(workspace, "connect", name, "127.0.0.1", "tester", *options)
         until = time.monotonic() + 15
         while True:
@@ -254,9 +418,9 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
                                     env=env, stdin=slave, stdout=slave, stderr=slave,
                                     preexec_fn=controlling)
         try:
-            wait("local / not recorded")
+            wait("CONTROL")
             background()
-            command("shell " + name, "#2 · local / not recorded")
+            command("shell " + name, "#2 · CONTROL")
             clients = shell_children()
             assert len(clients) == 2
             command("printf '\\033[?1049h\\033[2J\\033[HLOSS_%s' SCREEN", "LOSS_SCREEN")
@@ -268,7 +432,12 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
                     burrow(workspace, "close", name, "--yes")
                 else:
                     os.kill(state["masterPID"], signal.SIGKILL)
-                wait("SSH shell ended")
+                if loss == "close":
+                    wait("UNVERIFIED")
+                    background()
+                else:
+                    wait("LOST")
+                    background()
                 assert "ACTIVE SSH CONNECTIONS" in view()
                 command("shell " + name, "REFUSED")
                 assert all(not Path(f"/proc/{pid}").exists() for pid in clients)
@@ -276,7 +445,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
                 wait("Keep running")
                 send(b"\r")
                 assert frontend.wait(timeout=10) == 0
-            assert all(not Path(f"/proc/{pid}").exists() for pid in clients)
+            assert all(Path(f"/proc/{pid}").exists() == (loss == "frontend") for pid in clients)
             assert termios.tcgetattr(slave) == before
             view()
             assert b"\x1b[?1049l" in output and b"\x1b[?25h" in output

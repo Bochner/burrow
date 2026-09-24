@@ -4,22 +4,22 @@
 <p>A connection is an authenticated SSH transport. A shell is one terminal using it. Leaving a view, ending a shell and closing its connection have different effects.</p>
 <h2>Choose the intended scope</h2>
 <table><thead><tr><th>Action</th><th>Ends or leaves</th><th>Remains available</th></tr></thead><tbody>
-<tr><td><kbd>Ctrl+]</kbd> from an SSH shell</td><td>Leaves the shell view.</td><td>That shell runs in the same frontend; use <code>resume ID</code>.</td></tr>
+<tr><td><kbd>Ctrl+]</kbd> from an SSH shell</td><td>Releases this attachment’s control and leaves the shell view.</td><td>The retained shell, last geometry and other controllers; <code>resume ID</code> observes, Alt+T takes control.</td></tr>
 <tr><td>Remote <code>exit</code> or <code>shell-close ID</code></td><td>Ends one shell.</td><td>Its connection, sibling shells, tunnels and transfers.</td></tr>
-<tr><td>Exit a CLI after <code>session create CONNECTION</code></td><td>Ends only the launcher.</td><td>The Hovel-retained shell and connection. Use <code>session list CONNECTION</code>; headless control/observation are available; TUI attachment follows later.</td></tr>
+<tr><td>Exit a CLI after <code>session create CONNECTION</code></td><td>Ends only the launcher.</td><td>The Hovel-retained shell and connection. Use <code>session list CONNECTION</code>; <code>shell CONNECTION ID</code> observes that same shell in the TUI.</td></tr>
 <tr><td><code>session close CONNECTION ID</code></td><td>After review, ends and reaps one retained shell's SSH client.</td><td>Its master and sibling resources; remote-command outcomes remain unconfirmed.</td></tr>
 <tr><td>Close an output viewer</td><td>Leaves observation.</td><td>The retained run, capture and other viewers. Viewing is not collection.</td></tr>
-<tr><td>Quit → Keep running</td><td>Ends this frontend and all its local shell/editor/Hovel CLI processes.</td><td>Verified daemon-owned connections, forwarding, transfers, retained shells and runs, and collected evidence.</td></tr>
+<tr><td>Quit → Keep running</td><td>Releases this frontend’s shell claims and ends its editor/Hovel CLI processes.</td><td>Verified daemon-owned connections, forwarding, transfers, retained shells and runs, and collected evidence.</td></tr>
 <tr><td><code>close NAME</code></td><td>Closes the selected connection and its shells, transfers and listeners; remote run access is lost.</td><td>Other connections, saved settings and collected evidence.</td></tr>
-<tr><td>Quit → Close connections</td><td>Closes the reviewed connections across workspaces opened in this frontend, then exits after verified cleanup.</td><td>Hovel daemons, saved settings and collected evidence.</td></tr>
+<tr><td>Quit → Close connections</td><td>Closes the reviewed connections and shells across workspaces opened in this frontend, then exits after verified cleanup.</td><td>Hovel daemons, saved settings and collected evidence.</td></tr>
 <tr><td>Quit → Cancel / <kbd>Esc</kbd></td><td>Cancels quitting.</td><td>The frontend and its resources.</td></tr>
 </tbody></table>
-<p>The TUI's interactive shells are frontend-local. A second Burrow process cannot resume them, and Keep running does not retain those local shells after frontend exit. Current-source <a href="shells.html#retained">session lifecycle commands</a> create separate retained shells that do survive launcher exit and Keep running. Headless controller/observer access is available; TUI migration remains follow-on work under the <a href="https://github.com/Bochner/burrow/issues/87">accepted shared-session decision</a>.</p>
+<p>Current-source TUI tabs and <a href="shells.html#retained">headless session commands</a> share the same retained shells under the <a href="https://github.com/Bochner/burrow/issues/87">accepted shared-session decision</a>. Another frontend can observe and explicitly take over. A disappeared frontend leaves its claim until takeover; labels do not assert liveness. This replaces v0.1.0’s frontend-local shell lifetime.</p>
 <h2>Leave and return</h2>
 <ol>
 <li>Use <code>connections</code>, <code>transfers</code> and <code>run list</code> to inspect work in the selected workspace. Collect important completed run output before leaving.</li>
 <li>Enter <code>quit</code> in management. Review the connections across all workspaces you opened. Keep running retains the daemon-owned resources; Close connections ends the reviewed connections.</li>
-<li>Reopen Burrow with the same absolute workspace path. Inspect the retained resources. Open a new shell if needed; the old frontend's shells have ended.</li>
+<li>Reopen Burrow with the same absolute workspace path. Inspect the retained resources. Select a discovered retained shell to observe it, then explicitly take control with Alt+T if needed.</li>
 </ol>
 <p>Failed or uncertain teardown keeps Burrow open with an error. Inspect that result before retrying. Ending a local SSH client never proves that deliberately detached remote processes have stopped.</p>
 <h2>Close one connection from the CLI</h2>

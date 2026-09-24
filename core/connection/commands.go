@@ -233,10 +233,10 @@ session input CONNECTION ID --request-stdin Send 1..4096 base64 bytes with the c
 session resize CONNECTION ID --request-stdin Resize with the current token
 session release CONNECTION ID --request-stdin Release control; retain shell and geometry
 session observe CONNECTION ID [OFFSET] Read independent bytes (default position 0)
-session snapshot CONNECTION ID       Recover a bounded current-screen view
+session snapshot CONNECTION ID [HISTORY] Recover display; optional 0..1000 history lines
 Retained sessions survive CLI exit and Keep running; connection/manager close ends them.
 Creation uses supported Hovel throws and the existing verified master; no login fallback.
-Initial size defaults to 80x24; TUI attachment follows separately.
+Headless initial size defaults to 80x24; TUI creation uses the pane dimensions.
 Private commands require piped/file stdin AND stdout. Claim JSON defaults to
 {"label":"agent"}; optional columns/rows retain the current geometry when omitted.
 Takeover also requires the observed generation; old input/resize/release is refused.
@@ -253,18 +253,21 @@ Raw Hovel send/read/attach cannot control or observe these shells. Output stays 
 Loss reports lost/unavailable and uncertain command outcomes; relaunch never restores state.
 Failed creation may leave a prepared session: inspect/list, close explicitly, then review anew.
 
-shell NAME                          Open a local interactive SSH terminal
-shells                              List this frontend's shells in the workspace
-resume ID                           Resume a local shell by ID
-shell-close [ID]                     Close ID, or the last selected local shell
+shell NAME [SESSION_ID]             Create a retained shell, or observe an existing opaque ID
+shells                              Discover retained shells in this workspace
+resume ID                           Select an attached shell by frontend number
+shell-control [ID]                   Explicitly take control and apply pane dimensions
+shell-detach [ID]                    Release this frontend's control; retain the shell
+shell-close [ID]                     Close ID, or the last selected retained shell
 close NAME [--yes] [--review HASH]    Review/close the exact owned connection
 Shells reuse a verified master; no fresh login or authentication fallback.
-Ctrl+] returns to management, keeping the shell; Ctrl+C reaches SSH.
-Select a Shells entry or use resume ID to return; shell-close ends only that client.
+Ctrl+] or Alt+B detaches to management; Ctrl+C reaches SSH only in CONTROL mode.
+Select a Shells entry or use resume ID to return. Alt+T explicitly takes control.
+OBSERVE never sends keys or resizes; controller label, dimensions and sync stay visible.
 Multiple shells share the connection's existing master socket and authentication.
-Shell exit/close preserves the connection. Frontend quit ends local shells.
-Connection close ends its shells, transfers and tunnels. Shell bytes stay local,
-in memory; they are not Hovel-recorded session I/O or collected evidence.
+Shell exit/close preserves the connection. Keep running releases owned claims and
+retains shells; Cancel changes nothing. Close connections tears down reviewed resources.
+Shell bytes stay in bounded owner memory; they are not logs or collected evidence.
 
 Required: NAME HOST --user USER (- uses SSH config user). Positional USER remains accepted, as does:
 connect -ip HOST -port NUMBER -user USER -socket NAME [-ssh-key PATH]
@@ -511,8 +514,8 @@ func ValidateCommand(workspace string, args []string) error {
 		if len(args) != 1 {
 			return fmt.Errorf("%s takes no arguments", args[0])
 		}
-	case "resume", "shell-close":
-		if args[0] == "shell-close" && len(args) == 1 {
+	case "resume", "shell-close", "shell-control", "shell-detach":
+		if args[0] != "resume" && len(args) == 1 {
 			return nil
 		}
 		if len(args) != 2 {
@@ -532,6 +535,10 @@ func ValidateCommand(workspace string, args []string) error {
 		_, e := launch.ConnectionPath(workspace, args[1])
 		return e
 	case "inspect", "shell":
+		if args[0] == "shell" && len(args) == 3 {
+			_, _, err := sessionArgs(workspace, []string{"session", "inspect", args[1], args[2]})
+			return err
+		}
 		if len(args) != 2 {
 			return fmt.Errorf("expected %s NAME", args[0])
 		}
@@ -650,7 +657,7 @@ func closeOwned(ctx context.Context, w string, s State) error {
 }
 
 func closeReview(s State) string {
-	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access, including %d retained shells, frontend-local shells, transfers and tunnels; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.ShellCount, s.Name)
+	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access, including %d retained shells, transfers and tunnels; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.ShellCount, s.Name)
 }
 
 func closeOptions(args []string) (bool, string, error) {
@@ -810,8 +817,8 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		return executeForward(ctx, w, expanded)
 	case "connections":
 		return List(ctx, w)
-	case "shell-close", "shells", "resume":
-		return nil, fmt.Errorf("%s is frontend-local; use management in the frontend that opened the shell", args[0])
+	case "shell-close", "shells", "resume", "shell-control", "shell-detach":
+		return nil, fmt.Errorf("%s selects frontend tabs; use session commands with opaque IDs headlessly", args[0])
 	case "inspect":
 		return selected(ctx, w, args[1])
 	case "shell":
@@ -903,7 +910,7 @@ func displaySetting(value, fallback string) string {
 }
 
 func Suggestions(states []State) []string {
-	values := []string{"status", "connect", "connections", "proxy create", "proxy inspect", "proxy remove", "tunnel create", "tunnel list", "tunnel check", "tunnel remove", "tunc", "tund", "shells", "shell-close", "help", "quit"}
+	values := []string{"status", "connect", "connections", "proxy create", "proxy inspect", "proxy remove", "tunnel create", "tunnel list", "tunnel check", "tunnel remove", "tunc", "tund", "shells", "shell-close", "shell-control", "shell-detach", "help", "quit"}
 	for _, s := range states {
 		values = append(values, "proxy inspect "+s.Name)
 		if s.State == "connected" && s.Generation != "" {

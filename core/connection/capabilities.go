@@ -134,7 +134,7 @@ const connectionInputs = "name host user connection-options"
 const runInputs = "connection run-options command"
 
 var commandOperations = []Operation{
-	op("session.snapshot", "session snapshot", "session snapshot CONNECTION ID", "session snapshot target shell-id", "Recover a current screen after missed output", "connection session-id", "ShellOutput", "Returns a bounded complete display snapshot and byte position; does not send input or change geometry.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.snapshot", "session snapshot", "session snapshot CONNECTION ID [HISTORY]", "session snapshot target shell-id", "Recover a current screen after missed output", "connection session-id history-offset", "ShellOutput", "Returns a bounded complete display snapshot and byte position, or up to 1000 lines back with snapshot-history. Includes input modes for safe encoding. Never sends input or changes geometry.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
 	op("session.takeover", "session takeover", "session takeover CONNECTION ID --request-stdin", "session takeover target shell-id --request-stdin", "Explicitly replace the observed controller generation", "connection session-id shell-takeover", "ShellControl", "Shared shell owner enforces control; no automatic reconnect.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
 	op("session.resize", "session resize", "session resize CONNECTION ID --request-stdin", "session resize target shell-id --request-stdin", "Resize the controlled shell", "connection session-id shell-resize", "ShellControl", "Shared shell owner enforces control; no automatic reconnect.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
 	op("session.release", "session release", "session release CONNECTION ID --request-stdin", "session release target shell-id --request-stdin", "Release control and retain the shell", "connection session-id shell-release", "ShellControl", "Shared shell owner enforces control; no automatic reconnect.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
@@ -161,10 +161,12 @@ var commandOperations = []Operation{
 	op("profile.load", "profile load", "profile load PATH", "profile load /absolute/workspace/team.json", "Select an existing saved collection", "path", "Collection", "Persists selection; missing collections fail; never connects.", noReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.backup", "profile backup", "profile backup PATH", "profile backup /absolute/workspace/team.backup.json", "Back up the selected collection", "path", "Backup", "Creates a new private file; refuses an existing destination.", noReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
 	op("profile.history", "history", "history", "history", "Read retained profile command history", "", "Strings", inspectEffect, noReview, "core/connection/profiles.go", "core/cmd/burrow/profile_check.py"),
-	op("shell.open", "shell", "shell NAME", "shell target", "Open a frontend-local interactive shell", "name", "Terminal", "Opens a PTY over the verified existing master; no login fallback. Frontend exit ends the shell.", noReview, "core/cmd/burrow/terminal.go", "core/cmd/burrow/shell_lab.py"),
-	op("shell.list", "shells", "shells", "shells", "List this frontend's workspace shells", "", "Terminal", "Inspects this frontend's local shells only.", noReview, "core/cmd/burrow/terminal.go", "core/cmd/burrow/shell_lab.py"),
-	op("shell.resume", "resume", "resume ID", "resume 1", "Resume a local shell", "shell-id", "Terminal", "Changes frontend focus; does not create a connection or shell.", noReview, "core/cmd/burrow/terminal.go", "core/cmd/burrow/shell_lab.py"),
-	op("shell.close", "shell-close", "shell-close [ID]", "shell-close 1", "Close the selected local shell", "shell-id", "Terminal", "Ends only that PTY/client; the connection survives.", noReview, "core/cmd/burrow/terminal.go", "core/cmd/burrow/shell_lab.py"),
+	op("shell.open", "shell", "shell NAME [SESSION_ID]", "shell target", "Create a retained shell or observe an existing session", "name session-id", "Terminal", "Creates and controls one retained shell, or observes the selected existing session. No login fallback; detach/Keep running preserve the shell.", noReview, "core/cmd/burrow/terminal.go", "core/cmd/burrow/shell_lab.py"),
+	op("shell.list", "shells", "shells", "shells", "Discover retained workspace shells", "", "Terminal", "Discovers recognized shells from Hovel and opens independent observer tabs.", noReview, "core/cmd/burrow/terminal.go", "core/cmd/burrow/shell_lab.py"),
+	op("shell.resume", "resume", "resume ID", "resume 1", "Select an attached retained shell", "shell-id", "Terminal", "Changes frontend focus without claiming control; does not create a connection or shell.", noReview, "core/cmd/burrow/terminal.go", "core/cmd/burrow/shell_lab.py"),
+	op("shell.close", "shell-close", "shell-close [ID]", "shell-close 1", "Close the selected retained shell", "shell-id", "Terminal", "Explicitly closes that retained session; connection and sibling resources survive.", noReview, "core/cmd/burrow/terminal.go", "core/cmd/burrow/shell_lab.py"),
+	op("shell.control", "shell-control", "shell-control [ID]", "shell-control 1", "Explicitly take control of an attached shell", "shell-id", "Terminal", "Generation-checked takeover fences the previous controller and applies the pane dimensions.", noReview, "core/cmd/burrow/shared_shells.go", "core/cmd/burrow/shell_lab.py"),
+	op("shell.detach", "shell-detach", "shell-detach [ID]", "shell-detach 1", "Release this frontend's claim and retain the shell", "shell-id", "Terminal", "Releases only this attachment's token; preserves the shell, dimensions and other controllers.", noReview, "core/cmd/burrow/shared_shells.go", "core/cmd/burrow/shell_lab.py"),
 	op("tunnel.create", "tunnel create|tunc", "tunnel create CONNECTION forward|reverse LISTEN HOST PORT [--review HASH] [--yes]", "tunnel create target forward 8080 127.0.0.1 80", "Create a local or reverse forward on an existing connection", "connection direction listen host port review yes", "TunnelReview", "After approval binds a listener; explicit broad IP binds expose it. Reverse LISTEN 0 requests a random high port; returns actual endpoint.", confirmReview, "core/connection/forward.go", "core/cmd/burrow/forward_lab.py"),
 	op("tunnel.list", "tunnel list", "tunnel list", "tunnel list", "List retained forwards and exact qualified IDs", "", "Tunnels", inspectEffect, noReview, "core/connection/forward.go", "core/cmd/burrow/forward_lab.py"),
 	op("tunnel.check", "tunnel check", "tunnel check CONNECTION/ID", "tunnel check target/0123456789abcdef0123456789abcdef", "Passively check the destination greeting", "tunnel-id", "TunnelCheck", "Attempts traffic through the existing listener; no remote bytes retained. Silent protocols need their own client to prove reachability.", noReview, "core/connection/forward.go", "core/cmd/burrow/forward_lab.py"),
@@ -214,7 +216,7 @@ func init() {
 		op := &commandOperations[i]
 		switch op.ID {
 		case "session.create", "session.list", "session.inspect", "session.close", "session.claim", "session.takeover", "session.input", "session.resize", "session.release", "session.observe", "session.snapshot":
-			op.Human = "Headless CLI: " + strings.TrimPrefix(op.Agent.Syntax, "burrow --workspace PATH ") + "; TUI migration follows separately"
+			op.Human = "Headless CLI: " + strings.TrimPrefix(op.Agent.Syntax, "burrow --workspace PATH ") + "; TUI shell tabs attach to these same retained sessions"
 			op.Scope = "Explicit workspace, connection name and opaque Hovel shell ID; connection creation and manager generation are verified."
 		case "run.prepare", "run.now":
 			verb := strings.TrimPrefix(op.ID, "run.")
@@ -240,9 +242,9 @@ func init() {
 			op.Agent.Status = "terminal-only"
 			op.Agent.Limitation = "Requires terminal input; no headless structured route for this viewer."
 			op.ModuleCommand = false
-		case "shell.list", "shell.resume", "shell.close":
+		case "shell.list", "shell.resume", "shell.close", "shell.control", "shell.detach":
 			op.Agent.Status = "unsupported"
-			op.Agent.Limitation = "Separate CLI invocations cannot access shells owned by another frontend; use the frontend that opened them."
+			op.Agent.Limitation = "These tab-number shortcuts require a frontend. Headless agents use session list/inspect/claim/takeover/input/resize/release/close with opaque Hovel IDs."
 			op.Scope = "Current frontend and selected workspace only; IDs are local to that frontend."
 		}
 	}

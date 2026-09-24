@@ -58,6 +58,7 @@ type frame struct {
 	contextMenu                      *resourceMenu
 	invalidGeometry                  bool
 	initialShell                     string
+	initialSession                   string
 	initialLogs                      bool
 	terminals                        *terminalLifetime
 	quitReview                       quitSnapshot
@@ -142,7 +143,7 @@ func (m *frame) Init() tea.Cmd {
 	if m.demo {
 		return nil
 	}
-	return tea.Batch(m.dispatch(m.active, m.current().activeUI().Init()), m.dispatch(m.active, refreshDownloads(m.active)), m.check(m.active), m.tick())
+	return tea.Batch(m.dispatch(m.active, m.current().activeUI().Init()), m.dispatch(m.active, refreshDownloads(m.active)), m.discoverShells(m.active, false), m.check(m.active), m.tick())
 }
 func (m *frame) tick() tea.Cmd {
 	return m.dispatch(m.active, tea.Tick(time.Second, func(t time.Time) tea.Msg { return frameTick(t) }))
@@ -569,7 +570,34 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if path != m.active {
 				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("shell cancelled after workspace switch")})
 			}
-			return m, m.openShell(result.name)
+			return m, m.openSharedShell(result.name, result.session)
+		case shellsDiscovered:
+			return m, m.acceptShells(path, result)
+		case quitSnapshot:
+			return m, m.showQuit(result)
+		case shellDetached:
+			w := m.workspaces[path]
+			w.management.output = "Shell detached; retained shell continues. Resume observes; Alt+T takes control."
+			if result.err != nil {
+				w.management.output = "Release UNCONFIRMED: " + safe(result.err.Error())
+			}
+			return m, nil
+		case sharedClosed:
+			w := m.workspaces[path]
+			if !w.ownsTerminal(result.tab) {
+				return m, nil
+			}
+			result.tab.pending = false
+			if result.err != nil {
+				w.management.output = "Shell close UNCONFIRMED: " + safe(result.err.Error())
+				if result.tab.host == nil {
+					return m, nil
+				}
+				return m, m.readCLI(path, result.tab)
+			}
+			w.removeShell(result.tab)
+			w.management.output = "Retained SSH shell closed (" + result.tab.label() + "); connection retained."
+			return m, nil
 		case authenticationRequested:
 			if path != m.active {
 				return m, m.updateManagement(path, connectionResult{nil, fmt.Errorf("connection request cancelled after workspace switch")})
@@ -678,7 +706,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if _, ok := m.workspaces[destination]; !ok {
 				m.paths = append(m.paths, destination)
 				m.workspaces[destination] = &workspaceView{management: newUI(result.info, m.noColor), focus: "prompt"}
-				init = m.dispatch(destination, tea.Batch(m.workspaces[destination].management.Init(), refreshDownloads(destination)))
+				init = tea.Batch(m.dispatch(destination, tea.Batch(m.workspaces[destination].management.Init(), refreshDownloads(destination))), m.discoverShells(destination, false))
 			}
 			m.resize()
 			// Esc may dismiss a pending launch, but its completion never steals selection.
@@ -722,7 +750,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.initialShell != "" {
 			name := m.initialShell
 			m.initialShell = ""
-			return m, m.openShell(name)
+			return m, m.openSharedShell(name, m.initialSession)
 		}
 		return m, m.resizeReports()
 	case tea.ResumeMsg:
@@ -899,7 +927,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if key.Matches(v, quit) {
-					return m, tea.Quit
+					return m, m.keepRunning()
 				}
 				if key.Matches(v, escape) {
 					m.dismissForm()
@@ -946,9 +974,11 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.terminalFocused() {
+			if m.current().tab == "shell" && key.Matches(v, takeShellControl) {
+				return m, m.controlShell(m.current().shell)
+			}
 			if m.current().tab == "shell" && key.Matches(v, terminalEscape) {
-				m.current().tab, m.current().focus = "", "prompt"
-				return m, nil
+				return m, m.detachShell(m.current().shell)
 			}
 			if m.current().tab == "hovel" && key.Matches(v, restartTerminal) && m.current().canRestartCLI() {
 				return m, m.restartCLI()
@@ -1230,6 +1260,9 @@ func (m *frame) activate(id string) tea.Cmd {
 		m.modal = "metadata"
 		m.modalOffset = 0
 	case "burrow":
+		if m.current().tab == "shell" {
+			return m.detachShell(m.current().shell)
+		}
 		m.current().tab = ""
 		m.current().focus = "prompt"
 	case "hovel":
@@ -1465,6 +1498,34 @@ func (m *frame) metadata() string {
 	text := section("SELECTED CONNECTION") + "\n" + u.paint(connectionColor.Bold(true), connectionState) + "\n" + selected + "\n" + field("Active in workspace", count, numberStyle) + "\n\n" +
 		section("WORKSPACE DOWNLOADS") + "\n" + field("Completed files", files, numberStyle) + "\n" + field("Downloaded", bytes, numberStyle) + "\n" + u.paint(secondary, transferNote) + "\n\n" +
 		section("HOVEL DAEMON") + "\n"
+	if w.tab == "shell" && w.shell != nil && w.shell.screen.Shared != nil {
+		shared := w.shell.screen.Shared
+		mode, role := "OBSERVE", warningStyle
+		if shared.Controlled {
+			mode, role = "CONTROL", successStyle
+		}
+		controller := safe(shared.Shell.Controller)
+		if controller == "" {
+			controller = "Unclaimed"
+		}
+		syncRole := successStyle
+		if shared.Synchronization == "snapshot-history" {
+			syncRole = warningStyle
+		} else if shared.Synchronization != "snapshot-current" {
+			syncRole = errorStyle
+		}
+		shellText := section("SHARED SHELL") + "\n" + u.paint(role, mode) + "\n" +
+			u.paint(secondary, "Controller:") + "\n" + u.paint(accent, controller) + "\n" +
+			field("Remote size", fmt.Sprintf("%d×%d", shared.Shell.Columns, shared.Shell.Rows), numberStyle) + "\n" +
+			u.paint(syncRole, shared.Synchronization) + "\n" +
+			u.paint(accent, "Alt+T") + u.paint(secondary, " control · ") + u.paint(accent, "Ctrl+]") + u.paint(secondary, " detach") + "\n" +
+			field("Session", safe(shared.Shell.ID), accent) + "\n" +
+			u.paint(secondary, "Controller label is not liveness.")
+		if shared.RecoveredGap {
+			shellText += "\n" + u.paint(warningStyle, "Output gap recovered by snapshot")
+		}
+		text = shellText + "\n\n" + text
+	}
 	if m.demo {
 		return text + u.paint(warningStyle, "DEMO · no daemon") + details
 	}
@@ -1690,6 +1751,10 @@ func (m *frame) compositor() *lipgloss.Compositor {
 		statusStyle := secondary
 		if tab := current.activeTerminal(); tab != nil {
 			text = tab.screen.Screen
+			terminalError := tab.error
+			if tab.screen.Shared != nil && tab.screen.Err != nil {
+				terminalError = "SSH terminal: " + safe(tab.screen.Err.Error())
+			}
 			status = "CLI: running · " + safe(m.active)
 			if tab.connection != "" {
 				status = "SSH: " + safe(tab.label()) + " · local / not recorded"
@@ -1721,11 +1786,23 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			if tab.notice != "" {
 				status = tab.notice
 			}
-			if tab.error != "" {
-				status = tab.error
+			if terminalError != "" {
+				status = terminalError
 				statusStyle = errorStyle
 				if tab.host == nil {
-					text = current.management.paint(errorStyle, tab.error)
+					text = current.management.paint(errorStyle, terminalError)
+				}
+			}
+			if shared := tab.screen.Shared; shared != nil {
+				mode, role := "OBSERVE", warningStyle
+				if shared.Controlled {
+					mode, role = "CONTROL", successStyle
+				}
+				status = "SSH: " + safe(tab.label()) + " · " + mode + " · " + shared.Synchronization
+				statusStyle = role
+				if terminalError != "" {
+					status = mode + " · " + terminalError
+					statusStyle = errorStyle
 				}
 			}
 			if tab.screen.ScrollOffset > 0 {

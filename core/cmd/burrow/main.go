@@ -51,7 +51,7 @@ restart also registers the current build; next approved connect starts a manager
 Workspace routes emit JSON results and JSON errors on stderr (exit 1).
 session manages retained SSH shells headlessly; create/close review before --yes [--review HASH].
 These shells survive CLI exit. Claim/takeover/input/resize/release use private JSON stdin.
-Observe returns bounded bytes; snapshot recovers a current screen. TUI attachment follows later.
+Observe returns bounded bytes; snapshot recovers a screen. TUI tabs share these retained shells.
 session failures emit JSON errors on stderr (exit 1); inspect before retrying uncertain creation.
 capabilities prints the versioned JSON operation contract without initializing anything.
 agent install installs bundled standalone skills offline; --source PATH selects a trusted local bundle.
@@ -234,6 +234,9 @@ func run(args []string) (failure error) {
 		if command == "shell" {
 			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
 			m.initialShell = args[1]
+			if len(args) == 3 {
+				m.initialSession = args[2]
+			}
 			return terminal(m, m.noColor)
 		}
 		args, e = connection.ProfileConnect(ctx, o.Workspace, args)

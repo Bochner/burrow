@@ -1,4 +1,4 @@
-// Package terminal owns frontend-local Linux PTYs. It never owns daemon state.
+// Package terminal hosts local Linux PTYs and observes retained SSH shells. It never owns daemon state.
 package terminal
 
 import (
@@ -22,6 +22,7 @@ import (
 )
 
 type Snapshot struct {
+	Shared                       *SharedState
 	Screen                       string
 	Cursor                       image.Point
 	Visible, Exited, MouseMotion bool
@@ -323,18 +324,28 @@ func (s *Host) inputEvent(event any) {
 		if err != nil {
 			s.state.Err = err
 		}
+	default:
+		switch event.(type) {
+		case uv.KeyPressEvent, string:
+			s.offset = 0
+		}
+		sendVTInput(s.em, event, s.modes)
+	}
+}
+
+// Both local PTYs and shared-shell controllers use the same terminal encoding.
+func sendVTInput(em *vt.Emulator, event any, modes map[ansi.Mode]bool) {
+	switch v := event.(type) {
 	case uv.KeyPressEvent:
-		s.offset = 0
 		// x/vt's legacy matcher compares the whole struct; discard event metadata.
 		if v.Text != "" && v.Mod & ^uv.ModShift == 0 {
-			s.em.SendText(v.Text)
+			em.SendText(v.Text)
 		} else {
-			s.em.SendKey(uv.KeyPressEvent{Code: v.Code, Mod: v.Mod})
+			em.SendKey(uv.KeyPressEvent{Code: v.Code, Mod: v.Mod})
 		}
 	case string:
-		s.offset = 0
 		// Unbracketed pasted newlines must not execute commands implicitly.
-		if !s.modes[ansi.ModeBracketedPaste] {
+		if !modes[ansi.ModeBracketedPaste] {
 			v = strings.NewReplacer("\r", " ", "\n", " ").Replace(v)
 		}
 		v = strings.Map(func(r rune) rune {
@@ -343,16 +354,16 @@ func (s *Host) inputEvent(event any) {
 			}
 			return r
 		}, v)
-		s.em.Paste(v)
+		em.Paste(v)
 	case uv.MouseEvent:
 		_, motion := v.(uv.MouseMotionEvent)
 		_, release := v.(uv.MouseReleaseEvent)
-		if motion && !s.modes[ansi.ModeMouseAnyEvent] && !(s.modes[ansi.ModeMouseButtonEvent] && v.Mouse().Button != uv.MouseNone) {
+		if motion && !modes[ansi.ModeMouseAnyEvent] && !(modes[ansi.ModeMouseButtonEvent] && v.Mouse().Button != uv.MouseNone) {
 			return
 		}
-		if release && !(s.modes[ansi.ModeMouseNormal] || s.modes[ansi.ModeMouseButtonEvent] || s.modes[ansi.ModeMouseAnyEvent]) {
+		if release && !(modes[ansi.ModeMouseNormal] || modes[ansi.ModeMouseButtonEvent] || modes[ansi.ModeMouseAnyEvent]) {
 			return
 		}
-		s.em.SendMouse(v)
+		em.SendMouse(v)
 	}
 }

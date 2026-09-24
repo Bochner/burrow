@@ -109,7 +109,7 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfer
             os.write(outer,b"\x1bb")
             wait("SAVED CONNECTIONS")
             os.write(outer,("shell "+name+"\r").encode())
-            wait("local / not recorded")
+            wait("CONTROL")
             before_transfer=cli("downloads",transfer["id"])
             os.write(outer,b"printf '%s%s\\n' DOWNLOAD_ SHELL_LIVE\r")
             wait("DOWNLOAD_SHELL_LIVE")
@@ -187,7 +187,7 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfer
         wait("Enter Shell")
         os.write(outer, b"\x1b[B\r")
         wait("Shell #1")
-        wait("local / not recorded")
+        wait("CONTROL")
         os.write(outer, b"printf '%s%s\\n' BURROW_ MENU_SHELL\r")
         wait("BURROW_MENU_SHELL")
         assert cli("inspect", name)["masterPID"] == master

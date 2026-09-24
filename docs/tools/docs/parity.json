@@ -199,12 +199,14 @@
       "targets": [
         "//core/cmd/burrow:ssh_shell_test"
       ],
-      "scope": "Frontend-local shells and PTY restoration; retained shared TUI attachment remains separate.",
+      "scope": "Retained shared TUI shells: separate headless controller, explicit takeover both ways, observer isolation, two full-screen applications, gap recovery, history, detach/reattach, frontend disappearance, quit retention and PTY restoration.",
       "capabilities": [
         "shell.close",
         "shell.list",
         "shell.open",
-        "shell.resume"
+        "shell.resume",
+        "shell.control",
+        "shell.detach"
       ]
     },
     {
@@ -254,7 +256,7 @@
       "targets": [
         "//core/cmd/burrow:ssh_shell_test"
       ],
-      "scope": "Retained SSH lifecycle, independent no-TTY control/readers, generation-checked takeover, private input, geometry, bounded history and snapshot recovery, backpressure, close races and truthful loss; TUI attachment remains separate.",
+      "scope": "Retained SSH lifecycle, independent no-TTY control/readers, generation-checked takeover, private input, geometry, bounded history and snapshot recovery, backpressure, close races and truthful loss; TUI attachment has additional shell_lab coverage.",
       "capabilities": [
         "session.create",
         "session.list",

@@ -14,6 +14,8 @@ import (
 	"unicode"
 
 	"github.com/Bochner/burrow/core/launch"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 	"golang.org/x/sys/unix"
@@ -66,11 +68,14 @@ type ShellOutput struct {
 // A display snapshot, not serialized emulator/parser state. Consumers render
 // this complete view and poll snapshots again; never replay bytes into it.
 type ShellScreen struct {
-	Text      string `json:"text"`
-	CursorX   int    `json:"cursorX"`
-	CursorY   int    `json:"cursorY"`
-	Visible   bool   `json:"visible"`
-	Alternate bool   `json:"alternate"`
+	HistoryLines int    `json:"historyLines"`
+	ScrollOffset int    `json:"scrollOffset"`
+	InputModes   []int  `json:"inputModes"`
+	Text         string `json:"text"`
+	CursorX      int    `json:"cursorX"`
+	CursorY      int    `json:"cursorY"`
+	Visible      bool   `json:"visible"`
+	Alternate    bool   `json:"alternate"`
 }
 
 func decodeShellRequest(raw string, value any) error {
@@ -139,7 +144,7 @@ func observeShell(ctx context.Context, w string, args []string) (ShellOutput, er
 		after = args[4]
 	}
 	arguments := []string{after}
-	if args[1] == "snapshot" {
+	if args[1] == "snapshot" && len(args) == 4 {
 		arguments = nil
 	}
 	result, err := ownerCommand(ctx, w, s.ID, args[1], arguments)
@@ -155,15 +160,47 @@ func observeShell(ctx context.Context, w string, args []string) (ShellOutput, er
 
 // Called while holding the same lock as launch, close, output and geometry.
 func (s *retainedShell) sharedCommand(req hovel.PayloadCommandRequest) (any, error) {
-	if req.Command == "snapshot" && len(req.Args) == 0 && req.InputData == "" && req.InputEncoding == "" {
-		out := ShellOutput{Shell: s.record, Data: []byte{}, Oldest: s.record.Dropped, Next: s.record.Received, Closed: s.record.State == "closed" || s.record.State == "exited", Lost: s.record.State == "lost", Synchronization: "out-of-sync"}
+	closed := s.record.State == "closed" || s.record.State == "exited"
+	if closed && s.done != nil {
+		// Do not publish final completion before its audit result is available.
+		select {
+		case <-s.done:
+		default:
+			closed = false
+		}
+	}
+	if req.Command == "snapshot" && len(req.Args) <= 1 && req.InputData == "" && req.InputEncoding == "" {
+		offset := 0
+		if len(req.Args) == 1 {
+			var err error
+			offset, err = strconv.Atoi(req.Args[0])
+			if err != nil || offset < 0 || offset > 1000 {
+				return nil, fmt.Errorf("invalid history offset; expected 0..1000")
+			}
+		}
+		out := ShellOutput{Shell: s.record, Data: []byte{}, Oldest: s.record.Dropped, Next: s.record.Received, Closed: closed, Lost: s.record.State == "lost", Synchronization: "out-of-sync"}
 		if s.screen != nil {
+			history := s.screen.ScrollbackLen()
+			offset = min(offset, history)
+			if s.screen.IsAltScreen() {
+				offset = 0
+			}
+			cellAt := s.screen.CellAt
+			if offset > 0 {
+				cellAt = func(x, y int) *uv.Cell {
+					line := history - offset + y
+					if line < history {
+						return s.screen.ScrollbackCellAt(x, line)
+					}
+					return s.screen.CellAt(x, line-history)
+				}
+			}
 			// Bound variable-sized cell content before Render duplicates links per
 			// line. Fixed-size style overhead is bounded by the geometry limit.
 			contentBytes := 0
 			for y := 0; y < s.record.Rows; y++ {
 				for x := 0; x < s.record.Columns; x++ {
-					if cell := s.screen.CellAt(x, y); cell != nil {
+					if cell := cellAt(x, y); cell != nil {
 						contentBytes += len(cell.Content) + len(cell.Link.URL) + len(cell.Link.Params)
 						if contentBytes > 256<<10 {
 							out.RecoveryError = "screen content exceeds 256 KiB render budget; view remains out-of-sync"
@@ -173,8 +210,29 @@ func (s *retainedShell) sharedCommand(req hovel.PayloadCommandRequest) (any, err
 				}
 			}
 			cursor := s.screen.CursorPosition()
-			out.Screen = &ShellScreen{Text: s.screen.Render(), CursorX: cursor.X, CursorY: cursor.Y, Visible: s.cursorVisible, Alternate: s.screen.IsAltScreen()}
+			text := ""
+			if offset == 0 {
+				text = s.screen.Render()
+			} else {
+				buf := uv.NewRenderBuffer(s.record.Columns, s.record.Rows)
+				for y := range s.record.Rows {
+					for x := range s.record.Columns {
+						buf.SetCell(x, y, cellAt(x, y))
+					}
+				}
+				text = buf.Render()
+			}
+			out.Screen = &ShellScreen{Text: text, CursorX: cursor.X, CursorY: cursor.Y, Visible: s.cursorVisible && offset == 0, Alternate: s.screen.IsAltScreen(), HistoryLines: history, ScrollOffset: offset}
+			out.Screen.InputModes = []int{}
+			for _, mode := range []int{1, 9, 66, 1000, 1002, 1003, 1006, 2004} {
+				if s.inputModes[ansi.DECMode(mode)] {
+					out.Screen.InputModes = append(out.Screen.InputModes, mode)
+				}
+			}
 			out.Synchronization = "snapshot-current"
+			if offset > 0 {
+				out.Synchronization = "snapshot-history"
+			}
 			if out.Lost {
 				out.Synchronization = "last-known-screen"
 			}
@@ -193,7 +251,7 @@ func (s *retainedShell) sharedCommand(req hovel.PayloadCommandRequest) (any, err
 			return nil, fmt.Errorf("invalid shell output position")
 		}
 		oldest := s.record.Dropped
-		out := ShellOutput{Shell: s.record, Data: []byte{}, Oldest: oldest, Next: after, Gap: after < oldest, Closed: s.record.State == "closed" || s.record.State == "exited", Lost: s.record.State == "lost", Synchronization: "stream-only"}
+		out := ShellOutput{Shell: s.record, Data: []byte{}, Oldest: oldest, Next: after, Gap: after < oldest, Closed: closed, Lost: s.record.State == "lost", Synchronization: "stream-only"}
 		if out.Gap {
 			out.Synchronization = "out-of-sync"
 		} else {
@@ -318,12 +376,18 @@ func (s *retainedShell) resize(columns, rows int) error {
 
 func (s *retainedShell) initScreen() {
 	s.screen = vt.NewEmulator(s.record.Columns, s.record.Rows)
-	s.screen.SetScrollbackSize(0)
+	s.screen.SetScrollbackSize(1000)
 	s.cursorVisible = true
-	s.screen.SetCallbacks(vt.Callbacks{CursorVisibility: func(visible bool) { s.cursorVisible = visible }})
+	s.inputModes = make(map[ansi.Mode]bool)
+	s.screen.SetCallbacks(vt.Callbacks{
+		CursorVisibility: func(visible bool) { s.cursorVisible = visible },
+		EnableMode:       func(mode ansi.Mode) { s.inputModes[mode] = true },
+		DisableMode:      func(mode ansi.Mode) { delete(s.inputModes, mode) },
+	})
 	// The pinned VT's RIS reset makes the cursor visible without its callback.
 	s.screen.RegisterEscHandler('c', func() bool {
 		s.cursorVisible = true
+		clear(s.inputModes)
 		return false // Continue through the emulator's actual reset handler.
 	})
 	// Render-only: terminal queries cannot inject unfenced input. Controllers may

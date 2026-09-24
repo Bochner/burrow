@@ -383,7 +383,7 @@ func (m *frame) updateForm(msg tea.Msg) tea.Cmd {
 		}
 		m.modal = ""
 		if completed.GetBool("approved") {
-			return tea.Quit
+			return m.keepRunning()
 		}
 	case "menu":
 		return m.menuAction(completed.GetInt("action"))
@@ -724,7 +724,7 @@ func (m *frame) formControls(text string) map[string]int {
 }
 
 func quitForm() *huh.Form {
-	return confirmForm("", "No connections to close. Daemon remains.\nFrontend-local terminals end when Burrow exits.", "Quit", "Keep working")
+	return confirmForm("", "No connections to close. Daemon remains.\nLocal editors and Hovel CLI end when Burrow exits.", "Quit", "Keep working")
 }
 
 func (m *frame) stopAuthentication() {

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Bochner/burrow/core/launch"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 	"golang.org/x/sys/unix"
@@ -24,6 +25,8 @@ import (
 
 const shellKind = "burrow-shell-v1"
 const shellOutputLimit = 64 << 10
+
+var ErrShellUnavailable = errors.New("shell unavailable for this workspace/connection; no adoption or restoration")
 
 type shellLaunchRequest struct {
 	Connection State `json:"connection"`
@@ -96,6 +99,7 @@ type retainedShell struct {
 	token         string // Ephemeral; never part of Shell, logs or evidence.
 	screen        *vt.Emulator
 	cursorVisible bool
+	inputModes    map[ansi.Mode]bool
 }
 
 func sessionArgs(w string, args []string) (bool, string, error) {
@@ -131,6 +135,13 @@ func sessionArgs(w string, args []string) (bool, string, error) {
 				return false, "", nil
 			}
 			break
+		}
+		if args[1] == "snapshot" && len(args) == 5 {
+			offset, err := strconv.Atoi(args[4])
+			if err != nil || offset < 0 || offset > 1000 {
+				return false, "", fmt.Errorf("invalid history offset; expected 0..1000")
+			}
+			return false, "", nil
 		}
 		if args[1] == "observe" && len(args) == 5 {
 			_, err := strconv.ParseUint(args[4], 10, 64)
@@ -195,7 +206,7 @@ func executeSession(ctx context.Context, w string, args []string) (any, error) {
 	}
 	hash := shellReview(args[1], w, state, shellID, columns, rows)
 	if !yes {
-		text := fmt.Sprintf("Create one retained SSH shell at %dx%d through the verified master. It survives this CLI's exit; shared headless control is available. TUI attachment follows separately.", columns, rows)
+		text := fmt.Sprintf("Create one retained SSH shell at %dx%d through the verified master. It survives frontend exit; headless controllers and TUI observers share this session.", columns, rows)
 		if shellID != "" {
 			text = "Close only this shell's SSH client and channel; preserve the master and sibling resources. Remote commands and escaped descendants may have uncertain outcomes."
 		}
@@ -283,7 +294,7 @@ func inspectShell(ctx context.Context, w, name, id string) (Shell, error) {
 			return shellState(ctx, w, ref)
 		}
 	}
-	return Shell{}, fmt.Errorf("shell unavailable for this workspace/connection; no adoption or restoration")
+	return Shell{}, ErrShellUnavailable
 }
 
 func shellAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
