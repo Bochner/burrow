@@ -1,0 +1,40 @@
+<!-- burrow-doc: {"title":"Troubleshooting","group":"Reference","order":100,"description":"Diagnose setup refusals, unknown owners, authentication, transfer and evidence failures without repeating uncertain work."} -->
+<article>
+<h1>Troubleshooting</h1>
+<p>Keep the exact command, workspace, returned resource ID and error. Review and submission are not proof of execution. Inspect an uncertain operation before repeating it; a new <code>run now</code>, survey or chain throw can execute the work again.</p>
+<h2 id="setup">Installation and startup</h2>
+<table><thead><tr><th>Symptom</th><th>Next step</th></tr></thead><tbody>
+<tr><td>Unknown <code>capabilities</code>, <code>workspace</code>, <code>follow</code> or <code>agent</code> command</td><td>Check <code>burrow --help</code> and the executable you launched. Those commands are in current source, beyond v0.1.0. See the <a href="user-guide.html#versions">version table</a>.</td></tr>
+<tr><td>Pinned Hovel package is not cached</td><td>Run normal setup online, or supply the exact wheel with <code>--hovel-package FILE</code>. A fresh cache alone cannot satisfy <code>--offline</code>.</td></tr>
+<tr><td>Checksum mismatch or <code>.pending</code> cache reservation</td><td>Preserve the reported path and inspect an interrupted or changed install. Repeating launch will not adopt it; there is no checksum override.</td></tr>
+<tr><td>Unsafe directory, symlink or socket path too long</td><td>Use a canonical private workspace under a trusted parent. Connection sockets must fit the 90-byte path limit; select a shorter workspace path when necessary. Do not weaken permissions to bypass refusal.</td></tr>
+<tr><td>TUI requires terminal input</td><td>Run in a real terminal. Use <code>status</code> for release-compatible JSON setup, or current-source <code>workspace inspect</code> for read-only verification.</td></tr>
+</tbody></table>
+<p>Setup logs are retained in <code>WORKSPACE/burrow-launch.log</code>. Receipts, socket/process identity and ownership checks protect existing resources. Burrow refuses an unknown runtime root, daemon lock/status, stale receipt or replacement socket.</p>
+<h2 id="ownership">Unknown, lost or older owners</h2>
+<ol>
+<li>In current source, run <code>burrow --workspace PATH workspace inspect</code>. If the daemon cannot be verified, stop resource mutations and preserve the launch log, receipt and workspace.</li>
+<li>With a verified daemon, use <code>connections</code>, <code>inspect NAME</code>, <code>transfers</code> and <code>run inspect ID</code>. Failed observation means unverified, not an empty inventory.</li>
+<li>For an older live manager, review <a href="workspace-navigation.html#manager">restart or retirement</a> only when ending all its connections is intended. The command does not restart Hovel or recover a crashed daemon.</li>
+<li>For unknown ownership or a lost daemon, investigate the reported path and associated process/socket identity before manual recovery. Failure to connect does not prove a process is dead or that files are safe to remove.</li>
+</ol>
+<p>There is no force-delete, automatic restart, resource adoption or automatic reconnect. Preserve saved settings, collected artifacts and unknown files. The known <a href="safety.html#hovel-limitation">Hovel SQLite limitation</a> can interrupt active work; <code>database is locked</code>, daemon loss and completion uncertainty must remain distinct outcomes.</p>
+<h2 id="authentication">Authentication and forwarding</h2>
+<table><thead><tr><th>Symptom</th><th>Next step</th></tr></thead><tbody>
+<tr><td>Connecting never becomes connected</td><td>Inspect the exact creation. An asynchronous launch can fail after the CLI returns. For private challenges use guided connect, <code>--prompt</code> or bare <code>--password</code>.</td></tr>
+<tr><td>Key or agent not accepted</td><td>Check the resolved user, key/config path and accessible agent socket. Without an explicit key Burrow uses current-user OpenSSH selection. A key file's existence does not establish successful authentication.</td></tr>
+<tr><td>Password field is visible in the TUI</td><td>Ordinary TUI authentication uses the owner's visible-entry preference. Bare <code>--password</code> and chain authentication use hidden fields; CLI secret prompts are hidden. See <a href="connections.html#authentication">authentication</a>.</td></tr>
+<tr><td>Listener exists but traffic fails</td><td>Check the service from the correct side, destination and server forwarding permissions. A bound listener does not establish application health. See <a href="forwarding.html">forwarding</a>.</td></tr>
+<tr><td>Saved chain refuses after upgrade or recreation</td><td>Inspect the build and complete creation IDs, then explicitly re-export. A reused connection name or port is not the original resource.</td></tr>
+</tbody></table>
+<h2 id="files-output">Files, output and reports</h2>
+<table><thead><tr><th>Symptom</th><th>Next step</th></tr></thead><tbody>
+<tr><td>Upload or script path refused</td><td>Use <code>local</code> to find the configured upload root. Place a regular file inside it and use a relative path. The process working directory is not an upload fallback.</td></tr>
+<tr><td>Transfer failed or was cancelled</td><td>Read <code>transfers ID</code> and the per-file result. Existing destinations survive interrupted replacement; labelled partials can remain. Retry selected failures with a fresh review; copying restarts at zero.</td></tr>
+<tr><td>Command returned success but the target command failed</td><td>Read <code>remoteExit</code> or <code>localExit</code>, capture completeness and collection separately. A recorded result can have a nonzero command exit.</td></tr>
+<tr><td>Collection failed</td><td>Retry <code>run collect ID</code> for the same retained run. Do not prepare another run merely to recover output.</td></tr>
+<tr><td>Output or report unavailable after loss</td><td>Check Hovel's registered artifacts. Uncollected output has no recovery guarantee; unknown working files are not proof of complete capture.</td></tr>
+<tr><td>Ctrl+N/Ctrl+L or profile editor unavailable</td><td>Install local Vim with syntax/runtime support. Use CLI run output/report commands where appropriate; Burrow does not download an editor.</td></tr>
+</tbody></table>
+<p>The <a href="runs.html#staging-cleanup">script cleanup guide</a>, <a href="chains.html#cleanup">chain troubleshooting</a> and <a href="agent-skills.html">skill discovery/update guidance</a> cover their specific limits. The website's <a href="../reports/">Reports</a> page describes CI evidence, not missing operational reports in your workspace.</p>
+</article>

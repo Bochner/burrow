@@ -11,13 +11,19 @@ routes; `docs/site/public/assets/site.css`; Astro configuration; JavaScript
 manifest/lock and toolchain pins; Aspect/Bazel documentation wiring and the
 CI-to-Pages artifact promotion pattern.
 
-Changes: Burrow name, artwork, repository/Pages URLs, planning-stage content,
+Changes: Burrow name, artwork, repository/Pages URLs, operator content,
 and the authorized-use warning's product name. Book navigation, chapter
 numbering, responsive layout, search, and the upstream visual style are retained.
 Hovel-specific modules, generated SDK references, demos, version
 macros, and Tidewave integration are omitted because Burrow does not have those
 surfaces. Staging and checks are small Python tools under `docs/tools/docs/`.
-The inherited stylesheet is kept intact apart from attribution/branding.
+The inherited stylesheet retains its layout and branding. The #92 accessibility
+corrections wrap long prose tokens and use the existing muted text color for
+dim labels so navigation remains readable on the dark background. The existing
+hero grid now fits the image-first Burrow fragment and allows its text column
+to shrink instead of overlapping the image or clipping on small screens.
+Heading anchors leave room for the sticky header; table labels retain a minimum
+readable width on small screens.
 Burrow's staging tool also restores owner write access to previously copied
 output directories so repeated staging can replace read-only Bazel artifacts.
 
@@ -56,6 +62,17 @@ remote cache configuration, runtime history, or test reports are copied.
 The book publishes only explicit `docs/site` content and assets, not the full
 private research directory or local worktrees. This attribution applies to
 adapted upstream material; it does not select a license for all Burrow code.
+
+## Operator book reconciliation (#92)
+
+The operator reading path, short concept tables, ordered workflows and native
+advanced-detail disclosures follow Hovel's user guide at the already-inspected
+`a4cbfdf7769a9551695088c11061e3cabc368e07` revision. Existing book/sidebar/search
+components and flow-diagram classes are reused; no design system, frontend
+library or runtime dependency was added. Burrow's current-source versus v0.1.0
+availability, installation, lifetime and troubleshooting text is original.
+Historical research and ADRs are unchanged. See `BOOK-AUDIT.md` for the
+chapter/source audit and verification scope.
 
 ## Chain walkthrough diagrams (#62)
 
