@@ -248,6 +248,19 @@
         "workspace.list",
         "workspace.open"
       ]
+    },
+    {
+      "source": "core/cmd/burrow/sessions_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_shell_test"
+      ],
+      "scope": "Retained remote shell PIDs, launcher exit, exact selected/connection/manager teardown, ownership/review refusals, bounded output and truthful loss; no shared input or observation.",
+      "capabilities": [
+        "session.create",
+        "session.list",
+        "session.inspect",
+        "session.close"
+      ]
     }
   ]
 }

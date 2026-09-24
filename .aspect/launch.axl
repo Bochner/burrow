@@ -14,7 +14,7 @@ def _impl(ctx: TaskContext) -> int:
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/files.go", root + "/core/connection/remote_files.go", root + "/core/connection/downloads.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
-        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/manager.go", root + "/core/connection/forward.go", root + "/core/connection/proxy.go", root + "/core/connection/forward_control_test.go"]).current_dir(root).spawn().wait()
+        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/manager.go", root + "/core/connection/sessions_linux.go", root + "/core/connection/forward.go", root + "/core/connection/proxy.go", root + "/core/connection/forward_control_test.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/terminal/host_linux.go", root + "/core/terminal/host_test.go"]).current_dir(root).spawn().wait()
@@ -34,6 +34,7 @@ def _impl(ctx: TaskContext) -> int:
         "check": ["test", "//core/cmd/burrow:setup_test", "//core/cmd/burrow:connection_test", "//core/cmd/burrow:profile_test", "//core/cmd/burrow:interaction_test", "//core/launch:online_test", "//core/launch:digest_test", "//core/launch:audit_test", "//core/terminal:host_test", "//core/cmd/burrow:terminal_test"],
         "ssh-check": ["test", "--bazel-flag=--build_tests_only", "--bazel-flag=--nocache_test_results", "--bazel-flag=--test_tag_filters=acceptance", "//..."],
         "workspace-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--workspace-check"],
+        "sessions-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--sessions-check"],
         "shell-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--shell-check"],
         "files-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--files-check"],
         "runs-check": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--runs-check"],
@@ -51,7 +52,7 @@ def _impl(ctx: TaskContext) -> int:
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected agent-discovery, run, check, clean, ssh-check, workspace-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
+        print("expected agent-discovery, run, check, clean, ssh-check, workspace-check, sessions-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, package, or format")
         return 2
     if mode == "check":
         commands[mode] += ["//core/cmd/burrow:agent_test", "//core/cmd/burrow:activity_test"]
@@ -63,6 +64,6 @@ burrow = task(
         "mode": args.positional(default = ["check"], minimum = 0, maximum = 1),
         "options": args.trailing_var_args(description = "Burrow options, starting with --workspace PATH."),
     },
-    summary = "Run, check, agent-discovery, clean build outputs, ssh-smoke, ssh-check, workspace-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-latency, format or package the production Linux frontend.",
+    summary = "Run, check, agent-discovery, clean build outputs, ssh-smoke, ssh-check, workspace-check, sessions-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-latency, format or package the production Linux frontend.",
     implementation = _impl,
 )

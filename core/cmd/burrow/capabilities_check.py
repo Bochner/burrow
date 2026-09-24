@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory(prefix="burrow-api-") as scratch:
         route = subprocess.run([binary, *argv], env=env, capture_output=True,
                                text=True, timeout=15)
         error = route.stderr
-        if op["id"] in ("connection.close", "profile.connect"):
+        if op["id"] in ("connection.close", "profile.connect") or op["id"].startswith("session."):
             error = "Burrow: " + json.loads(error)["error"]["message"] + "\n"
         assert route.returncode == 1 and error == baseline.stderr, (op["id"], route, baseline)
     for verb in ("prepare", "now"):

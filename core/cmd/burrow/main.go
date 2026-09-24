@@ -25,6 +25,8 @@ const usage = `Burrow — verified Hovel workspace
 Usage: burrow --workspace /absolute/workspace [options] [status|tui|COMMAND]
        burrow --workspace /absolute/workspace workspace open|inspect|restart|retire
        burrow --workspace /absolute/workspace follow [--json]
+       burrow --workspace /absolute/workspace session create|list CONNECTION
+       burrow --workspace /absolute/workspace session inspect|close CONNECTION ID
        burrow workspace list PATH [PATH...]
        burrow capabilities [ID]
        burrow agent install claude|codex|opencode --scope user|project [--dry-run]
@@ -47,6 +49,9 @@ workspace restart/retire returns a JSON review; --yes --review HASH confirms tha
 Both retire the entire owner, including concurrent additions, without opening a TUI.
 restart also registers the current build; next approved connect starts a manager.
 Workspace routes emit JSON results and JSON errors on stderr (exit 1).
+session manages retained SSH shells headlessly; create/close review before --yes [--review HASH].
+These shells survive CLI exit; shared input, observation and TUI attachment follow later.
+session failures emit JSON errors on stderr (exit 1); inspect before retrying uncertain creation.
 capabilities prints the versioned JSON operation contract without initializing anything.
 agent install installs bundled standalone skills offline; --source PATH selects a trusted local bundle.
 tui opens the management interface (default); quit retains the daemon.
@@ -134,6 +139,8 @@ func run(args []string) (failure error) {
 		operation = "connection.close"
 	} else if fs.Arg(0) == "profile" && fs.Arg(1) == "connect" {
 		operation = "profile.connect"
+	} else if fs.Arg(0) == "session" {
+		operation = "session." + fs.Arg(1)
 	}
 	if operation != "" {
 		defer func() {

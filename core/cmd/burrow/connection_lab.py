@@ -27,6 +27,7 @@ from core.cmd.burrow.manager_lab import manager_checks, audit_cleanup_checks
 from core.cmd.burrow.workspace_lab import workspace_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
+from core.cmd.burrow.sessions_lab import session_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
 from core.cmd.burrow.files_lab import file_checks, load_checks, file_ui
 from core.cmd.burrow.runs_lab import run_checks, run_ui
@@ -47,6 +48,7 @@ parser.add_argument("--chains-check", action="store_true", help="check productio
 parser.add_argument("--scripts-check", action="store_true", help="check script inputs and staging through retained runs")
 parser.add_argument("--automation-check", action="store_true", help="check selected local tools and supported Hovel automation")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
+parser.add_argument("--sessions-check", action="store_true", help="check retained SSH shell lifecycle only")
 parser.add_argument("--files-check", action="store_true", help="check real SFTP browsing only")
 parser.add_argument("--forward-check", action="store_true", help="check real local forwarding only")
 parser.add_argument("--reverse-check", action="store_true", help="check real reverse forwarding only")
@@ -202,6 +204,10 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if args.sessions_check or args.shell_check:
+            session_checks(burrow, w, first, command, container, wait, options, root, daemons)
+            if args.sessions_check:
+                raise SystemExit(0)
         if args.chains_check:
             handoff_workspace = root / "hc"
             daemons.append(burrow(handoff_workspace, "status")["pid"])
@@ -652,10 +658,15 @@ launch:
             wait(lambda: screen_contains(b"inspect gateway"))
             os.write(outer, b"\r")
             wait(lambda: screen_contains(b'"name"'))
-            os.write(outer, b"\x1b[6~" * 3)
-            wait(lambda: screen_contains(b'"socket"'))
-            os.write(outer, b"\x1b[6~" * 5)  # PgDn reveals the remaining inspect fields
-            wait(lambda: screen_contains(b"socketInode"))
+            # PgDn moves one output line. Assert that actual fields can be
+            # revealed without tying the check to a fixed metadata row count.
+            for field in (b'"shellCount"', b'"shellRevision"', b'"socket"', b'"socketInode"'):
+                for _ in range(64):
+                    if screen_contains(field):
+                        break
+                    os.write(outer, b"\x1b[6~")
+                else:
+                    raise AssertionError(f"inspect field unreachable by scrolling: {field!r}")
             os.write(outer, b"close gateway\r")
             wait(lambda: screen_contains(b"Close gateway"))
             os.write(outer,b"\r")

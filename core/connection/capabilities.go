@@ -103,6 +103,10 @@ const connectionInputs = "name host user connection-options"
 const runInputs = "connection run-options command"
 
 var commandOperations = []Operation{
+	op("session.create", "session create", "session create CONNECTION [--yes] [--review HASH]", "session create target", "Create a Hovel-retained SSH shell", "connection yes review", "ShellReview", "Creates one shell through the exact existing manager and master; survives launcher exit. No input or observation routes yet.", confirmReview, "core/connection/sessions_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.list", "session list", "session list CONNECTION", "session list target", "List retained shells for a connection", "connection", "Shells", "Reads Hovel session records; unavailable modules remain explicit.", noReview, "core/connection/sessions_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.inspect", "session inspect", "session inspect CONNECTION ID", "session inspect target shell-id", "Inspect retained shell identity and state", "connection session-id", "Shell", "Reads lifecycle and bounded output counts; never reads terminal bytes or reconnects.", noReview, "core/connection/sessions_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.close", "session close", "session close CONNECTION ID [--yes] [--review HASH]", "session close target shell-id", "Close one retained SSH shell", "connection session-id yes review", "ShellReview", "Terminates and waits for its owned SSH subprocess; preserves the master and sibling resources. Remote-command outcomes and escaped descendants remain uncertain.", confirmReview, "core/connection/sessions_linux.go", "core/cmd/burrow/sessions_lab.py"),
 	op("connection.list", "connections", "connections", "connections", "List live, lost and unverified connection owners", "", "States", inspectEffect, noReview, "core/connection/commands.go", "core/cmd/burrow/manager_lab.py"),
 	op("connection.inspect", "inspect", "inspect NAME", "inspect target", "Inspect one connection and its ownership", "name", "State", inspectEffect, noReview, "core/connection/commands.go", "core/cmd/burrow/manager_lab.py"),
 	op("connection.connect", "connect", "connect NAME HOST --user USER [OPTIONS]", "connect target 192.0.2.10 --user alice", "Create a shell-free SSH master; bare connect opens a human form", connectionInputs, "ConnectionReview", "After approval authenticates and creates a retained connection; may initialize the workspace manager. SSH host keys are not verified under the accepted host-trust policy.", confirmReview, "core/connection/commands.go", "core/cmd/burrow/authentication_lab.py"),
@@ -171,6 +175,9 @@ func init() {
 	for i := range commandOperations {
 		op := &commandOperations[i]
 		switch op.ID {
+		case "session.create", "session.list", "session.inspect", "session.close":
+			op.Human = "Headless CLI: " + strings.TrimPrefix(op.Agent.Syntax, "burrow --workspace PATH ") + "; TUI migration follows separately"
+			op.Scope = "Explicit workspace, connection name and opaque Hovel shell ID; connection creation and manager generation are verified."
 		case "run.prepare", "run.now":
 			verb := strings.TrimPrefix(op.ID, "run.")
 			yes := ""
@@ -212,6 +219,7 @@ func ResultSchemas() map[string]any {
 		"Tunnel": Tunnel{}, "Tunnels": []Tunnel{},
 		"FileRoots": FileRoots{}, "FileListing": FileListing{}, "FileTree": FileTree{},
 		"Download": Download{}, "Downloads": Downloads{}, "DownloadPlan": DownloadPlan{},
+		"Shell": Shell{}, "Shells": []Shell{},
 		"Run": Run{}, "Runs": []Run{}, "RunOutput": RunOutput{},
 		"Reports": []reports.Entry{}, "Document": reports.Document{}, "ChainSelection": chainSelection{},
 		"TunnelHTTP": tunnelHTTPResult{}, "Workspace": launch.Info{}, "Strings": []string{}, "ManagerReview": ManagerReview{},
@@ -220,7 +228,7 @@ func ResultSchemas() map[string]any {
 	for name, value := range values {
 		out[name] = jsonShape(reflect.TypeOf(value))
 	}
-	for _, name := range []string{"ConnectionReview", "CloseReview", "ProfileChange", "TunnelReview", "TunnelCheck", "Proxy", "ProxyReview", "DownloadReview", "TransferInventory", "RunReview", "HTTPReview", "Backup", "SavedChain", "Terminal", "Inventory"} {
+	for _, name := range []string{"ShellReview", "ConnectionReview", "CloseReview", "ProfileChange", "TunnelReview", "TunnelCheck", "Proxy", "ProxyReview", "DownloadReview", "TransferInventory", "RunReview", "HTTPReview", "Backup", "SavedChain", "Terminal", "Inventory"} {
 		out[name] = map[string]any{"description": resultDescriptions[name]}
 	}
 	// These actual replies are maps or unions, not named Go structs.
@@ -240,6 +248,7 @@ func ResultSchemas() map[string]any {
 	tunnelReview := object("review")
 	tunnelReview["properties"].(map[string]any)["digest"] = map[string]string{"type": "string"}
 	unions := map[string][]any{
+		"ShellReview":       {review, ref("Shell")},
 		"ConnectionReview":  {review, ref("State")},
 		"CloseReview":       {review, object("state", "name")},
 		"ProfileChange":     {object("review", "revision", "collection"), object("state", "name", "collection")},
@@ -261,6 +270,7 @@ func ResultSchemas() map[string]any {
 }
 
 var resultDescriptions = map[string]string{
+	"ShellReview":       "Review {review,digest}; confirmation returns Shell. Creation prepares then launches through supported Hovel throws. Failed acknowledgement requires inspection, never automatic retry.",
 	"ConnectionReview":  "Review object {review:string,digest:string} or State after confirmation. Interactive authentication may show a private prompt before State.",
 	"CloseReview":       "{review:string,digest:string} before approval; {state:'closed',name:string} after close. --review binds the exact creation, state and tunnel revision.",
 	"ProfileChange":     "Replacement review {review:string,revision:string,collection:string}; success {state:string,name:string,collection:string}.",

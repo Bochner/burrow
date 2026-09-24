@@ -26,12 +26,13 @@ const managerKind = "burrow-manager-v1"
 const buildMismatch = "installed Burrow module build differs from the requesting frontend; run burrow status to register this build; nothing was dispatched"
 
 type managerIdentity struct {
-	PasswordAuth bool   `json:"passwordAuth,omitempty"`
-	Session      string `json:"session"`
-	Generation   string `json:"generation"`
-	Workspace    string `json:"workspace"`
-	OwnerPID     int    `json:"ownerPID"`
-	RunID        string `json:"runID"`
+	RetainedShells bool   `json:"retainedShells,omitempty"`
+	PasswordAuth   bool   `json:"passwordAuth,omitempty"`
+	Session        string `json:"session"`
+	Generation     string `json:"generation"`
+	Workspace      string `json:"workspace"`
+	OwnerPID       int    `json:"ownerPID"`
+	RunID          string `json:"runID"`
 }
 
 type managerRequest struct {
@@ -116,7 +117,7 @@ func (m *manager) Close(string) error {
 }
 
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "chain-inventory", ReadOnly: true}, {Name: "tunnel-http", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "download-review", ReadOnly: true}, {Name: "downloads", ReadOnly: true}, {Name: "download-cancel"}, {Name: "download", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
+	return []hovel.PayloadCommand{{Name: "shell-register", Summary: "Confirmed shell preparation adapter only"}, {Name: "shell-start", Summary: "Confirmed shell launch adapter only"}, {Name: "shell-close", Summary: "Reviewed selected shell cleanup"}, {Name: "close-selected", Summary: "Close with an exact connection and dependent-resource review"}, {Name: "chain-inventory", ReadOnly: true}, {Name: "tunnel-http", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "download-review", ReadOnly: true}, {Name: "downloads", ReadOnly: true}, {Name: "download-cancel"}, {Name: "download", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
 }
 
 func (m *manager) inventory() ([]State, error) {
@@ -139,7 +140,7 @@ func (m *manager) inventory() ([]State, error) {
 }
 
 func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
-	if len(req.Config) > 0 || req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" {
+	if len(req.Config) > 0 || req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" || req.InputEncoding != "" {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported manager inputs")
 	}
 	if req.Command == "connect" && len(req.Args) == 3 {
@@ -190,6 +191,12 @@ func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 			return hovel.PayloadCommandResult{}, fmt.Errorf("exact manager generation required")
 		}
 		switch req.Command {
+		case "shell-register", "shell-start", "shell-close":
+			shell, err := m.shellControl(c, req)
+			if err != nil {
+				return hovel.PayloadCommandResult{}, err
+			}
+			value = shell
 		case "list":
 			if len(req.Args) != 1 {
 				return hovel.PayloadCommandResult{}, fmt.Errorf("unexpected list arguments")
@@ -199,8 +206,8 @@ func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 				return hovel.PayloadCommandResult{}, e
 			}
 			value = states
-		case "profile", "close", "shell":
-			if len(req.Args) != 2 {
+		case "profile", "close", "close-selected", "shell":
+			if (req.Command == "close-selected" && len(req.Args) != 3) || (req.Command != "close-selected" && len(req.Args) != 2) {
 				return hovel.PayloadCommandResult{}, fmt.Errorf("exact creation required")
 			}
 			s := m.connections[req.Args[1]]
@@ -212,6 +219,13 @@ func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 			}
 			if req.Command == "shell" {
 				return s.RunPayloadCommand(hovel.PayloadCommandRequest{Command: "connection-shell"})
+			}
+			if req.Command == "close-selected" {
+				current, err := s.RunPayloadCommand(hovel.PayloadCommandRequest{Command: "connection-status"})
+				var state State
+				if err != nil || json.Unmarshal([]byte(current.Stdout), &state) != nil || closeDigest(m.Workspace, state) != req.Args[2] {
+					return hovel.PayloadCommandResult{}, fmt.Errorf("connection changed after review; review close again")
+				}
 			}
 			if e := s.Close("operator confirmed selected close"); e != nil {
 				return hovel.PayloadCommandResult{}, e
@@ -321,6 +335,9 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 	if strings.HasPrefix(ctx.InputString("action", ""), "run-") {
 		return runAdapter(ctx, w)
 	}
+	if strings.HasPrefix(ctx.InputString("action", ""), "shell-") {
+		return shellAdapter(ctx, w)
+	}
 	switch ctx.InputString("action", "") {
 	case "chain-connect":
 		return chainConnectAdapter(ctx, w)
@@ -365,7 +382,7 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 		if e != nil {
 			return hovel.Result{}, e
 		}
-		m := &manager{managerIdentity: managerIdentity{PasswordAuth: true, Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, connections: map[string]*owner{}, log: ctx.Log}
+		m := &manager{managerIdentity: managerIdentity{RetainedShells: true, PasswordAuth: true, Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, connections: map[string]*owner{}, log: ctx.Log}
 		ref, e := ctx.OpenSession(m, hovel.WithName("Burrow manager"), hovel.WithKind(managerKind))
 		if e != nil {
 			dir.Close()
@@ -415,7 +432,7 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 	}
 	var found managerIdentity
 	for _, ref := range refs.Sessions {
-		if ref.ModuleID != "burrow@0.1.0" || ref.Kind == "connection" || ref.Kind == runKind || ref.State == "closed" {
+		if ref.ModuleID != "burrow@0.1.0" || ref.Kind == "connection" || ref.Kind == runKind || ref.Kind == shellKind || ref.State == "closed" {
 			continue
 		}
 		if ref.Kind != managerKind {

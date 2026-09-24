@@ -223,6 +223,18 @@ connect                             Guided connection entry (terminal)
 connect NAME HOST --user USER [options] Create shell-free SSH master
 reconnect NAME HOST --user USER [options] Explicitly replace a lost owned connection
 inspect NAME                        State, endpoint and socket identity
+session create CONNECTION [--yes] [--review HASH] Review/create a retained Hovel SSH shell
+session list CONNECTION              Discover retained Hovel shells (headless CLI)
+session inspect CONNECTION ID        Read shell identity, lifecycle and output counts
+session close CONNECTION ID [--yes] [--review HASH] Review/close only this retained shell
+Retained sessions survive CLI exit and Keep running; connection/manager close ends them.
+Creation uses supported Hovel throws and the existing verified master; no login fallback.
+Initial size is 80x24. Shared input/observation, resize and TUI attachment follow later.
+Raw Hovel send/read/attach cannot control or observe these shells. Output stays in a
+64 KiB memory suffix; inspect reports received/buffered/dropped counts, never terminal bytes.
+Loss reports lost/unavailable and uncertain command outcomes; relaunch never restores state.
+Failed creation may leave a prepared session: inspect/list, close explicitly, then review anew.
+
 shell NAME                          Open a local interactive SSH terminal
 shells                              List this frontend's shells in the workspace
 resume ID                           Resume a local shell by ID
@@ -414,6 +426,9 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "session":
+		_, _, err := sessionArgs(workspace, args)
+		return err
 	case "chain":
 		return validateChain(workspace, args)
 	case "run":
@@ -617,7 +632,7 @@ func closeOwned(ctx context.Context, w string, s State) error {
 }
 
 func closeReview(s State) string {
-	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access, including shells, transfers and tunnels; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.Name)
+	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access, including %d retained shells, frontend-local shells, transfers and tunnels; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.ShellCount, s.Name)
 }
 
 func closeOptions(args []string) (bool, string, error) {
@@ -632,7 +647,7 @@ func closeOptions(args []string) (bool, string, error) {
 }
 
 func closeDigest(w string, s State) string {
-	b, _ := json.Marshal([]any{w, s.Name, s.Session, s.Generation, s.Creation, s.MasterPID, s.Socket, s.SocketInode, s.State, s.TunnelRevision})
+	b, _ := json.Marshal([]any{w, s.Name, s.Session, s.Generation, s.Creation, s.MasterPID, s.Socket, s.SocketInode, s.State, s.TunnelRevision, s.ShellRevision})
 	return digest(string(b))
 }
 
@@ -654,7 +669,24 @@ func CloseReviewed(ctx context.Context, w string, expected State) (any, error) {
 	if closeDigest(w, current) != closeDigest(w, expected) {
 		return nil, fmt.Errorf("connection changed after review; inspect and review close again")
 	}
-	if e := closeOwned(ctx, w, expected); e != nil {
+	if expected.Generation != "" {
+		id, e := findManager(ctx, w)
+		if e != nil {
+			return nil, e
+		}
+		// Older managers cannot own this slice's shells. Preserve their existing
+		// explicit close route so an upgrade never requires forceful cleanup.
+		if !id.RetainedShells {
+			if e := closeOwned(ctx, w, expected); e != nil {
+				return nil, e
+			}
+			return map[string]string{"state": "closed", "name": expected.Name}, nil
+		}
+		var result any
+		if e := managerControl(ctx, w, managerIdentity{Session: expected.Session, Generation: expected.Generation}, "close-selected", []string{expected.Creation, closeDigest(w, expected)}, &result); e != nil {
+			return nil, fmt.Errorf("selected close unconfirmed; inspect before retrying: %w", e)
+		}
+	} else if e := closeOwned(ctx, w, expected); e != nil {
 		return nil, e
 	}
 	return map[string]string{"state": "closed", "name": expected.Name}, nil
@@ -671,13 +703,13 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	}
 	// Capture submitted identity and full safe frontend result, including reviews
 	// and pre-dispatch refusals. Owner records carry asynchronous actual outcomes.
-	if args[0] == "run" && (args[1] == "list" || args[1] == "inspect" || args[1] == "output") {
+	if (args[0] == "run" || args[0] == "session") && (args[1] == "list" || args[1] == "inspect" || args[1] == "output") {
 		return executeOperation(ctx, w, args, promptSocket)
 	}
 	switch args[0] {
-	case "connect", "reconnect", "profile", "chain", "run", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
+	case "connect", "reconnect", "profile", "chain", "run", "session", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
 		a, err := launch.BeginAudit(w, commandIdentity(args), "submitted request; see owner result", nil)
-		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove") || (args[0] == "run" && (args[1] == "cancel" || args[1] == "close"))
+		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove") || ((args[0] == "run" || args[0] == "session") && (args[1] == "cancel" || args[1] == "close"))
 		if err != nil && !cleanup {
 			return nil, err
 		}
@@ -688,16 +720,18 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 			}
 			logErr := a.Record(status, map[string]any{"result": value, "error": fmt.Sprint(failure)})
 			failure = errors.Join(failure, err, logErr)
-			if failure != nil && args[0] == "run" {
+			if failure != nil && (args[0] == "run" || args[0] == "session") {
 				id := ""
 				switch result := value.(type) {
 				case Run:
+					id = result.ID
+				case Shell:
 					id = result.ID
 				case map[string]string:
 					id = result["id"]
 				}
 				if id != "" {
-					failure = fmt.Errorf("run %s: %w; inspect that ID before retrying", id, failure)
+					failure = fmt.Errorf("%s %s: %w; inspect that ID before retrying", args[0], id, failure)
 				}
 			}
 		}()
@@ -721,6 +755,8 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		return execute(ctx, w, expanded, promptSocket)
 	}
 	switch operation.Dispatch {
+	case "session":
+		return executeSession(ctx, w, args)
 	case "chain":
 		return executeChain(ctx, w, args)
 	case "run":
