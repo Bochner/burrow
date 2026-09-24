@@ -29,12 +29,19 @@ def _impl(ctx: TaskContext) -> int:
     elif suite not in ["all", "hovel"]:
         filters += ["acceptance-" + suite]
     tests += ["--bazel-flag=--test_tag_filters=" + ",".join(filters)]
+    if mode == "preflight":
+        commands.insert(0, ["run", "//docs/tools/docs:report", "--", "begin", "--suite", suite])
+        tests += ["--bazel-flag=--build_event_json_file=" + root + "/.report-input/" + suite + "/bep.json"]
     commands.append(tests + ["//..."])
     for command in commands:
         status = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait()
         if status.code:
-            return status.code
-    return 0
+            break
+    result = status.code or 0
+    if mode == "preflight":
+        collected = ctx.std.process.command("aspect").args(["run", "//docs/tools/docs:report", "--", "collect", "--suite", suite, "--exit-code", str(result)]).current_dir(root).spawn().wait().code or 0
+        return result or collected
+    return result
 
 burrow_check = task(
     args = {"mode": args.positional(default = ["full"], minimum = 0, maximum = 2)},

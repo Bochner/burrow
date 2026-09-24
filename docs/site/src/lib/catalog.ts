@@ -1,6 +1,7 @@
 /* Adapted from Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388; Copyright 2026 William Born; Apache-2.0. Changed for Burrow; see docs/site/UPSTREAM.md. */
 import { apiFragments } from "./api";
-export type DocArea = "home" | "book" | "modules" | "api";
+import report from "../../report-default.json";
+export type DocArea = "home" | "book" | "modules" | "api" | "reports";
 
 export interface DocMetadata {
   title: string;
@@ -147,7 +148,7 @@ function parsePage(sourcePath: string, raw: string): DocPage {
 
   const relative = sourcePath.replace(/^\.\.\/content\//, "").replace(/\.html$/, "");
   const slug = relative === "index" ? "index" : relative;
-  const area: DocArea = slug === "index" ? "home" : slug.startsWith("spec/") ? "book" : slug.startsWith("api/") ? "api" : "modules";
+  const area: DocArea = slug === "index" ? "home" : slug.startsWith("spec/") ? "book" : slug.startsWith("api/") ? "api" : slug.startsWith("reports/") ? "reports" : "modules";
 
   return {
     area,
@@ -171,7 +172,9 @@ function comparePages(left: DocPage, right: DocPage): number {
   return left.order - right.order || left.title.localeCompare(right.title);
 }
 
-export const pages = Object.entries({ ...rawPages, ...apiFragments }).map(([path, raw]) => parsePage(path, raw));
+export const pages = Object.entries({ ...rawPages, ...apiFragments,
+  "../content/reports/index.html": '<!-- burrow-doc: {"title":"Burrow Test Report","group":"Reports","order":0} -->' + report.html,
+}).map(([path, raw]) => parsePage(path, raw));
 const pageBySlug = new Map(pages.map((page) => [page.slug, page]));
 if (pageBySlug.size !== pages.length) {
   throw new Error("docs content contains duplicate output slugs");

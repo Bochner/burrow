@@ -29,8 +29,15 @@ succeed. The separate Hovel compatibility workflow runs the three #86
 `hovel-followup` targets as advisory diagnostics; failures remain visible but
 do not block Repository or Pages. Restore them to the required gate after an
 official fixed runtime is pinned and verified. The strict default full gate
-still includes them. The portable job also stages the checked `_site/` and uploads it as `docs-site`.
-Pages promotes that exact artifact from successful main CI. Manual dispatch
+still includes them. Each preflight records commit-bound BEP results under
+`.report-input/`; the portable job stages `docs-base`. A required coverage job
+measures production Go lines. The report job combines all ten partitions and
+coverage from the same source/run, attaches available same-commit advisory
+evidence, and uploads `docs-site` only after `aspect burrow-report publish` passes.
+Unavailable advisory results remain explicitly missing. Repository requires
+checks, coverage and report assembly to succeed.
+Pages verifies the report commit and the complete site artifact's hashes through
+`aspect burrow-report verify SHA`, then promotes that artifact from successful main CI. Manual dispatch
 finds a successful Repository run for its exact main commit and promotes the
 existing artifact; it does not rebuild or rerun checks. Both paths skip
 deployment if main has advanced. Site artifacts and each job's
@@ -38,6 +45,18 @@ deployment if main has advanced. Site artifacts and each job's
 privacy alone does not make a Pages site private: confirm intended publication
 visibility before enabling Pages. Never stage the repository or research tree
 as the public site.
+
+The public Reports page adapts Hovel's report layout using native links, tables
+and disclosure controls. Generate its initial missing-evidence state from
+`burrow capabilities` and `docs/tools/docs/parity.json`; every inventory ID must
+have an explicit behavior-check binding. Update those bindings when adding a
+capability, and preserve separate reachability, schema and selected-semantics
+metrics. Prototype tests never contribute production coverage. For a local
+report, run preflight, coverage, site staging, then `aspect burrow-report render`
+without editing source between steps. Dirty local evidence is inspectable but
+cannot pass publication. `aspect burrow-report release` additionally requires
+usable agent routes and passing behavior evidence for every inventory capability;
+it remains failing while MVP 5 parity is incomplete.
 
 See [the upstream pin and adaptation notes](../site/UPSTREAM.md) before updating
 copied Hovel theme code or dependency versions.

@@ -43,10 +43,21 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1; matches Hovel
         if: matrix.suite == 'portable'
         with:
-          name: docs-site
+          name: docs-base
           path: _site
           include-hidden-files: true
           if-no-files-found: error
+          retention-days: 14
+      - name: Preserve commit-bound report inputs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-${{ matrix.suite }}
+          path: |
+            .report-input/**/suite.json
+            .report-input/**/evidence/**
+          include-hidden-files: true
+          if-no-files-found: warn
           retention-days: 14
       - name: Preserve test diagnostics
         if: always()
@@ -61,10 +72,79 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9
+        with:
+          launcher-version: "2026.33.3"
+          disk-cache: burrow-portable
+          repository-cache: burrow-portable
+      - run: aspect burrow-report coverage
+      - name: Preserve coverage and failures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-coverage
+          path: |
+            .report-input/**/suite.json
+            .report-input/**/coverage.lcov
+            .report-input/**/evidence/**
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  report:
+    needs: [checks, coverage]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9
+        with:
+          launcher-version: "2026.33.3"
+          disk-cache: burrow-portable
+          repository-cache: burrow-portable
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: docs-base
+          path: _site
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: evidence-*
+          path: .report-input
+          merge-multiple: true
+      - name: Attach available advisory diagnostics for this commit
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id="$(gh run list --workflow hovel-compatibility.yml --commit "$GITHUB_SHA" --status completed --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [ -n "$run_id" ]; then
+            gh run download "$run_id" --name evidence-hovel --dir .report-input || echo 'Advisory evidence unavailable; report will show missing.'
+          fi
+      - run: aspect burrow-report publish
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docs-site
+          path: _site
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
   repository:
     name: repository
     if: ${{ always() }}
-    needs: checks
+    needs: [checks, coverage, report]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
@@ -72,4 +152,6 @@ jobs:
       - name: Require every verification partition
         env:
           CHECKS_RESULT: ${{ needs.checks.result }}
-        run: test "$CHECKS_RESULT" = success
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          REPORT_RESULT: ${{ needs.report.result }}
+        run: test "$CHECKS_RESULT" = success && test "$COVERAGE_RESULT" = success && test "$REPORT_RESULT" = success

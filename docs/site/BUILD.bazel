@@ -18,6 +18,14 @@ genrule(
     cmd = "$(location //core/cmd/burrow:burrow) capabilities > $@",
 )
 
+genrule(
+    name = "report_default",
+    srcs = [":api_inventory", "//docs/tools/docs:parity.json"],
+    outs = ["report-default.json"],
+    tools = ["//docs/tools/docs:report"],
+    cmd = "$(location //docs/tools/docs:report) default --inventory $(location :api_inventory) --parity $(location //docs/tools/docs:parity.json) --output $@",
+)
+
 filegroup(
     name = "site_sources",
     srcs = glob(["public/**", "src/**"]) + ["astro.config.mjs", "package.json", "tsconfig.json"],
@@ -25,7 +33,7 @@ filegroup(
 
 js_run_binary(
     name = "astro_site",
-    srcs = [":node_modules/astro", ":site_sources", ":api_inventory"],
+    srcs = [":node_modules/astro", ":site_sources", ":api_inventory", ":report_default"],
     args = ["build"],
     chdir = package_name(),
     env = {"ASTRO_TELEMETRY_DISABLED": "1"},

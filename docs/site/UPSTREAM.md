@@ -14,12 +14,32 @@ CI-to-Pages artifact promotion pattern.
 Changes: Burrow name, artwork, repository/Pages URLs, planning-stage content,
 and the authorized-use warning's product name. Book navigation, chapter
 numbering, responsive layout, search, and the upstream visual style are retained.
-Hovel-specific modules, generated SDK references, demos, report pages, version
+Hovel-specific modules, generated SDK references, demos, version
 macros, and Tidewave integration are omitted because Burrow does not have those
 surfaces. Staging and checks are small Python tools under `docs/tools/docs/`.
 The inherited stylesheet is kept intact apart from attribution/branding.
 Burrow's staging tool also restores owner write access to previously copied
 output directories so repeated staging can replace read-only Bazel artifacts.
+
+## Public test reports (#91)
+
+Report presentation and evidence structure adapt the current Hovel revision
+`a4cbfdf7769a9551695088c11061e3cabc368e07` (verified against upstream main on
+2026-09-23): `docs/site/public/assets/report.css`, `report.js`,
+`src/pages/reports/tests/latest/index.astro`, and `tools/testreport/`.
+Copyright 2026 William Born; Apache-2.0 under the retained license.
+Burrow keeps the hero/sidebar, overview metrics, coverage, suite and target
+evidence layout. It renders static HTML with native anchor navigation, tables
+and details rather than copying Hovel's JavaScript application, linter runners
+or SDK coverage tooling. `public/assets/report.css` contains the adapted subset.
+`docs/tools/docs/report.py` and its CLI checks are original Burrow code.
+
+All measurements come from Burrow's declared targets, BEP attempts and LCOV.
+The report uses the production capability inventory and explicit selected-check
+bindings, separating CLI reachability, JSON shape documentation and observed
+behavior. No Hovel test results or coverage percentages are reused. Evidence
+and the staged site bind to the same source; Pages verifies the eligible commit
+and artifact hashes. The #86 diagnostics remain visibly advisory.
 
 The API tab (#88) reuses that header, sidebar, table styling and search. Its
 operation pages and downloadable JSON are generated from the production

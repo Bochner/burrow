@@ -1,0 +1,35 @@
+/* Adapted from Hovel a4cbfdf's report workspace; Copyright 2026 William Born.
+ * Apache-2.0. Static sections/native navigation; see ../LICENSE-HOVEL and UPSTREAM.md. */
+.report-page .content { width: 100%; max-width: none; padding: 1rem clamp(.75rem, 2vw, 2rem); }
+.report-hero { border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+.report-hero h1 { font-size: clamp(1.4rem, 3vw, 2rem); margin: .3rem 0; }
+.report-hero p { color: var(--muted); overflow-wrap: anywhere; }
+.report-app { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 1rem; align-items: start; }
+.report-app nav { display: flex; flex-direction: column; gap: .35rem; position: sticky; top: 5rem; border: 1px solid var(--border); border-radius: 10px; padding: .4rem; background: rgba(10, 8, 24, .78); }
+.report-app nav a { font: .85rem var(--mono); padding: .7rem; border-radius: 7px; }
+.report-app nav a:hover { background: rgba(82, 240, 255, .07); }
+.report-app a:focus-visible, .report-app summary:focus-visible, .report-app [tabindex]:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.report-panels { min-width: 0; }
+.report-panels section { margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 10px; background: rgba(10, 8, 24, .56); scroll-margin-top: 5rem; }
+.report-panels h2 { font-size: 1.1rem; }
+.report-panels p { line-height: 1.6; }
+.summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.metric { background: linear-gradient(145deg, rgba(25, 18, 48, .9), rgba(15, 11, 31, .84)); border: 1px solid var(--border); border-radius: 8px; padding: .85rem; }
+.metric span { display: block; color: var(--muted); font: .75rem var(--mono); }
+.metric strong { display: block; font-size: 1.6rem; margin-top: .3rem; }
+.report-table { overflow: auto; max-height: 70vh; }
+.report-table table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+.report-table th, .report-table td { padding: .65rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; min-width: 9rem; overflow-wrap: anywhere; }
+.report-table th { color: var(--cyan); position: sticky; top: 0; background: var(--code-bg); }
+.report-panels details { border-bottom: 1px solid var(--border); padding: .8rem 0; scroll-margin-top: 5rem; }
+.report-panels summary { cursor: pointer; overflow-wrap: anywhere; }
+.report-panels pre { max-height: 28rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; }
+.report-panels code { overflow-wrap: anywhere; }
+@media (max-width: 980px) {
+  .report-app { grid-template-columns: minmax(0, 1fr); }
+  .report-app nav { position: static; flex-direction: row; flex-wrap: wrap; }
+}
+@media (max-width: 680px) {
+  .summary-grid { grid-template-columns: 1fr; }
+  .report-panels section { padding: .65rem; }
+}

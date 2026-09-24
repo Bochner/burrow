@@ -1,0 +1,253 @@
+{
+  "schemaVersion": 1,
+  "description": "Explicit selected behavior checks, not exhaustive semantic equivalence. All inventory capabilities remain required for final parity; missing routes and unmeasured checks block release acceptance.",
+  "groups": [
+    {
+      "source": "core/cmd/burrow/capabilities_check.py",
+      "targets": [
+        "//core/cmd/burrow:capabilities_test"
+      ],
+      "scope": "Offline discovery, ID selection, schema references and parser reachability; no execution proof.",
+      "capabilities": [
+        "capabilities.list"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/chains_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_chains_test"
+      ],
+      "scope": "Confirmed selected-tunnel traffic, exported chains, refusals and retained evidence.",
+      "capabilities": [
+        "chain.connect",
+        "chain.export",
+        "chain.http",
+        "chain.select"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/workspace_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_lifecycle_test"
+      ],
+      "scope": "Bound manager reviews, stale/foreign refusal, teardown and sibling/evidence preservation.",
+      "capabilities": [
+        "connection.close",
+        "workspace.restart",
+        "workspace.retire"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/authentication_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_lifecycle_test"
+      ],
+      "scope": "Real authentication and cancellation through the approved connection flow.",
+      "capabilities": [
+        "connection.connect"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/manager_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_lifecycle_test"
+      ],
+      "scope": "Retained ownership, concurrent submissions and refusal/cleanup; see selected assertions.",
+      "capabilities": [
+        "connection.inspect",
+        "connection.list"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/files_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_files_test"
+      ],
+      "scope": "Contained real SFTP navigation/transfers, approval, bytes, failures and retained outcomes.",
+      "capabilities": [
+        "files.cancel",
+        "files.cd",
+        "files.complete",
+        "files.list",
+        "files.pwd",
+        "files.tree",
+        "transfer.cancel",
+        "transfer.downloads",
+        "transfer.get",
+        "transfer.list",
+        "transfer.mget",
+        "transfer.put"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/files_check.py",
+      "targets": [
+        "//core/cmd/burrow:files_test"
+      ],
+      "scope": "Workspace roots, containment, history and local navigation through the CLI.",
+      "capabilities": [
+        "files.history",
+        "files.local-cd",
+        "files.local-list",
+        "files.roots",
+        "files.set-root"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/setup_check.py",
+      "targets": [
+        "//core/cmd/burrow:setup_test"
+      ],
+      "scope": "Packaged first launch, pinned runtime verification and offline reuse.",
+      "capabilities": [
+        "installation.package"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/agent_check.py",
+      "targets": [
+        "//core/cmd/burrow:agent_test"
+      ],
+      "scope": "Packaged offline installation, six locations, conflicts and OS failure recovery; not native discovery.",
+      "capabilities": [
+        "installation.skills"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/activity_check.py",
+      "targets": [
+        "//core/cmd/burrow:activity_test"
+      ],
+      "scope": "Independent activity readers, gaps, safe output and observation without mutation.",
+      "capabilities": [
+        "logs.follow"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/terminal_check.py",
+      "targets": [
+        "//core/cmd/burrow:terminal_test"
+      ],
+      "scope": "Human PTY navigation, lifecycle, editor and frontend restoration; not headless shell control.",
+      "capabilities": [
+        "logs.view",
+        "workspace.hovel-cli",
+        "workspace.tui"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/profile_check.py",
+      "targets": [
+        "//core/cmd/burrow:profile_test"
+      ],
+      "scope": "Saved-settings CRUD, review binding, load-only behavior and connection refusals.",
+      "capabilities": [
+        "profile.backup",
+        "profile.collection",
+        "profile.connect",
+        "profile.create",
+        "profile.delete",
+        "profile.edit",
+        "profile.history",
+        "profile.list",
+        "profile.load",
+        "profile.select"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/reports_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_reports_test"
+      ],
+      "scope": "Reviewed Ubuntu survey, partial capture, artifacts, unchanged reads and PTY viewing.",
+      "capabilities": [
+        "report.list",
+        "report.read",
+        "report.survey"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/runs_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_runs_test"
+      ],
+      "scope": "Retained execution, approval, scripts, cancellation, capture and explicit collection.",
+      "capabilities": [
+        "run.cancel",
+        "run.close",
+        "run.collect",
+        "run.inspect",
+        "run.launch",
+        "run.list",
+        "run.now",
+        "run.prepare"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/follow_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_follow_test"
+      ],
+      "scope": "Independent offset readers, binary output, truthful capture state and PTY follow.",
+      "capabilities": [
+        "run.follow",
+        "run.output"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/shell_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_shell_test"
+      ],
+      "scope": "Frontend-local shells and PTY restoration; retained shared sessions are not implemented.",
+      "capabilities": [
+        "shell.close",
+        "shell.list",
+        "shell.open",
+        "shell.resume"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/forward_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_shell_test",
+        "//core/cmd/burrow:ssh_reverse_test"
+      ],
+      "scope": "Real local/reverse-forward approval, random allocation, selected traffic, removal and sibling preservation.",
+      "capabilities": [
+        "tunnel.check",
+        "tunnel.create",
+        "tunnel.list",
+        "tunnel.remove"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/connection_lab.py",
+      "targets": [
+        "//core/cmd/burrow:ssh_lifecycle_test"
+      ],
+      "scope": "Real SOCKS, saved live settings and reconnection, explicit loss/reconnect, reviewed quit and teardown.",
+      "capabilities": [
+        "tunnel.proxy-create",
+        "tunnel.proxy-inspect",
+        "tunnel.proxy-remove",
+        "workspace.quit",
+        "connection.reconnect",
+        "profile.save",
+        "profile.connect"
+      ]
+    },
+    {
+      "source": "core/cmd/burrow/workspace_check.py",
+      "targets": [
+        "//core/cmd/burrow:workspace_test"
+      ],
+      "scope": "Headless workspace selection, opening, inspection and structured refusals.",
+      "capabilities": [
+        "workspace.inspect",
+        "workspace.list",
+        "workspace.open"
+      ]
+    }
+  ]
+}

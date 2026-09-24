@@ -49,6 +49,15 @@ jobs:
           path: _site
           run-id: ${{ github.event.workflow_run.id || steps.verified.outputs.run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9
+        with:
+          launcher-version: "2026.33.3"
+          disk-cache: burrow-portable
+          repository-cache: burrow-portable
+      - name: Verify the report and exact site artifact belong to the eligible commit
+        env:
+          SITE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: aspect burrow-report verify "$SITE_SHA"
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

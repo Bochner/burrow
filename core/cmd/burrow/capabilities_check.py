@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,16 @@ with tempfile.TemporaryDirectory(prefix="burrow-api-") as scratch:
         assert op["result"] in contract["results"], op
         for name in op["inputs"]:
             assert name in contract["inputs"], (op["id"], name)
+    # Independently inspect the human command list. Shared execution already
+    # refuses unregistered operations; help must not advertise an orphan route.
+    help_result = subprocess.run([binary, "--help"], env=env, cwd=root,
+                                 capture_output=True, text=True, timeout=15)
+    assert help_result.returncode == 0
+    patterns = [pattern for op in operations.values() for pattern in op["patterns"]]
+    for syntax in re.findall(r"^([a-z][^\n]*?) {2,}\S", help_result.stderr, re.M):
+        tokens = syntax.split()
+        assert any(len(pattern) <= len(tokens) and all(part == "*" or part == token for part, token in zip(pattern, tokens))
+                   for pattern in patterns), ("human command has no capability inventory entry", syntax)
     assert operations["workspace.open"]["effects"].startswith("Initializes")
     for name in ("open", "inspect", "list", "restart", "retire"):
         assert operations["workspace." + name]["agent"]["status"] == "supported"
