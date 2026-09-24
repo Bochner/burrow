@@ -1391,7 +1391,7 @@ func TestForwardArgumentGuidance(t *testing.T) {
 
 func TestSemanticOutput(t *testing.T) {
 	m := newUI(launch.Info{}, false)
-	m.output = `{"name":"gateway","port":22,"count":-2.5e-3,"active":true,"missing":null,"items":[false],"session":"session-one","detail":"Master verified","error":"refused"}`
+	m.output = `{"name":"gateway","port":22,"count":-2.5e-3,"active":true,"missing":null,"items":[false],"session":"session-one","detail":"Master verified","error":"refused","controller":"agent-one","synchronization":"out-of-sync","recoveryError":"snapshot too large","inputError":"write failed"}`
 	styled := m.styledOutput()
 	if ansi.Strip(styled) != m.output || !strings.Contains(styled, "38;2;180;190;254") || !strings.Contains(styled, "38;2;250;179;135") || !strings.Contains(styled, "38;2;249;226;175") {
 		t.Fatal("JSON text or semantic token roles lost", styled)
@@ -1401,7 +1401,7 @@ func TestSemanticOutput(t *testing.T) {
 	if _, err := screen.Write([]byte(styled)); err != nil {
 		t.Fatal(err)
 	}
-	for _, role := range []struct{ text, color string }{{"{", subtextColor}, {"}", subtextColor}, {"[", subtextColor}, {"]", subtextColor}, {":", subtextColor}, {",", subtextColor}, {"-2.5e-3", "#fab387"}, {"true", "#cba6f7"}, {"false", "#cba6f7"}, {"null", "#cba6f7"}, {`"session-one"`, lavenderColor}, {`"Master verified"`, subtextColor}, {`"refused"`, "#f38ba8"}} {
+	for _, role := range []struct{ text, color string }{{"{", subtextColor}, {"}", subtextColor}, {"[", subtextColor}, {"]", subtextColor}, {":", subtextColor}, {",", subtextColor}, {"-2.5e-3", "#fab387"}, {"true", "#cba6f7"}, {"false", "#cba6f7"}, {"null", "#cba6f7"}, {`"session-one"`, lavenderColor}, {`"Master verified"`, subtextColor}, {`"refused"`, "#f38ba8"}, {`"agent-one"`, lavenderColor}, {`"out-of-sync"`, "#f38ba8"}, {`"snapshot too large"`, "#f38ba8"}, {`"write failed"`, "#f38ba8"}} {
 		assertTextRole(t, screen, image.Rect(0, 0, 200, 2), role.text, role.color)
 	}
 	m.noColor = true

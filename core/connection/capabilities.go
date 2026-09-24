@@ -74,6 +74,37 @@ func CommandOperation(args []string) (Operation, bool) {
 
 func Operations() []Operation { return append([]Operation(nil), commandOperations...) }
 
+// ShellRequestSchemas describes the same private objects decoded by the owner.
+func ShellRequestSchemas() map[string]any {
+	out := map[string]any{}
+	for name, value := range map[string]any{"shell-claim": ShellClaim{}, "shell-takeover": ShellClaim{}, "shell-input": ShellInput{}, "shell-resize": ShellResize{}, "shell-release": ShellRelease{}} {
+		shape := jsonShape(reflect.TypeOf(value))
+		shape["additionalProperties"] = false
+		shape["description"] = "One JSON object on private stdin with --request-stdin; at most 8192 bytes. Piped/file stdout required. Never put tokens in argv, history, logs or evidence."
+		fields := shape["properties"].(map[string]any)
+		for _, field := range []string{"columns", "rows"} {
+			if _, ok := fields[field]; ok {
+				fields[field] = map[string]any{"type": "integer", "minimum": 1, "maximum": 1000, "description": "At most 20000 cells in columns × rows. Omitted claim/takeover dimensions retain current geometry; explicit null is refused."}
+			}
+		}
+		if _, ok := fields["label"]; ok {
+			fields["label"] = map[string]any{"type": "string", "default": "agent", "maxLength": 64, "description": "At most 64 UTF-8 bytes; no control/format characters; not a liveness assertion."}
+		}
+		if name == "shell-claim" {
+			delete(fields, "generation")
+		}
+		if name == "shell-takeover" {
+			shape["required"] = []string{"generation"}
+			fields["generation"] = map[string]any{"type": "integer", "minimum": 0, "description": "Observed controlGeneration from inspect; never guessed or retried automatically."}
+		}
+		if name == "shell-input" {
+			fields["data"] = map[string]any{"type": "string", "contentEncoding": "base64", "description": "1..4096 decoded bytes. acceptedBytes counts only the accepted prefix; no execution result or automatic retry."}
+		}
+		out[name] = shape
+	}
+	return out
+}
+
 // op keeps common CLI/TUI/daemon semantics in one place. Variants and explicit
 // gaps below override them; examples never imply approval.
 func op(id, pattern, syntax, example, summary, inputs, result, effects, review, source, check string) Operation {
@@ -103,7 +134,14 @@ const connectionInputs = "name host user connection-options"
 const runInputs = "connection run-options command"
 
 var commandOperations = []Operation{
-	op("session.create", "session create", "session create CONNECTION [--yes] [--review HASH]", "session create target", "Create a Hovel-retained SSH shell", "connection yes review", "ShellReview", "Creates one shell through the exact existing manager and master; survives launcher exit. No input or observation routes yet.", confirmReview, "core/connection/sessions_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.snapshot", "session snapshot", "session snapshot CONNECTION ID", "session snapshot target shell-id", "Recover a current screen after missed output", "connection session-id", "ShellOutput", "Returns a bounded complete display snapshot and byte position; does not send input or change geometry.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.takeover", "session takeover", "session takeover CONNECTION ID --request-stdin", "session takeover target shell-id --request-stdin", "Explicitly replace the observed controller generation", "connection session-id shell-takeover", "ShellControl", "Shared shell owner enforces control; no automatic reconnect.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.resize", "session resize", "session resize CONNECTION ID --request-stdin", "session resize target shell-id --request-stdin", "Resize the controlled shell", "connection session-id shell-resize", "ShellControl", "Shared shell owner enforces control; no automatic reconnect.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.release", "session release", "session release CONNECTION ID --request-stdin", "session release target shell-id --request-stdin", "Release control and retain the shell", "connection session-id shell-release", "ShellControl", "Shared shell owner enforces control; no automatic reconnect.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.claim", "session claim", "session claim CONNECTION ID --request-stdin", "session claim target shell-id --request-stdin", "Claim an unclaimed shell", "connection session-id shell-claim", "ShellControl", "Shared shell owner enforces control; no automatic reconnect.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.input", "session input", "session input CONNECTION ID --request-stdin", "session input target shell-id --request-stdin", "Submit controller input", "connection session-id shell-input", "ShellControl", "Shared shell owner enforces control; no automatic reconnect.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.observe", "session observe", "session observe CONNECTION ID [OFFSET]", "session observe target shell-id", "Read independent bounded shell output", "connection session-id", "ShellOutput", "Shared shell owner enforces control; no automatic reconnect.", noReview, "core/connection/session_control_linux.go", "core/cmd/burrow/sessions_lab.py"),
+	op("session.create", "session create", "session create CONNECTION [--columns N --rows N] [--yes] [--review HASH]", "session create target", "Create a Hovel-retained SSH shell", "connection shell-geometry yes review", "ShellReview", "Creates one shell through the exact existing manager and master; survives launcher exit. Supports owner-fenced control and independent observation through session commands.", confirmReview, "core/connection/sessions_linux.go", "core/cmd/burrow/sessions_lab.py"),
 	op("session.list", "session list", "session list CONNECTION", "session list target", "List retained shells for a connection", "connection", "Shells", "Reads Hovel session records; unavailable modules remain explicit.", noReview, "core/connection/sessions_linux.go", "core/cmd/burrow/sessions_lab.py"),
 	op("session.inspect", "session inspect", "session inspect CONNECTION ID", "session inspect target shell-id", "Inspect retained shell identity and state", "connection session-id", "Shell", "Reads lifecycle and bounded output counts; never reads terminal bytes or reconnects.", noReview, "core/connection/sessions_linux.go", "core/cmd/burrow/sessions_lab.py"),
 	op("session.close", "session close", "session close CONNECTION ID [--yes] [--review HASH]", "session close target shell-id", "Close one retained SSH shell", "connection session-id yes review", "ShellReview", "Terminates and waits for its owned SSH subprocess; preserves the master and sibling resources. Remote-command outcomes and escaped descendants remain uncertain.", confirmReview, "core/connection/sessions_linux.go", "core/cmd/burrow/sessions_lab.py"),
@@ -175,7 +213,7 @@ func init() {
 	for i := range commandOperations {
 		op := &commandOperations[i]
 		switch op.ID {
-		case "session.create", "session.list", "session.inspect", "session.close":
+		case "session.create", "session.list", "session.inspect", "session.close", "session.claim", "session.takeover", "session.input", "session.resize", "session.release", "session.observe", "session.snapshot":
 			op.Human = "Headless CLI: " + strings.TrimPrefix(op.Agent.Syntax, "burrow --workspace PATH ") + "; TUI migration follows separately"
 			op.Scope = "Explicit workspace, connection name and opaque Hovel shell ID; connection creation and manager generation are verified."
 		case "run.prepare", "run.now":
@@ -219,7 +257,7 @@ func ResultSchemas() map[string]any {
 		"Tunnel": Tunnel{}, "Tunnels": []Tunnel{},
 		"FileRoots": FileRoots{}, "FileListing": FileListing{}, "FileTree": FileTree{},
 		"Download": Download{}, "Downloads": Downloads{}, "DownloadPlan": DownloadPlan{},
-		"Shell": Shell{}, "Shells": []Shell{},
+		"Shell": Shell{}, "Shells": []Shell{}, "ShellControl": ShellControl{}, "ShellOutput": ShellOutput{},
 		"Run": Run{}, "Runs": []Run{}, "RunOutput": RunOutput{},
 		"Reports": []reports.Entry{}, "Document": reports.Document{}, "ChainSelection": chainSelection{},
 		"TunnelHTTP": tunnelHTTPResult{}, "Workspace": launch.Info{}, "Strings": []string{}, "ManagerReview": ManagerReview{},
@@ -325,6 +363,9 @@ func jsonShape(t reflect.Type) map[string]any {
 		}
 		return map[string]any{"type": "object", "properties": properties, "required": required}
 	case reflect.Slice, reflect.Array:
+		if t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8 {
+			return map[string]any{"type": []string{"string", "null"}, "contentEncoding": "base64"}
+		}
 		shape := map[string]any{"type": "array", "items": jsonShape(t.Elem())}
 		if t.Kind() == reflect.Slice {
 			shape["type"] = []string{"array", "null"}

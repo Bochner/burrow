@@ -14,7 +14,7 @@ def _impl(ctx: TaskContext) -> int:
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/files.go", root + "/core/connection/remote_files.go", root + "/core/connection/downloads.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
-        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/manager.go", root + "/core/connection/sessions_linux.go", root + "/core/connection/forward.go", root + "/core/connection/proxy.go", root + "/core/connection/forward_control_test.go"]).current_dir(root).spawn().wait()
+        status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/connection/manager.go", root + "/core/connection/sessions_linux.go", root + "/core/connection/session_control_linux.go", root + "/core/connection/forward.go", root + "/core/connection/proxy.go", root + "/core/connection/forward_control_test.go"]).current_dir(root).spawn().wait()
         if status.code:
             return status.code
         status = ctx.std.process.command("aspect").args(["run", "@rules_go//go", "--", "fmt", root + "/core/terminal/host_linux.go", root + "/core/terminal/host_test.go"]).current_dir(root).spawn().wait()

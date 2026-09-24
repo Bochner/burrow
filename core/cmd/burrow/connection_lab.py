@@ -205,7 +205,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
         if args.sessions_check or args.shell_check:
-            session_checks(burrow, w, first, command, container, wait, options, root, daemons)
+            session_checks(burrow, w, first, command, container, wait, options, root, daemons, binary, env)
             if args.sessions_check:
                 raise SystemExit(0)
         if args.chains_check:

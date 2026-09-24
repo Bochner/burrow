@@ -361,9 +361,9 @@ func (m ui) styledOutput() string {
 					style = keywordStyle
 				case "url":
 					style = hostStyle
-				case "connection", "connectionCreation":
+				case "connection", "connectionCreation", "controller":
 					style = accent
-				case "name", "id", "generation", "creation", "runID", "launchRunID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "cleanupScope", "error", "outputError", "auditError", "cleanupError":
+				case "name", "id", "generation", "creation", "runID", "launchRunID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "cleanupScope", "error", "outputError", "auditError", "cleanupError", "recoveryError", "inputError":
 					style = fieldStyle(strings.ToUpper(field))
 					if token == `""` {
 						style = secondary
@@ -391,7 +391,7 @@ func (m ui) styledOutput() string {
 					} else if token == `"ordinary-group-terminated"` {
 						style = successStyle
 					}
-				case "state", "status":
+				case "state", "status", "synchronization":
 					var state string
 					_ = json.Unmarshal([]byte(token), &state)
 					style = connectionStyle(state)
@@ -417,11 +417,11 @@ func scrollBody(text string, width, height, offset int) viewport.Model {
 
 func connectionStyle(state string) lipgloss.Style {
 	switch state {
-	case "applied", "unchanged", "connected", "active", "running", "listening", "traffic-observed":
+	case "applied", "unchanged", "connected", "active", "running", "listening", "traffic-observed", "snapshot-current":
 		return successStyle
-	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable", "staging-failed", "timed-out", "local-start-failed", "local-signaled":
+	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable", "staging-failed", "timed-out", "local-start-failed", "local-signaled", "out-of-sync":
 		return errorStyle
-	case "planned", "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown":
+	case "planned", "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown", "last-known-screen":
 		return warningStyle
 	default:
 		return secondary
@@ -503,7 +503,7 @@ func fieldStyle(header string) lipgloss.Style {
 		return numberStyle
 	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "CLEANUPSCOPE", "SOURCE", "DESTINATION PATH", "SCRIPT", "STAGED SCRIPT", "PROGRAM STDIN", "WORKING DIRECTORY", "BURROW_WORKSPACE", "BURROW_SOCKET", "BURROW_SSH_CONFIG", "PATH":
 		return secondary
-	case "ERROR", "OUTPUTERROR", "AUDITERROR", "CLEANUPERROR":
+	case "ERROR", "OUTPUTERROR", "AUDITERROR", "CLEANUPERROR", "RECOVERYERROR", "INPUTERROR":
 		return errorStyle
 	default:
 		return pageStyle

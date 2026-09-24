@@ -50,7 +50,8 @@ Both retire the entire owner, including concurrent additions, without opening a 
 restart also registers the current build; next approved connect starts a manager.
 Workspace routes emit JSON results and JSON errors on stderr (exit 1).
 session manages retained SSH shells headlessly; create/close review before --yes [--review HASH].
-These shells survive CLI exit; shared input, observation and TUI attachment follow later.
+These shells survive CLI exit. Claim/takeover/input/resize/release use private JSON stdin.
+Observe returns bounded bytes; snapshot recovers a current screen. TUI attachment follows later.
 session failures emit JSON errors on stderr (exit 1); inspect before retrying uncertain creation.
 capabilities prints the versioned JSON operation contract without initializing anything.
 agent install installs bundled standalone skills offline; --source PATH selects a trusted local bundle.
@@ -279,6 +280,16 @@ func run(args []string) (failure error) {
 		}
 		if connection.RunWaits(args) {
 			ctx = interrupt
+		}
+		if command == "session" && len(args) == 5 && args[4] == "--request-stdin" {
+			if term.IsTerminal(os.Stdin.Fd()) || term.IsTerminal(os.Stdout.Fd()) {
+				return fmt.Errorf("private shell requests require piped/file stdin and stdout")
+			}
+			result, err := connection.SessionCommand(ctx, o.Workspace, args, os.Stdin)
+			if err != nil {
+				return err
+			}
+			return printResult(os.Stdout, result, noColor)
 		}
 		result, e := connection.Execute(ctx, o.Workspace, args)
 		if e != nil {

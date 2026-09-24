@@ -199,7 +199,7 @@
       "targets": [
         "//core/cmd/burrow:ssh_shell_test"
       ],
-      "scope": "Frontend-local shells and PTY restoration; retained shared sessions are not implemented.",
+      "scope": "Frontend-local shells and PTY restoration; retained shared TUI attachment remains separate.",
       "capabilities": [
         "shell.close",
         "shell.list",
@@ -254,12 +254,19 @@
       "targets": [
         "//core/cmd/burrow:ssh_shell_test"
       ],
-      "scope": "Retained remote shell PIDs, launcher exit, exact selected/connection/manager teardown, ownership/review refusals, bounded output and truthful loss; no shared input or observation.",
+      "scope": "Retained SSH lifecycle, independent no-TTY control/readers, generation-checked takeover, private input, geometry, bounded history and snapshot recovery, backpressure, close races and truthful loss; TUI attachment remains separate.",
       "capabilities": [
         "session.create",
         "session.list",
         "session.inspect",
-        "session.close"
+        "session.close",
+        "session.claim",
+        "session.takeover",
+        "session.input",
+        "session.resize",
+        "session.release",
+        "session.observe",
+        "session.snapshot"
       ]
     }
   ]

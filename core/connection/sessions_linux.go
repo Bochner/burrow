@@ -10,12 +10,14 @@ import (
 	"os/exec"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/Bochner/burrow/core/launch"
+	"github.com/charmbracelet/x/vt"
 	"github.com/vibepwners/hovel/sdk/go/hovel"
 	"golang.org/x/sys/unix"
 )
@@ -23,44 +25,82 @@ import (
 const shellKind = "burrow-shell-v1"
 const shellOutputLimit = 64 << 10
 
+type shellLaunchRequest struct {
+	Connection State `json:"connection"`
+	Columns    int   `json:"columns"`
+	Rows       int   `json:"rows"`
+}
+
+func shellCreateOptions(args []string) (columns, rows int, flags []string, err error) {
+	columns, rows = 80, 24
+	seen := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		if args[i] != "--columns" && args[i] != "--rows" {
+			flags = append(flags, args[i])
+			continue
+		}
+		flag := args[i]
+		if seen[flag] || i+1 == len(args) {
+			return 0, 0, nil, fmt.Errorf("expected one value per geometry flag")
+		}
+		seen[flag] = true
+		i++
+		value, e := strconv.Atoi(args[i])
+		if e != nil {
+			return 0, 0, nil, fmt.Errorf("invalid shell dimensions")
+		}
+		if flag == "--columns" {
+			columns = value
+		} else {
+			rows = value
+		}
+	}
+	return
+}
+
 // Shell describes one Hovel session, not a second session registry. The
 // connection owner keeps dependent references only to serialize launch/cleanup.
 type Shell struct {
-	adopted    bool   // Observed in this daemon's broker; absence afterward means explicit CloseSession.
-	ID         string `json:"id"`
-	Workspace  string `json:"workspace"`
-	Connection State  `json:"connection"`
-	RunID      string `json:"runID"`
-	OwnerPID   int    `json:"ownerPID"`
-	PID        int    `json:"pid"`
-	State      string `json:"state"`
-	Detail     string `json:"detail"`
-	Columns    int    `json:"columns"`
-	Rows       int    `json:"rows"`
-	Received   uint64 `json:"received"`
-	Buffered   int    `json:"buffered"`
-	Dropped    uint64 `json:"dropped"`
-	Cleanup    string `json:"cleanup"`
-	AuditError string `json:"auditError,omitempty"`
-	SSHExit    *int   `json:"sshExit,omitempty"`
+	adopted           bool   // Observed in this daemon's broker; absence afterward means explicit CloseSession.
+	ID                string `json:"id"`
+	Workspace         string `json:"workspace"`
+	Connection        State  `json:"connection"`
+	RunID             string `json:"runID"`
+	OwnerPID          int    `json:"ownerPID"`
+	PID               int    `json:"pid"`
+	State             string `json:"state"`
+	Detail            string `json:"detail"`
+	Columns           int    `json:"columns"`
+	Rows              int    `json:"rows"`
+	Received          uint64 `json:"received"`
+	Buffered          int    `json:"buffered"`
+	Dropped           uint64 `json:"dropped"`
+	Cleanup           string `json:"cleanup"`
+	AuditError        string `json:"auditError,omitempty"`
+	SSHExit           *int   `json:"sshExit,omitempty"`
+	Controller        string `json:"controller"`
+	ControlGeneration uint64 `json:"controlGeneration"`
 }
 
 type retainedShell struct {
-	mu      sync.Mutex
-	record  Shell
-	cmd     *exec.Cmd
-	pty     *os.File
-	data    []byte
-	done    chan struct{}
-	drained chan struct{}
-	closed  chan struct{}
-	closeMu sync.Mutex
-	audit   launch.Audit
+	mu            sync.Mutex
+	record        Shell
+	cmd           *exec.Cmd
+	pty           *os.File
+	data          []byte
+	done          chan struct{}
+	drained       chan struct{}
+	closed        chan struct{}
+	closeMu       sync.Mutex
+	audit         launch.Audit
+	token         string // Ephemeral; never part of Shell, logs or evidence.
+	screen        *vt.Emulator
+	cursorVisible bool
 }
 
 func sessionArgs(w string, args []string) (bool, string, error) {
 	if len(args) < 3 {
-		return false, "", fmt.Errorf("expected session create|list CONNECTION or session inspect|close CONNECTION ID")
+		return false, "", fmt.Errorf("expected session ACTION CONNECTION [ID]; use help")
 	}
 	if _, err := launch.ConnectionPath(w, args[2]); err != nil {
 		return false, "", err
@@ -71,23 +111,43 @@ func sessionArgs(w string, args []string) (bool, string, error) {
 			return false, "", nil
 		}
 	case "create":
-		return closeOptions(args[3:])
-	case "inspect", "close":
+		columns, rows, flags, err := shellCreateOptions(args[3:])
+		if err != nil {
+			return false, "", err
+		}
+		if err := shellGeometry(columns, rows); err != nil {
+			return false, "", err
+		}
+		return closeOptions(flags)
+	case "claim", "takeover", "input", "resize", "release", "observe", "snapshot", "inspect", "close":
 		if len(args) < 4 || args[3] == "" || len(args[3]) > 256 || strings.ContainsAny(args[3], "/\\\x00\r\n\t ") {
 			break
 		}
 		if args[1] == "close" {
 			return closeOptions(args[4:])
 		}
+		if privateShellCommand(args[1]) {
+			if len(args) == 5 && args[4] == "--request-stdin" {
+				return false, "", nil
+			}
+			break
+		}
+		if args[1] == "observe" && len(args) == 5 {
+			_, err := strconv.ParseUint(args[4], 10, 64)
+			if err != nil {
+				return false, "", fmt.Errorf("invalid shell output position")
+			}
+			return false, "", nil
+		}
 		if len(args) == 4 {
 			return false, "", nil
 		}
 	}
-	return false, "", fmt.Errorf("invalid session command; use session create|list CONNECTION or session inspect|close CONNECTION ID [--yes --review HASH]")
+	return false, "", fmt.Errorf("invalid session arguments; use help for lifecycle, shared control and observation routes")
 }
 
-func shellReview(action, w string, state State, id string) string {
-	b, _ := json.Marshal([]any{action, w, state, id})
+func shellReview(action, w string, state State, id string, columns, rows int) string {
+	b, _ := json.Marshal([]any{action, w, state, id, columns, rows})
 	return digest(string(b))
 }
 
@@ -101,6 +161,12 @@ func executeSession(ctx context.Context, w string, args []string) (any, error) {
 	}
 	if args[1] == "inspect" {
 		return inspectShell(ctx, w, args[2], args[3])
+	}
+	if args[1] == "observe" || args[1] == "snapshot" {
+		return observeShell(ctx, w, args)
+	}
+	if privateShellCommand(args[1]) {
+		return nil, fmt.Errorf("private request required; use the headless CLI with --request-stdin")
 	}
 	state, err := selected(ctx, w, args[2])
 	if err != nil {
@@ -123,9 +189,13 @@ func executeSession(ctx context.Context, w string, args []string) (any, error) {
 	} else if state.State != "connected" {
 		return nil, fmt.Errorf("shell creation requires a connected master; reconnect explicitly")
 	}
-	hash := shellReview(args[1], w, state, shellID)
+	columns, rows := 80, 24
+	if args[1] == "create" {
+		columns, rows, _, _ = shellCreateOptions(args[3:])
+	}
+	hash := shellReview(args[1], w, state, shellID, columns, rows)
 	if !yes {
-		text := "Create one retained SSH shell at 80x24 through the verified master. It survives this CLI's exit. Input/observation and TUI attachment are not available yet."
+		text := fmt.Sprintf("Create one retained SSH shell at %dx%d through the verified master. It survives this CLI's exit; shared headless control is available. TUI attachment follows separately.", columns, rows)
 		if shellID != "" {
 			text = "Close only this shell's SSH client and channel; preserve the master and sibling resources. Remote commands and escaped descendants may have uncertain outcomes."
 		}
@@ -142,7 +212,7 @@ func executeSession(ctx context.Context, w string, args []string) (any, error) {
 		}
 		return result, err
 	}
-	raw, _ := json.Marshal(state)
+	raw, _ := json.Marshal(shellLaunchRequest{Connection: state, Columns: columns, Rows: rows})
 	var result Shell
 	err = managerThrow(ctx, w, map[string]string{"action": "shell-prepare", "request": string(raw), "review": digest(string(raw))}, &result)
 	if err != nil {
@@ -220,18 +290,22 @@ func shellAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 	c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	raw := ctx.InputString("request", "")
-	var connection State
+	var request shellLaunchRequest
 	d := json.NewDecoder(strings.NewReader(raw))
 	d.DisallowUnknownFields()
-	if len(raw) > 16384 || d.Decode(&connection) != nil || d.Decode(new(any)) != io.EOF || digest(raw) != ctx.InputString("review", "") {
+	if len(raw) > 16384 || d.Decode(&request) != nil || d.Decode(new(any)) != io.EOF || digest(raw) != ctx.InputString("review", "") {
 		return hovel.Result{}, fmt.Errorf("changed shell request refused")
 	}
+	if err := shellGeometry(request.Columns, request.Rows); err != nil {
+		return hovel.Result{}, err
+	}
+	connection := request.Connection
 	id := managerIdentity{Session: connection.Session, Generation: connection.Generation}
 	var result Shell
 	switch ctx.InputString("action", "") {
 	case "shell-prepare":
 		// Register through Module.Run, as required by Hovel's session adoption.
-		s := &retainedShell{record: Shell{Workspace: w, Connection: connection, RunID: ctx.RunID, OwnerPID: os.Getpid(), State: "prepared", Columns: 80, Rows: 24, Cleanup: "not requested"}}
+		s := &retainedShell{record: Shell{Workspace: w, Connection: connection, RunID: ctx.RunID, OwnerPID: os.Getpid(), State: "prepared", Columns: request.Columns, Rows: request.Rows, Cleanup: "not requested"}}
 		ref, err := ctx.OpenSession(s, hovel.WithName(connection.Name), hovel.WithKind(shellKind), hovel.WithTransport("ssh"), hovel.WithCapabilities("close"))
 		if err != nil {
 			return hovel.Result{}, err
@@ -277,7 +351,7 @@ func (m *manager) shellControl(c context.Context, req hovel.PayloadCommandReques
 	}
 	if req.Command == "shell-register" && len(req.Args) == 3 {
 		var shell Shell
-		if json.Unmarshal([]byte(req.Args[2]), &shell) != nil || shell.Connection != live || live.State != "connected" || shell.Workspace != m.Workspace || shell.ID == "" || shell.State != "prepared" || shell.OwnerPID <= 0 {
+		if json.Unmarshal([]byte(req.Args[2]), &shell) != nil || shell.Connection != live || live.State != "connected" || shell.Workspace != m.Workspace || shell.ID == "" || shell.State != "prepared" || shell.OwnerPID <= 0 || shellGeometry(shell.Columns, shell.Rows) != nil {
 			return Shell{}, fmt.Errorf("shell request or connection changed; review again")
 		}
 		s.mu.Lock()
@@ -299,8 +373,8 @@ func (m *manager) shellControl(c context.Context, req hovel.PayloadCommandReques
 	}
 	switch {
 	case req.Command == "shell-start" && len(req.Args) == 5:
-		var expected State
-		if json.Unmarshal([]byte(req.Args[3]), &expected) != nil || expected != shell.Connection || live.State != "connected" || live.MasterPID != expected.MasterPID || live.SocketInode != expected.SocketInode || req.Args[4] == "" {
+		var expected shellLaunchRequest
+		if json.Unmarshal([]byte(req.Args[3]), &expected) != nil || expected.Connection != shell.Connection || expected.Columns != shell.Columns || expected.Rows != shell.Rows || live.State != "connected" || live.MasterPID != expected.Connection.MasterPID || live.SocketInode != expected.Connection.SocketInode || req.Args[4] == "" {
 			return shell, fmt.Errorf("shell connection changed; no launch")
 		}
 		observed, err := inspectShell(c, m.Workspace, live.Name, shell.ID)
@@ -407,7 +481,7 @@ func (s *retainedShell) Closed() bool {
 	return s.record.State == "closed"
 }
 func (s *retainedShell) Write([]byte) error {
-	return fmt.Errorf("raw shell input disabled; shared controller input is not available yet")
+	return fmt.Errorf("raw shell input disabled; use token-fenced input through RunSessionCommand")
 }
 func (s *retainedShell) Read(wait time.Duration) ([]byte, error) {
 	if wait < 0 {
@@ -423,10 +497,34 @@ func (s *retainedShell) Read(wait time.Duration) ([]byte, error) {
 	return nil, nil
 }
 func (s *retainedShell) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "inspect", ReadOnly: true}, {Name: "stop", Summary: "End the owned channel and return final cleanup metadata"}, {Name: "start", Summary: "Confirmed manager adapter only; never raw interactive input"}}, nil
+	return []hovel.PayloadCommand{
+		{Name: "inspect", ReadOnly: true},
+		{Name: "observe", ReadOnly: true, Usage: "args: [decimal byte position]", Summary: "Independent bounded bytes, explicit gap/loss; not a current screen"},
+		{Name: "snapshot", ReadOnly: true, Summary: "Bounded current display and byte position; no input or resize"},
+		{Name: "claim", Summary: "Claim if unowned; private JSON inputData, inputEncoding=utf-8"},
+		{Name: "takeover", Summary: "Explicit generation-checked takeover; private JSON inputData"},
+		{Name: "input", Summary: "Private token and base64 data; accepted bytes are not a command result"},
+		{Name: "resize", Summary: "Private token, columns and rows; current controller only"},
+		{Name: "release", Summary: "Private token; retain shell and last geometry"},
+		{Name: "stop", Summary: "End the owned channel and return final cleanup metadata"},
+		{Name: "start", Summary: "Confirmed manager adapter only; never raw interactive input"},
+	}, nil
 }
 func (s *retainedShell) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
-	if len(req.Config) != 0 || req.InputData != "" || req.InputEncoding != "" || req.InputPath != "" || req.Reconnect != nil || req.InstalledPayloadID != "" {
+	if len(req.Config) != 0 || req.InputPath != "" || req.Reconnect != nil || req.InstalledPayloadID != "" || req.Target != "" || req.PayloadID != "" || req.Agent != nil {
+		return hovel.PayloadCommandResult{}, fmt.Errorf("unexpected shell command inputs")
+	}
+	if privateShellCommand(req.Command) || req.Command == "observe" || req.Command == "snapshot" {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		value, err := s.sharedCommand(req)
+		if err != nil {
+			return hovel.PayloadCommandResult{}, err
+		}
+		b, err := json.Marshal(value)
+		return hovel.PayloadCommandResult{Command: req.Command, Stdout: string(b)}, err
+	}
+	if req.InputData != "" || req.InputEncoding != "" {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unexpected shell command inputs")
 	}
 	if req.Command == "stop" && len(req.Args) == 0 {
@@ -445,7 +543,7 @@ func (s *retainedShell) RunPayloadCommand(req hovel.PayloadCommandRequest) (hove
 	switch {
 	case req.Command == "inspect" && len(req.Args) == 0:
 	case req.Command == "start" && len(req.Args) == 2:
-		b, _ := json.Marshal(s.record.Connection)
+		b, _ := json.Marshal(shellLaunchRequest{Connection: s.record.Connection, Columns: s.record.Columns, Rows: s.record.Rows})
 		if req.Args[0] != digest(string(b)) || req.Args[1] == "" || s.record.State != "prepared" {
 			return hovel.PayloadCommandResult{}, fmt.Errorf("shell launch request changed or already submitted")
 		}
@@ -460,8 +558,11 @@ func (s *retainedShell) RunPayloadCommand(req hovel.PayloadCommandRequest) (hove
 }
 
 // Own the PTY directly: SDK PTYSession has an unbounded intermediate queue.
-// Output never waits for a reader, and no raw input is accepted in this slice.
+// Output never waits for a reader; only token-fenced input reaches this PTY.
 func (s *retainedShell) start(runID string) error {
+	if err := shellGeometry(s.record.Columns, s.record.Rows); err != nil {
+		return err
+	}
 	cmd, err := shellCommand(s.record.Workspace, s.record.Connection)
 	if err != nil {
 		return err
@@ -494,7 +595,7 @@ func (s *retainedShell) start(runID string) error {
 		return err
 	}
 	defer slave.Close()
-	if err := unix.IoctlSetWinsize(fd, unix.TIOCSWINSZ, &unix.Winsize{Col: 80, Row: 24}); err != nil {
+	if err := unix.IoctlSetWinsize(fd, unix.TIOCSWINSZ, &unix.Winsize{Col: uint16(s.record.Columns), Row: uint16(s.record.Rows)}); err != nil {
 		return err
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
@@ -515,6 +616,12 @@ func (s *retainedShell) start(runID string) error {
 			return
 		}
 		err = cmd.Wait()
+		// Read the final channel output before closing the master. A descendant
+		// holding the slave cannot defer completion indefinitely.
+		select {
+		case <-s.drained:
+		case <-time.After(100 * time.Millisecond):
+		}
 		master.Close()
 		<-s.drained
 		s.mu.Lock()
@@ -541,8 +648,9 @@ func (s *retainedShell) start(runID string) error {
 		return err
 	}
 	s.cmd, s.pty = cmd, master
+	s.initScreen()
 	s.record.PID, s.record.RunID, s.record.State = cmd.Process.Pid, runID, "running"
-	s.record.Detail = "retained SSH shell; input and observation await shared control"
+	s.record.Detail = "retained SSH shell; one explicit controller, independent observers; controller label does not assert liveness"
 	ok = true
 	go s.drain(master)
 	return nil
@@ -555,6 +663,7 @@ func (s *retainedShell) drain(pty *os.File) {
 		n, err := pty.Read(buf)
 		if n > 0 {
 			s.mu.Lock()
+			s.screen.Write(buf[:n])
 			s.record.Received += uint64(n)
 			// ponytail: bounded 64 KiB suffix copy; use a ring if profiling requires it.
 			if len(s.data)+n > shellOutputLimit {
@@ -605,7 +714,7 @@ func (s *retainedShell) Close(string) error {
 	s.mu.Lock()
 	s.record.State = "closed"
 	s.record.Detail = "SSH client reaped; shell explicitly closed"
-	s.record.Cleanup = "owned SSH client reaped and channel ended; remote-command outcomes and escaped descendants unconfirmed"
+	s.record.Cleanup = "owned SSH client reaped; channel teardown requested; remote-command outcomes and escaped descendants unconfirmed"
 	defer s.mu.Unlock()
 	close(s.closed)
 	if err := s.audit.Record("closed", s.record); err != nil {

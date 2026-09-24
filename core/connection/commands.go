@@ -223,15 +223,33 @@ connect                             Guided connection entry (terminal)
 connect NAME HOST --user USER [options] Create shell-free SSH master
 reconnect NAME HOST --user USER [options] Explicitly replace a lost owned connection
 inspect NAME                        State, endpoint and socket identity
-session create CONNECTION [--yes] [--review HASH] Review/create a retained Hovel SSH shell
+session create CONNECTION [--columns N --rows N] [--yes] [--review HASH] Review/create a retained Hovel SSH shell
 session list CONNECTION              Discover retained Hovel shells (headless CLI)
 session inspect CONNECTION ID        Read shell identity, lifecycle and output counts
 session close CONNECTION ID [--yes] [--review HASH] Review/close only this retained shell
+session claim CONNECTION ID --request-stdin Claim an unclaimed shell using private JSON
+session takeover CONNECTION ID --request-stdin Replace the observed control generation
+session input CONNECTION ID --request-stdin Send 1..4096 base64 bytes with the current token
+session resize CONNECTION ID --request-stdin Resize with the current token
+session release CONNECTION ID --request-stdin Release control; retain shell and geometry
+session observe CONNECTION ID [OFFSET] Read independent bytes (default position 0)
+session snapshot CONNECTION ID       Recover a bounded current-screen view
 Retained sessions survive CLI exit and Keep running; connection/manager close ends them.
 Creation uses supported Hovel throws and the existing verified master; no login fallback.
-Initial size is 80x24. Shared input/observation, resize and TUI attachment follow later.
+Initial size defaults to 80x24; TUI attachment follows separately.
+Private commands require piped/file stdin AND stdout. Claim JSON defaults to
+{"label":"agent"}; optional columns/rows retain the current geometry when omitted.
+Takeover also requires the observed generation; old input/resize/release is refused.
+Input uses {"token":"...","data":"BASE64"}; resize uses token, columns, rows;
+release uses token. Tokens never belong in argv, history, logs or evidence.
+An accepted byte count is not a command result. A disappeared controller keeps its
+claim until explicit takeover. Labels do not assert liveness; there is no timeout.
+Observe never consumes another reader's bytes or changes geometry. Gaps remain
+out-of-sync; snapshot returns the current display and a fresh byte position.
+Byte reads are stream-only, never proof of current screen state. Use snapshots
+for current display; raw bytes are not a serialized emulator state.
 Raw Hovel send/read/attach cannot control or observe these shells. Output stays in a
-64 KiB memory suffix; inspect reports received/buffered/dropped counts, never terminal bytes.
+64 KiB memory suffix; inspect reports received/buffered/dropped counts.
 Loss reports lost/unavailable and uncertain command outcomes; relaunch never restores state.
 Failed creation may leave a prepared session: inspect/list, close explicitly, then review anew.
 
@@ -703,7 +721,7 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	}
 	// Capture submitted identity and full safe frontend result, including reviews
 	// and pre-dispatch refusals. Owner records carry asynchronous actual outcomes.
-	if (args[0] == "run" || args[0] == "session") && (args[1] == "list" || args[1] == "inspect" || args[1] == "output") {
+	if (args[0] == "run" || args[0] == "session") && (args[1] == "list" || args[1] == "inspect" || args[1] == "output" || args[1] == "observe" || args[1] == "snapshot") {
 		return executeOperation(ctx, w, args, promptSocket)
 	}
 	switch args[0] {

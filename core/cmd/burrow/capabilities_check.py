@@ -53,6 +53,8 @@ with tempfile.TemporaryDirectory(prefix="burrow-api-") as scratch:
     assert operations["logs.follow"]["result"] == "Activity"
     assert {"workspacePath", "kind", "source", "time", "observedAt"} <= set(contract["results"]["Activity"]["required"])
     assert contract["results"]["Activity"]["properties"]["data"]["type"] == "string"
+    output_bytes = contract["results"]["ShellOutput"]["properties"]["data"]
+    assert output_bytes["type"] == ["string", "null"] and output_bytes["contentEncoding"] == "base64", output_bytes
     assert contract["errors"]["encoding"] == "text/stderr"
     # Reachability only: valid examples must pass the production parser and
     # reach the same missing-workspace refusal, without starting local state.
