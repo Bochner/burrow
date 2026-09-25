@@ -13,8 +13,10 @@ The project is implementing useful LazySSH SSH parity in five approved
 milestones. Linux amd64 is the initial operator platform. **MVP 1–4 are
 implemented: verified workspace setup, saved connections, retained SSH,
 independent shells, forwarding, file transfers, commands and scripts, live
-output, local automation, Ubuntu Markdown reports, and Hovel chains. MVP 5
-(operator skills and final daily-use acceptance) remains.** Full LazySSH parity
+output, local automation, Ubuntu Markdown reports, and Hovel chains. MVP 5 adds
+shared shell control, independent observation, six agent workflows and interface
+reports; final daily-use acceptance remains pending.** See the
+[candidate verification record](docs/site/MVP-ACCEPTANCE.md). Full LazySSH parity
 and a distribution release are not yet claimed.
 
 > **Authorized red-team emulation only.** Use Burrow only in environments you own
@@ -61,7 +63,7 @@ the `burrow` executable and the public-SDK module manifest. Follow the
 [named connection](docs/site/src/content/spec/connections.html) and
 [saved collection](docs/site/src/content/spec/profiles.html) guides. The [v0.1.0 development release](https://github.com/Bochner/burrow/releases/tag/v0.1.0)
 is source-only; no binary assets are attached. Current-source CLI discovery,
-headless workspace lifecycle, activity following and agent inspection skills
+headless workspace and shared-shell lifecycle, activity following and six agent workflow skills
 are unreleased additions. See the book’s
 [version table](docs/site/src/content/spec/user-guide.html#versions). See the
 [proposed Hovel compatibility convention](docs/research/hovel-daemon-compatibility-handoff.md)
@@ -143,7 +145,8 @@ This is a scoped exception for [#86](https://github.com/Bochner/burrow/issues/86
 restore those checks to the required gate after an official Hovel fix is pinned
 and verified. `aspect burrow-check` remains the strict full gate, including
 these diagnostics. The portable job stages `docs-base`; the report job combines matching test and
-coverage evidence and publishes the verified `docs-site` artifact. Every job retains logs, XML,
+coverage evidence, enforces operational agent parity through `burrow-report release`,
+and publishes the verified `docs-site` artifact. Every job retains logs, XML,
 terminal captures and available phase/daemon logs as `test-results-SUITE` for
 14 days, including after failure. Pages promotes that exact site after
 successful main CI and checks that its commit is still current. Manual Pages

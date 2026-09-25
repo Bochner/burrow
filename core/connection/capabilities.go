@@ -13,28 +13,30 @@ import (
 // documented route cannot silently fall through to a different command family.
 // Patterns select commands, not validate inputs; the existing parsers do that.
 type Operation struct {
-	ID            string     `json:"id"`
-	Category      string     `json:"category"`
-	Summary       string     `json:"summary"`
-	Patterns      [][]string `json:"patterns"`
-	Dispatch      string     `json:"dispatch"`
-	Human         string     `json:"human"`
-	Agent         Route      `json:"agent"`
-	Inputs        []string   `json:"inputs"`
-	Result        string     `json:"result"`
-	Scope         string     `json:"scope"`
-	Effects       string     `json:"effects"`
-	Review        string     `json:"review"`
-	ModuleCommand bool       `json:"moduleCommand"`
-	Evidence      []Evidence `json:"evidence"`
+	ID               string     `json:"id"`
+	Category         string     `json:"category"`
+	Summary          string     `json:"summary"`
+	Patterns         [][]string `json:"patterns"`
+	Dispatch         string     `json:"dispatch"`
+	Human            string     `json:"human"`
+	Agent            Route      `json:"agent"`
+	Inputs           []string   `json:"inputs"`
+	Result           string     `json:"result"`
+	Scope            string     `json:"scope"`
+	Effects          string     `json:"effects"`
+	Review           string     `json:"review"`
+	ModuleCommand    bool       `json:"moduleCommand"`
+	Evidence         []Evidence `json:"evidence"`
+	PresentationOnly string     `json:"presentationOnly,omitempty"`
 }
 
 type Route struct {
-	Status     string   `json:"status"`
-	Syntax     string   `json:"syntax"`
-	Example    []string `json:"example"`
-	Variants   []string `json:"variants,omitempty"`
-	Limitation string   `json:"limitation,omitempty"`
+	Status      string   `json:"status"`
+	Syntax      string   `json:"syntax"`
+	Example     []string `json:"example"`
+	Variants    []string `json:"variants,omitempty"`
+	Limitation  string   `json:"limitation,omitempty"`
+	Equivalents []string `json:"equivalents,omitempty"`
 }
 
 type Evidence struct {
@@ -174,12 +176,12 @@ var commandOperations = []Operation{
 	op("tunnel.proxy-create", "proxy create", "proxy create CONNECTION LISTEN [--review HASH] [--yes]", "proxy create target 1080", "Create connection-owned SOCKS4/5", "connection listen review yes", "ProxyReview", "Binds an unauthenticated SOCKS listener; one per connection, separate from L/R IDs and counts.", confirmReview, "core/connection/proxy.go", "core/cmd/burrow/connection_lab.py"),
 	op("tunnel.proxy-inspect", "proxy inspect", "proxy inspect CONNECTION", "proxy inspect target", "Inspect SOCKS endpoint and owner identity", "connection", "Proxy", inspectEffect, noReview, "core/connection/proxy.go", "core/cmd/burrow/connection_lab.py"),
 	op("tunnel.proxy-remove", "proxy remove", "proxy remove CONNECTION [--review HASH] [--yes]", "proxy remove target", "Remove SOCKS only", "connection review yes", "ProxyReview", "Removes SOCKS while preserving the master and L/R forwards.", confirmReview, "core/connection/proxy.go", "core/cmd/burrow/connection_lab.py"),
-	op("files.pwd", "scp|scp * pwd", "scp NAME [pwd [PATH]]", "scp target pwd", "Resolve a remote directory", "name remote-path", "FileListing", "Queries remote SFTP through the existing master; records file history. CLI is stateless; TUI keeps current directories.", noReview, "core/connection/remote_files.go", "core/cmd/burrow/files_lab.py"),
+	op("files.pwd", "scp|scp * pwd|scp * --request", "scp NAME [pwd [PATH]]", "scp target pwd", "Resolve a remote directory", "name remote-path", "FileListing", "Queries remote SFTP through the existing master; records file history. CLI is stateless; TUI keeps current directories.", noReview, "core/connection/remote_files.go", "core/cmd/burrow/files_lab.py"),
 	op("files.list", "scp * ls", "scp NAME ls [PATH]", "scp target ls", "List remote files including hidden entries", "name remote-path", "FileListing", "Reads remote SFTP metadata; records history. Links are shown, with numeric UID/GID fallback.", noReview, "core/connection/remote_files.go", "core/cmd/burrow/files_lab.py"),
 	op("files.tree", "scp * tree", "scp NAME tree [PATH]", "scp target tree", "Read a bounded remote directory tree", "name remote-path", "FileTree", "Reads at most 3000 entries or 30 seconds, reports partial results, and does not recurse into directory links.", noReview, "core/connection/remote_files.go", "core/cmd/burrow/files_lab.py"),
 	op("files.cd", "scp * cd", "scp NAME cd [PATH]", "scp target cd /tmp", "Validate and resolve remote navigation", "name remote-path", "FileListing", "CLI returns the resolved directory; pass it on subsequent calls. TUI changes its file-tab directory.", noReview, "core/connection/remote_files.go", "core/cmd/burrow/files_lab.py"),
 	op("files.complete", "scp * complete", "scp NAME complete [PATH]", "scp target complete /tmp/", "Read contextual remote path completion", "name remote-path", "FileListing", "Uses bounded cached SFTP discovery; completion is not command history.", noReview, "core/connection/remote_files.go", "core/cmd/burrow/files_lab.py"),
-	op("files.cancel", "scp * cancel", "scp NAME cancel", "scp target cancel", "Cancel pending file discovery", "name", "FileListing", "Cancels pending owner discovery; does not cancel transfers. TUI Ctrl+C uses its exact discovery request ID.", noReview, "core/connection/remote_files.go", "core/cmd/burrow/files_lab.py"),
+	op("files.cancel", "scp * cancel", "scp NAME cancel ID", "scp target cancel request-1", "Cancel pending file discovery", "name request-id", "FileListing", "Requests cancellation for the exact connection and caller-chosen discovery ID; does not cancel transfers. Cancellation requested is not cleanup acknowledgement. A cancelled ID remains refused for one minute; use a fresh ID for each new request. TUI Ctrl+C uses the same owner contract.", noReview, "core/connection/remote_files.go", "core/cmd/burrow/files_lab.py"),
 	op("files.roots", "local", "local", "local", "Inspect effective transfer roots", "", "FileRoots", inspectEffect, noReview, "core/connection/files.go", "core/cmd/burrow/files_check.py"),
 	op("files.set-root", "local *", "local [download|upload] PATH", "local download /absolute/workspace/downloads", "Persist a workspace transfer root", "area path", "FileRoots", "Creates a missing private root directory, validates it and persists the selection; never moves or deletes files; unsafe roots fail without fallback.", noReview, "core/connection/files.go", "core/cmd/burrow/files_check.py"),
 	op("files.local-cd", "lcd", "lcd [download|upload] PATH", "lcd download .", "Validate navigation within a local root", "area local-path", "FileListing", "Inspects containment and accessibility; records history. CLI navigation is stateless.", noReview, "core/connection/files.go", "core/cmd/burrow/files_check.py"),
@@ -231,24 +233,37 @@ func init() {
 				"burrow --workspace PATH run " + verb + " CONNECTION --script PATH --mode stream|inline|stage --interpreter PATH [OPTIONS]" + yes + " -- [ARG...]",
 				"burrow --workspace PATH run " + verb + " CONNECTION --local [OPTIONS]" + yes + " -- /absolute/TOOL [ARG...]",
 			}
-		case "files.cancel":
-			op.Agent.Status = "unsupported"
-			op.Agent.Limitation = "The parser accepts scp NAME cancel, but the CLI cannot supply a discovery request ID, so it does not cancel another request. TUI Ctrl+C supplies its own request ID."
-			op.Human = "Ctrl+C during file discovery in that file tab"
-			op.Effects = "TUI cancels its current discovery request. The accepted CLI spelling has no cancellation effect."
-			op.ModuleCommand = false
+		case "files.pwd", "files.list", "files.tree", "files.cd", "files.complete":
+			op.Agent.Syntax += " [--request ID]"
+			op.Inputs = append(op.Inputs, "request-id")
 		case "tunnel.remove":
 			op.Review = "Review then --yes. No --review flag; the exact qualified ID selects the listener."
 		case "profile.connect":
 			op.ModuleCommand = false
-		case "shell.open", "run.follow", "logs.view":
-			op.Agent.Status = "terminal-only"
-			op.Agent.Limitation = "Requires terminal input; no headless structured route for this viewer."
+		case "logs.view":
+			op.Agent.Syntax = "burrow --workspace PATH logs --json"
+			op.Agent.Example = append(op.Agent.Example, "--json")
+			op.Result = "LogSnapshot"
+			op.Effects = "Returns the same historical operator-note snapshot as the read-only Vim viewer in a JSON text field. Starts no editor or remote work; may initialize an empty private log. Interactive shell I/O is not recorded."
 			op.ModuleCommand = false
-		case "shell.list", "shell.resume", "shell.close", "shell.control", "shell.detach":
-			op.Agent.Status = "unsupported"
-			op.Agent.Limitation = "These tab-number shortcuts require a frontend. Headless agents use session list/inspect/claim/takeover/input/resize/release/close with opaque Hovel IDs."
+			op.Evidence = append(op.Evidence, Evidence{Kind: "semantic-check", Source: "core/cmd/burrow/activity_check.py"})
+		case "shell.resume":
+			op.Agent.Status = "equivalent"
+			op.Agent.Equivalents = []string{"session.resize"}
+			op.Agent.Limitation = "Frontend focus is presentation; resuming a controlled tab applies its geometry through session.resize. Observers cannot resize. Use the retained session ID and current control token for the headless operation."
+			op.Effects = "Selects an existing frontend tab without claiming control; a current controller applies the frontend geometry. Does not create a connection or shell."
 			op.Scope = "Current frontend and selected workspace only; IDs are local to that frontend."
+			op.ModuleCommand = false
+		case "shell.open", "shell.list", "shell.close", "shell.control", "shell.detach", "run.follow":
+			op.Agent.Status = "equivalent"
+			op.Agent.Equivalents = map[string][]string{
+				"shell.open":  {"session.create", "session.claim", "session.inspect", "session.observe", "session.snapshot", "session.input", "session.resize"},
+				"shell.list":  {"connection.list", "session.list", "session.observe"},
+				"shell.close": {"session.close"}, "shell.control": {"session.takeover"},
+				"shell.detach": {"session.release"}, "run.follow": {"run.output"},
+			}[op.ID]
+			op.Agent.Limitation = "This spelling is a terminal adapter. Use the listed headless equivalents with explicit workspace/resource identities and independent output offsets; frontend tab numbers are not retained session IDs."
+			op.ModuleCommand = false
 		}
 	}
 }
@@ -310,6 +325,19 @@ func ResultSchemas() map[string]any {
 	}
 	out["TunnelCheck"] = object("id", "state", "detail")
 	out["Backup"] = object("backup", "collection")
+	out["LogSnapshot"] = object("text")
+	out["SavedChain"].(map[string]any)["type"] = "object"
+	out["SavedChain"].(map[string]any)["required"] = []string{"apiVersion", "kind", "metadata", "spec"}
+	out["SavedChain"].(map[string]any)["properties"] = map[string]any{
+		"apiVersion": map[string]string{"const": "hovel.dev/v1alpha1"}, "kind": map[string]string{"const": "Chain"},
+		"metadata": object("name"),
+		"spec": map[string]any{"type": "object", "required": []string{"mode", "steps", "targets", "config"}, "properties": map[string]any{
+			"mode":    map[string]string{"const": "configured"},
+			"steps":   map[string]any{"type": "array", "items": object("id", "uses")},
+			"targets": map[string]any{"type": "array", "items": object("id")},
+			"config":  map[string]any{"type": "object", "additionalProperties": map[string]string{"type": "string"}, "description": "Hovel chain configuration. Generated request strings are opaque confirmed adapter inputs; do not edit them."},
+		}},
+	}
 	out["SavedChain"].(map[string]any)["example"] = savedChain(map[string]string{"workspace": "/absolute/workspace", "command": "run list"})
 	return out
 }

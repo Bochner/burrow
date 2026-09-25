@@ -47,6 +47,12 @@ behavior. No Hovel test results or coverage percentages are reused. Evidence
 and the staged site bind to the same source; Pages verifies the eligible commit
 and artifact hashes. The #86 diagnostics remain visibly advisory.
 
+The #65 comparison also inspected the published Hovel report generated on
+2026-09-24 at source `b4190bb548c49263003d7d398571c3837717890f`.
+`MVP-ACCEPTANCE.md` records applicable differences, including unmeasured Burrow
+branch coverage and the absence of a Burrow SDK or required typed MCP surface.
+No additional upstream implementation was copied for that comparison.
+
 The API tab (#88) reuses that header, sidebar, table styling and search. Its
 operation pages and downloadable JSON are generated from the production
 `burrow capabilities` command as a declared build input. It documents Burrow

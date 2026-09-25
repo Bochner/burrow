@@ -14,6 +14,11 @@ Load `burrow` first and follow its selection and operating rules. Load
 Ordinary inspection uses remote commands on the selected existing connection;
 it needs no separate diagnostic service.
 
+For historical Burrow operation notes, use `logs --json` in the selected
+workspace. Its `text` is the same filtered snapshot as the human log viewer;
+it is not remote system logs or a complete audit export. Use `follow --json`
+for new live observations and retained run output for captured command bytes.
+
 Read [commands.md](references/commands.md) only for the requested diagnostic.
 Prepare those arguments with `run prepare NAME -- COMMAND ARG...`, check the
 exact target and command recap, then use the retained run's review digest.

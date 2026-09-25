@@ -45,12 +45,25 @@ with tempfile.TemporaryDirectory(prefix="burrow-api-") as scratch:
     assert "--review HASH" in operations["profile.connect"]["agent"]["syntax"]
     assert "--review HASH" in operations["connection.close"]["agent"]["syntax"]
     assert contract["errors"]["workspace"]["encoding"] == "JSON/stderr"
-    assert operations["shell.resume"]["agent"]["status"] == "unsupported"
+    assert operations["shell.resume"]["agent"]["equivalents"] == ["session.resize"]
+    assert "presentationOnly" not in operations["shell.resume"]
+    assert operations["shell.close"]["agent"]["equivalents"] == ["session.close"]
+    assert "connection.close" in operations["workspace.quit"]["agent"]["equivalents"]
+    for op in operations.values():
+        for name in op["agent"].get("equivalents", []):
+            assert name != op["id"] and operations[name]["agent"]["status"] == "supported", op
+    assert operations["files.cancel"]["agent"]["status"] == "supported"
+    assert "request-id" in operations["files.cancel"]["inputs"]
     assert operations["installation.skills"]["agent"]["status"] == "supported"
     assert operations["installation.skills"]["result"] == "SkillInstallation"
-    assert operations["logs.view"]["agent"]["status"] == "terminal-only"
+    assert operations["logs.view"]["agent"]["status"] == "supported"
+    assert operations["logs.view"]["agent"]["syntax"].endswith("logs --json")
     assert operations["logs.follow"]["agent"]["status"] == "supported"
     assert operations["logs.follow"]["result"] == "Activity"
+    assert contract["inputs"]["profile-review"]["properties"]["--yes"]["type"] == "boolean"
+    assert "--password" not in contract["inputs"]["profile-options"]["properties"]
+    assert contract["inputs"]["survey-options"]["properties"]["--timeout"]["type"] == "string"
+    assert contract["results"]["SavedChain"]["properties"]["spec"]["properties"]["config"]["additionalProperties"]["type"] == "string"
     assert {"workspacePath", "kind", "source", "time", "observedAt"} <= set(contract["results"]["Activity"]["required"])
     assert contract["results"]["Activity"]["properties"]["data"]["type"] == "string"
     output_bytes = contract["results"]["ShellOutput"]["properties"]["data"]

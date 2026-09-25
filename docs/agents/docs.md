@@ -56,7 +56,13 @@ report, run preflight, coverage, site staging, then `aspect burrow-report render
 without editing source between steps. Dirty local evidence is inspectable but
 cannot pass publication. `aspect burrow-report release` additionally requires
 usable agent routes and passing behavior evidence for every inventory capability;
-it remains failing while MVP 5 parity is incomplete.
+it requires usable direct routes or explicit supported equivalents for all
+operational capabilities. Presentation-only entries stay visible with their
+own behavior checks. Schema documentation and owner acceptance remain separate.
+Repeated local suites preserve previous evidence in `.report-input/archive/`;
+archived failures must be diagnosed and never silently replaced by a passing retry.
+The required CI report job uses `aspect burrow-report release`, enforcing these
+operational route and behavior checks before the `repository` aggregate passes.
 
 See [the upstream pin and adaptation notes](../site/UPSTREAM.md) before updating
 copied Hovel theme code or dependency versions.

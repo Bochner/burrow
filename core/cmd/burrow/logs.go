@@ -148,6 +148,20 @@ func prepareLogViewer(ctx context.Context, workspace string, plain, collected bo
 	return cmd, dir, nil
 }
 
+// The headless reader uses exactly the snapshot rendered by the human viewer.
+func readLogSnapshot(workspace string) (string, error) {
+	dir, err := os.MkdirTemp("", "burrow-log-read-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+	if err := writeActivitySnapshot(workspace, dir); err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "notes.log"))
+	return string(data), err
+}
+
 func writeActivitySnapshot(workspace, dir string) error {
 	f, err := os.OpenFile(filepath.Join(dir, "operations.log"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {

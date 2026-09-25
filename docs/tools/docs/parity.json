@@ -118,9 +118,10 @@
       "targets": [
         "//core/cmd/burrow:activity_test"
       ],
-      "scope": "Independent activity readers, gaps, safe output and observation without mutation.",
+      "scope": "Independent activity readers, gaps, safe output and observation without mutation; headless historical operation notes match the human viewer's filtered snapshot.",
       "capabilities": [
-        "logs.follow"
+        "logs.follow",
+        "logs.view"
       ]
     },
     {

@@ -23,6 +23,8 @@ for (const [index, category] of categories.entries()) {
     ])) + ops.map((op) => `<section id="${escape(op.id)}"><h2>${code(op.id)}</h2><p>${escape(op.summary)}</p>` +
       table(["Contract", "Current behavior"], [
         ["Agent availability", `${escape(op.agent.status)}${op.agent.limitation ? ` — ${escape(op.agent.limitation)}` : ""}`],
+        ["Equivalent headless operations", ((op.agent as { equivalents?: string[] }).equivalents ?? []).map((id) => `<a href="${escape(inventory.operations.find((entry) => entry.id === id)!.category)}.html#${escape(id)}">${code(id)}</a>`).join(", ") || "Use the direct route, or the explicit limitation above."],
+        ["Presentation only", escape((op as { presentationOnly?: string }).presentationOnly || "No; operational behavior is included in parity evidence.")],
         ["CLI / delegated call", [op.agent.syntax, ...(op.agent.variants ?? [])].map(code).join("<br>")], ["Human entry point", code(op.human)],
         ["Scope", escape(op.scope)], ["Effects / initialization", escape(op.effects)], ["Review", escape(op.review)],
         ["Inputs", op.inputs.length ? op.inputs.map((name) => `<a href="inputs.html#${escape(name)}">${code(name)}</a>`).join(", ") : "No operation-specific inputs; see invocation and global flags."],

@@ -41,6 +41,14 @@ func capabilities(fs *flag.FlagSet, args []string) error {
 	for name, schema := range connection.ShellRequestSchemas() {
 		capabilityInputs[name] = schema
 	}
+	profileOptions := map[string]any{}
+	for _, name := range []string{"--port", "--key", "--agent", "--ssh-config", "--jump", "-proxy"} {
+		profileOptions[name] = capabilityInputs["connection-options"].(map[string]any)["properties"].(map[string]any)[name]
+	}
+	for name, shape := range capabilityInputs["profile-review"].(map[string]any)["properties"].(map[string]any) {
+		profileOptions[name] = shape
+	}
+	capabilityInputs["profile-options"].(map[string]any)["properties"] = profileOptions
 	results["SkillInstallation"] = map[string]any{
 		"type": "object", "required": []string{"version", "bundleSHA256", "source", "provenance", "upstream", "destination", "dryRun", "complete", "skills"},
 		"description": "Offline installation report. A failure may emit this partial report on stdout, then text stderr and exit 1; planned actions are not success. Native client discovery is not implied.",
@@ -91,17 +99,31 @@ func capabilities(fs *flag.FlagSet, args []string) error {
 		"presentation": map[string]any{
 			"aliases":  map[string]string{"tunc CONNECTION l|r ...": "tunnel.create (forward|reverse)", "tund CONNECTION/ID": "tunnel.remove", "download-cancel ID": "transfer.cancel", "-ip/-socket/-ssh-key": "--host/--name/--key connection options", "--load PATH": "profile.load during startup", "file mode ls/tree/cd/pwd/get/mget/put": "files.* / transfer.* with the selected connection and per-tab directories", "file mode history": "files.history", "reports/report": "report.list/read with a human renderer in TUI", "Ctrl+N": "logs.view", "Saved profile Edit (Vim)": "profile.edit through a private one-profile draft; validates and binds revision on successful editor exit; CLI uses profile edit"},
 			"controls": "Help/F1, Ctrl+P search/menu, Tab completion, command recall, scrolling, NO_COLOR, mouse toggle, clipboard copy, workspace/tab selection, Ctrl+L output/activity views, and file-mode back/exit alter presentation or select existing capabilities; they are not independent remote operations. Ctrl+] detaches and releases this frontend's shell claim; Alt+T explicitly takes control. Keep running retains shells.",
-			"stdout":   "Discovery always emits JSON. Workspace operations, close, profile connect and session commands use structured stderr on failure; human terminals apply the shared semantic JSON renderer to their results and errors. Other nonterminal stdout emits JSON; terminal stdout uses the shared semantic renderer. Shell, logs and run follow routes are interactive. Workspace follow emits NDJSON with --json or a pipe, otherwise a colored scrolling feed. Private session controls require piped/file stdin AND stdout. Global flags precede the command; tokens after -- in run commands belong to the target program.",
+			"stdout":   "Discovery always emits JSON. Workspace operations, close, profile connect and session commands use structured stderr on failure; human terminals apply the shared semantic JSON renderer to their results and errors. Other nonterminal stdout emits JSON; terminal stdout uses the shared semantic renderer. Shell, bare logs and run follow routes are interactive; logs --json returns historical notes without an editor. Workspace follow emits NDJSON with --json or a pipe, otherwise a colored scrolling feed. Private session controls require piped/file stdin AND stdout. Global flags precede the command; tokens after -- in run commands belong to the target program.",
 		},
 		"evidencePolicy": "Dispatch registration and successful route parsing prove reachability only. Reflected result schemas describe wire shapes, not execution outcomes. Referenced semantic checks assert selected real behavior; neither inventory size, shared help, nor upstream coverage percentages establish 100% parity.",
 	})
 }
 
 func frontendOp(id, category, summary, syntax, human, status, result, effects, review, source, check string) connection.Operation {
-	return connection.Operation{ID: id, Category: category, Summary: summary, Patterns: [][]string{}, Human: human,
+	op := connection.Operation{ID: id, Category: category, Summary: summary, Patterns: [][]string{}, Human: human,
 		Agent: connection.Route{Status: status, Syntax: syntax, Example: []string{}}, Inputs: []string{}, Result: result,
 		Scope: "Local operator installation/frontend; workspace operations require an explicit canonical path.", Effects: effects, Review: review,
 		Evidence: []connection.Evidence{{Kind: "dispatch", Source: source}, {Kind: "semantic-check", Source: check}}}
+	switch id {
+	case "workspace.tui":
+		op.Agent.Status = "equivalent"
+		op.Agent.Equivalents = []string{"workspace.open", "profile.load"}
+		op.Agent.Limitation = "Opening the frontend is presentation; workspace setup and optional collection loading use these same headless operations."
+	case "workspace.quit":
+		op.Agent.Status = "equivalent"
+		op.Agent.Equivalents = []string{"workspace.list", "connection.list", "connection.close", "session.release"}
+		op.Agent.Syntax = "Use the listed routes for explicit workspaces and exact reviewed resources; retain work by releasing only your own claims."
+		op.Agent.Limitation = "An agent has no frontend to quit. Keep releases its own claims; close reviews and closes each selected connection. Cancel makes no change. This does not authorize retiring a whole manager."
+	case "workspace.hovel-cli":
+		op.PresentationOnly = "Starts or closes the embedded Hovel frontend. Hovel operations remain delegated to its pinned public CLI contract; they are not extra Burrow capabilities."
+	}
+	return op
 }
 
 var frontendOperations = []connection.Operation{
@@ -123,6 +145,7 @@ var frontendOperations = []connection.Operation{
 // are specified by the operation's syntax; these definitions give constraints
 // and defaults shared across those invocations.
 var capabilityInputs = map[string]any{
+	"request-id":         map[string]any{"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Optional --request ID for discovery; required positional ID for cancel. Choose a fresh non-secret ID per request. Scoped to the selected connection creation. Cancellation is remembered for one minute and affects no transfers."},
 	"shell-geometry":     map[string]any{"type": "object", "description": "Optional --columns and --rows; defaults 80x24, each 1..1000, at most 20000 cells. Bound into the creation review and validated by the shell owner.", "properties": map[string]any{"--columns": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000, "default": 80}, "--rows": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000, "default": 24}}},
 	"session-id":         map[string]any{"type": "string", "description": "Opaque Hovel shell session ID; requires the explicit workspace and connection name."},
 	"name":               map[string]any{"type": "string", "description": "Workspace-local connection/profile name, 1–24 ASCII letters, digits, underscores or hyphens. Must start with a letter or digit; no paths."},
@@ -156,7 +179,7 @@ var capabilityInputs = map[string]any{
 	"as":                 map[string]any{"type": "string", "description": "Optional --as NAME; defaults to saved/live name."},
 	"prompt":             map[string]any{"type": "boolean", "default": false, "description": "--prompt requests private interactive authentication."},
 	"collect":            map[string]any{"type": "boolean", "default": false, "description": "--collect on launch waits for completion and registers output; stopping the wait does not cancel execution."},
-	"profile-review":     map[string]any{"type": "object", "description": "--revision HASH and --collection PATH optionally bind a saved-settings review; --yes confirms replacement/deletion."},
+	"profile-review":     map[string]any{"type": "object", "properties": map[string]any{"--revision": map[string]string{"type": "string"}, "--collection": map[string]string{"type": "string"}, "--yes": map[string]any{"type": "boolean", "default": false}}, "description": "--revision HASH and --collection PATH optionally bind a saved-settings review; --yes confirms replacement/deletion."},
 	"profile-options":    map[string]any{"type": "object", "description": "Connection key/agent/port/ssh-config/jump/proxy options; no --password or --prompt. Edit replaces all fields. --revision HASH/--collection PATH bind review, --yes approves."},
 	"connection-options": map[string]any{"type": "object", "properties": map[string]any{
 		"--port":       map[string]any{"type": "integer", "description": "Default SSH config port or 22."},
@@ -164,9 +187,9 @@ var capabilityInputs = map[string]any{
 		"--agent":      map[string]any{"type": "string", "description": "Default frontend SSH_AUTH_SOCK / effective SSH configuration; must be accessible by daemon."},
 		"--ssh-config": map[string]any{"type": "string", "description": "Default ~/.ssh/config; supports aliases and selected safe settings."},
 		"--jump":       map[string]any{"type": "string", "description": "[USER@]HOST[:PORT][,...]; config ProxyJump otherwise."},
-		"--password":   map[string]any{"description": "Bare flag prompts privately; optional explicit value supplies target once, mutually exclusive with key/explicit nonempty agent. Value remains visible in original process argv; never persist it."},
+		"--password":   map[string]any{"anyOf": []any{map[string]any{"const": true}, map[string]string{"type": "string"}}, "description": "Bare flag prompts privately; optional explicit value supplies target once, mutually exclusive with key/explicit nonempty agent. Value remains visible in original process argv; never persist it."},
 		"--prompt":     map[string]any{"type": "boolean", "default": false},
-		"-proxy":       map[string]any{"description": "Optional SOCKS port; omitted off, bare flag 9050. Not accepted by chain connect."},
+		"-proxy":       map[string]any{"anyOf": []any{map[string]any{"const": true}, map[string]any{"type": "integer", "minimum": 1, "maximum": 65535}}, "description": "Optional SOCKS port; omitted off, bare flag 9050. Not accepted by chain connect."},
 		"--yes":        map[string]any{"type": "boolean", "default": false, "description": "Not accepted by chain connect; exported chains need a separate confirmed Hovel throw."},
 		"--review":     map[string]any{"type": "string", "description": "Bind direct connection approval to preview digest."},
 	}},
@@ -180,5 +203,5 @@ var capabilityInputs = map[string]any{
 		"--timeout":     map[string]any{"type": "string", "description": "Optional positive duration, e.g. 30s; default no execution timeout."},
 		"--budget":      map[string]any{"type": "integer", "minimum": 1, "default": 268435456, "description": "Bytes per captured stream; incomplete capture is reported."},
 	}},
-	"survey-options": map[string]any{"type": "object", "required": []string{"--os"}, "properties": map[string]any{"--os": map[string]any{"enum": []string{"ubuntu"}}, "--timeout": map[string]any{"default": "90s", "description": "Optional positive duration."}, "--budget": map[string]any{"type": "integer", "minimum": 1, "default": 1048576}}},
+	"survey-options": map[string]any{"type": "object", "required": []string{"--os"}, "properties": map[string]any{"--os": map[string]any{"enum": []string{"ubuntu"}}, "--timeout": map[string]any{"type": "string", "default": "90s", "description": "Optional positive duration."}, "--budget": map[string]any{"type": "integer", "minimum": 1, "default": 1048576}}},
 }

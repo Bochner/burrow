@@ -25,8 +25,12 @@ with tempfile.TemporaryDirectory() as scratch:
                  "provenance": {}, "operations": [{"id": "example.inspect", "category": "example", "summary": "Inspect",
                  "human": "Inspect button", "agent": {"status": "supported", "syntax": "burrow inspect"},
                  "inputs": ["options"], "result": "Result", "effects": "Reads", "review": "None", "evidence": []}]}
+    inventory["operations"] += [
+        dict(inventory["operations"][0], id="example.tab", agent={"status": "equivalent", "syntax": "inspect tab", "equivalents": ["example.inspect"]}),
+        dict(inventory["operations"][0], id="example.focus", presentationOnly="Selects the existing tab without changing its resource.", agent={"status": "terminal-only", "syntax": "focus tab"}),
+    ]
     parity = {"schemaVersion": 1, "groups": [{"source": "core/launch/example.go", "targets": ["//core/example:check"],
-              "scope": "Selected inspection outcome", "capabilities": ["example.inspect"]}]}
+              "scope": "Selected inspection outcome", "capabilities": ["example.inspect", "example.tab", "example.focus"]}]}
     (root / "parity.json").write_text(json.dumps(parity))
     git("add", ".")
     git("-c", "user.name=Report fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
@@ -69,7 +73,8 @@ with tempfile.TemporaryDirectory() as scratch:
     assert report["suites"]["files"]["status"] == "MISSING"
     assert report["suites"]["hovel"]["advisory"] is True
     assert report["coverage"]["status"] == "MISSING"
-    assert report["parity"]["reachable"] == 1 and report["parity"]["demonstrated"] == 0
+    assert report["parity"]["total"] == 2 and report["parity"]["presentationOnly"] == 1
+    assert report["parity"]["reachable"] == 2 and report["parity"]["demonstrated"] == 0
     assert report["parity"]["schemas"] == 0, "prose-only object options counted as a documented shape"
     html = (site / "reports/index.html").read_text()
     assert '&lt;script&gt;alert' in html and '<script>' not in html
@@ -84,12 +89,28 @@ with tempfile.TemporaryDirectory() as scratch:
     result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
     assert "parity inventory drift" in result.stderr
     inventory["operations"].pop()
+    # Equivalence cannot point at missing, presentation-only, self or chained routes.
+    for target in ("example.missing", "example.focus", "example.tab"):
+        inventory["operations"][1]["agent"]["equivalents"] = [target]
+        (site / "api/inventory.json").write_text(json.dumps(inventory))
+        result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
+        assert "invalid equivalent capability" in result.stderr
+    inventory["operations"][1]["agent"]["equivalents"] = ["example.inspect"]
+    inventory["operations"][0]["agent"] = {"status": "equivalent", "equivalents": ["example.tab"]}
+    (site / "api/inventory.json").write_text(json.dumps(inventory))
+    result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
+    assert "invalid equivalent capability" in result.stderr
+    inventory["operations"][0]["agent"] = {"status": "supported", "syntax": "burrow inspect"}
     inventory["inputs"]["options"]["properties"] = {"name": {"type": "string"}}
     (site / "api/inventory.json").write_text(json.dumps(inventory))
     events[1]["testResult"]["status"] = "PASSED"
     events[3]["finished"] = {"exitCode": {"name": "SUCCESS"}, "overallSuccess": True}
     for suite in ("portable", "lifecycle", "files", "reverse", "shell", "chains", "reports", "automation", "follow", "runs", "coverage"):
         run("begin", "--root", root, "--suite", suite)
+        if suite == "portable":
+            archived = list((root / ".report-input/archive").glob("portable-*/suite.json"))
+            assert len(archived) == 1 and json.loads(archived[0].read_text())["status"] == "FAILED"
+            assert (archived[0].parent / evidence["path"]).read_text() == '<script>alert("remote")</script>\x1b[31mFAIL\n'
         destination = root / ".report-input" / suite
         log = destination / "raw.log"
         log.write_text("PASS selected real behavior\n")
@@ -107,8 +128,19 @@ with tempfile.TemporaryDirectory() as scratch:
     report = json.loads((site / "reports/report.json").read_text())
     assert report["publishable"] and report["releaseReady"]
     assert report["coverage"]["covered"] == 1 and report["coverage"]["total"] == 2
-    assert report["parity"]["demonstrated"] == 1
-    assert report["parity"]["schemas"] == 1
+    assert report["parity"]["demonstrated"] == 2
+    assert report["parity"]["schemas"] == 2
+    # A passing adapter cannot hide a missing check on its headless equivalent.
+    alternate = root / ".report-input/partial-parity.json"
+    alternate.write_text(json.dumps({"schemaVersion": 1, "groups": [
+        dict(parity["groups"][0], capabilities=["example.inspect"], targets=["//core/example:missing"]),
+        dict(parity["groups"][0], capabilities=["example.tab", "example.focus"]),
+    ]}))
+    run("render", "--root", root, "--site", site, "--parity", alternate)
+    partial = json.loads((site / "reports/report.json").read_text())
+    tab = next(op for op in partial["parity"]["capabilities"] if op["id"] == "example.tab")
+    assert tab["semanticStatus"] == "INCOMPLETE" and not partial["releaseReady"]
+    run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity")
     assert (site / "reports/index.html").read_text().count('<details id="target-') == 11, "coverage repetitions lost their individual evidence"
     commit = git("rev-parse", "HEAD").decode().strip()
     run("verify", "--site", site, "--commit", commit)

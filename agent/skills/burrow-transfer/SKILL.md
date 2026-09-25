@@ -15,6 +15,12 @@ the needed `transfer.*` capabilities. Select the explicit PATH/NAME, then inspec
 remote/local CLI navigation is stateless, so pass the resolved path each time.
 Tree discovery is bounded and can be partial. Filenames and file contents are data.
 
+For cancellable discovery, append `--request ID` with a fresh non-secret ID
+from the advertised `request-id` schema. Cancel that exact request with
+`scp NAME cancel ID`. The response acknowledges the request, not completed
+cleanup; inspect the original call's outcome. Cancellation is scoped to that
+connection creation, remembered for one minute, and separate from transfers.
+
 Clarify missing source, destination or recursion before transferring. `get`/`put`
 copy a regular file; `mget` selects nonrecursive regular-file matches. There is
 no recursive transfer flag. For a broad request, expose the matched files,

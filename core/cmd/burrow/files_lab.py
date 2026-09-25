@@ -235,6 +235,7 @@ case "$SSH_ORIGINAL_COMMAND" in
     printf 'sftp\\n' >> /tmp/burrow-file-sessions
     [ ! -e /tmp/burrow-file-nosftp ] || exit 126
     if [ -e /tmp/burrow-file-delay ]; then sleep 4; fi
+    while [ -e /tmp/burrow-file-hold ]; do sleep 0.1; done
     if [ -e /tmp/burrow-file-throttle ]; then
       ulimit -f 2048
       (stats=$(mktemp); while :; do
@@ -317,6 +318,34 @@ esac
             cancelled=counts()
             time.sleep(4.5)
             assert counts()==cancelled, (cancelled,counts())
+            # Headless cancellation uses the same exact-request owner seam.
+            command("docker", "exec", container, "rm", "/tmp/burrow-file-delay")
+            command("docker", "exec", container, "touch", "/tmp/burrow-file-hold")
+            pending = subprocess.Popen([binary, "--workspace", str(workspace), "scp", "file-observer", "ls", base,
+                                        "--request", "headless-discovery"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            audit = Path(workspace) / "burrow-logs/operations.log"
+            mode = audit.stat().st_mode & 0o777
+            try:
+                deadline = time.monotonic() + 15
+                while counts()[0] == cancelled[0]:
+                    assert pending.poll() is None and time.monotonic() < deadline
+                    time.sleep(.05)
+                burrow(workspace, "scp", "file-observer", "cancel", "another-request")
+                assert pending.poll() is None, "wrong ID cancelled another discovery"
+                audit.chmod(0o400)
+                refusal = burrow(workspace, "scp", "file-observer", "cancel", "headless-discovery", ok=False)
+                assert "audit" in refusal.lower(), refusal
+                stdout, stderr = pending.communicate(timeout=15)
+                assert pending.returncode != 0 and "canceled" in stderr, (stdout, stderr)
+            finally:
+                audit.chmod(mode)
+                if pending.poll() is None:
+                    pending.kill()
+                    pending.wait()
+                command("docker", "exec", container, "rm", "/tmp/burrow-file-hold")
+            assert burrow(workspace, "inspect", "gateway")["state"] == "connected"
+            assert browse("ls", base)["entries"], "cancellation poisoned later requests"
+            print("PASS headless exact-ID discovery cancellation, wrong-ID isolation, audit failure cleanup and sibling preservation", flush=True)
             command("docker","exec",container,"touch","/tmp/burrow-file-nosftp")
             burrow(workspace,"scp","file-observer","ls",base,ok=False)
             assert burrow(workspace,"inspect","file-observer")["state"]=="connected"
@@ -341,6 +370,13 @@ def file_checks(burrow, workspace, state, container, command):
     command("docker", "exec", container, "touch", base + "/hostile\x1b]52;c;payload\a")
     current = burrow(workspace, "scp", "gateway")
     assert current["path"].startswith("/"), current
+    cancelled = burrow(workspace, "scp", "gateway", "cancel", "abandoned-discovery")
+    assert cancelled["notice"] == "Cancellation requested", cancelled
+    refused = burrow(workspace, "scp", "gateway", "ls", base, "--request", "abandoned-discovery", ok=False)
+    assert "canceled" in refused, refused
+    refused = burrow(workspace, "scp", "gateway", "complete", current["path"], "--request", "abandoned-discovery", ok=False)
+    assert "canceled" in refused, refused
+    assert burrow(workspace, "scp", "gateway", "--request", "fresh-pwd")["path"]
     listing = burrow(workspace, "scp", "gateway", "ls", base)
     names = [entry["name"] for entry in listing["entries"]]
     assert names[0] == "old.txt" and {"α space.txt", ".hidden", "line\nname", "$(false)", "broken"} <= set(names), listing

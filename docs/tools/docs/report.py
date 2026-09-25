@@ -58,7 +58,11 @@ def suite_directory(root, suite):
 def begin(root, suite):
     directory = suite_directory(root, suite)
     if directory.exists():
-        shutil.rmtree(directory)
+        archive = directory.parent / "archive"
+        if archive.is_symlink():
+            raise ValueError("refusing symlink evidence archive")
+        archive.mkdir(exist_ok=True)
+        directory.rename(archive / (suite + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")))
     directory.mkdir(parents=True)
     write_json(directory / "start.json", {"source": snapshot(root),
         "started": datetime.now(timezone.utc).isoformat(),
@@ -138,6 +142,15 @@ def target_status(target, suite):
 
 def validate_parity(inventory, parity):
     operations = {op["id"]: op for op in inventory["operations"]}
+    for op in operations.values():
+        equivalents = op["agent"].get("equivalents", [])
+        if op.get("presentationOnly") and (equivalents or op["agent"]["status"] not in ("terminal-only", "delegated")):
+            raise ValueError("invalid presentation-only capability: " + op["id"])
+        if (op["agent"]["status"] == "equivalent") != bool(equivalents):
+            raise ValueError("equivalent route requires explicit capabilities: " + op["id"])
+        for name in equivalents:
+            if name not in operations or name == op["id"] or operations[name]["agent"].get("equivalents") or operations[name].get("presentationOnly"):
+                raise ValueError("invalid equivalent capability: " + name)
     checks = {name: [] for name in operations}
     names = set()
     for group in parity["groups"]:
@@ -282,15 +295,25 @@ def report_model(inventory, parity, root=None):
         status = "PASSED" if bindings and all(item["status"] == "PASSED" for item in bindings) else "MISSING" if all(item["status"] == "MISSING" for item in bindings) else "INCOMPLETE"
         schema = shaped(inventory["results"][op["result"]], inventory["results"]) and all(shaped(inventory["inputs"][name], inventory["results"]) for name in op["inputs"])
         capabilities.append(op | {"checks": bindings, "semanticStatus": status, "schemaDocumented": schema})
-    parity_result = {"capabilities": capabilities, "total": len(capabilities),
-                     "reachable": sum(op["agent"]["status"] == "supported" for op in capabilities),
-                     "schemas": sum(op["schemaDocumented"] for op in capabilities),
-                     "demonstrated": sum(op["semanticStatus"] == "PASSED" and op["agent"]["status"] == "supported" for op in capabilities)}
+    by_id = {op["id"]: op for op in capabilities}
+    for op in capabilities:
+        equivalents = [by_id[name] for name in op["agent"].get("equivalents", [])]
+        op["agentUsable"] = op["agent"]["status"] == "supported" or bool(equivalents) and all(item["agent"]["status"] == "supported" for item in equivalents)
+        if equivalents:
+            op["schemaDocumented"] = all(item["schemaDocumented"] for item in equivalents)
+            if any(item["semanticStatus"] != "PASSED" for item in equivalents) and op["semanticStatus"] == "PASSED":
+                op["semanticStatus"] = "INCOMPLETE"
+    operational = [op for op in capabilities if not op.get("presentationOnly")]
+    parity_result = {"capabilities": capabilities, "total": len(operational),
+                     "presentationOnly": len(capabilities) - len(operational),
+                     "reachable": sum(op["agentUsable"] for op in operational),
+                     "schemas": sum(op["schemaDocumented"] for op in operational),
+                     "demonstrated": sum(op["semanticStatus"] == "PASSED" and op["agentUsable"] for op in operational)}
     publishable = bool(source and not source["dirty"] and coverage["status"] == "MEASURED" and
                        all(suites[name]["status"] == "PASSED" for name in (*SUITES, "coverage")))
     return {"schemaVersion": 1, "source": source, "suites": suites, "coverage": coverage, "parity": parity_result,
             "provenance": inventory["provenance"], "publishable": publishable,
-            "releaseReady": publishable and parity_result["demonstrated"] == parity_result["total"]}, evidence
+            "releaseReady": publishable and parity_result["demonstrated"] == parity_result["total"] and all(op["semanticStatus"] == "PASSED" for op in capabilities)}, evidence
 
 
 def safe_text(value):
@@ -309,6 +332,7 @@ def link(path, label):
 
 def render_html(report, evidence):
     source, parity, coverage = report["source"], report["parity"], report["coverage"]
+    categories = {op["id"]: op["category"] for op in parity["capabilities"]}
     sections = ("overview", "coverage", "parity", "suites", "targets", "provenance")
     parts = [START, '<article class="report-shell"><div class="report-hero"><p class="hero-tag">// quality and operator evidence</p><h1>Burrow Test Report</h1>',
              '<p>Source: ' + safe_text(source["commit"] + (" (uncommitted changes)" if source["dirty"] else "") if source else "No test evidence attached to this build") + '</p></div>',
@@ -326,12 +350,12 @@ def render_html(report, evidence):
         parts.append('<p class="empty-state">MISSING: no measured coverage is attached. A missing measurement is not zero coverage.</p>')
     if coverage.get("unmeasuredFiles"):
         parts.append('<details><summary>Production files without a line measurement</summary><pre>' + safe_text('\n'.join(coverage["unmeasuredFiles"])) + '</pre></details>')
-    parts += ['</section><section id="parity"><h2>Operator interface parity</h2><p>Reachability means a supported CLI route is advertised. Schema coverage means inputs and results have documented JSON shapes; descriptions alone do not count. Neither proves behavior. Selected semantic coverage requires the listed real checks to pass for this source and a usable agent route. It is not exhaustive outcome coverage. Optional MCP is not measured as typed MCP coverage. Delegated and terminal-only routes remain distinct.</p>',
+    parts += ['</section><section id="parity"><h2>Operator interface parity</h2><p>Reachability requires a supported CLI route or explicit supported equivalents. Every equivalent must have passing behavior evidence before its human adapter earns semantic credit. Schema coverage counts fully documented JSON shapes; prose and opaque payloads do not count. Neither metric proves behavior. Optional MCP is not measured as typed MCP coverage. Selected checks do not prove exhaustive outcome coverage.</p><p>' + str(parity["total"]) + ' operational capabilities; ' + str(parity["presentationOnly"]) + ' explicitly identified presentation-only entries remain below and require their own behavior checks, but do not enter the operational denominator.</p>',
               table(["Capability / human route", "Agent route", "Risk / review", "Contract status", "Selected behavior evidence"], [[
                   '<strong>' + link('../api/' + op["category"] + '.html#' + op["id"], op["id"]) + '</strong><br>' + safe_text(op["human"]),
-                  safe_text(op["agent"]["status"]) + '<br><code>' + safe_text(op["agent"]["syntax"]) + '</code><p>' + safe_text(op["agent"].get("limitation", "")) + '</p>',
+                  safe_text(op["agent"]["status"]) + '<br><code>' + safe_text(op["agent"]["syntax"]) + '</code><p>' + safe_text(op["agent"].get("limitation", "")) + '</p>' + ''.join(link('../api/' + categories[name] + '.html#' + name, name) + '<br>' for name in op["agent"].get("equivalents", [])),
                   safe_text(op["effects"]) + '<p>' + safe_text(op["review"]) + '</p>',
-                  ('Documented shape' if op["schemaDocumented"] else 'Partial / no structured shape') + '<br>Semantics: ' + safe_text(op["semanticStatus"]),
+                  ('Presentation only: ' + safe_text(op["presentationOnly"]) if op.get("presentationOnly") else 'Documented shape' if op["schemaDocumented"] else 'Partial / no structured shape') + '<br>Semantics: ' + safe_text(op["semanticStatus"]),
                   ''.join('<p>' + (link('#target-' + digest(item["target"].encode())[:16], item["target"]) if item["status"] != "MISSING" else safe_text(item["target"])) + '<br>' + safe_text(item["source"]) + '<br>' + safe_text(item["scope"]) + '<br>' + safe_text(item["status"]) + '</p>' for item in op["checks"])
               ] for op in parity["capabilities"]]), '</section><section id="suites"><h2>Required and advisory suites</h2><p>The three Hovel #86 diagnostics are advisory under the accepted release exception. Missing advisory evidence is shown explicitly; it never substitutes for a required suite.</p>',
               table(["Suite", "Requirement", "Status", "Targets / metadata"], [[safe_text(name), 'Advisory: ' + link('https://github.com/Bochner/burrow/issues/86', '#86') if suite["advisory"] else 'Required', safe_text(suite["status"]), str(len(suite["targets"])) + (' · ' + link(suite["evidence"], 'Evidence') if 'evidence' in suite else '')] for name, suite in report["suites"].items()]),

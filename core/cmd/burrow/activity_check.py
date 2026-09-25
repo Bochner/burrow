@@ -102,6 +102,9 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                                    env=env, capture_output=True, timeout=20)
         assert duplicate.returncode != 0
         wait(b, lambda e: e["kind"] == "failed" and e["message"].startswith("profile create watched"))
+        snapshot = cli("logs", "--json")
+        assert "profile create watched" in snapshot["text"] and "\x1b" not in snapshot["text"], snapshot
+        assert cli("logs", "--json") == snapshot, "reading a log snapshot changed the activity log"
         recap = cli("connect", "recap", "192.0.2.12", "--user", "alice", "--password", "RECAP-SECRET-CANARY")
         assert recap["review"] and not cli("connections")
         wait(b, lambda e: e["kind"] == "review" and e["message"].startswith("connect recap"))

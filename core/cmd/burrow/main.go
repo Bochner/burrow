@@ -201,7 +201,7 @@ func run(args []string) (failure error) {
 				return e
 			}
 		}
-		if (command == "shell" || command == "logs") && !term.IsTerminal(os.Stdin.Fd()) {
+		if (command == "shell" || (command == "logs" && len(args) == 1)) && !term.IsTerminal(os.Stdin.Fd()) {
 			return fmt.Errorf("shell requires terminal input; use inspect NAME for JSON")
 		}
 		following := command == "run" && len(args) > 1 && args[1] == "follow"
@@ -223,6 +223,13 @@ func run(args []string) (failure error) {
 			}
 		}
 		if command == "logs" {
+			if len(args) == 2 {
+				text, err := readLogSnapshot(o.Workspace)
+				if err != nil {
+					return err
+				}
+				return json.NewEncoder(os.Stdout).Encode(map[string]string{"text": text})
+			}
 			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
 			m.initialLogs = true
 			return terminal(m, m.noColor)

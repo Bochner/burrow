@@ -128,6 +128,7 @@ Output JSON includes the captured snapshot's status, budget, stored/received byt
 Original bytes stay in capture; terminal controls and binary data are escaped only for display.
 
 logs / Ctrl+N                      Open workspace log in embedded read-only Vim
+logs --json                        Read the same historical notes as JSON {text}
 Ctrl+N or :q returns to the previous context. Reopening refreshes the snapshot.
 Ctrl+N is reserved in management, file mode and embedded SSH/Hovel/editor tabs.
 Logs persist Burrow operations and shell lifecycle, not interactive shell I/O.
@@ -136,6 +137,9 @@ New target work requires logging; cleanup still runs if logging fails and report
 Logs: WORKSPACE/burrow-logs/operations.log (private). No automatic retention/rotation.
 Authentication secrets are excluded; remote output may contain customer-sensitive data.
 scp NAME [ls|tree|cd|pwd|complete] [PATH] Browse an existing live master (JSON)
+Append --request ID for cancellable discovery; use a fresh ID per request.
+scp NAME cancel ID                 Request cancellation of that exact discovery
+Cancellation affects no transfers; inspect the original discovery outcome.
 In the TUI, scp [NAME] enters file mode; back restores management.
 local [download|upload] PATH         Persist an absolute workspace root (local PATH: download)
 local                               Show effective upload and download roots
@@ -473,7 +477,12 @@ func ValidateCommand(workspace string, args []string) error {
 			return fmt.Errorf("expected downloads/transfers [ID] or download-cancel/transfer-cancel ID")
 		}
 		return nil
-	case "logs", "files-history":
+	case "logs":
+		if len(args) != 1 && (len(args) != 2 || args[1] != "--json") {
+			return fmt.Errorf("expected logs [--json]")
+		}
+		return nil
+	case "files-history":
 		if len(args) != 1 {
 			return fmt.Errorf("expected files-history")
 		}
@@ -734,7 +743,7 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	switch args[0] {
 	case "connect", "reconnect", "profile", "chain", "run", "session", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
 		a, err := launch.BeginAudit(w, commandIdentity(args), "submitted request; see owner result", nil)
-		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove") || ((args[0] == "run" || args[0] == "session") && (args[1] == "cancel" || args[1] == "close"))
+		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove") || ((args[0] == "run" || args[0] == "session") && (args[1] == "cancel" || args[1] == "close")) || (args[0] == "scp" && len(args) > 2 && args[2] == "cancel")
 		if err != nil && !cleanup {
 			return nil, err
 		}
