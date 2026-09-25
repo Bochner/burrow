@@ -117,7 +117,7 @@ No claim of equal numerical coverage or exhaustive semantic equivalence is made.
   only the three tagged diagnostic targets, not production SSH/follower failures.
 - Native skills: #64 verified all six skills installed and updated in Codex and
   Claude user/project scopes; OpenCode was absent. This is prior evidence.
-- Owner walkthrough: pending. Use the isolated fixture, have the agent operate
+- Owner walkthrough: explicitly deferred by the owner on 2026-09-25. Use the isolated fixture, have the agent operate
   installed skills while the owner observes the same TUI/follower, manually
   takes over and returns control, then reviews keep/close/cancel. Record only
   outcomes, candidate identity and unresolved defects; omit credentials, tokens,
@@ -166,6 +166,53 @@ remains fenced; explicit takeover, release and owner evidence keep their existin
 contracts. The real SSH audit-failure check retains its refusal and running-shell
 assertions, and the failed run is preserved separately.
 
+The first hosted candidate, `7b051837` (merge tree `3de3d9a`), passed eight
+of ten verification partitions and coverage in
+[run 36091699545](https://github.com/Bochner/burrow/actions/runs/36091699545).
+Reports failed with Hovel SQLite `_walFindFrame` SIGBUS during
+`SaveOperatorSession`; post-shutdown integrity passed. Shell switching/input
+during background output took 4.153 seconds against its unchanged three-second
+bound. Both failures remain recorded; no hosted retry erased them.
+
+The shell fixture now keeps one incremental decoder using the same pinned VT
+implementation, feeding each new PTY byte once. It drains available PTY chunks
+for at most 50 ms before requesting a screen, and bounds the complete decoder
+exchange at three seconds. Resize and frontend replacement reset the decoder;
+fixture cleanup closes it. The existing three-second input/redraw bound
+still includes reading and decoding time, and all screen assertions remain.
+Local diagnosis retained failures at 7.464 and 6.337 seconds; instrumentation
+attributed 5.216 seconds of the latter to repeated full-history VT decoding.
+After decoder correction, the full run still measured 6.058 seconds, including
+only 0.118 in decoding. A focused shared-TUI run passed in 1.227 seconds, while
+the full partition failed at 5.147 seconds even with experimental input batching.
+Batching was removed after it failed to resolve the full-scenario regression.
+
+The full fixture exposed production manager and retained-run providers returning
+immediately from Hovel's timed `Read` calls. The broker consequently issued
+thousands of empty RPCs per second for idle retained owners. A direct regression
+probe observed 3,117 manager reads and 2,709 completed-run reads in 0.6 seconds,
+against the existing idle-shell allowance of fewer than 100. All three providers
+now reuse the shell's timeout/closure wait. Dedicated close signals preserve
+completed-run inspection and wake on committed closure, including cleanup-error
+returns; refused close does not signal. The real SSH fixture checks idle manager
+and completed-run reads as well as the original shell behavior.
+
+The long flood setup uses terminal bracketed paste; timed short commands still
+exercise individual keys. The faster reader also exposed input sent after tab
+creation but before control and the remote prompt were ready; the fixture now
+waits for those actual states. Resume waits for observer state before explicit
+takeover. The full shell partition then passed with the idle-read correction: the
+instrumented responsiveness check took 0.849 seconds with individual key events.
+Temporary probes were removed. Failed diagnosis runs remain in local evidence;
+the candidate report and PR record final gates for the exact source revision.
+
+Official Hovel v0.4.3 (`b4190bb`) was inspected on 2026-09-25: its SQLite
+implementation is unchanged and it does not fix #86. The existing patch passed
+SQLite normal and race tests in an isolated v0.4.3 source proof. This is not an
+official runtime release or a shipped Burrow dependency. Burrow keeps its exact
+official v0.4.2 runtime pin and the existing three-diagnostic exception. Required
+production failures still block promotion; the known runtime risk remains.
+
 ## Explicit follow-up status
 
 | Follow-up | Status and release boundary |
@@ -177,6 +224,6 @@ assertions, and the failed run is preserved separately.
 | #34 structured retained controls | Open upstream API improvement; current public session-command workaround remains the accepted supported boundary. |
 | #39 background retained-run results | Open upstream; explicit collection remains required; follow/view does not collect. |
 | #75 attached Hovel catalog refresh | Open upstream; Burrow verifies registration and the embedded frontend's availability; general attached-shell refresh is not claimed. |
-| Prebuilt Linux archive | Specified, unimplemented in `DISTRIBUTION-FOLLOWUP.md`; existing v0.1.0 has source only. Publication requires a separate owner action. |
+| Prebuilt Linux archive | Owner authorized the v0.2.0 development release on 2026-09-25. Build the existing package, verify it and publish the archive/checksum from the successful main candidate; `DISTRIBUTION-FOLLOWUP.md` records the contract. v0.1.0 remains source-only. |
 | Other platforms, SMB/WinRM, generic Mesh routing, automatic recovery, plugin distribution | Deferred outside this MVP by #16/#33 and the Wayfinder map. No placeholder runtime adapters. |
-| PR, merge, Pages/distribution visibility, LazySSH archive | Owner authorized staging a PR and closing #65 after acceptance on 2026-09-24. Merge remains explicitly withheld; publication/distribution and archiving require separate actions. Work stays on `mvp5` through review. |
+| PR, merge, Pages/distribution visibility, LazySSH archive | Owner authorized merge to main, Pages and a new tagged development release on 2026-09-25 after required CI passes. The owner walkthrough is deferred, not performed or waived; #65 remains open for that acceptance. Repository visibility and archiving LazySSH remain unchanged. |

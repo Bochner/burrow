@@ -207,12 +207,12 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
     assert {s["id"] for s in burrow(w, "session", "list", "gateway")} == {one["id"], two["id"]}
     # Hovel polls Read every 250ms. An empty immediate return spins RPCs even
     # while the shell is idle; allow ample overhead without a CPU-speed limit.
-    def read_calls():
-        counters = dict(line.split(": ") for line in Path(f'/proc/{one["ownerPID"]}/io').read_text().splitlines())
+    def read_calls(pid):
+        counters = dict(line.split(": ") for line in Path(f'/proc/{pid}/io').read_text().splitlines())
         return int(counters["syscr"])
-    before = read_calls()
+    before = read_calls(one["ownerPID"])
     time.sleep(.6)
-    assert read_calls() - before < 100, "idle session ignored the broker read wait"
+    assert read_calls(one["ownerPID"]) - before < 100, "idle session ignored the broker read wait"
     # Normal discovery remains usable after recognized shells are registered.
     burrow(w, "connect", "shell-peer", "127.0.0.1", "tester", *options)
     peer = wait(lambda: (s if (s := burrow(w, "inspect", "shell-peer"))["state"] == "connected" else None))
@@ -344,6 +344,14 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
     assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
     assert (w / "burrow-profiles.json").read_bytes() == saved
     assert burrow(w, "run", "output", evidence["id"], "stdout", "0") == output
+
+    # All retained providers must honor Hovel's broker read wait, including a
+    # completed run whose evidence remains available after connection close.
+    owners = (first["ownerPID"], evidence["ownerPID"])
+    before = {pid: read_calls(pid) for pid in owners}
+    time.sleep(.6)
+    for pid in owners:
+        assert read_calls(pid) - before[pid] < 100, "idle manager/run ignored the broker read wait"
 
     # Destructive loss scenarios use separate owners, preserving the main suite.
     for loss in ("master", "module", "manager", "daemon", "retire"):

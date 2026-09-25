@@ -61,6 +61,7 @@ type manager struct {
 	managerIdentity
 	dir         *os.File
 	closed      bool
+	readClosed  chan struct{}
 	connections map[string]*owner
 	logMu       sync.Mutex
 	log         *hovel.Logger
@@ -81,10 +82,10 @@ func (m *manager) milestone(message string) {
 		m.logs++
 	}
 }
-func (m *manager) Open() error                        { return nil }
-func (m *manager) Read(time.Duration) ([]byte, error) { return nil, nil }
-func (m *manager) Write([]byte) error                 { return fmt.Errorf("use bounded manager controls") }
-func (m *manager) Closed() bool                       { m.mu.Lock(); defer m.mu.Unlock(); return m.closed }
+func (m *manager) Open() error                             { return nil }
+func (m *manager) Read(wait time.Duration) ([]byte, error) { return readRetained(wait, m.readClosed) }
+func (m *manager) Write([]byte) error                      { return fmt.Errorf("use bounded manager controls") }
+func (m *manager) Closed() bool                            { m.mu.Lock(); defer m.mu.Unlock(); return m.closed }
 func (m *manager) Close(string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -113,7 +114,24 @@ func (m *manager) Close(string) error {
 		return errors.Join(failures, e)
 	}
 	m.closed = true
+	defer close(m.readClosed)
 	return errors.Join(failures, m.dir.Close())
+}
+
+// Retained providers have no raw output. Honor the broker's read wait so idle
+// managers and completed runs do not spin empty RPCs while remaining inspectable.
+func readRetained(wait time.Duration, closed <-chan struct{}) ([]byte, error) {
+	if wait < 0 {
+		<-closed
+	} else if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-closed:
+		case <-timer.C:
+		}
+	}
+	return nil, nil
 }
 
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
@@ -382,7 +400,7 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 		if e != nil {
 			return hovel.Result{}, e
 		}
-		m := &manager{managerIdentity: managerIdentity{RetainedShells: true, PasswordAuth: true, Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, connections: map[string]*owner{}, log: ctx.Log}
+		m := &manager{managerIdentity: managerIdentity{RetainedShells: true, PasswordAuth: true, Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, readClosed: make(chan struct{}), connections: map[string]*owner{}, log: ctx.Log}
 		ref, e := ctx.OpenSession(m, hovel.WithName("Burrow manager"), hovel.WithKind(managerKind))
 		if e != nil {
 			dir.Close()

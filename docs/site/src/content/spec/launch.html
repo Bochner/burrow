@@ -4,8 +4,14 @@
 <p>Burrow supports Linux amd64. It installs a verified Hovel runtime on first workspace launch and manages that local daemon. You do not need to install Hovel separately or run it on the SSH target.</p>
 <nav aria-label="On this page"><p><strong>On this page:</strong> <a href="#distribution">Available distribution</a> · <a href="#requirements">Requirements</a> · <a href="#build">Build and install</a> · <a href="#first-launch">Open your first workspace</a> · <a href="#offline">Offline and managed Hovel setup</a> · <a href="#upgrade">Upgrade deliberately</a></p></nav>
 <h2 id="distribution">Available distribution</h2>
-<p>The <a href="https://github.com/Bochner/burrow/releases/tag/v0.1.0">v0.1.0 release</a> is a source release at <code>0515137b76b86e54bdccd40eada479bca5243eeb</code>. It has no uploaded executable or package assets (checked 2026-09-23). Building from an authorized repository checkout is the supported installation path. There is no Burrow package-manager install or public binary download to substitute here.</p>
-<p>This book also describes <a href="user-guide.html#versions">unreleased current-source features</a>. Building v0.1.0 does not provide <code>capabilities</code>, <code>workspace</code> subcommands, <code>follow</code> or <code>agent install</code>. Those require a checkout containing the corresponding changes. The public module identity <code>burrow@0.1.0</code> is not a feature-version check.</p>
+<p>The <a href="https://github.com/Bochner/burrow/releases/tag/v0.2.0">v0.2.0 development release</a> provides <a href="https://github.com/Bochner/burrow/releases/download/v0.2.0/burrow-v0.2.0-linux-amd64.tar.gz">burrow-v0.2.0-linux-amd64.tar.gz</a> and <a href="https://github.com/Bochner/burrow/releases/download/v0.2.0/SHA256SUMS">SHA256SUMS</a>. Download both using an account with repository access, then verify the archive before extracting it:</p>
+<pre data-lang="Local shell"><code>sha256sum --check SHA256SUMS
+mkdir -m 700 "$HOME/burrow-v0.2.0"
+tar -xzf burrow-v0.2.0-linux-amd64.tar.gz -C "$HOME/burrow-v0.2.0"
+"$HOME/burrow-v0.2.0/burrow" --help
+export PATH="$HOME/burrow-v0.2.0:$PATH"</code></pre>
+<p>Use a fresh operator-owned directory. Release notes identify the exact source commit and archive digest. The archive contains <code>burrow</code>, <code>hovel-module.yaml</code>, <code>burrow-agent.zip</code> and Hovel's license; it downloads the separately pinned Hovel runtime on first launch. There is no package-manager integration or automatic updater.</p>
+<p>The older v0.1.0 release has source only and lacks <code>capabilities</code>, <code>workspace</code> subcommands, <code>follow</code> and <code>agent install</code>. The public module identity <code>burrow@0.1.0</code> is not a feature-version check. See <a href="user-guide.html#versions">release scope and acceptance status</a>.</p>
 <h2 id="requirements">Requirements</h2>
 <table><thead><tr><th>Use</th><th>Required</th></tr></thead><tbody>
 <tr><td>Build</td><td>Linux amd64, Git and the <a href="https://github.com/aspect-build/aspect-cli#installation">Aspect CLI launcher</a>. Repository access and network access for uncached pinned dependencies.</td></tr>
@@ -17,7 +23,7 @@
 <p>The checkout pins Aspect <code>2026.33.3</code> in <code>.aspect/version.axl</code> and Bazel <code>9.1.1</code> in <code>.bazelversion</code>. Run all build and check commands through Aspect; Go, Python, Node and site dependencies come from the declared toolchains.</p>
 <h2 id="build">Build and install</h2>
 <p>For the released baseline, clone the tag using an account with repository access:</p>
-<pre data-lang="Local shell"><code>git clone --branch v0.1.0 https://github.com/Bochner/burrow.git
+<pre data-lang="Local shell"><code>git clone --branch v0.2.0 https://github.com/Bochner/burrow.git
 cd burrow
 aspect burrow package</code></pre>
 <p>For a current-source build, run <code>aspect burrow package</code> in that checkout instead. Record <code>git rev-parse HEAD</code> and any local changes with your build. The declared output is <code>bazel-bin/core/cmd/burrow/package.tgz</code>. Extract it into a new operator-owned directory:</p>
@@ -25,14 +31,14 @@ aspect burrow package</code></pre>
 tar -xzf bazel-bin/core/cmd/burrow/package.tgz -C "$HOME/burrow-install"
 "$HOME/burrow-install/burrow" --help
 export PATH="$HOME/burrow-install:$PATH"</code></pre>
-<p>Choose another fresh directory if that destination already exists. The PATH change applies to this shell; use the absolute executable path or add that directory to your shell configuration for later sessions. Both packages contain the executable, <code>hovel-module.yaml</code> and Hovel's license; current source also includes <code>burrow-agent.zip</code>, whose contents are embedded in the executable.</p>
+<p>Choose another fresh directory if that destination already exists. The PATH change applies to this shell; use the absolute executable path or add that directory to your shell configuration for later sessions. The package contains the executable, <code>hovel-module.yaml</code>, Hovel's license and <code>burrow-agent.zip</code>, whose contents are embedded in the executable.</p>
 <h2 id="first-launch">Open your first workspace</h2>
 <pre data-lang="Local shell"><code>burrow --workspace "$HOME/burrow-lab"</code></pre>
 <p>The default command opens the Catppuccin Mocha management interface. Use a short absolute canonical path under a trusted parent; Burrow creates absent private workspace directories. Symlinks, unsafe permissions and overly long socket paths are refused. A workspace separates settings and evidence, but does not isolate processes running as the same user.</p>
 <p>In management, enter <code>connect</code> for guided entry. Use <code>help</code> or <kbd>F1</kbd> for commands and <kbd>Ctrl+P</kbd> for the searchable menu. Follow <a href="connections.html">connections</a> and <a href="workspace-navigation.html">workspace navigation</a> next.</p>
 <p>For JSON setup without a TUI, use the release-compatible <code>status</code> command:</p>
 <pre data-lang="Local shell"><code>burrow --workspace "$HOME/burrow-lab" status</code></pre>
-<p><code>status</code> initializes or reuses a workspace; it is not a read-only probe of an absent workspace. Current source adds <code>workspace open</code> for the same operation and <code>workspace inspect</code> to verify an existing daemon without initializing it. Each invocation needs its own explicit workspace. Global flags such as <code>--offline</code> and <code>--no-color</code> go before the command.</p>
+<p><code>status</code> initializes or reuses a workspace; it is not a read-only probe of an absent workspace. Use <code>workspace open</code> for the same operation and <code>workspace inspect</code> to verify an existing daemon without initializing it. Each invocation needs its own explicit workspace. Global flags such as <code>--offline</code> and <code>--no-color</code> go before the command.</p>
 <h2 id="offline">Offline and managed Hovel setup</h2>
 <p>Normal first launch downloads the exact Hovel v0.4.2 wheel and extracts its verified executable; it does not run pip. Later launches reuse the verified cache at <code>$XDG_CACHE_HOME/burrow/hovel/0.4.2</code>, falling back to <code>~/.cache/burrow/hovel/0.4.2</code>. <code>XDG_CACHE_HOME</code>, when set, must be absolute.</p>
 <pre data-lang="Local shell"><code># An already populated, verified cache:
@@ -53,7 +59,7 @@ burrow --workspace "$HOME/burrow-lab" --offline --hovel-package /absolute/hovel-
 <ol>
 <li>Build the intended source revision and extract into a fresh directory. Keep the old executable while its retained resources still need it.</li>
 <li>Open the same workspace with the new executable to register its base module. Opening does not replace live managers or reconnect their SSH connections.</li>
-<li>If a retained owner lacks a required capability, inspect its connections and review <a href="workspace-navigation.html#manager">manager retirement</a>. The release-compatible <code>burrow --workspace PATH restart</code> asks before ending that manager and opening the TUI; current source also provides the headless workflow.</li>
+<li>If a retained owner lacks a required capability, inspect its connections and review <a href="workspace-navigation.html#manager">manager retirement</a>. The release-compatible <code>burrow --workspace PATH restart</code> asks before ending that manager and opening the TUI; v0.2.0 also provides the headless workflow.</li>
 <li>Reconnect explicitly with saved settings. Re-export chains whose build or resource bindings have changed.</li>
 </ol>
 <p>There is no automatic Burrow updater. A stale receipt, unknown socket or incomplete cache publication requires investigation; see <a href="troubleshooting.html">troubleshooting</a>. Quit reviews whether to keep or close connections, and retains the Hovel daemon in either case.</p>

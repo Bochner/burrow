@@ -33,7 +33,7 @@ still includes them. Each preflight records commit-bound BEP results under
 `.report-input/`; the portable job stages `docs-base`. A required coverage job
 measures production Go lines. The report job combines all ten partitions and
 coverage from the same source/run, attaches available same-commit advisory
-evidence, and uploads `docs-site` only after `aspect burrow-report publish` passes.
+evidence, and uploads `docs-site` only after `aspect burrow-report release` passes.
 Unavailable advisory results remain explicitly missing. Repository requires
 checks, coverage and report assembly to succeed.
 Pages verifies the report commit and the complete site artifact's hashes through

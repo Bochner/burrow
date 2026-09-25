@@ -77,8 +77,10 @@ pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
 Work in the user's current checkout. When creating a branch, switch that
 checkout to it and stay on it until the owner explicitly requests a PR and merge.
 Keep each MVP's work and commits local on its shared milestone branch until
-the entire milestone is done. MVP 4 implementation is complete; MVP 5 remains
-follow-on work. PR authorization does not authorize merging.
+the entire milestone is done. MVP 1–5 implementation is present; #65's owner
+walkthrough remains deferred. The owner authorized the MVP 5 merge, Pages and
+tagged development release on 2026-09-25 after required CI passes. PR
+authorization alone does not authorize merging.
 Do not push, create a PR, or merge until the owner explicitly requests it;
 completion of a ticket or milestone does not authorize any of these actions.
 Use this shared branch across the milestone's tickets; each MVP milestone

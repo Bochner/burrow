@@ -77,6 +77,7 @@ type retainedRun struct {
 	done                      chan struct{}
 	identityReady             chan struct{}
 	closed                    bool
+	readClosed                chan struct{}
 	pid, group                int
 	start                     string
 	stageDirectory, stageFile string
@@ -441,7 +442,7 @@ func runAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 		if err != nil {
 			return hovel.Result{}, err
 		}
-		r := &retainedRun{workspace: w, dir: dir, root: root, done: make(chan struct{}), identityReady: make(chan struct{}), record: Run{RunID: ctx.RunID, OwnerPID: os.Getpid(), Connection: req.Connection, Command: req.Command, Budget: req.Budget, Input: req.Input, State: "prepared", Cancellation: "not-requested", CleanupScope: "ordinary process group only; escaped descendants and post-loss recovery unconfirmed"}}
+		r := &retainedRun{workspace: w, dir: dir, root: root, done: make(chan struct{}), readClosed: make(chan struct{}), identityReady: make(chan struct{}), record: Run{RunID: ctx.RunID, OwnerPID: os.Getpid(), Connection: req.Connection, Command: req.Command, Budget: req.Budget, Input: req.Input, State: "prepared", Cancellation: "not-requested", CleanupScope: "ordinary process group only; escaped descendants and post-loss recovery unconfirmed"}}
 		r.record.Execution = req.Execution
 		transport := "ssh"
 		if req.Execution == "local" {
@@ -544,8 +545,10 @@ func runAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 	return hovel.Ok(nil, hovel.WithSummary(string(data)), hovel.WithArtifacts(artifacts...)), nil
 }
 
-func (r *retainedRun) Open() error                        { return nil }
-func (r *retainedRun) Read(time.Duration) ([]byte, error) { return nil, nil }
+func (r *retainedRun) Open() error { return nil }
+func (r *retainedRun) Read(wait time.Duration) ([]byte, error) {
+	return readRetained(wait, r.readClosed)
+}
 func (r *retainedRun) Write([]byte) error {
 	return fmt.Errorf("use typed run controls; terminal input never launches a command")
 }
@@ -1153,6 +1156,7 @@ func (r *retainedRun) Close(string) error {
 	}
 	audit, auditErr := launch.BeginAudit(r.workspace, "run close", targetLabel(r.record.Connection), r.record)
 	r.closed = true
+	defer close(r.readClosed)
 	r.record.State = "closed"
 	r.mu.Unlock()
 	var failures error

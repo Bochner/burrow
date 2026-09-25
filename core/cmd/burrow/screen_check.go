@@ -20,8 +20,34 @@ func main() {
 		h, _ = strconv.Atoi(os.Args[2])
 	}
 	screen := vt.NewEmulator(w, h)
-	defer screen.Close()
+	defer func() { screen.Close() }()
 	go io.Copy(io.Discard, screen)
+	if len(os.Args) == 4 && os.Args[3] == "--stream" {
+		input, output := json.NewDecoder(os.Stdin), json.NewEncoder(os.Stdout)
+		for {
+			var frame struct {
+				Data          []byte
+				Width, Height int
+				Reset         bool
+			}
+			if err := input.Decode(&frame); err == io.EOF {
+				return
+			} else if err != nil {
+				panic(err)
+			}
+			if frame.Reset {
+				screen.Close()
+				screen = vt.NewEmulator(frame.Width, frame.Height)
+				go io.Copy(io.Discard, screen)
+			}
+			if _, err := screen.Write(frame.Data); err != nil {
+				panic(err)
+			}
+			if err := output.Encode(screen.String()); err != nil {
+				panic(err)
+			}
+		}
+	}
 	if _, err := io.Copy(screen, os.Stdin); err != nil {
 		panic(err)
 	}

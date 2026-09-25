@@ -1,6 +1,6 @@
 <!-- burrow-doc: {"title":"Workspace navigation","group":"Foundations","order":120} -->
 <article><h1>Workspace navigation</h1>
-<p>Use an explicit workspace to keep connection names, settings and evidence together. The TUI navigation below is available in v0.1.0. Headless <code>workspace</code> commands and digest-bound close are <a href="user-guide.html#versions">current-source additions</a>.</p>
+<p>Use an explicit workspace to keep connection names, settings and evidence together. The TUI navigation below is available in v0.1.0. Headless <code>workspace</code> commands and digest-bound close are <a href="user-guide.html#versions">v0.2.0 additions</a>.</p>
 <h2 id="open-and-inspect-from-the-cli">Open and inspect from the CLI</h2>
 <p>Choose one absolute canonical path with <code>--workspace</code>. Each CLI invocation selects its own workspace; it does not change another frontend's selection. Open initializes or reuses the verified workspace through the same operation as the TUI. Inspect only verifies an existing daemon and never creates a destination or replaces an unavailable owner. The older <code>status</code> spelling remains an initializing alias for open.</p>
 <pre><code>burrow --workspace /absolute/workspace workspace open

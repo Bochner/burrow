@@ -28,11 +28,58 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
     def send(data):
         os.write(outer, data if isinstance(data, bytes) else data.encode())
 
+    decoded = 0
+    reset_decoder = True
+    renderer = None
+
+    def close_renderer():
+        nonlocal renderer
+        if renderer is not None:
+            renderer.stdin.close()
+            try:
+                renderer.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                renderer.kill()
+                renderer.wait(timeout=3)
+            renderer.stdout.close()
+            renderer = None
+
     def view():
+        nonlocal decoded, reset_decoder, renderer
+        if renderer is None:
+            renderer = subprocess.Popen([decoder, *map(str, dimensions), "--stream"],
+                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
+            os.set_blocking(renderer.stdin.fileno(), False)
+            os.set_blocking(renderer.stdout.fileno(), False)
+            decoded, reset_decoder = 0, True
         if select.select([outer], [], [], .05)[0]:
-            output.extend(os.read(outer, 65536))
-        return subprocess.run([decoder, *map(str, dimensions)], input=output,
-                              capture_output=True, timeout=3, check=True).stdout.decode()
+            # Drain ready PTY chunks before decoding; replaying after each small
+            # read makes the fixture fall behind a responsive terminal.
+            until = time.monotonic() + .05
+            while True:
+                output.extend(os.read(outer, 65536))
+                if time.monotonic() >= until or not select.select([outer], [], [], 0)[0]:
+                    break
+        request = json.dumps({"Data": base64.b64encode(output[decoded:]).decode(),
+                              "Width": dimensions[0], "Height": dimensions[1],
+                              "Reset": reset_decoder}).encode() + b"\n"
+        sent, response = 0, bytearray()
+        until = time.monotonic() + 3
+        while sent < len(request) or not response.endswith(b"\n"):
+            remaining = until - time.monotonic()
+            assert remaining > 0, "terminal decoder stalled"
+            readable, writable, _ = select.select([renderer.stdout],
+                [renderer.stdin] if sent < len(request) else [], [], remaining)
+            assert readable or writable, "terminal decoder stalled"
+            if writable:
+                sent += os.write(renderer.stdin.fileno(), request[sent:sent + 4096])
+            if readable:
+                chunk = os.read(renderer.stdout.fileno(), 65536)
+                assert chunk, "terminal decoder exited without a screen"
+                response.extend(chunk)
+        screen = json.loads(response)
+        decoded, reset_decoder = len(output), False
+        return screen
 
     def wait(needle):
         needles = needle if isinstance(needle, tuple) else (needle,)
@@ -48,8 +95,13 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         send(text + "\r")
         screen = wait(expected)
         if text.startswith("resume "):
+            wait("OBSERVE")
             send(b"\x1bt")
             screen = wait("CONTROL")
+        elif text.startswith("shell ") and expected != "REFUSED":
+            # Tab creation precedes auto-claim and remote shell readiness.
+            wait("CONTROL")
+            screen = wait(":~$")
         return screen
 
     active_name = "gateway"
@@ -82,9 +134,11 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         wait("ACTIVE SSH CONNECTIONS")
 
     def resize(width, height):
+        nonlocal decoded, reset_decoder
         while select.select([outer], [], [], 0)[0]:
             os.read(outer, 65536)
         output.clear()
+        decoded, reset_decoder = 0, True
         dimensions[:] = [width, height]
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
         os.kill(frontend.pid, signal.SIGWINCH)
@@ -95,6 +149,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
                                 preexec_fn=controlling)
     try:
         wait("CONTROL")
+        wait(":~$")
         retained = burrow(workspace, "session", "list", "gateway")
         assert len(retained) == 1 and retained[0]["controller"].startswith("tui-"), retained
         command("printf 'INITIAL='; stty size", "INITIAL=35 98")
@@ -264,7 +319,10 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
                 background()
             command("resume 1", "SSH: gateway #1")
         # Output and ordinary management ticks must continue during attachment.
-        command("printf 'FLOOD_%s\\n' START; sleep .2; i=0; while [ $i -lt 4000 ]; do echo background-$i; i=$((i+1)); done; printf 'BACKGROUND_%s\\n' COMPLETED", "FLOOD_START")
+        # Paste the long setup command as a terminal would; the timed short
+        # command below still exercises individual key events.
+        send("\x1b[200~" + "printf 'FLOOD_%s\\n' START; sleep .2; i=0; while [ $i -lt 4000 ]; do echo background-$i; i=$((i+1)); done; printf 'BACKGROUND_%s\\n' COMPLETED" + "\x1b[201~\r")
+        wait("FLOOD_START")
         background()
         responsive = time.monotonic()
         command("resume 2", "SSH: gateway #2")
@@ -325,6 +383,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         while select.select([outer], [], [], 0)[0]:
             os.read(outer, 65536)
         output.clear()
+        decoded, reset_decoder = 0, True
         dimensions[:] = [120, 30]
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
         os.kill(frontend.pid, signal.SIGWINCH)
@@ -353,6 +412,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         retained = next(s for s in burrow(workspace, "session", "list", "gateway") if s["state"] == "running")
         shared_id = retained["id"]
         output.clear()
+        decoded, reset_decoder = 0, True
         frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", "gateway", shared_id],
                                     env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
         wait("OBSERVE")
@@ -369,6 +429,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         assert gone["pid"] == client and gone["controller"] == f"tui-{frontend.pid}"
         termios.tcsetattr(slave, termios.TCSANOW, before)  # SIGKILL cannot restore a tty.
         output.clear()
+        decoded, reset_decoder = 0, True
         frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", "gateway", shared_id],
                                     env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
         wait("OBSERVE")
@@ -399,6 +460,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         if frontend.poll() is None:
             frontend.terminate()
             frontend.wait(timeout=10)
+        close_renderer()
         os.close(outer)
         os.close(slave)
     # Selected connection close and transport loss unwind active remote PTYs;
@@ -418,6 +480,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         outer, slave = pty.openpty()
         dimensions[:] = [160, 40]
         output.clear()
+        decoded, reset_decoder = 0, True
         before = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", name],
@@ -465,6 +528,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
             if frontend.poll() is None:
                 frontend.terminate()
                 frontend.wait(timeout=10)
+            close_renderer()
             os.close(outer)
             os.close(slave)
             if loss != "close":
@@ -487,6 +551,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         outer, slave = pty.openpty()
         dimensions[:] = [160, 40]
         output.clear()
+        decoded, reset_decoder = 0, True
         before = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         frontend = subprocess.Popen([binary, "--workspace", str(workspace), "restart", *(["--yes"] if reply == "--yes" else [])],
@@ -520,6 +585,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
             if frontend.poll() is None:
                 frontend.terminate()
                 frontend.wait(timeout=10)
+            close_renderer()
             os.close(outer)
             os.close(slave)
     burrow(workspace, "connect", "gateway", "127.0.0.1", "tester", *options)

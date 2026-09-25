@@ -28,7 +28,7 @@ npm.npm_translate_lock(
 )
 use_repo(npm, "npm")
 
-# Latest published runtime v0.4.2 (c461ba282a8a); GitHub asset digest.
+# Pinned runtime v0.4.2 (c461ba282a8a); GitHub asset digest.
 # SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 

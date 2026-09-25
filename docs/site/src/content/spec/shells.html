@@ -2,8 +2,8 @@
 <article>
 <h1>Interactive SSH shells</h1>
 <p>After connecting, enter <code>shell NAME</code> in management, or run <code>burrow --workspace /absolute/workspace shell NAME</code> from a terminal. The CLI opens the same management frame with the SSH pane selected. The shell uses the server account's normal login shell through the existing authenticated master; it never connects or authenticates again.</p>
-<p><strong>Current-source lifetime:</strong> TUI tabs and headless agents attach to the same Hovel-retained SSH shells. A human can observe an agent, explicitly take control, detach and return to the same shell. Keep running retains the shells and releases only this frontend’s control. v0.1.0’s frontend-local lifetime is replaced in current source. See <a href="lifecycle.html">quit, detach and close</a>.</p>
-<h2 id="retained">Retained shells from the CLI (current source)</h2>
+<p><strong>v0.2.0 lifetime:</strong> TUI tabs and headless agents attach to the same Hovel-retained SSH shells. A human can observe an agent, explicitly take control, detach and return to the same shell. Keep running retains the shells and releases only this frontend’s control. v0.1.0’s frontend-local lifetime is replaced in v0.2.0. See <a href="lifecycle.html">quit, detach and close</a>.</p>
+<h2 id="retained">Retained shells from the CLI (v0.2.0)</h2>
 <p>Use <code>session</code> to create, list, inspect and close real SSH shells retained by Hovel. Select an existing connection explicitly. Each shell has an opaque Hovel ID, its own SSH client and remote login shell, and a default initial size of 80×24 (override with <code>--columns N --rows N</code> when creating). Exiting the creating CLI leaves it alive. The commands below provide private controller input, live resize, independent byte reads and current-screen snapshots without requiring a TTY. Use <code>shell CONNECTION ID</code> to observe one in the TUI.</p>
 <pre data-lang="Local shell"><code>burrow --workspace /absolute/workspace session create gateway
 # Approve the returned review and copy its digest:

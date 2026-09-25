@@ -495,17 +495,7 @@ func (s *retainedShell) Write([]byte) error {
 	return fmt.Errorf("raw shell input disabled; use token-fenced input through RunSessionCommand")
 }
 func (s *retainedShell) Read(wait time.Duration) ([]byte, error) {
-	if wait < 0 {
-		<-s.closed
-	} else if wait > 0 {
-		timer := time.NewTimer(wait)
-		defer timer.Stop()
-		select {
-		case <-s.closed:
-		case <-timer.C:
-		}
-	}
-	return nil, nil
+	return readRetained(wait, s.closed)
 }
 func (s *retainedShell) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
 	return []hovel.PayloadCommand{

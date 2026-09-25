@@ -4,16 +4,16 @@
 <p>Keep the exact command, workspace, returned resource ID and error. Review and submission are not proof of execution. Inspect an uncertain operation before repeating it; a new <code>run now</code>, survey or chain throw can execute the work again.</p>
 <h2 id="setup">Installation and startup</h2>
 <table><thead><tr><th>Symptom</th><th>Next step</th></tr></thead><tbody>
-<tr><td>Unknown <code>capabilities</code>, <code>workspace</code>, <code>follow</code> or <code>agent</code> command</td><td>Check <code>burrow --help</code> and the executable you launched. Those commands are in current source, beyond v0.1.0. See the <a href="user-guide.html#versions">version table</a>.</td></tr>
+<tr><td>Unknown <code>capabilities</code>, <code>workspace</code>, <code>follow</code> or <code>agent</code> command</td><td>Check <code>burrow --help</code> and the executable you launched. Those commands were added in v0.2.0. See the <a href="user-guide.html#versions">version table</a>.</td></tr>
 <tr><td>Pinned Hovel package is not cached</td><td>Run normal setup online, or supply the exact wheel with <code>--hovel-package FILE</code>. A fresh cache alone cannot satisfy <code>--offline</code>.</td></tr>
 <tr><td>Checksum mismatch or <code>.pending</code> cache reservation</td><td>Preserve the reported path and inspect an interrupted or changed install. Repeating launch will not adopt it; there is no checksum override.</td></tr>
 <tr><td>Unsafe directory, symlink or socket path too long</td><td>Use a canonical private workspace under a trusted parent. Connection sockets must fit the 90-byte path limit; select a shorter workspace path when necessary. Do not weaken permissions to bypass refusal.</td></tr>
-<tr><td>TUI requires terminal input</td><td>Run in a real terminal. Use <code>status</code> for release-compatible JSON setup, or current-source <code>workspace inspect</code> for read-only verification.</td></tr>
+<tr><td>TUI requires terminal input</td><td>Run in a real terminal. Use <code>status</code> for release-compatible JSON setup, or <code>workspace inspect</code> (v0.2.0) for read-only verification.</td></tr>
 </tbody></table>
 <p>Setup logs are retained in <code>WORKSPACE/burrow-launch.log</code>. Receipts, socket/process identity and ownership checks protect existing resources. Burrow refuses an unknown runtime root, daemon lock/status, stale receipt or replacement socket.</p>
 <h2 id="ownership">Unknown, lost or older owners</h2>
 <ol>
-<li>In current source, run <code>burrow --workspace PATH workspace inspect</code>. If the daemon cannot be verified, stop resource mutations and preserve the launch log, receipt and workspace.</li>
+<li>In v0.2.0, run <code>burrow --workspace PATH workspace inspect</code>. If the daemon cannot be verified, stop resource mutations and preserve the launch log, receipt and workspace.</li>
 <li>With a verified daemon, use <code>connections</code>, <code>inspect NAME</code>, <code>transfers</code> and <code>run inspect ID</code>. Failed observation means unverified, not an empty inventory.</li>
 <li>For an older live manager, review <a href="workspace-navigation.html#manager">restart or retirement</a> only when ending all its connections is intended. The command does not restart Hovel or recover a crashed daemon.</li>
 <li>For unknown ownership or a lost daemon, investigate the reported path and associated process/socket identity before manual recovery. Failure to connect does not prove a process is dead or that files are safe to remove.</li>
