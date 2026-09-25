@@ -180,7 +180,7 @@ func (m ui) suggestions() []string {
 		}
 	}
 	for _, id := range m.shellIDs {
-		values = append(values, "resume "+id, "shell-close "+id)
+		values = append(values, "resume "+id, "shell-close "+id, "shell-control "+id, "shell-detach "+id)
 	}
 	if strings.HasPrefix(line, "profile create ") || strings.HasPrefix(line, "profile edit ") {
 		sub := strings.TrimPrefix(strings.TrimPrefix(line, "profile create "), "profile edit ")

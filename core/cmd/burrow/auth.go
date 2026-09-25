@@ -147,7 +147,7 @@ func promptChainCLI(ctx context.Context, workspace string, args []string, noColo
 		ask = func(ctx context.Context, p connection.Prompt) ([]byte, error) { return readPrompt(ctx, tty, p) }
 	}
 	_, err = connection.PrepareChainPrompt(ctx, workspace, args, ask, func(chain any) error {
-		if err := printResult(chain, noColor); err != nil {
+		if err := printResult(os.Stdout, chain, noColor); err != nil {
 			return err
 		}
 		fmt.Fprintln(os.Stderr, "Chain JSON exported. Keep this process running; confirm the chain in Hovel from another process within 10 minutes. Ctrl+C cancels.")

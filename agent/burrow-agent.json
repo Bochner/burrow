@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "version": "0.2.0",
+  "source": "https://github.com/Bochner/burrow/tree/main/agent",
+  "upstream": "https://github.com/vibepwners/hovel/tree/a4cbfdf7769a9551695088c11061e3cabc368e07/agent/skills"
+}

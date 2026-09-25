@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_binary")
+load("@rules_python//python:defs.bzl", "py_test")
+
+go_binary(
+    name = "burrow",
+    srcs = ["main.go", "control.go"],
+    deps = ["//core/connection", "//core/launch", "@hovel_sdk//:hovel", "@org_golang_x_sys//unix"],
+)
+
+py_test(
+    name = "check",
+    srcs = ["check.py"],
+    args = ["$(location :burrow)", "$(location //core/cmd/burrow:burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location //core/cmd/burrow:screen_check)"],
+    data = [":burrow", "//core/cmd/burrow:burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", "//core/cmd/burrow:screen_check"],
+    tags = ["local", "external", "acceptance", "acceptance-shell"],
+    size = "large",
+    legacy_create_init = 0,
+)

@@ -24,6 +24,7 @@ import (
 )
 
 var terminalEscape = key.NewBinding(key.WithKeys("ctrl+]"))
+var takeShellControl = key.NewBinding(key.WithKeys("alt+t"), key.WithHelp("Alt+T", "take control"))
 
 const invalidTerminalGeometry = "REFUSED: terminal geometry outside 1..1000 cells; previous size retained."
 
@@ -69,7 +70,15 @@ func (l *terminalLifetime) close() {
 	l.jobs.Wait()
 }
 
+type terminalHost interface {
+	Send(any) error
+	Snapshot() ptyhost.Snapshot
+	Close()
+	Done() <-chan struct{}
+}
+
 type cliTab struct {
+	session    string
 	setupInput string
 	setupWait  string
 	prefill    string
@@ -80,14 +89,14 @@ type cliTab struct {
 	editor     *profileEdit
 	id         string
 	connection string
-	host       *ptyhost.Host
+	host       terminalHost
 	screen     ptyhost.Snapshot
 	pending    bool
 	error      string
 }
 type cliOpened struct {
 	tab  *cliTab
-	host *ptyhost.Host
+	host terminalHost
 	err  error
 }
 type cliScreen struct {
@@ -95,7 +104,7 @@ type cliScreen struct {
 	screen ptyhost.Snapshot
 }
 type cliClosed struct{ tab *cliTab }
-type shellRequested struct{ name string }
+type shellRequested struct{ name, session string }
 
 type chainStaged struct {
 	file string
@@ -317,6 +326,9 @@ func (tab *cliTab) label() string {
 	return tab.connection + " #" + tab.id
 }
 func (tab *cliTab) state() string {
+	if tab.screen.Shared != nil && !tab.pending {
+		return tab.screen.Shared.Shell.State
+	}
 	if tab.pending {
 		if tab.host == nil {
 			return "opening"
@@ -354,6 +366,9 @@ func (m *frame) shellControl(args []string) tea.Cmd {
 	w := m.current()
 	w.management.busy = false
 	w.management.outputOffset = 0
+	if args[0] == "shells" && !m.demo {
+		return m.discoverShells(m.active, true)
+	}
 	if args[0] == "shells" {
 		var lines []string
 		for _, tab := range w.shells {
@@ -364,9 +379,9 @@ func (m *frame) shellControl(args []string) tea.Cmd {
 					state = "active"
 				}
 			}
-			lines = append(lines, "Shell "+tab.label()+" · "+state+" · frontend-local / not recorded")
+			lines = append(lines, "Shell "+tab.label()+" · "+state+" · demo / not recorded")
 		}
-		w.management.output = "No local shells in this workspace."
+		w.management.output = "No retained shell tabs in this workspace."
 		if len(lines) > 0 {
 			w.management.output = strings.Join(lines, "\n")
 		}
@@ -383,13 +398,20 @@ func (m *frame) shellControl(args []string) tea.Cmd {
 		}
 	}
 	if tab == nil {
-		w.management.output = "REFUSED: no matching local shell in this workspace; use shells."
+		w.management.output = "REFUSED: no matching shell tab in this workspace; use shells."
 		return nil
 	}
 	if args[0] == "resume" {
 		m.resumeShell(tab)
-		w.management.output = "Local SSH shell selected (" + tab.label() + ") · " + tab.state() + "."
+		w.management.output = "SSH shell selected (" + tab.label() + ") · " + tab.state() + "."
 		return nil
+	}
+	if args[0] == "shell-control" {
+		m.resumeShell(tab)
+		return m.controlShell(tab)
+	}
+	if args[0] == "shell-detach" {
+		return m.detachShell(tab)
 	}
 	return m.closeShellTab(tab)
 }
@@ -402,51 +424,7 @@ func (w *workspaceView) activeTerminal() *cliTab {
 }
 
 func (m *frame) openShell(name string) tea.Cmd {
-	w := m.current()
-	w.management.busy = false
-	if m.invalidGeometry {
-		w.management.output = invalidTerminalGeometry
-		return nil
-	}
-	tab := &cliTab{id: strconv.Itoa(len(w.shells) + 1), pending: true, connection: name, auditDone: make(chan error, 1)}
-	w.management.output = "Opening local SSH shell (" + tab.label() + ")…"
-	w.management.outputOffset = 0
-	w.shells = append(w.shells, tab)
-	m.resumeShell(tab)
-	path, bounds, lifetime := m.active, m.terminalBounds(), m.terminals
-	return m.dispatch(path, func() tea.Msg {
-		if !lifetime.begin() {
-			return cliOpened{tab: tab, err: context.Canceled}
-		}
-		ctx, cancel := context.WithTimeout(lifetime.context, 10*time.Second)
-		defer cancel()
-		audit, err := launch.BeginAudit(path, "shell "+name, name, map[string]string{"scope": "lifecycle only; interactive bytes not recorded", "frontendShell": tab.id})
-		if err != nil {
-			lifetime.jobs.Done()
-			return cliOpened{tab: tab, err: err}
-		}
-		cmd, err := connection.ShellCommand(ctx, path, name)
-		var host *ptyhost.Host
-		if err == nil {
-			host, err = ptyhost.StartWithScrollback(lifetime.context, cmd, bounds.Dx(), bounds.Dy(), 1000)
-		}
-		if err != nil {
-			err = audit.Finish(nil, err)
-			lifetime.jobs.Done()
-		} else {
-			if logErr := audit.Record("opened", map[string]string{"connection": name}); logErr != nil {
-				lifetime.recordAuditError(logErr)
-			}
-			go func() {
-				defer lifetime.jobs.Done()
-				<-host.Done()
-				logErr := audit.Record("ended", map[string]string{"connection": name, "exit": fmt.Sprint(host.Snapshot().Err), "scope": "lifecycle only"})
-				lifetime.recordAuditError(logErr)
-				tab.auditDone <- logErr
-			}()
-		}
-		return cliOpened{tab, host, err}
-	})
+	return m.openSharedShell(name, "")
 }
 
 func (m *frame) cycleShell(delta int) {
@@ -506,6 +484,9 @@ func (m *frame) closeShellTab(tab *cliTab) tea.Cmd {
 	w.management.busy = false
 	if tab.logs == nil && w.shell == tab && w.tab == "shell" {
 		w.tab, w.focus = "", "prompt"
+	}
+	if tab.session != "" {
+		return m.closeSharedShell(tab)
 	}
 	w.management.output = "Closing local SSH shell…"
 	if tab.host == nil {
@@ -627,7 +608,7 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 			if v.tab.connection != "" {
 				if v.tab.logs != nil {
 					w.restoreLogs(v.tab)
-				} else {
+				} else if v.tab.session == "" {
 					w.removeShell(v.tab)
 				}
 				w.management.output = v.tab.error
@@ -635,13 +616,25 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		v.tab.host = v.host
-		if v.tab.connection != "" && w.management.output == "Opening local SSH shell ("+v.tab.label()+")…" {
+		v.tab.screen = v.host.Snapshot()
+		created := v.tab.session == "" && v.tab.screen.Shared != nil
+		if shared := v.tab.screen.Shared; shared != nil {
+			v.tab.session = shared.Shell.ID
+			if w.management.output == "Opening retained SSH shell ("+v.tab.label()+")…" {
+				w.management.output = "Retained SSH shell attached (" + v.tab.label() + "); shell survives detach and Keep running."
+			}
+		}
+		if v.tab.connection != "" && w.management.output == "Opening retained SSH shell ("+v.tab.label()+")…" {
 			w.management.output = "Local SSH shell started (" + v.tab.label() + "); output is in its shell tab."
 		}
 		r := m.terminalBounds()
+		var geometry any = image.Pt(r.Dx(), r.Dy())
+		if created {
+			geometry = ptyhost.Control(image.Pt(r.Dx(), r.Dy()))
+		}
 		if m.invalidGeometry {
 			v.tab.error = invalidTerminalGeometry
-		} else if err := v.host.Send(image.Pt(r.Dx(), r.Dy())); err != nil {
+		} else if err := v.host.Send(geometry); err != nil {
 			v.tab.error = safe(err.Error())
 		} else if v.tab.error == invalidTerminalGeometry {
 			v.tab.error = ""
@@ -667,15 +660,21 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 			}
 			w.removeShell(v.tab)
 			w.management.output = "Local SSH shell exited (" + v.tab.label() + "); connection retained if still live."
+			if v.screen.Shared != nil {
+				w.management.output = "Retained SSH shell exited (" + v.tab.label() + "); connection retained if still live."
+			}
 			if v.screen.Err != nil {
 				w.management.output = fmt.Sprintf("SSH shell ended (%s): %s. Inspect the connection before reopening.", v.tab.label(), safe(v.screen.Err.Error()))
 			}
+			if v.tab.host != nil {
+				return func() tea.Msg { v.tab.host.Close(); return nil }
+			}
 			return nil
 		}
-		if v.screen.Err != nil {
+		if v.screen.Err != nil && v.screen.Shared == nil {
 			v.tab.error = "CLI ended or input failed; inspect Hovel history before repeating work"
 			if v.tab.connection != "" {
-				v.tab.error = "SSH terminal input/resize failed: " + safe(v.screen.Err.Error())
+				v.tab.error = "SSH terminal: " + safe(v.screen.Err.Error())
 			}
 		}
 		if !v.screen.Exited {
@@ -728,6 +727,11 @@ func (m *frame) sendTerminal(event any) {
 	}
 	if err := tab.host.Send(event); err != nil {
 		tab.error = safe(err.Error())
+	} else if tab.screen.Shared != nil {
+		switch event.(type) {
+		case uv.KeyPressEvent, string:
+			tab.error = ""
+		}
 	}
 	tab.screen = tab.host.Snapshot()
 }

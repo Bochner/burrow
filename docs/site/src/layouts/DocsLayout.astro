@@ -8,19 +8,20 @@ interface Props { page: DocPage }
 const { page } = Astro.props;
 const root = rootPrefix(page.slug);
 const chapter = bookChapter(page);
-const ordered = orderedPages("book");
+const api = page.area === "api";
+const ordered = orderedPages(api ? "api" : "book");
 const index = ordered.findIndex((candidate) => candidate.slug === page.slug);
 const previous = ordered[index - 1];
 const next = ordered[index + 1];
 ---
-<PageShell area="book" current="Book" description={page.description} root={root}
-  tag={chapter ? `// chapter ${chapter.label}` : "// book"} title={`${page.title} - Burrow book`}>
+<PageShell area={api ? "api" : "book"} current={api ? "API" : "Book"} description={page.description} root={root}
+  tag={api ? "// API" : chapter ? `// chapter ${chapter.label}` : "// book"} title={`${page.title} - Burrow`}>
   <div class="layout">
     <Sidebar current={page} root={root} />
     <main id="main-content" class:list={["content structured-content book-content", chapter && "numbered-document book-chapter", !chapter && "book-contents-page"]} data-chapter-number={chapter?.label}>
       <nav class="breadcrumbs" aria-label="Breadcrumb">
         <a href={`${root}index.html`}>Home</a><span aria-hidden="true">/</span>
-        <a href={`${root}spec/`}>Book</a><span aria-hidden="true">/</span>
+        <a href={`${root}${api ? "api" : "spec"}/`}>{api ? "API" : "Book"}</a><span aria-hidden="true">/</span>
         <span aria-current="page">{page.title}</span>
       </nav>
       {chapter && <header class="document-header book-chapter-header">

@@ -451,12 +451,16 @@ func (m ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.historyIndex = len(m.history)
 				m.busy = true
 				workspace := m.info.Workspace
-				if args[0] == "shell-close" || args[0] == "shells" || args[0] == "resume" {
+				if args[0] == "shell-close" || args[0] == "shells" || args[0] == "resume" || args[0] == "shell-control" || args[0] == "shell-detach" {
 					m.shellControl = args
 					return m, nil
 				}
 				if args[0] == "shell" {
-					return m, func() tea.Msg { return shellRequested{args[1]} }
+					id := ""
+					if len(args) == 3 {
+						id = args[2]
+					}
+					return m, func() tea.Msg { return shellRequested{name: args[1], session: id} }
 				}
 				m.output = "Running reviewed command through Hovel…"
 				if (args[0] == "chain" && args[1] != "select") || (args[0] == "run" && (args[1] == "survey" || args[1] == "now" || args[1] == "launch" || args[1] == "cancel" || args[1] == "collect" || args[1] == "close")) {
@@ -525,7 +529,7 @@ func (m ui) activeConnections(w int) string {
 		proxy, terminal, tunnels := "—", "—", "—"
 		if row.Generation != "" {
 			proxy = "No"
-			terminal = "Local PTY"
+			terminal = "Retained PTY"
 			if row.State == "connected" {
 				tunnels = fmt.Sprint(row.TunnelCount)
 			}
@@ -769,8 +773,11 @@ logs / Ctrl+N	Open workspace log in Vim; Ctrl+N or :q returns; reopen refreshes
 Ctrl+N in SSH/Hovel/Vim	Burrow shortcut, not forwarded to the embedded program
 Ctrl+L	Open Collected output and Activity log tabs; Ctrl+L or :qa returns
 Tab / Shift+Tab in results	Switch tabs; / searches; reopen refreshes both snapshots
-shell NAME / resume ID	Open a shell / return to an existing frontend-local shell
-Ctrl+] / Alt+1–9	Return from SSH to management / select a shell
+shell NAME [SESSION_ID] / resume ID	Create or observe a retained shell / select an attached tab
+shells	Discover retained shells in this workspace
+shell-control [ID] / Alt+T	Explicit takeover; previous controller is fenced
+shell-detach [ID]	Release your control and retain the shell
+Ctrl+] / Alt+1–9	Detach to management / select a shell
 Alt+←/→	Cycle shells without closing them
 shell-close ID	Close one shell, keeping its connection
 inspect NAME / status	Inspect connection details / verify the daemon
@@ -829,7 +836,8 @@ Alt+N / Alt+W	Create a workspace / open the workspace drawer
 # QUIT & MORE HELP
 close NAME	Review closing the connection and all its shells and listeners
 quit / Ctrl+C	Choose keep running, close connections, or cancel
-Keeping connections does not keep frontend-local shells alive. Saved settings remain.
+Keep running retains shells and releases your claims; other controllers stay in control.
+OBSERVE cannot type or resize. Saved settings and daemon remain.
 SSH host keys are not verified. Never put passwords or passphrases in commands.
 Inventory commands remain callable for full details; they are omitted from TUI suggestions.
 burrow --workspace PATH help	Full CLI reference (run outside the TUI)

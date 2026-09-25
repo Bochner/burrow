@@ -12,6 +12,8 @@ import time
 
 
 def run_checks(burrow, workspace, connection, container, command, hv, binary, env, decoder, scripts_only=False):
+    if not scripts_only:
+        inspection_checks(burrow, workspace, connection, container, command, hv, binary, env)
     def run(*args, **kw):
         return burrow(workspace, "run", *args, **kw)
 
@@ -273,6 +275,9 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("close", scripted["id"], "--yes")
 
     now_review = hovel_run("now", connection["name"], "--", "printf", "reviewed-now")
+    contract = burrow(workspace, "capabilities", "run.now")
+    review_shape = contract["results"]["RunReview"]["anyOf"][0]
+    assert set(review_shape["required"]) <= now_review.keys() <= review_shape["properties"].keys(), (review_shape, now_review)
     assert run("inspect", now_review["id"])["state"] == "prepared", now_review
     assert now_review["confirm"] == f'run launch {now_review["id"]} --collect --review {now_review["digest"]} --yes'
     assert hovel_run(*shlex.split(now_review["confirm"])[1:])["collection"] == "succeeded"
@@ -482,6 +487,72 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     command("docker", "exec", container, "sh", "-c", 'kill -TERM -$(cat /tmp/burrow-lost-run)')
 
     master_loss_checks()
+
+
+def inspection_checks(burrow, workspace, connection, container, command, hv, binary, env):
+    project = workspace / "agent-inspection"
+    project.mkdir()
+    installed = subprocess.run([binary, "agent", "install", "codex", "--scope", "project"],
+                               cwd=project, env=env, capture_output=True, text=True, timeout=15)
+    assert installed.returncode == 0, installed.stderr
+    reference = project / ".agents/skills/burrow-inspect/references/commands.md"
+    assert "find /var/log -type f -name '*.log'" in reference.read_text()
+    contract = json.loads(command(binary, "capabilities", env=env))
+    ops = {op["id"]: op for op in contract["operations"]}
+    assert all(ops[name]["agent"]["status"] == "supported" for name in
+               ("connection.list", "connection.inspect", "run.prepare", "run.launch", "run.output", "run.collect"))
+    burrow(workspace, "workspace", "inspect")
+    selected, = [c for c in burrow(workspace, "connections") if c["name"] == connection["name"]]
+    assert selected["generation"] == connection["generation"] and selected["state"] == "connected"
+    selected = burrow(workspace, "inspect", selected["name"])
+    assert selected["creation"] == connection["creation"]
+    # Controlled target data: one useful filename plus an unreadable directory.
+    command("docker", "exec", container, "sh", "-c",
+            "mkdir -p /tmp/burrow-inspection/private; touch /tmp/burrow-inspection/observed.log; "
+            "chmod 755 /tmp/burrow-inspection; chmod 700 /tmp/burrow-inspection/private")
+    def run(*args):
+        return burrow(workspace, "run", *args)
+    prepared = run("prepare", selected["name"], "--", "find", "/tmp/burrow-inspection", "-type", "f", "-name", "*.log")
+    assert prepared["connection"]["creation"] == selected["creation"] and prepared["execution"] == "remote"
+    review = run("launch", prepared["id"])
+    assert selected["name"] in review["review"] and "/tmp/burrow-inspection" in review["review"]
+    assert run("inspect", prepared["id"])["state"] == "prepared", "review executed the search"
+    # Hovel writes administrative chain-KV artifacts for invocations. Identify
+    # this retained run's evidence by its name, independently of command run IDs.
+    def run_artifacts():
+        return [a for a in json.loads(hv("artifact", "list", "--json"))
+                if a["name"].startswith("run-" + prepared["id"] + "-")]
+    assert not run_artifacts()
+    run("launch", prepared["id"], "--review", review["digest"], "--yes")
+    deadline = time.monotonic() + 15
+    while (state := run("inspect", prepared["id"]))["state"] == "running":
+        assert time.monotonic() < deadline, state
+        time.sleep(.1)
+    assert state["remoteExit"] != 0 and state["remoteExit"] is not None and state["outputComplete"], state
+    output = []
+    for stream in ("stdout", "stderr"):
+        data, offset = bytearray(), 0
+        while True:
+            chunk = run("output", prepared["id"], stream, str(offset))
+            data.extend(base64.b64decode(chunk["data"]))
+            assert chunk["nextOffset"] >= offset and chunk["outputComplete"]
+            offset = chunk["nextOffset"]
+            if offset == chunk["storedBytes"]:
+                break
+        output.append(bytes(data))
+    assert output[0] == b"/tmp/burrow-inspection/observed.log\n" and b"Permission denied" in output[1], output
+    assert not run_artifacts(), "launch/viewing output collected it"
+    review = run("collect", prepared["id"])
+    collected = run("collect", prepared["id"], "--review", review["digest"], "--yes")
+    assert collected["collection"] == "succeeded" and collected["remoteExit"] == state["remoteExit"]
+    artifacts = run_artifacts()
+    assert len(artifacts) == 3 and all(a["runId"] == collected["runID"] for a in artifacts), artifacts
+    for stream, content in zip(("stdout", "stderr"), output):
+        artifact, = [a for a in artifacts if a["name"].endswith("-" + stream)]
+        assert (workspace / artifact["path"]).read_bytes() == content
+    run("close", prepared["id"], "--yes")
+    assert all((workspace / a["path"]).is_file() for a in artifacts)
+    print("PASS installed inspection recipe: explicit live identity, review, partial search/complete capture, stdout/stderr and explicit Hovel evidence", flush=True)
 
 
 def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):

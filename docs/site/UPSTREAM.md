@@ -11,15 +11,54 @@ routes; `docs/site/public/assets/site.css`; Astro configuration; JavaScript
 manifest/lock and toolchain pins; Aspect/Bazel documentation wiring and the
 CI-to-Pages artifact promotion pattern.
 
-Changes: Burrow name, artwork, repository/Pages URLs, planning-stage content,
+Changes: Burrow name, artwork, repository/Pages URLs, operator content,
 and the authorized-use warning's product name. Book navigation, chapter
 numbering, responsive layout, search, and the upstream visual style are retained.
-Hovel-specific modules, generated SDK references, demos, report pages, version
+Hovel-specific modules, generated SDK references, demos, version
 macros, and Tidewave integration are omitted because Burrow does not have those
 surfaces. Staging and checks are small Python tools under `docs/tools/docs/`.
-The inherited stylesheet is kept intact apart from attribution/branding.
+The inherited stylesheet retains its layout and branding. The #92 accessibility
+corrections wrap long prose tokens and use the existing muted text color for
+dim labels so navigation remains readable on the dark background. The existing
+hero grid now fits the image-first Burrow fragment and allows its text column
+to shrink instead of overlapping the image or clipping on small screens.
+Heading anchors leave room for the sticky header; table labels retain a minimum
+readable width on small screens.
 Burrow's staging tool also restores owner write access to previously copied
 output directories so repeated staging can replace read-only Bazel artifacts.
+
+## Public test reports (#91)
+
+Report presentation and evidence structure adapt the current Hovel revision
+`a4cbfdf7769a9551695088c11061e3cabc368e07` (verified against upstream main on
+2026-09-23): `docs/site/public/assets/report.css`, `report.js`,
+`src/pages/reports/tests/latest/index.astro`, and `tools/testreport/`.
+Copyright 2026 William Born; Apache-2.0 under the retained license.
+Burrow keeps the hero/sidebar, overview metrics, coverage, suite and target
+evidence layout. It renders static HTML with native anchor navigation, tables
+and details rather than copying Hovel's JavaScript application, linter runners
+or SDK coverage tooling. `public/assets/report.css` contains the adapted subset.
+`docs/tools/docs/report.py` and its CLI checks are original Burrow code.
+
+All measurements come from Burrow's declared targets, BEP attempts and LCOV.
+The report uses the production capability inventory and explicit selected-check
+bindings, separating CLI reachability, JSON shape documentation and observed
+behavior. No Hovel test results or coverage percentages are reused. Evidence
+and the staged site bind to the same source; Pages verifies the eligible commit
+and artifact hashes. The #86 diagnostics remain visibly advisory.
+
+The #65 comparison also inspected the published Hovel report generated on
+2026-09-24 at source `b4190bb548c49263003d7d398571c3837717890f`.
+`MVP-ACCEPTANCE.md` records applicable differences, including unmeasured Burrow
+branch coverage and the absence of a Burrow SDK or required typed MCP surface.
+No additional upstream implementation was copied for that comparison.
+
+The API tab (#88) reuses that header, sidebar, table styling and search. Its
+operation pages and downloadable JSON are generated from the production
+`burrow capabilities` command as a declared build input. It documents Burrow
+CLI and base-module routes and links the pinned upstream RPC/SDK sources;
+it does not add a Burrow REST service or SDK. `src/lib/api.ts` is original
+Burrow rendering code; the upstream stylesheet remains unchanged.
 
 Dependency pins match the inspected Hovel source: Astro 7.0.7, Node 22.20.0,
 pnpm 10.20.0, rules_js 3.2.2, rules_nodejs 6.7.5, and rules_python 2.2.0.
@@ -29,6 +68,17 @@ remote cache configuration, runtime history, or test reports are copied.
 The book publishes only explicit `docs/site` content and assets, not the full
 private research directory or local worktrees. This attribution applies to
 adapted upstream material; it does not select a license for all Burrow code.
+
+## Operator book reconciliation (#92)
+
+The operator reading path, short concept tables, ordered workflows and native
+advanced-detail disclosures follow Hovel's user guide at the already-inspected
+`a4cbfdf7769a9551695088c11061e3cabc368e07` revision. Existing book/sidebar/search
+components and flow-diagram classes are reused; no design system, frontend
+library or runtime dependency was added. Burrow's current-source versus v0.1.0
+availability, installation, lifetime and troubleshooting text is original.
+Historical research and ADRs are unchanged. See `BOOK-AUDIT.md` for the
+chapter/source audit and verification scope.
 
 ## Chain walkthrough diagrams (#62)
 

@@ -33,6 +33,13 @@ with tempfile.TemporaryDirectory(prefix="bp-") as scratch:
         assert run("connections") == [], "saving authenticated"
         assert run("profile", "select", "gateway")["host"] == "127.0.0.1"
         assert run("connections") == [], "selecting authenticated"
+        review = run("profile", "connect", "gateway")
+        run("profile", "edit", "gateway", "127.0.0.2", "tester", "--port", "1", "--yes")
+        error = run("profile", "connect", "gateway", "--yes", "--review", review["digest"], ok=False)
+        assert json.loads(error)["error"]["operation"] == "profile.connect", error
+        assert "changed after review" in error, error
+        assert run("connections") == [], "stale saved settings authenticated"
+        run("profile", "edit", "gateway", "127.0.0.1", "tester", "--port", "1", "--yes")
         backup = root / "backup.json"
         run("profile", "backup", str(backup))
         assert json.loads(backup.read_text())["_example"] == initial["_example"]

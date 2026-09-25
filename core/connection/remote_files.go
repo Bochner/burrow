@@ -42,14 +42,27 @@ type FileTree struct {
 
 func fileArgs(args []string) (FileQuery, error) {
 	q := FileQuery{Operation: "pwd", Path: "."}
+	if len(args) >= 4 && args[len(args)-2] == "--request" {
+		q.ID = args[len(args)-1]
+		if q.ID == "" {
+			return q, fmt.Errorf("request ID must not be empty")
+		}
+		args = args[:len(args)-2]
+	}
 	if len(args) < 2 || len(args) > 4 {
-		return q, fmt.Errorf("expected scp NAME [ls|tree|cd|pwd|complete] [PATH]")
+		return q, fmt.Errorf("expected scp NAME [ls|tree|cd|pwd|complete] [PATH] [--request ID], or scp NAME cancel ID")
 	}
 	if len(args) > 2 {
 		q.Operation = args[2]
 	}
 	if len(args) > 3 {
 		q.Path = args[3]
+	}
+	if q.Operation == "cancel" {
+		if len(args) != 4 || q.ID != "" {
+			return q, fmt.Errorf("expected scp NAME cancel ID")
+		}
+		q.ID, q.Path = args[3], "."
 	}
 	return q, validateFileQuery(q)
 }
@@ -58,11 +71,19 @@ func validateFileQuery(q FileQuery) error {
 	if len(q.Path) > 4096 || strings.ContainsRune(q.Path, 0) || len(q.ID) > 64 {
 		return fmt.Errorf("invalid file path or request")
 	}
+	for _, c := range q.ID {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return fmt.Errorf("request ID must contain only ASCII letters, digits, underscores or hyphens")
+		}
+	}
+	if q.Operation == "cancel" && q.ID == "" {
+		return fmt.Errorf("cancellation requires the exact discovery request ID")
+	}
 	switch q.Operation {
 	case "ls", "tree", "cd", "pwd", "complete", "cancel":
 		return nil
 	}
-	return fmt.Errorf("expected ls, tree, cd, pwd or complete; transfers follow in the next file milestone tickets")
+	return fmt.Errorf("expected ls, tree, cd, pwd, complete or cancel")
 }
 
 // Browse binds every request to a specific live connection creation.
@@ -225,6 +246,17 @@ func (s *owner) browseFiles(ctx context.Context, q FileQuery) (any, error) {
 	if strings.HasPrefix(key, "~") && key != "~" && !strings.HasPrefix(key, "~/") {
 		return nil, fmt.Errorf("use ~ or ~/PATH for the connected account, or an absolute remote path")
 	}
+	operation, stop := context.WithCancel(ctx)
+	defer stop()
+	s.mu.Lock()
+	if at, cancelled := s.fileCancelled[q.ID]; q.ID != "" && cancelled && time.Since(at) < time.Minute {
+		s.mu.Unlock()
+		return nil, context.Canceled
+	}
+	s.fileCancel = stop
+	s.fileRequest = q.ID
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); s.fileCancel = nil; s.fileRequest = ""; s.mu.Unlock() }()
 	if q.Operation == "complete" {
 		if cached, ok := s.fileListings[key]; ok && time.Since(cached.at) < 30*time.Second {
 			return cached.listing, nil
@@ -234,17 +266,6 @@ func (s *owner) browseFiles(ctx context.Context, q FileQuery) (any, error) {
 		}
 	}
 	s.fileNext = time.Now().Add(time.Second)
-	operation, stop := context.WithCancel(ctx)
-	defer stop()
-	s.mu.Lock()
-	if _, cancelled := s.fileCancelled[q.ID]; q.ID != "" && cancelled {
-		s.mu.Unlock()
-		return nil, context.Canceled
-	}
-	s.fileCancel = stop
-	s.fileRequest = q.ID
-	s.mu.Unlock()
-	defer func() { s.mu.Lock(); s.fileCancel = nil; s.fileRequest = ""; s.mu.Unlock() }()
 	client, closeClient, err := openFileClient(operation, state)
 	if err != nil {
 		return nil, err

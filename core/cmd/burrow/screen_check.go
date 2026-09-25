@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -19,10 +20,59 @@ func main() {
 		h, _ = strconv.Atoi(os.Args[2])
 	}
 	screen := vt.NewEmulator(w, h)
-	defer screen.Close()
+	defer func() { screen.Close() }()
 	go io.Copy(io.Discard, screen)
+	if len(os.Args) == 4 && os.Args[3] == "--stream" {
+		input, output := json.NewDecoder(os.Stdin), json.NewEncoder(os.Stdout)
+		for {
+			var frame struct {
+				Data          []byte
+				Width, Height int
+				Reset         bool
+			}
+			if err := input.Decode(&frame); err == io.EOF {
+				return
+			} else if err != nil {
+				panic(err)
+			}
+			if frame.Reset {
+				screen.Close()
+				screen = vt.NewEmulator(frame.Width, frame.Height)
+				go io.Copy(io.Discard, screen)
+			}
+			if _, err := screen.Write(frame.Data); err != nil {
+				panic(err)
+			}
+			if err := output.Encode(screen.String()); err != nil {
+				panic(err)
+			}
+		}
+	}
 	if _, err := io.Copy(screen, os.Stdin); err != nil {
 		panic(err)
+	}
+	if len(os.Args) == 4 && os.Args[3] == "--cells" {
+		type cell struct {
+			Text  string `json:"text"`
+			Color string `json:"color"`
+		}
+		rows := make([][]cell, h)
+		for y := 0; y < h; y++ {
+			rows[y] = make([]cell, w)
+			for x := 0; x < w; x++ {
+				if c := screen.CellAt(x, y); c != nil {
+					rows[y][x].Text = c.Content
+					if c.Style.Fg != nil {
+						r, g, b, _ := c.Style.Fg.RGBA()
+						rows[y][x].Color = fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
+					}
+				}
+			}
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(rows); err != nil {
+			panic(err)
+		}
+		return
 	}
 	if len(os.Args) == 4 && os.Args[3] == "--cursor-line" {
 		fmt.Print(strings.Split(screen.String(), "\n")[screen.CursorPosition().Y])

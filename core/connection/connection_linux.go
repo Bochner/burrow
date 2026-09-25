@@ -4,6 +4,7 @@ package connection
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -43,6 +44,8 @@ type Config struct {
 	Review         string  `json:"review,omitempty"`
 }
 type State struct {
+	ShellCount     int    `json:"shellCount"`
+	ShellRevision  uint64 `json:"shellRevision"`
 	Proxy          Tunnel `json:"proxy,omitzero"`
 	TunnelCount    int    `json:"tunnelCount"`
 	TunnelRevision uint64 `json:"tunnelRevision"`
@@ -74,6 +77,13 @@ func ShellCommand(ctx context.Context, workspace, name string) (*exec.Cmd, error
 		return nil, err
 	}
 	s := value.(State)
+	return shellCommand(workspace, s)
+}
+
+// Shared construction seam for frontend-local and Hovel-retained channels.
+// Callers must first admit the exact connection through its manager.
+func shellCommand(workspace string, s State) (*exec.Cmd, error) {
+	name := s.Name
 	path, err := launch.ConnectionPath(workspace, name)
 	if err != nil || s.Socket != path || s.Name != name || s.MasterPID <= 0 || s.SocketInode == 0 {
 		return nil, fmt.Errorf("shell owner identity changed")
@@ -182,6 +192,7 @@ func (f *sshFailure) detail() string {
 }
 
 type owner struct {
+	shells         map[string]Shell
 	audit          launch.Audit
 	auditConnected bool
 
@@ -396,6 +407,9 @@ func (s *owner) RunPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payloa
 		if e := launch.VerifyReservation(c, s.config.Workspace, s.dir); e != nil {
 			return hovel.PayloadCommandResult{}, e
 		}
+		if e := s.reconcileShells(c); e != nil {
+			return hovel.PayloadCommandResult{}, e
+		}
 		if s.state.State == "connected" {
 			if e := s.checkMaster(); e != nil {
 				s.state.State = "lost"
@@ -452,6 +466,22 @@ func (s *owner) Close(reason string) (failure error) {
 		s.mu.Unlock()
 		return fmt.Errorf("unidentified master socket preserved; investigate manually")
 	}
+	// The manager admission lock excludes new shells throughout connection close.
+	// An unavailable child acknowledgement preserves the owner for investigation.
+	c, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	e = s.reconcileShells(c)
+	cancel()
+	if e != nil {
+		s.mu.Unlock()
+		return e
+	}
+	shellErr := s.closeShells()
+	if len(s.shells) != 0 {
+		s.mu.Unlock()
+		return shellErr
+	}
+	// Audit failure reports incomplete evidence, not incomplete physical cleanup.
+	defer func() { failure = errors.Join(failure, shellErr) }()
 	if s.cancel != nil {
 		s.downloadClosing = true
 		for _, work := range s.downloads {

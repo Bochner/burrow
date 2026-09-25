@@ -1,22 +1,44 @@
-<!-- burrow-doc: {"title":"User guide","group":"Foundations","order":100} -->
+<!-- burrow-doc: {"title":"Start here","group":"Foundations","order":100,"description":"Install Burrow, open a workspace, connect and choose a manual or agent workflow."} -->
 <article>
-<h1>User guide</h1>
-<p>For Hovel-driven SSH connections, including running Dropbear servers, and reviewed HTTP through existing tunnels, see the <a href="chains.html">visual SSH and tunnel chains walkthroughs</a> for Burrow's TUI, shell CLI and embedded Hovel CLI.</p>
-<p>Burrow is the Go successor to LazySSH. The production Linux amd64 package supports verified Hovel workspaces, retained SSH connections, saved settings, interactive shells, forwarding, file transfers, commands and scripts, live output, local automation, Ubuntu reports and Hovel chains. MVP 1–4 are implemented; MVP 5 covers operator skills and final daily-use acceptance. Start with the <a href="launch.html">setup and launch guide</a>.</p>
-<h2>Connect and save settings</h2>
-<p>The <a href="connections.html">connection guide</a> covers passwords, encrypted keys, SSH agents, SSH config aliases and jump hosts. Host trust uses the owner-selected LazySSH settings, <code>StrictHostKeyChecking=no</code> and <code>UserKnownHostsFile=/dev/null</code>, with no separate host-key approval. After successful interactive authentication, Burrow offers to save the settings for a future session.</p>
-<p>Each workspace automatically receives a private <code>burrow-profiles.json</code> template with instructions and an inactive example. Follow <a href="profiles.html">saved connection collections</a> for a filled-out JSON example and commands to create, save, edit, delete, load and back up profiles. Opening a collection only displays settings; connect explicitly when ready.</p>
-<h2>Connection lifetime</h2>
-<p>Quit reviews whether to keep connections running or close them, while retaining the daemon. Frontend-local shells end on exit. Reopen the same workspace to manage retained connections, or use <code>close NAME</code> to review and end one. Editing or deleting a saved profile changes future connections only. Saved settings contain no passwords or private-key contents.</p>
-<h2>Follow the work</h2>
-<p><code>scp NAME</code> enters <a href="files.html">file browsing and transfers</a> through a live connection, with remote navigation, cached completion and persistent workspace upload/download roots. Download with <code>get</code> or <code>mget</code>, upload with <code>put</code>, and review retained outcomes with <code>transfers</code>.</p>
-<p>Use <code>shell NAME</code> to open an <a href="shells.html">interactive SSH shell</a> through a live connection. Ctrl+] backgrounds it; open another, list with <code>shells</code>, return with <code>resume ID</code>, or close one with <code>shell-close ID</code>. Shells share the owning connection's master socket. The <a href="forwarding.html">forwarding guide</a> covers local and reverse listeners.</p>
-<h2>Run commands and scripts</h2>
-<p>Enter these examples in the management prompt for a live connection named <code>gateway</code>. The first runs an existing command. The second streams a local script from the configured upload root:</p>
-<pre data-lang="Burrow management"><code>run now gateway -- ps -elf
-run now gateway --script check.sh --mode stream --interpreter /bin/sh --</code></pre>
-<p>Review and confirm to execute and collect. Press <kbd>Ctrl+L</kbd> to read stdout, stderr and the outcome. The <a href="runs.html#tui-workflow">TUI walkthrough</a> and <a href="runs.html#script-inputs">worked script examples</a> explain where files belong, literal arguments, independent stdin, inline and staged modes, timeouts, keep and cleanup. <code>run list</code> and <code>run inspect ID</code> expose retained state after you leave the view.</p>
-<p><code>run follow ID</code> opens an independent live stdout/stderr viewer; closing it leaves the run active. Use <code>--local</code> to run a selected local tool with non-secret connection context. Both share the reviewed run lifecycle; <a href="automation.html">local tools and automation</a> explains local exit and cancellation limits.</p>
-<p>Use <code>run survey CONNECTION --os ubuntu</code> for a reviewed inventory survey and <code>reports</code> to read its saved Markdown in an independent view. See <a href="reports.html">Ubuntu surveys and reports</a>.</p>
-<p>The <a href="https://github.com/Bochner/burrow/issues/43">daily-use MVP specification</a> tracks remaining implementation and acceptance; the <a href="https://github.com/Bochner/burrow/issues/1">resolved SSH specification map</a> indexes its decisions. Legacy LazySSH plugin compatibility and additional OS surveys remain outside the implemented command set. SMB and WinRM implementation remain outside this MVP.</p>
+<h1>Start here</h1>
+<p>Burrow manages SSH connections, shells, forwarding, files and retained commands from a Linux terminal. Hovel keeps workspace state and collected evidence; Burrow installs and starts its pinned Hovel dependency for you.</p>
+<h2 id="versions">Which version does this book describe?</h2>
+<p>This book describes the <a href="https://github.com/Bochner/burrow/releases/tag/v0.2.0">v0.2.0 development release</a>, with a Linux amd64 archive and source builds. Repository access is required to download it. Follow <a href="launch.html">Install and launch</a> for checksums and setup. The earlier v0.1.0 release contains MVP 1–4 and has source only.</p>
+<table><thead><tr><th>Availability</th><th>Workflows</th></tr></thead><tbody>
+<tr><td>v0.1.0 baseline</td><td>Workspace setup and TUI navigation, connections, profiles, frontend-local shells, forwarding, transfers, runs, live run output, local tools, Ubuntu Markdown reports and chains.</td></tr>
+<tr><td>v0.2.0 additions</td><td>CLI capability discovery and the <a href="../api/">API reference</a>, headless workspace and <a href="shells.html#retained">retained-shell lifecycle, shared CLI control and TUI attachment</a>, workspace activity following, agent workflow skills and the website's <a href="../reports/">CI Reports</a>.</td></tr>
+</tbody></table>
+<p>The pinned Hovel runtime has a known concurrent SQLite access failure that can interrupt work. See <a href="safety.html">security and known limitations</a>. The owner authorized this development release while deferring the shared-workspace walkthrough in <a href="https://github.com/Bochner/burrow/issues/65">#65</a>. That walkthrough and full daily-use acceptance remain outstanding; a passing site build does not establish them.</p>
+<h2>Your first connection</h2>
+<ol>
+<li><a href="launch.html">Build and install</a> Burrow, then open a private workspace: <code>burrow --workspace "$HOME/burrow-lab"</code>.</li>
+<li>In the Burrow management prompt, enter <code>connect</code>. Fill in the host, account and connection name. Port, key and agent settings can use their defaults.</li>
+<li>Review the actual SSH command and resolved settings, then confirm. Complete authentication if asked. Wait for <strong>connected</strong>; an accepted launch alone is not authentication success.</li>
+<li>Optionally save the successful connection's settings when offered. Saved profiles contain references and preferences, never passwords or private-key contents.</li>
+<li>Enter <code>shell gateway</code>, replacing <code>gateway</code> with your connection name. <kbd>Ctrl+]</kbd> returns to management and releases your control while retaining the shell. Resume observes; Alt+T explicitly takes control.</li>
+</ol>
+<p>Host trust follows the accepted LazySSH policy: <code>StrictHostKeyChecking=no</code> and <code>UserKnownHostsFile=/dev/null</code>. There is no separate host-key approval or retained user host-trust record. Read the <a href="connections.html#authentication">authentication guidance</a> before connecting.</p>
+<h2>Where to type commands</h2>
+<table><thead><tr><th>Surface</th><th>Example</th><th>Result</th></tr></thead><tbody>
+<tr><td>Burrow management prompt</td><td><code>inspect gateway</code></td><td>Formatted output and interactive reviews.</td></tr>
+<tr><td>Your local shell</td><td><code>burrow --workspace "$HOME/burrow-lab" inspect gateway</code></td><td>JSON, colored on a terminal. Global options go before the command.</td></tr>
+<tr><td>Embedded Hovel tab</td><td><code>session list --json</code></td><td>Hovel commands in the same workspace. Use <kbd>Alt+B</kbd> to return to Burrow.</td></tr>
+<tr><td>Interactive SSH shell</td><td><code>pwd</code></td><td>A command on the target. Use <kbd>Ctrl+]</kbd> before typing Burrow management commands.</td></tr>
+</tbody></table>
+<p>Examples use <code>gateway</code> for an already connected host. Replace example hosts, usernames, paths, IDs and returned review digests with your actual values. Commands shown as alternatives are not a batch to paste. Use <kbd>F1</kbd> for contextual help and <kbd>Tab</kbd> for completion.</p>
+<h2>Choose your next task</h2>
+<table><thead><tr><th>Task</th><th>Start with</th></tr></thead><tbody>
+<tr><td>Choose or switch workspaces</td><td><a href="workspace-navigation.html">Workspace navigation</a></td></tr>
+<tr><td>Use keys, passwords, aliases or jump hosts</td><td><a href="connections.html">Named SSH connections</a></td></tr>
+<tr><td>Save and reuse settings</td><td><a href="profiles.html">Saved connection collections</a></td></tr>
+<tr><td>Open terminals or expose a service</td><td><a href="shells.html">Interactive shells</a> · <a href="forwarding.html">Forwarding and SOCKS</a></td></tr>
+<tr><td>Browse, upload or collect files</td><td><a href="files.html">File roots and transfers</a></td></tr>
+<tr><td>Run a command or script and save its output</td><td><a href="runs.html">Commands and scripts</a> · <a href="automation.html">Local tools</a></td></tr>
+<tr><td>Survey a host or automate a connection</td><td><a href="reports.html">Operational Markdown reports</a> · <a href="chains.html">Hovel chains</a></td></tr>
+<tr><td>Work alongside an agent</td><td><a href="agent-skills.html">Install workflow skills</a> · <a href="logs.html">Follow activity</a> (v0.2.0)</td></tr>
+<tr><td>Leave, close resources or recover a failure</td><td><a href="lifecycle.html">Quit, detach and close</a> · <a href="troubleshooting.html">Troubleshooting</a></td></tr>
+</tbody></table>
+<h2>Reference and evidence</h2>
+<p>The <a href="../api/">API tab</a> is generated from <code>burrow capabilities</code>: supported commands, inputs, results and known interface gaps. The <a href="../reports/">website Reports tab</a> contains CI tests, production coverage and operator parity. Neither is the <code>reports</code> command, which reads operational Markdown evidence collected in your workspace.</p>
+<p>Legacy LazySSH plugins, server deployment, additional OS surveys, SMB and WinRM are outside the implemented workflows. See <a href="hovel-integration.html">Hovel integration</a> for ownership and <a href="development-guide.html">the development guide</a> for builds and checks.</p>
 </article>

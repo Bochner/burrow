@@ -1,0 +1,123 @@
+"""Opt-in native skill discovery, isolated from user config and the network."""
+import json
+import hashlib
+import zipfile
+import os
+from pathlib import Path
+import select
+import shutil
+import subprocess
+import tempfile
+import time
+import sys
+import tarfile
+
+def exchange(process, message, matches):
+    process.stdin.write(json.dumps(message)+'\n'); process.stdin.flush()
+    deadline = time.monotonic()+20
+    while time.monotonic() < deadline:
+        if select.select([process.stdout], [], [], 0.2)[0]:
+            line = process.stdout.readline()
+            if not line:
+                raise AssertionError('client exited before discovery response')
+            reply = json.loads(line)
+            if matches(reply):
+                return reply
+    raise AssertionError('client discovery timed out')
+
+
+with tempfile.TemporaryDirectory(prefix='burrow-discovery-') as temporary:
+    root = Path(temporary)
+    home = Path.home()
+    with tarfile.open(sys.argv[1]) as release:
+        release.extractall(root/'release', filter='data')
+    burrow = str(root/'release/burrow')
+    with zipfile.ZipFile(root/'release/burrow-agent.zip') as bundle:
+        bundle.extractall(root/'updated')
+    manifest_path = root/'updated/burrow-agent.json'
+    manifest = json.loads(manifest_path.read_text())
+    names = {p.parent.name for p in (root/'updated/skills').glob('*/SKILL.md')}
+    # Different descriptions prove the native client refreshed the installed
+    # content, not merely cached the same names after an update.
+    marker = ' Updated-discovery-check.'
+    for path in (root/'updated/skills').glob('*/SKILL.md'):
+        content = path.read_text().replace('"'+manifest['version']+'"', '"0.2.1"')
+        content = '\n'.join(line + marker if line.startswith('description: ') else line for line in content.split('\n'))
+        path.write_text(content)
+    manifest['version'] = '0.2.1'
+    manifest['files'] = {str(p.relative_to(root/'updated')): hashlib.sha256(p.read_bytes()).hexdigest()
+                         for p in (root/'updated/skills').rglob('*') if p.is_file()}
+    manifest_path.write_text(json.dumps(manifest))
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('CODEX_', 'CLAUDE_', 'ANTHROPIC_', 'OPENAI_', 'OPENCODE_', 'XDG_'))}
+    for host, scope in ((host, scope) for host in ('codex', 'claude', 'opencode') for scope in ('project', 'user')):
+        binary = shutil.which(host)
+        if not binary:
+            print('UNVERIFIED '+host+' '+scope+': client absent; placement tests do not prove native discovery')
+            continue
+        binary = str(Path(binary).resolve())
+        scratch = root/(host+'-'+scope)
+        scratch.mkdir()
+        project = scratch/'project'; project.mkdir()
+        config = scratch/'home'; config.mkdir()
+        env.update(XDG_DATA_HOME=str(scratch/'data'), XDG_STATE_HOME=str(scratch/'state'), XDG_CACHE_HOME=str(scratch/'cache'))
+        # A writable empty home works even when the real user has no skill/config
+        # directories yet. Restore only installed executable dependencies read-only.
+        sandbox = ['/usr/bin/bwrap', '--die-with-parent', '--unshare-net', '--ro-bind', '/', '/', '--dev', '/dev', '--tmpfs', '/tmp', '--bind', str(root), str(root), '--bind', str(config), str(home), '--chdir', str(project)]
+        tool_dirs = set()
+        for executable in (binary, shutil.which('node')):
+            if not executable:
+                continue
+            path = Path(executable).resolve()
+            if path.is_relative_to(home):
+                directory = path.parent
+                # npm shims may load platform binaries from sibling packages.
+                for parent in path.parents:
+                    if parent.name == 'node_modules':
+                        directory = parent
+                tool_dirs.add(directory)
+        for directory in sorted(tool_dirs):
+            sandbox += ['--ro-bind', str(directory), str(directory)]
+        skill_root = {'codex': '.agents', 'claude': '.claude', 'opencode': '.opencode' if scope == 'project' else '.config/opencode'}[host]
+        for stage, source in (('installed', []), ('updated', ['--source', str(root/'updated')])):
+            install = subprocess.run(sandbox+[burrow, 'agent', 'install', host, '--scope', scope]+source, env=env, capture_output=True, text=True)
+            assert install.returncode == 0, install.stderr
+            visible = (project if scope == 'project' else home)/skill_root/'skills'
+            if host == 'opencode':
+                result = subprocess.run(sandbox+[binary, 'debug', 'skill'], env=env, capture_output=True, text=True, timeout=30)
+                assert result.returncode == 0, result.stderr
+                skills = {s['name']: s for s in json.loads(result.stdout)}
+                assert names <= skills.keys(), skills
+                assert all(Path(skills[n]['location']).is_relative_to(visible) for n in names), skills
+                assert all((marker.strip() in skills[n]['description']) == bool(source) for n in names), skills
+                print('PASS native opencode '+scope+' '+stage+' discovery: '+', '.join(sorted(names)))
+                continue
+            command = [binary, 'app-server'] if host == 'codex' else [binary, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', '{"disableAllHooks":true}']
+            with (scratch/'stderr').open('w') as errors:
+                process = subprocess.Popen(sandbox+command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True, bufsize=1, env=env)
+                try:
+                    if host == 'codex':
+                        exchange(process, {'id': 1, 'method': 'initialize', 'params': {'clientInfo': {'name': 'burrow-discovery', 'version': '0.0.0'}}}, lambda r: r.get('id') == 1)
+                        process.stdin.write('{"method":"initialized"}\n'); process.stdin.flush()
+                        response = exchange(process, {'id': 2, 'method': 'skills/list', 'params': {'cwds': [str(project)], 'forceReload': True}}, lambda r: r.get('id') == 2)
+                        assert 'error' not in response, response
+                        skills = response['result']['data'][0]['skills']
+                        found = {s['name']: s for s in skills if s['name'] in names}
+                        assert set(found) == names, response
+                        assert all(Path(s['path']).is_relative_to(visible) for s in found.values()), found
+                        assert all((marker.strip() in s['description']) == bool(source) for s in found.values()), found
+                    else:
+                        response = exchange(process, {'type': 'control_request', 'request_id': 'init', 'request': {'subtype': 'initialize'}}, lambda r: r.get('type') == 'control_response')
+                        commands = response['response']['response']['commands']
+                        assert names <= {c['name'] for c in commands}, response
+                        assert all((marker.strip() in c['description']) == bool(source) for c in commands if c['name'] in names), response
+                    print('PASS native '+host+' '+scope+' '+stage+' discovery: '+', '.join(sorted(names)))
+                except Exception:
+                    print((scratch/'stderr').read_text()[-4000:])
+                    raise
+                finally:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill(); process.wait(timeout=5)
+    print('Native discovery checks complete; any UNVERIFIED clients above remain unverified.')

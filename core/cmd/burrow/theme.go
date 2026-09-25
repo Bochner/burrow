@@ -350,6 +350,10 @@ func (m ui) styledOutput() string {
 			} else {
 				switch field {
 				case "listen", "destination", "requestedListen":
+					if strings.HasPrefix(token, `"/`) {
+						style = secondary
+						break
+					}
 					b.WriteString(m.paint(secondary, `"`) + m.endpoint(token[1:len(token)-1]) + m.paint(secondary, `"`))
 					end = at[1]
 					continue
@@ -357,14 +361,14 @@ func (m ui) styledOutput() string {
 					style = keywordStyle
 				case "url":
 					style = hostStyle
-				case "connection", "connectionCreation":
+				case "connection", "connectionCreation", "controller":
 					style = accent
-				case "name", "id", "generation", "creation", "runID", "launchRunID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "cleanupScope", "error", "outputError", "auditError", "cleanupError":
+				case "name", "id", "generation", "creation", "runID", "launchRunID", "session", "host", "hostname", "user", "username", "key", "agent", "shell", "socket", "jump", "sshConfig", "collection", "detail", "cleanupScope", "error", "outputError", "auditError", "cleanupError", "recoveryError", "inputError":
 					style = fieldStyle(strings.ToUpper(field))
 					if token == `""` {
 						style = secondary
 					}
-				case "path", "stagePath":
+				case "path", "stagePath", "backup", "source", "provenance", "upstream":
 					style = secondary
 				case "mode", "execution":
 					style = keywordStyle
@@ -387,7 +391,7 @@ func (m ui) styledOutput() string {
 					} else if token == `"ordinary-group-terminated"` {
 						style = successStyle
 					}
-				case "state", "status":
+				case "state", "status", "synchronization":
 					var state string
 					_ = json.Unmarshal([]byte(token), &state)
 					style = connectionStyle(state)
@@ -413,11 +417,11 @@ func scrollBody(text string, width, height, offset int) viewport.Model {
 
 func connectionStyle(state string) lipgloss.Style {
 	switch state {
-	case "connected", "active", "running", "listening", "traffic-observed":
+	case "applied", "unchanged", "connected", "active", "running", "listening", "traffic-observed", "snapshot-current":
 		return successStyle
-	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable", "staging-failed", "timed-out", "local-start-failed", "local-signaled":
+	case "failed", "lost", "closed", "disconnected", "unverified", "unavailable", "staging-failed", "timed-out", "local-start-failed", "local-signaled", "out-of-sync":
 		return errorStyle
-	case "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown":
+	case "planned", "connecting", "reconnecting", "opening", "closing", "prepared", "cancelled", "cancelled-before-launch", "transport-or-completion-unknown", "last-known-screen":
 		return warningStyle
 	default:
 		return secondary
@@ -452,7 +456,7 @@ func (m *frame) commandHelp() string {
 	}
 	if m.terminalFocused() {
 		if m.current().tab == "shell" {
-			keys = []key.Binding{binding("Ctrl+]", "management"), numberedShell, previousShell, binding("Ctrl+C", "interrupt"), binding("drag", "select text")}
+			keys = []key.Binding{binding("Ctrl+]", "detach"), takeShellControl, numberedShell, previousShell, binding("Ctrl+C", "interrupt"), binding("drag", "select text")}
 			return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 		}
 		keys = []key.Binding{showBurrow, binding("drag", "select text"), selection, binding("Shift+PgUp/PgDn", "scroll"), binding("Shift+Home/End", "oldest/live"), binding("Ctrl+]", "frame controls"), binding("Ctrl+C", "interrupt CLI")}
@@ -495,11 +499,11 @@ func fieldStyle(header string) lipgloss.Style {
 		return infoStyle
 	case "TERM", "TYPE", "PERMISSIONS", "MODE", "EXECUTION", "LANG":
 		return keywordStyle
-	case "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
+	case "SHELLS", "TUNNELS", "MASTER PID", "OWNER PID", "SIZE", "MODIFIED", "FILES", "KNOWN TOTAL":
 		return numberStyle
 	case "SOCKET", "NO-TERM", "SSH CONFIG", "SSHCONFIG", "COLLECTION", "DETAIL", "CLEANUPSCOPE", "SOURCE", "DESTINATION PATH", "SCRIPT", "STAGED SCRIPT", "PROGRAM STDIN", "WORKING DIRECTORY", "BURROW_WORKSPACE", "BURROW_SOCKET", "BURROW_SSH_CONFIG", "PATH":
 		return secondary
-	case "ERROR", "OUTPUTERROR", "AUDITERROR", "CLEANUPERROR":
+	case "ERROR", "OUTPUTERROR", "AUDITERROR", "CLEANUPERROR", "RECOVERYERROR", "INPUTERROR":
 		return errorStyle
 	default:
 		return pageStyle

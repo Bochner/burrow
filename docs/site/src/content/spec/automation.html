@@ -1,7 +1,7 @@
-<!-- burrow-doc: {"title":"Local tools and automation","group":"Foundations","order":151,"description":"Run selected local tools and automate Burrow through Hovel saved chains and public daemon operations."} -->
+<!-- burrow-doc: {"title":"Local tools and automation","group":"Operator Experience","order":240,"description":"Run selected local tools and automate Burrow through Hovel saved chains and public daemon operations."} -->
 <article>
-<p>For confirmed SSH connection creation and selected live-tunnel HTTP consumption, see <a href="chains.html">SSH and tunnel chains</a>.</p>
 <h1>Local tools and automation</h1>
+<p>For confirmed SSH connection creation and selected live-tunnel HTTP consumption, see <a href="chains.html">SSH and tunnel chains</a>.</p>
 <p><code>--local</code> runs a tool on the daemon host with an explicitly selected live SSH connection's non-secret context. It uses the same <a href="runs.html">retained run lifecycle</a>, output viewer, cancellation and evidence collection as remote commands. The initial supported daemon is local to Burrow, so the tool runs on your machine.</p>
 <h2>Run a local tool</h2>
 <pre data-lang="Burrow management"><code>run now gateway --local -- /usr/bin/printf 'local output\n'
@@ -83,11 +83,12 @@ curl --fail-with-body --silent --show-error \
   -H 'Content-Type: application/json' -d '{}' \
   http://localhost/hovel.daemon.v1.DaemonService/GetDaemonInfo</code></pre>
 <p>Check the response's <code>workspacePath</code> matches the intended canonical path. <code>ListSessions</code> discovers retained runs on this same public surface. Collected output remains available in Burrow’s <kbd>Ctrl+L</kbd> view and Hovel’s artifact inventory. Use saved throws for confirmed execution and collection. Privileged <code>ExecuteModule</code> or raw session controls do not establish the surrounding planning/confirmation contract. The product automation contract is saved-chain <code>hovel throw</code> and documented public daemon operations, not compatibility/developer <code>hovel run</code>, <code>command</code> or internal registry roots. No separate Burrow scripting runtime is required.</p>
-<h2>Verification and provenance</h2>
+<details><summary>Verification and provenance</summary>
 <pre data-lang="Aspect checks"><code>aspect burrow automation-check
 aspect burrow-check ci
 aspect burrow-check
 aspect burrow-site check</code></pre>
 <p>The focused disposable SSH check exercises local execution and stream results, saved-chain confirmation/danger/launch-key refusals, explicit workspace identity, a local SSH socket driver across two live connections, missing selection/master, local child cancellation and timeout, and evidence retention. Portable terminal checks cover contextual completion, execution labels, semantic colors and narrow/no-color reviews.</p>
 <p>Contracts follow <a href="https://github.com/Bochner/burrow/issues/13">the accepted automation decision</a> and <a href="https://github.com/Bochner/burrow/issues/26">the retained-run proof</a>, with Hovel 0.4.2 / SDK source <code>a4cbfdf7769a9551695088c11061e3cabc368e07</code>. The implementation traces <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/plugin_manager.py">LazySSH's plugin runner</a> and <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/tests/test_plugin_manager.py">its environment, argument and output tests</a>. Useful connection context and tool output are preserved through explicit selection and retained Hovel runs; legacy discovery, inherited ambient credentials, combined output and implicit five-minute timeouts are intentionally not carried forward.</p>
+</details>
 </article>

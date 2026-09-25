@@ -8,6 +8,7 @@
 /.bazelrc.user
 /dist/
 /_site/
+/.report-input/
 node_modules/
 /docs/site/dist/
 /docs/site/.astro/

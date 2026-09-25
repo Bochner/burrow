@@ -24,8 +24,10 @@ import time
 
 from core.cmd.burrow.authentication_lab import authentication_matrix
 from core.cmd.burrow.manager_lab import manager_checks, audit_cleanup_checks
+from core.cmd.burrow.workspace_lab import workspace_checks
 from core.cmd.burrow.latency_lab import measure, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
+from core.cmd.burrow.sessions_lab import session_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
 from core.cmd.burrow.files_lab import file_checks, load_checks, file_ui
 from core.cmd.burrow.runs_lab import run_checks, run_ui
@@ -33,10 +35,13 @@ from core.cmd.burrow.follow_lab import follow_checks
 from core.cmd.burrow.automation_lab import automation_checks
 from core.cmd.burrow.reports_lab import report_checks
 from core.cmd.burrow.chains_lab import chain_checks, dropbear_check, connection_chain_ui
+from core.cmd.burrow.agent_lab import agent_exercise
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=10, metavar="PATH")
+parser.add_argument("--agent-exercise", metavar="DIRECTORY", help="opt-in external-agent rendezvous and evidence; no model in default gates")
 parser.add_argument("--lifecycle-check", action="store_true", help="check connection management, SOCKS, authentication and failure ownership")
+parser.add_argument("--workspace-check", action="store_true", help="check headless lifecycle with a separate observing TUI")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
 parser.add_argument("--runs-check", action="store_true", help="check retained remote command lifecycle only")
 parser.add_argument("--follow-check", action="store_true", help="check independent live output readers and viewers")
@@ -44,7 +49,9 @@ parser.add_argument("--reports-check", action="store_true", help="check Ubuntu s
 parser.add_argument("--chains-check", action="store_true", help="check production selected-tunnel chain traffic")
 parser.add_argument("--scripts-check", action="store_true", help="check script inputs and staging through retained runs")
 parser.add_argument("--automation-check", action="store_true", help="check selected local tools and supported Hovel automation")
+parser.add_argument("--shared-tui-check", action="store_true", help="check shared SSH TUI only")
 parser.add_argument("--shell-check", action="store_true", help="check real interactive SSH shell only")
+parser.add_argument("--sessions-check", action="store_true", help="check retained SSH shell lifecycle only")
 parser.add_argument("--files-check", action="store_true", help="check real SFTP browsing only")
 parser.add_argument("--forward-check", action="store_true", help="check real local forwarding only")
 parser.add_argument("--reverse-check", action="store_true", help="check real reverse forwarding only")
@@ -53,6 +60,8 @@ parser.add_argument("--measure", action="store_true", help="record production ph
 parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
 parser.add_argument("--auth-check", action="store_true", help="check private prompts, cancellation and rejected passwords only")
 args = parser.parse_args()
+if args.shared_tui_check:
+    args.shell_check = True
 smoke = args.smoke
 binary, wheel, image_file, screen_check, legacy_binary, vim_apk, survey_script, dropbear_apk, utmps_apk, skalibs_apk = [str(Path(p).resolve()) for p in args.paths]
 image = Path(image_file).read_text().strip()
@@ -151,6 +160,11 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             measure(binary,root,env,container,port,key,command,wait)
             raise SystemExit(0)
         options = ["--key", str(key), "--port", str(port), "--yes"]
+        if args.workspace_check or args.lifecycle_check or not any(vars(args)[name] for name in vars(args) if name != "paths"):
+            workspace_checks(binary, env, screen_check, root, w, burrow, wait, options, daemons)
+            timing("headless workspace lifecycle")
+            if args.workspace_check:
+                raise SystemExit(0)
         phases = root / "phases.jsonl"
         env["BURROW_PHASE_TRACE"] = str(phases)
         def state_is(w, name, expected):
@@ -195,6 +209,14 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if args.agent_exercise:
+            agent_exercise(args.agent_exercise, binary, env, w, first, container, command, burrow, hv, screen_check)
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
+        if args.sessions_check or (args.shell_check and not args.shared_tui_check):
+            session_checks(burrow, w, first, command, container, wait, options, root, daemons, binary, env)
+            if args.sessions_check:
+                raise SystemExit(0)
         if args.chains_check:
             handoff_workspace = root / "hc"
             daemons.append(burrow(handoff_workspace, "status")["pid"])
@@ -262,7 +284,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
         if not args.lifecycle_check and not smoke and not args.proxy_check:
-            forward_evidence.append(forward_checks(binary, env, screen_check, burrow, w, first, options, container, command))
+            if not args.shared_tui_check:
+                forward_evidence.append(forward_checks(binary, env, screen_check, burrow, w, first, options, container, command))
         if args.forward_check:
             burrow(w, "close", "gateway", "--yes")
             raise SystemExit(0)
@@ -645,10 +668,15 @@ launch:
             wait(lambda: screen_contains(b"inspect gateway"))
             os.write(outer, b"\r")
             wait(lambda: screen_contains(b'"name"'))
-            os.write(outer, b"\x1b[6~" * 3)
-            wait(lambda: screen_contains(b'"socket"'))
-            os.write(outer, b"\x1b[6~" * 5)  # PgDn reveals the remaining inspect fields
-            wait(lambda: screen_contains(b"socketInode"))
+            # PgDn moves one output line. Assert that actual fields can be
+            # revealed without tying the check to a fixed metadata row count.
+            for field in (b'"shellCount"', b'"shellRevision"', b'"socket"', b'"socketInode"'):
+                for _ in range(64):
+                    if screen_contains(field):
+                        break
+                    os.write(outer, b"\x1b[6~")
+                else:
+                    raise AssertionError(f"inspect field unreachable by scrolling: {field!r}")
             os.write(outer, b"close gateway\r")
             wait(lambda: screen_contains(b"Close gateway"))
             os.write(outer,b"\r")
@@ -774,6 +802,10 @@ launch:
         leftover.write_text("not owned by connection")
         burrow(w, "close", "gateway", "--yes", ok=False)
         assert leftover.read_text() == "not owned by connection" and evidence.read_text() == "retain evidence"
+        burrow(w, "connect", "quit-shared", "127.0.0.1", "tester", *plain)
+        wait(lambda: state_is(w, "quit-shared", "connected"))
+        reviewed_shells = [burrow(path, "session", "create", name, "--yes")
+                           for path, name in ((w, "quit-shared"), (other, "gateway"))]
         # Quit reviews both opened workspaces and refuses to exit on uncertain cleanup.
         outer, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
@@ -792,11 +824,18 @@ launch:
             os.write(outer, b"\x03")
             wait(lambda: screen_contains(b"Close connections"))
             assert screen_contains(b"WORKSPACE") and screen_contains(b"STATUS")
+            assert screen_contains(b"SHELLS")
             assert screen_contains(w.name.encode()) and screen_contains(other.name.encode())
+            os.write(outer, b"\x1b")  # Cancel preserves both workspaces' shells.
+            wait(lambda: not screen_contains(b"Close connections"))
+            assert all(Path(f"/proc/{s['pid']}").exists() for s in reviewed_shells)
+            os.write(outer, b"\x03")
+            wait(lambda: screen_contains(b"Close connections"))
             os.write(outer, b"\t\r")  # explicit cleanup, default is Keep running
             wait(lambda: screen_contains(b"Connections remain or changed"))
             assert tui.poll() is None and leftover.exists()
             assert burrow(other, "connections") == []
+            assert all(not Path(f"/proc/{s['pid']}").exists() for s in reviewed_shells)
             leftover.unlink()  # harness owns this injected conflict
             os.write(outer, b"\t\r")  # retry the freshly reviewed remaining owner
             assert tui.wait(timeout=10) == 0

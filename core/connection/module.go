@@ -51,7 +51,8 @@ func (Module) Run(ctx *hovel.Context) (hovel.Result, error) {
 		if err != nil {
 			return hovel.Result{}, err
 		}
-		if len(args) == 0 || (args[0] != "reports" && args[0] != "report" && args[0] != "run" && args[0] != "downloads" && args[0] != "download-cancel" && args[0] != "transfers" && args[0] != "transfer-cancel" && args[0] != "profile" && args[0] != "profiles" && args[0] != "history" && args[0] != "scp" && args[0] != "local" && args[0] != "lcd" && args[0] != "lls" && args[0] != "files-history") || (args[0] == "profile" && len(args) > 1 && args[1] == "connect") {
+		operation, supported := CommandOperation(args)
+		if !supported || !operation.ModuleCommand {
 			return hovel.Result{}, fmt.Errorf("expected profile, file, retained-run or report command; authenticate explicitly through the reviewed connect adapter")
 		}
 		if RunWaits(args) {

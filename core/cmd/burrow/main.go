@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -22,6 +23,13 @@ import (
 
 const usage = `Burrow — verified Hovel workspace
 Usage: burrow --workspace /absolute/workspace [options] [status|tui|COMMAND]
+       burrow --workspace /absolute/workspace workspace open|inspect|restart|retire
+       burrow --workspace /absolute/workspace follow [--json]
+       burrow --workspace /absolute/workspace session create|list CONNECTION
+       burrow --workspace /absolute/workspace session inspect|close CONNECTION ID
+       burrow workspace list PATH [PATH...]
+       burrow capabilities [ID]
+       burrow agent install claude|codex|opencode --scope user|project [--dry-run]
        burrow --demo [--no-color]
 
 Required:
@@ -35,7 +43,22 @@ Options:
   --help                Show this help without starting anything
 
 status opens/reuses the workspace and prints verified daemon identity as JSON.
+workspace open does the same setup; workspace inspect only verifies an existing daemon.
+workspace list inspects only the supplied paths; no global workspace registry exists.
+workspace restart/retire returns a JSON review; --yes --review HASH confirms that manager.
+Both retire the entire owner, including concurrent additions, without opening a TUI.
+restart also registers the current build; next approved connect starts a manager.
+Workspace routes emit JSON results and JSON errors on stderr (exit 1).
+session manages retained SSH shells headlessly; create/close review before --yes [--review HASH].
+These shells survive CLI exit. Claim/takeover/input/resize/release use private JSON stdin.
+Observe returns bounded bytes; snapshot recovers a screen. TUI tabs share these retained shells.
+session failures emit JSON errors on stderr (exit 1); inspect before retrying uncertain creation.
+capabilities prints the versioned JSON operation contract without initializing anything.
+agent install installs bundled standalone skills offline; --source PATH selects a trusted local bundle.
 tui opens the management interface (default); quit retains the daemon.
+follow streams new shared activity with normal scrollback; --json or a pipe emits NDJSON.
+Shared shell lifecycle and control results are included; input counts never establish command completion.
+It requires an existing daemon. Ctrl+C ends only the viewer; no approvals or SSH reconnects.
 restart [--yes] retires the workspace's Burrow manager, then opens the current TUI.
 --yes skips restart confirmation and ends the workspace's connections and shells.
 It ends that manager's connections and shells; saved settings, evidence and Hovel remain.
@@ -58,20 +81,20 @@ func safe(s string) string {
 }
 
 // Human terminals share the TUI's semantic renderer; pipes remain JSON-only.
-func printResult(result any, noColor bool) error {
-	if !term.IsTerminal(os.Stdout.Fd()) {
-		return json.NewEncoder(os.Stdout).Encode(result)
+func printResult(output *os.File, result any, noColor bool) error {
+	if !term.IsTerminal(output.Fd()) {
+		return json.NewEncoder(output).Encode(result)
 	}
 	body, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return err
 	}
 	m := ui{output: string(body), noColor: noColor || os.Getenv("NO_COLOR") != ""}
-	_, err = lipgloss.Fprintln(os.Stdout, m.styledOutput())
+	_, err = lipgloss.Fprintln(output, m.styledOutput())
 	return err
 }
 
-func run(args []string) error {
+func run(args []string) (failure error) {
 	if os.Getenv("BURROW_ASKPASS") == "1" {
 		if len(args) != 1 || term.IsTerminal(os.Stdout.Fd()) {
 			return fmt.Errorf("invalid authentication helper invocation")
@@ -89,8 +112,13 @@ func run(args []string) error {
 	var o launch.Options
 	var noColor, demo bool
 	var loadPath string
+	var workspaceSelections int
 	fs.StringVar(&loadPath, "load", "", "open saved collection without connecting")
-	fs.StringVar(&o.Workspace, "workspace", "", "explicit canonical workspace (required)")
+	fs.Func("workspace", "explicit canonical workspace (required except discovery)", func(path string) error {
+		workspaceSelections++
+		o.Workspace = path
+		return nil
+	})
 	fs.StringVar(&o.Package, "hovel-package", "", "pinned wheel file")
 	fs.BoolVar(&o.Offline, "offline", false, "verified cache only")
 	fs.BoolVar(&demo, "demo", false, "sample-data UI preview")
@@ -102,10 +130,37 @@ func run(args []string) error {
 		}
 		return e
 	}
+	if fs.NArg() > 0 && fs.Arg(0) == "capabilities" {
+		return capabilities(fs, fs.Args()[1:])
+	}
+	if fs.Arg(0) == "agent" {
+		return agentCommand(fs, fs.Args()[1:], noColor)
+	}
+	operation := ""
+	if fs.Arg(0) == "close" {
+		operation = "connection.close"
+	} else if fs.Arg(0) == "profile" && fs.Arg(1) == "connect" {
+		operation = "profile.connect"
+	} else if fs.Arg(0) == "session" {
+		operation = "session." + fs.Arg(1)
+	}
+	if operation != "" {
+		defer func() {
+			if failure != nil {
+				failure = &commandError{Operation: operation, Workspace: o.Workspace, Code: "operation_failed", Message: failure.Error()}
+			}
+		}()
+	}
 	if noColor {
 		if e := os.Setenv("NO_COLOR", "1"); e != nil {
 			return e
 		}
+	}
+	if fs.NArg() > 0 && fs.Arg(0) == "workspace" {
+		return workspaceCommand(o, fs.Args()[1:], workspaceSelections, loadPath, demo)
+	}
+	if workspaceSelections > 1 {
+		return fmt.Errorf("select exactly one workspace with --workspace PATH")
 	}
 	if demo {
 		if fs.NArg() > 0 {
@@ -118,6 +173,12 @@ func run(args []string) error {
 	}
 	if o.Workspace == "" {
 		return fmt.Errorf("--workspace PATH is required; use --help")
+	}
+	if fs.Arg(0) == "follow" {
+		if loadPath != "" {
+			return fmt.Errorf("follow does not load settings; select the existing workspace only")
+		}
+		return activityCommand(o.Workspace, fs.Args()[1:], noColor)
 	}
 	command := "tui"
 	if fs.NArg() > 0 {
@@ -140,7 +201,7 @@ func run(args []string) error {
 				return e
 			}
 		}
-		if (command == "shell" || command == "logs") && !term.IsTerminal(os.Stdin.Fd()) {
+		if (command == "shell" || (command == "logs" && len(args) == 1)) && !term.IsTerminal(os.Stdin.Fd()) {
 			return fmt.Errorf("shell requires terminal input; use inspect NAME for JSON")
 		}
 		following := command == "run" && len(args) > 1 && args[1] == "follow"
@@ -162,6 +223,13 @@ func run(args []string) error {
 			}
 		}
 		if command == "logs" {
+			if len(args) == 2 {
+				text, err := readLogSnapshot(o.Workspace)
+				if err != nil {
+					return err
+				}
+				return json.NewEncoder(os.Stdout).Encode(map[string]string{"text": text})
+			}
 			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
 			m.initialLogs = true
 			return terminal(m, m.noColor)
@@ -174,6 +242,9 @@ func run(args []string) error {
 		if command == "shell" {
 			m := newFrame(info, noColor || os.Getenv("NO_COLOR") != "", o)
 			m.initialShell = args[1]
+			if len(args) == 3 {
+				m.initialSession = args[2]
+			}
 			return terminal(m, m.noColor)
 		}
 		args, e = connection.ProfileConnect(ctx, o.Workspace, args)
@@ -206,7 +277,7 @@ func run(args []string) error {
 					if err != nil {
 						return err
 					}
-					return printResult(result, noColor)
+					return printResult(os.Stdout, result, noColor)
 				}
 				interactive = c.Prompt || (!yes && term.IsTerminal(os.Stdin.Fd()))
 			}
@@ -215,17 +286,27 @@ func run(args []string) error {
 				if e := a.Run(); e != nil {
 					return e
 				}
-				return printResult(a.result, noColor)
+				return printResult(os.Stdout, a.result, noColor)
 			}
 		}
 		if connection.RunWaits(args) {
 			ctx = interrupt
 		}
+		if command == "session" && len(args) == 5 && args[4] == "--request-stdin" {
+			if term.IsTerminal(os.Stdin.Fd()) || term.IsTerminal(os.Stdout.Fd()) {
+				return fmt.Errorf("private shell requests require piped/file stdin and stdout")
+			}
+			result, err := connection.SessionCommand(ctx, o.Workspace, args, os.Stdin)
+			if err != nil {
+				return err
+			}
+			return printResult(os.Stdout, result, noColor)
+		}
 		result, e := connection.Execute(ctx, o.Workspace, args)
 		if e != nil {
 			return e
 		}
-		return printResult(result, noColor)
+		return printResult(os.Stdout, result, noColor)
 	}
 	if fs.NArg() > 1 && !restartApproved {
 		return fmt.Errorf("status and tui take no arguments")
@@ -290,7 +371,12 @@ func openWorkspace(ctx context.Context, options launch.Options) (launch.Info, er
 
 func main() {
 	if e := run(os.Args[1:]); e != nil {
-		fmt.Fprintln(os.Stderr, "Burrow: "+safe(e.Error()))
+		var problem *commandError
+		if errors.As(e, &problem) {
+			_ = printResult(os.Stderr, map[string]any{"error": problem}, false)
+		} else {
+			fmt.Fprintln(os.Stderr, "Burrow: "+safe(e.Error()))
+		}
 		os.Exit(1)
 	}
 }

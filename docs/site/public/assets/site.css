@@ -10,7 +10,7 @@
   --border-2:  #432a78;
   --text:      #ece6ff;
   --muted:     #8a83bf;
-  --dim:       #4d4574;
+  --dim:       var(--muted);
 
   /* synthwave neons */
   --magenta:   #ff3ee0;
@@ -608,6 +608,7 @@ summary:focus-visible {
   padding: 2rem 2.5rem 4rem;
   max-width: 900px;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 .breadcrumbs {
   display: flex;
@@ -928,6 +929,7 @@ summary:focus-visible {
 /* ---------- typography ---------- */
 
 h1, h2, h3, h4 {
+  scroll-margin-top: 5rem;
   font-family: var(--mono);
   font-feature-settings: "zero" 1, "ss01" 1;
   color: var(--text);
@@ -1000,6 +1002,10 @@ td {
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
   vertical-align: top;
+}
+th:first-child,
+td:first-child {
+  min-width: calc(6ch + 1.4rem);
 }
 th {
   color: var(--cyan);
@@ -1938,7 +1944,7 @@ pre[data-lang]::before {
 .hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 2rem;
   align-items: center;
   padding: 3rem max(2.5rem, calc((100vw - 1180px) / 2));
@@ -1967,6 +1973,9 @@ pre[data-lang]::before {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--magenta), var(--cyan), transparent);
   opacity: 0.5;
+}
+.hero-text {
+  min-width: 0;
 }
 .hero-text h1 {
   margin: 0 0 0.5rem;

@@ -13,9 +13,11 @@ The project is implementing useful LazySSH SSH parity in five approved
 milestones. Linux amd64 is the initial operator platform. **MVP 1–4 are
 implemented: verified workspace setup, saved connections, retained SSH,
 independent shells, forwarding, file transfers, commands and scripts, live
-output, local automation, Ubuntu Markdown reports, and Hovel chains. MVP 5
-(operator skills and final daily-use acceptance) remains.** Full LazySSH parity
-and a distribution release are not yet claimed.
+output, local automation, Ubuntu Markdown reports, and Hovel chains. MVP 5 adds
+shared shell control, independent observation, six agent workflows and interface
+reports; final daily-use acceptance remains pending.** See the
+[candidate verification record](docs/site/MVP-ACCEPTANCE.md). The owner deferred
+the shared-workspace walkthrough; full daily-use acceptance is not yet claimed.
 
 > **Authorized red-team emulation only.** Use Burrow only in environments you own
 > or are explicitly authorized to assess, with written scope and approvals. See
@@ -24,6 +26,11 @@ and a distribution release are not yet claimed.
 ## Documentation
 
 The documentation uses the same Astro GitHub Pages book format as Hovel.
+
+`burrow capabilities` prints the current machine-readable operation contract
+without opening a workspace or TUI. Use `burrow capabilities run.output` to
+inspect one route. The generated [API reference](https://bochner.github.io/burrow/api/)
+publishes the same inventory, including human-only routes and current gaps.
 
 ## [bochner.github.io/burrow](https://bochner.github.io/burrow/index.html)
 
@@ -54,8 +61,13 @@ The declared `//core/cmd/burrow:package` target produces an archive containing
 the `burrow` executable and the public-SDK module manifest. Follow the
 [launch guide](docs/site/src/content/spec/launch.html), then the
 [named connection](docs/site/src/content/spec/connections.html) and
-[saved collection](docs/site/src/content/spec/profiles.html) guides. There is no
-distribution release yet. See the
+[saved collection](docs/site/src/content/spec/profiles.html) guides. The
+[v0.2.0 development release](https://github.com/Bochner/burrow/releases/tag/v0.2.0)
+includes a Linux amd64 archive and SHA256 checksums. It adds CLI discovery,
+headless workspace and shared-shell lifecycle, activity following and six agent
+workflow skills to the source-only v0.1.0 baseline. Repository access is required
+to download the release. See the book’s
+[version table](docs/site/src/content/spec/user-guide.html#versions). See the
 [proposed Hovel compatibility convention](docs/research/hovel-daemon-compatibility-handoff.md)
 for the deferred upstream handoff and current development boundary.
 
@@ -134,7 +146,9 @@ targets and reports real failures without blocking the required release gate.
 This is a scoped exception for [#86](https://github.com/Bochner/burrow/issues/86);
 restore those checks to the required gate after an official Hovel fix is pinned
 and verified. `aspect burrow-check` remains the strict full gate, including
-these diagnostics. The portable job stages and uploads `docs-site`. Every job retains logs, XML,
+these diagnostics. The portable job stages `docs-base`; the report job combines matching test and
+coverage evidence, enforces operational agent parity through `burrow-report release`,
+and publishes the verified `docs-site` artifact. Every job retains logs, XML,
 terminal captures and available phase/daemon logs as `test-results-SUITE` for
 14 days, including after failure. Pages promotes that exact site after
 successful main CI and checks that its commit is still current. Manual Pages

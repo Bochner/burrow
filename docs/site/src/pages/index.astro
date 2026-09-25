@@ -4,6 +4,6 @@ import { getPage } from "../lib/catalog";
 import PageShell from "../layouts/PageShell.astro";
 const page = getPage("index");
 ---
-<PageShell area="home" current="Home" description={page.description} root="" tag="// planning" title={page.title}>
+<PageShell area="home" current="Home" description={page.description} root="" tag="// SSH management" title={page.title}>
   <main id="main-content" class="home-main"><Fragment set:html={page.body} /></main>
 </PageShell>

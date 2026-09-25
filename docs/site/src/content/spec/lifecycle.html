@@ -1,0 +1,34 @@
+<!-- burrow-doc: {"title":"Quit, detach and close","group":"Foundations","order":150,"description":"What survives leaving a view, quitting Burrow, closing a connection or losing its owner."} -->
+<article>
+<h1>Quit, detach and close</h1>
+<p>A connection is an authenticated SSH transport. A shell is one terminal using it. Leaving a view, ending a shell and closing its connection have different effects.</p>
+<h2>Choose the intended scope</h2>
+<table><thead><tr><th>Action</th><th>Ends or leaves</th><th>Remains available</th></tr></thead><tbody>
+<tr><td><kbd>Ctrl+]</kbd> from an SSH shell</td><td>Releases this attachment’s control and leaves the shell view.</td><td>The retained shell, last geometry and other controllers; <code>resume ID</code> observes, Alt+T takes control.</td></tr>
+<tr><td>Remote <code>exit</code> or <code>shell-close ID</code></td><td>Ends one shell.</td><td>Its connection, sibling shells, tunnels and transfers.</td></tr>
+<tr><td>Exit a CLI after <code>session create CONNECTION</code></td><td>Ends only the launcher.</td><td>The Hovel-retained shell and connection. Use <code>session list CONNECTION</code>; <code>shell CONNECTION ID</code> observes that same shell in the TUI.</td></tr>
+<tr><td><code>session close CONNECTION ID</code></td><td>After review, ends and reaps one retained shell's SSH client.</td><td>Its master and sibling resources; remote-command outcomes remain unconfirmed.</td></tr>
+<tr><td>Close an output viewer</td><td>Leaves observation.</td><td>The retained run, capture and other viewers. Viewing is not collection.</td></tr>
+<tr><td>Quit → Keep running</td><td>Releases this frontend’s shell claims and ends its editor/Hovel CLI processes.</td><td>Verified daemon-owned connections, forwarding, transfers, retained shells and runs, and collected evidence.</td></tr>
+<tr><td><code>close NAME</code></td><td>Closes the selected connection and its shells, transfers and listeners; remote run access is lost.</td><td>Other connections, saved settings and collected evidence.</td></tr>
+<tr><td>Quit → Close connections</td><td>Closes the reviewed connections and shells across workspaces opened in this frontend, then exits after verified cleanup.</td><td>Hovel daemons, saved settings and collected evidence.</td></tr>
+<tr><td>Quit → Cancel / <kbd>Esc</kbd></td><td>Cancels quitting.</td><td>The frontend and its resources.</td></tr>
+</tbody></table>
+<p>v0.2.0 TUI tabs and <a href="shells.html#retained">headless session commands</a> share the same retained shells under the <a href="https://github.com/Bochner/burrow/issues/87">accepted shared-session decision</a>. Another frontend can observe and explicitly take over. A disappeared frontend leaves its claim until takeover; labels do not assert liveness. This replaces v0.1.0’s frontend-local shell lifetime.</p>
+<h2>Leave and return</h2>
+<ol>
+<li>Use <code>connections</code>, <code>transfers</code> and <code>run list</code> to inspect work in the selected workspace. Collect important completed run output before leaving.</li>
+<li>Enter <code>quit</code> in management. Review the connections across all workspaces you opened. Keep running retains the daemon-owned resources; Close connections ends the reviewed connections.</li>
+<li>Reopen Burrow with the same absolute workspace path. Inspect the retained resources. Select a discovered retained shell to observe it, then explicitly take control with Alt+T if needed.</li>
+</ol>
+<p>Failed or uncertain teardown keeps Burrow open with an error. Inspect that result before retrying. Ending a local SSH client never proves that deliberately detached remote processes have stopped.</p>
+<h2>Close one connection from the CLI</h2>
+<pre data-lang="Local shell"><code>burrow --workspace /absolute/workspace inspect gateway
+burrow --workspace /absolute/workspace close gateway
+# v0.2.0: copy the digest from the review after approving it.
+burrow --workspace /absolute/workspace close gateway --yes --review HASH</code></pre>
+<p>v0.2.0 binds the review to the exact connection creation and observed state. Changed state requires another review. <code>--yes</code> without a digest explicitly approves the current selection; v0.1.0 supports that older form. Connection names can be reused later, so never treat a name or port as a permanent identity.</p>
+<h2>Manager retirement and loss</h2>
+<p>The v0.2.0 <code>workspace restart</code> and <code>workspace retire</code> commands review the entire connection owner, including connections added concurrently. They preserve the daemon and separate retained-run records, but ending their SSH masters loses access for remote runs. Restart also registers the current executable. Neither reconnects SSH or starts a replacement manager. See <a href="workspace-navigation.html#manager">the headless lifecycle workflow</a>.</p>
+<p>After owner or daemon loss, saved profiles and already collected artifacts remain. Live state may be lost or unverified, uncollected output may be unavailable, and remote process cleanup may be unknown. There is no automatic login, shell recovery or adoption of stale sockets. Follow <a href="troubleshooting.html#ownership">ownership recovery guidance</a>.</p>
+</article>

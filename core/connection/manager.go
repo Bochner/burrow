@@ -26,12 +26,13 @@ const managerKind = "burrow-manager-v1"
 const buildMismatch = "installed Burrow module build differs from the requesting frontend; run burrow status to register this build; nothing was dispatched"
 
 type managerIdentity struct {
-	PasswordAuth bool   `json:"passwordAuth,omitempty"`
-	Session      string `json:"session"`
-	Generation   string `json:"generation"`
-	Workspace    string `json:"workspace"`
-	OwnerPID     int    `json:"ownerPID"`
-	RunID        string `json:"runID"`
+	RetainedShells bool   `json:"retainedShells,omitempty"`
+	PasswordAuth   bool   `json:"passwordAuth,omitempty"`
+	Session        string `json:"session"`
+	Generation     string `json:"generation"`
+	Workspace      string `json:"workspace"`
+	OwnerPID       int    `json:"ownerPID"`
+	RunID          string `json:"runID"`
 }
 
 type managerRequest struct {
@@ -60,6 +61,7 @@ type manager struct {
 	managerIdentity
 	dir         *os.File
 	closed      bool
+	readClosed  chan struct{}
 	connections map[string]*owner
 	logMu       sync.Mutex
 	log         *hovel.Logger
@@ -80,10 +82,10 @@ func (m *manager) milestone(message string) {
 		m.logs++
 	}
 }
-func (m *manager) Open() error                        { return nil }
-func (m *manager) Read(time.Duration) ([]byte, error) { return nil, nil }
-func (m *manager) Write([]byte) error                 { return fmt.Errorf("use bounded manager controls") }
-func (m *manager) Closed() bool                       { m.mu.Lock(); defer m.mu.Unlock(); return m.closed }
+func (m *manager) Open() error                             { return nil }
+func (m *manager) Read(wait time.Duration) ([]byte, error) { return readRetained(wait, m.readClosed) }
+func (m *manager) Write([]byte) error                      { return fmt.Errorf("use bounded manager controls") }
+func (m *manager) Closed() bool                            { m.mu.Lock(); defer m.mu.Unlock(); return m.closed }
 func (m *manager) Close(string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -112,11 +114,28 @@ func (m *manager) Close(string) error {
 		return errors.Join(failures, e)
 	}
 	m.closed = true
+	defer close(m.readClosed)
 	return errors.Join(failures, m.dir.Close())
 }
 
+// Retained providers have no raw output. Honor the broker's read wait so idle
+// managers and completed runs do not spin empty RPCs while remaining inspectable.
+func readRetained(wait time.Duration, closed <-chan struct{}) ([]byte, error) {
+	if wait < 0 {
+		<-closed
+	} else if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-closed:
+		case <-timer.C:
+		}
+	}
+	return nil, nil
+}
+
 func (m *manager) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]hovel.PayloadCommand, error) {
-	return []hovel.PayloadCommand{{Name: "chain-inventory", ReadOnly: true}, {Name: "tunnel-http", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "download-review", ReadOnly: true}, {Name: "downloads", ReadOnly: true}, {Name: "download-cancel"}, {Name: "download", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
+	return []hovel.PayloadCommand{{Name: "shell-register", Summary: "Confirmed shell preparation adapter only"}, {Name: "shell-start", Summary: "Confirmed shell launch adapter only"}, {Name: "shell-close", Summary: "Reviewed selected shell cleanup"}, {Name: "close-selected", Summary: "Close with an exact connection and dependent-resource review"}, {Name: "chain-inventory", ReadOnly: true}, {Name: "tunnel-http", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "download-review", ReadOnly: true}, {Name: "downloads", ReadOnly: true}, {Name: "download-cancel"}, {Name: "download", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "files", ReadOnly: true, Summary: "Browse a verified live connection; no transfer or authentication"}, {Name: "identity", ReadOnly: true}, {Name: "list", ReadOnly: true}, {Name: "tunnels", ReadOnly: true}, {Name: "forward", Summary: "Confirmed adapter only; session commands do not certify approval"}, {Name: "unforward"}, {Name: "tunnel-check", Summary: "Passive destination greeting check; no remote content retained"}, {Name: "profile", ReadOnly: true}, {Name: "shell", ReadOnly: true, Summary: "Verify connection for a frontend-local shell; no session I/O recording"}, {Name: "close"}, {Name: "close-reviewed"}, {Name: "connect", Summary: "Confirmed adapter forwarding only; session commands do not certify approval"}}, nil
 }
 
 func (m *manager) inventory() ([]State, error) {
@@ -139,7 +158,7 @@ func (m *manager) inventory() ([]State, error) {
 }
 
 func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.PayloadCommandResult, error) {
-	if len(req.Config) > 0 || req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" {
+	if len(req.Config) > 0 || req.Reconnect != nil || req.InstalledPayloadID != "" || req.InputPath != "" || req.InputData != "" || req.InputEncoding != "" {
 		return hovel.PayloadCommandResult{}, fmt.Errorf("unsupported manager inputs")
 	}
 	if req.Command == "connect" && len(req.Args) == 3 {
@@ -190,6 +209,12 @@ func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 			return hovel.PayloadCommandResult{}, fmt.Errorf("exact manager generation required")
 		}
 		switch req.Command {
+		case "shell-register", "shell-start", "shell-close":
+			shell, err := m.shellControl(c, req)
+			if err != nil {
+				return hovel.PayloadCommandResult{}, err
+			}
+			value = shell
 		case "list":
 			if len(req.Args) != 1 {
 				return hovel.PayloadCommandResult{}, fmt.Errorf("unexpected list arguments")
@@ -199,8 +224,8 @@ func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 				return hovel.PayloadCommandResult{}, e
 			}
 			value = states
-		case "profile", "close", "shell":
-			if len(req.Args) != 2 {
+		case "profile", "close", "close-selected", "shell":
+			if (req.Command == "close-selected" && len(req.Args) != 3) || (req.Command != "close-selected" && len(req.Args) != 2) {
 				return hovel.PayloadCommandResult{}, fmt.Errorf("exact creation required")
 			}
 			s := m.connections[req.Args[1]]
@@ -212,6 +237,13 @@ func (m *manager) runPayloadCommand(req hovel.PayloadCommandRequest) (hovel.Payl
 			}
 			if req.Command == "shell" {
 				return s.RunPayloadCommand(hovel.PayloadCommandRequest{Command: "connection-shell"})
+			}
+			if req.Command == "close-selected" {
+				current, err := s.RunPayloadCommand(hovel.PayloadCommandRequest{Command: "connection-status"})
+				var state State
+				if err != nil || json.Unmarshal([]byte(current.Stdout), &state) != nil || closeDigest(m.Workspace, state) != req.Args[2] {
+					return hovel.PayloadCommandResult{}, fmt.Errorf("connection changed after review; review close again")
+				}
 			}
 			if e := s.Close("operator confirmed selected close"); e != nil {
 				return hovel.PayloadCommandResult{}, e
@@ -321,6 +353,9 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 	if strings.HasPrefix(ctx.InputString("action", ""), "run-") {
 		return runAdapter(ctx, w)
 	}
+	if strings.HasPrefix(ctx.InputString("action", ""), "shell-") {
+		return shellAdapter(ctx, w)
+	}
 	switch ctx.InputString("action", "") {
 	case "chain-connect":
 		return chainConnectAdapter(ctx, w)
@@ -365,7 +400,7 @@ func runManager(ctx *hovel.Context) (hovel.Result, error) {
 		if e != nil {
 			return hovel.Result{}, e
 		}
-		m := &manager{managerIdentity: managerIdentity{PasswordAuth: true, Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, connections: map[string]*owner{}, log: ctx.Log}
+		m := &manager{managerIdentity: managerIdentity{RetainedShells: true, PasswordAuth: true, Workspace: w, Generation: generation, OwnerPID: os.Getpid(), RunID: ctx.RunID}, dir: dir, readClosed: make(chan struct{}), connections: map[string]*owner{}, log: ctx.Log}
 		ref, e := ctx.OpenSession(m, hovel.WithName("Burrow manager"), hovel.WithKind(managerKind))
 		if e != nil {
 			dir.Close()
@@ -415,7 +450,7 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 	}
 	var found managerIdentity
 	for _, ref := range refs.Sessions {
-		if ref.ModuleID != "burrow@0.1.0" || ref.Kind == "connection" || ref.Kind == runKind || ref.State == "closed" {
+		if ref.ModuleID != "burrow@0.1.0" || ref.Kind == "connection" || ref.Kind == runKind || ref.Kind == shellKind || ref.State == "closed" {
 			continue
 		}
 		if ref.Kind != managerKind {
@@ -433,26 +468,63 @@ func findManager(ctx context.Context, w string) (managerIdentity, error) {
 	return found, nil
 }
 
-// RestartManager retires one verified retained owner, not the Hovel daemon.
-// Approval covers that entire owner, including concurrently added connections.
-// Unknown reservations and legacy owners require manual investigation.
-func RestartManager(ctx context.Context, w string, confirm func([]State) bool) error {
+// ManagerReview is an observation, not a second owner registry. Approval covers
+// the whole owner, including concurrent additions, as in the interactive restart.
+type ManagerReview struct {
+	Action      string          `json:"action"`
+	State       string          `json:"state"`
+	Digest      string          `json:"digest"`
+	Review      string          `json:"review"`
+	Workspace   launch.Info     `json:"workspace"`
+	Owner       managerIdentity `json:"owner"`
+	Connections []State         `json:"connections"`
+}
+
+func ReviewManager(ctx context.Context, w, action string) (ManagerReview, error) {
+	r := ManagerReview{Action: action, State: "review"}
+	if action != "restart" && action != "retire" {
+		return r, fmt.Errorf("expected manager restart or retire")
+	}
+	var err error
+	r.Workspace, err = launch.Status(ctx, w)
+	if err != nil {
+		return r, err
+	}
 	id, err := findManager(ctx, w)
 	if err != nil {
-		return err
+		return r, err
 	}
 	states, err := List(ctx, w)
 	if err != nil {
-		return err
+		return r, err
 	}
 	for _, state := range states {
 		if id.Session == "" || state.Session != id.Session || state.Generation != id.Generation {
-			return fmt.Errorf("unverified or legacy resources remain; close them explicitly before restart")
+			return r, fmt.Errorf("unverified or legacy resources remain; close them explicitly before retirement")
 		}
 	}
-	if !confirm(states) {
-		return fmt.Errorf("restart cancelled; resources retained")
+	r.Owner, r.Connections = id, states
+	r.Review = "Retire this entire workspace manager, including concurrently added connections. Connections lists the pre-action observation, not an exhaustive cleanup inventory. Ends its connections, shells, transfers and tunnels. Saved settings, collected evidence, separate retained runs and Hovel remain. Reconnect explicitly afterward."
+	if action == "restart" {
+		r.Review += " Registers the current Burrow build for subsequent operations; no TUI, manager or SSH connection is started."
 	}
+	// Bind the action and exact daemon/manager incarnation. Live connection state
+	// is informative: approval explicitly covers this entire owner's lifetime.
+	b, _ := json.Marshal(struct {
+		Action    string
+		Workspace launch.Info
+		Owner     managerIdentity
+	}{action, r.Workspace, id})
+	r.Digest = digest(string(b))
+	return r, nil
+}
+
+func RetireManager(ctx context.Context, w string, expected ManagerReview) error {
+	review, err := ReviewManager(ctx, w, expected.Action)
+	if err != nil || review.Digest != expected.Digest {
+		return fmt.Errorf("manager changed or became unverified; review retirement again")
+	}
+	id := review.Owner
 	current, err := findManager(ctx, w)
 	if err != nil || current != id {
 		return fmt.Errorf("manager changed or became unverified; review restart again")
@@ -468,7 +540,22 @@ func RestartManager(ctx context.Context, w string, confirm func([]State) bool) e
 	if err != nil || current.Session != "" {
 		return fmt.Errorf("a retained manager remains or cleanup is unverified; close other frontends and inspect before retrying")
 	}
+	if states, err := List(ctx, w); err != nil || len(states) != 0 {
+		return fmt.Errorf("manager cleanup unverified; inspect reservations before retrying")
+	}
 	return nil
+}
+
+// RestartManager preserves the interactive confirmation through the same seam.
+func RestartManager(ctx context.Context, w string, confirm func([]State) bool) error {
+	review, err := ReviewManager(ctx, w, "restart")
+	if err != nil {
+		return err
+	}
+	if !confirm(review.Connections) {
+		return fmt.Errorf("restart cancelled; resources retained")
+	}
+	return RetireManager(ctx, w, review)
 }
 
 // Isolated request chains preserve the reviewed binding across independent frontends.

@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sys
+import subprocess
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -15,7 +16,11 @@ for page in pages:
     assert 'id="main-content"' in html and 'class="skip-link"' in html, page
     for raw in re.findall(r'\b(?:href|src)="([^"]+)"', html):
         url = urlsplit(raw)
-        if url.scheme or url.netloc or not url.path:
+        if url.scheme or url.netloc:
+            continue
+        if not url.path:
+            if url.fragment:
+                assert f'id="{unquote(url.fragment)}"' in html, (page, raw)
             continue
         path = unquote(url.path)
         if path.startswith("/"):
@@ -40,4 +45,29 @@ for entry in index:
 assert "Authorized red-team emulation only." in (root / "index.html").read_text()
 assert (root / "LICENSE-HOVEL").is_file()
 assert (root / ".nojekyll").is_file()
+contract = json.loads((root / "api/inventory.json").read_text())
+binary_contract = json.loads(subprocess.check_output([sys.argv[2], "capabilities"], text=True))
+# The site producer may be built in the execution configuration; compare the
+# contract, while retaining its actual binary digest as separate provenance.
+assert contract.pop("provenance")["binarySHA256"]
+assert binary_contract.pop("provenance")["binarySHA256"]
+assert contract == binary_contract, "site inventory differs from the real binary"
+for operation in contract["operations"]:
+    page = root / f'api/{operation["category"]}.html'
+    html = page.read_text()
+    assert f'id="{operation["id"]}"' in html, operation["id"]
+    assert operation["agent"]["status"] in html, operation["id"]
+    assert any(operation["id"] in entry["text"] for entry in index), operation["id"]
+for page in pages:
+    assert re.search(r'href="[^"]*api/"[^>]*>API</a>', page.read_text()), page
+assert 'aria-current="page">API</a>' in (root / "api/index.html").read_text()
+report = json.loads((root / "reports/report.json").read_text())
+report_html = (root / "reports/index.html").read_text()
+assert {op["id"] for op in report["parity"]["capabilities"]} == {op["id"] for op in contract["operations"]}
+assert not report["publishable"] and report["coverage"]["status"] == "MISSING"
+assert 'aria-current="page">Reports</a>' in report_html
+assert 'Optional MCP is not measured as typed MCP coverage' in report_html
+assert 'aria-label="Report sections"' in report_html and 'tabindex="0"' in report_html
+for page in pages:
+    assert re.search(r'href="[^"]*reports/"[^>]*>Reports</a>', page.read_text()), page
 print(f"Validated {len(pages)} pages, internal links/assets, and search entries")

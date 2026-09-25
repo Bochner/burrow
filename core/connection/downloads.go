@@ -221,6 +221,9 @@ func openFileClient(ctx context.Context, state State) (*sftp.Client, func(), err
 	client, err := sftp.NewClientPipe(out, in)
 	if err != nil {
 		cleanup()
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
 		return nil, nil, fmt.Errorf("SFTP subsystem unavailable; no new authentication attempted")
 	}
 	// Close waits for the reader goroutine: terminate our subsystem client first

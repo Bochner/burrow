@@ -20,6 +20,12 @@ shipping the full rewrite is the subsequent implementation effort.
 
 ## Standing preferences from the owner
 
+- Follow-up owner instruction (2026-09-20, #87): MVP 5 adopts Hovel-retained
+  shared SSH shells, one explicit controller, independent observers and retained
+  shells on detach/Keep running. This supersedes the frontend-local lifetime
+  selected in #24; daemon/module loss still requires explicit recovery. See the
+  [accepted shared-session decision](adr/0002-shared-interactive-sessions.md).
+
 - Follow-up owner instruction (2026-09-12, #70): the connection recap is the
   single manual approval, including for saved settings; show the actual SSH
   command and generated config with semantic colors. The owner selected

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"github.com/Bochner/burrow/core/connection"
+	ptyhost "github.com/Bochner/burrow/core/terminal"
 )
 
 // A review snapshot, never another resource registry. CloseReviewed rechecks it.
@@ -34,7 +36,7 @@ func (m *frame) quitSummary() string {
 	var rows [][]string
 	for _, path := range q.paths {
 		for _, s := range q.states[path] {
-			rows = append(rows, []string{safe(filepath.Base(path)), safe(s.Name), safe(s.State)})
+			rows = append(rows, []string{safe(filepath.Base(path)), safe(s.Name), safe(s.State), fmt.Sprint(s.ShellCount)})
 		}
 	}
 	var lines []string
@@ -46,7 +48,7 @@ func (m *frame) quitSummary() string {
 		}
 	}
 	if len(rows) > 0 {
-		lines = append(lines, u.dataTable("", []string{"WORKSPACE", "CONNECTION", "STATUS"}, rows, max(1, m.dialogBounds().Dx()-6)))
+		lines = append(lines, u.dataTable("", []string{"WORKSPACE", "CONNECTION", "STATUS", "SHELLS"}, rows, max(1, m.dialogBounds().Dx()-6)))
 	}
 	for _, err := range q.errors {
 		lines = append(lines, u.paint(errorStyle, err))
@@ -101,13 +103,52 @@ func (m *frame) showQuit(q quitSnapshot) tea.Cmd {
 	}
 	f := quitForm()
 	if q.count() > 0 {
-		f = confirmForm("", "Keep connections, or close all listed connections and quit?\nSaved settings/evidence and daemon remain. Local terminals end.", "Keep running", "Close connections")
+		f = confirmForm("", "Keep shells/connections and release your control, or close the listed resources?\nSaved settings/evidence and daemon remain.", "Keep running", "Close connections")
 		keep := true // Safe default: Enter never tears resources down.
 		f.GetFocusedField().(*huh.Confirm).Value(&keep)
 	} else if len(q.errors) > 0 {
-		f = confirmForm("", "Connection status is unverified. Quit keeps all resources.\nFrontend-local terminals end.", "Quit", "Keep working")
+		f = confirmForm("", "Connection status is unverified. Quit keeps all resources.\nRelease this frontend's control before leaving.", "Quit", "Keep working")
 	}
 	return m.setForm("quit", "Quit Burrow?", f)
+}
+
+func (m *frame) keepRunning() tea.Cmd {
+	var hosts []*ptyhost.Shared
+	for _, w := range m.workspaces {
+		for _, tab := range w.shells {
+			if tab.pending {
+				m.current().management.output = "Shell operation pending; wait for its result before quitting."
+				m.dismissForm()
+				return nil
+			}
+			if host, ok := tab.host.(*ptyhost.Shared); ok {
+				hosts = append(hosts, host)
+			}
+		}
+	}
+	if len(hosts) == 0 {
+		return tea.Quit
+	}
+	m.quitClosing, m.form = true, nil
+	m.modal = "quit"
+	m.quitReview.errors = []string{"Releasing this frontend's shell control; shells remain running…"}
+	paths := append([]string{}, m.paths...)
+	return m.dispatch(m.active, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(m.terminals.context, 15*time.Second)
+		defer cancel()
+		var failures []string
+		for _, host := range hosts {
+			if err := host.Detach(ctx); err != nil {
+				failures = append(failures, safe(err.Error()))
+			}
+		}
+		if len(failures) > 0 {
+			q := readQuit(ctx, paths)
+			q.errors = append(q.errors, failures...)
+			return q
+		}
+		return tea.QuitMsg{}
+	})
 }
 
 func (m *frame) quitChanged() bool {

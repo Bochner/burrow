@@ -4,8 +4,11 @@ Burrow is the Go successor to Bochner's LazySSH, for homelab SSH management
 and authorized penetration-testing engagements. It fits Hovel's extension and
 development conventions as Hovel evolves. MVP 1 (setup, profiles and
 connections), MVP 2 (shells and forwarding), and MVP 3 (file workflows)
-are merged. MVP 4 (scripts, reports and chains) is implemented; MVP 5 remains
-follow-on work. The owner approved releasing MVP 4 with Hovel compatibility
+are merged. MVP 4 (scripts, reports and chains) and MVP 5 (shared sessions,
+headless workflows and verification reports) are implemented. On 2026-09-25,
+the owner authorized the MVP 5 merge, Pages and tagged development release
+after required CI passes, while deferring #65's shared-workspace walkthrough.
+The owner approved releasing MVP 4 with Hovel compatibility
 issue [#86](https://github.com/Bochner/burrow/issues/86) as a known limitation:
 three upstream diagnostics are advisory, while all production acceptance,
 normal startup and documentation checks remain required. Merge remains
@@ -28,12 +31,14 @@ owner-controlled.
 | --- | --- |
 | Connection | An authenticated SSH transport to a host; can exist without an interactive shell and support shells, transfers, or tunnels on demand. |
 | Master socket | The local control endpoint through which operations reuse an established SSH connection. Its existence does not imply an open interactive shell. |
-| Interactive shell | An on-demand terminal channel using a connection; closing it does not close the connection. Initially local to the Burrow frontend, rather than a retained Hovel shell. |
-| Background shell | An interactive shell that keeps running while Burrow displays management or another shell. Backgrounding within Burrow does not imply survival after the frontend exits. |
+| Interactive shell | An on-demand terminal channel using a connection, retained independently of its human or agent attachments. Closing it does not close the connection; see the [shared-session decision](docs/adr/0002-shared-interactive-sessions.md). |
+| Background shell | An interactive shell that keeps running while an operator displays another view or leaves the frontend. Retention does not promise survival after daemon or owning-module loss. |
+| Controller | The single human or agent attachment authorized to send a shared shell input and change its terminal dimensions; takeover explicitly replaces that authority. |
+| Observer | An attachment with an independent output position that cannot send shell input or change terminal dimensions. A missed-output gap makes its view out of sync until resynchronized. |
 | Session | An interactive channel exposed to an operator; distinguish Burrow SSH channels from Hovel's session records. |
 | Script run | A noninteractive command or script execution whose lifetime is independent of a viewer; local-tool results and remote-command results are distinct. |
 | Collection | Explicitly register a run's output as workspace evidence; viewing live output alone is not collection. |
-| Detach | Leave an operator frontend or attachment while daemon-owned resources remain available. Burrow quit reviews connections in opened workspaces: the operator can keep them running (detach), explicitly close them, or cancel. Frontend-local interactive shells end on exit. |
+| Detach | Leave an operator frontend or attachment while retained resources remain available. Shared-shell detach releases only that attachment’s control and preserves the shell and other controllers. |
 | Close | Explicitly end a live resource, distinct from detaching an operator. Closing a connection ends all its shells, transfers and tunnels and removes its master socket; saved settings and evidence remain. |
 | Tunnel | Local, remote, or dynamic forwarding owned by a connection. Initially, the operator establishes it in Burrow before a Hovel chain can select and use it. |
 | Saved connection | Non-secret connection settings that can recreate a connection; not a live transport. |

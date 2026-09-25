@@ -1389,9 +1389,40 @@ func TestForwardArgumentGuidance(t *testing.T) {
 	}
 }
 
+func TestSharedActivityPresentation(t *testing.T) {
+	event := connection.Activity{Time: "12:00:00", Source: "burrow/shell-control", Kind: "result", State: "completed", Resource: "shell-one", Connection: "connection-one", Actor: "agent-one", ID: "request-one", Message: "Provider input result", Details: map[string]any{"submittedBytes": 17, "providerResult": map[string]any{"acceptedBytes": 17}}}
+	for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+		for _, plain := range []bool{false, true} {
+			text := activityText(event, plain)
+			screen := vt.NewEmulator(size.X, size.Y)
+			screen.WriteString(strings.ReplaceAll(text, "\n", "\r\n"))
+			for _, value := range []string{"shell-one", "connection-one", "agent-one", "request-one", "submittedBytes", "acceptedBytes"} {
+				if !strings.Contains(screen.String(), value) {
+					t.Fatal("activity lost identity or input/result distinction", value, size, plain)
+				}
+			}
+			if plain {
+				if strings.Join(strings.Fields(text), " ") != strings.Join(strings.Fields(ansi.Strip(activityText(event, false))), " ") || strings.Contains(text, "\x1b") {
+					t.Fatal("NO_COLOR changed activity text or leaked escapes")
+				}
+			} else {
+				for _, value := range []string{"shell-one", "connection-one", "agent-one", "request-one"} {
+					assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y), value, "#b4befe")
+				}
+				assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y), "17", "#fab387")
+			}
+			screen.Close()
+		}
+	}
+	event.Actor = "agent\x1b]52;c;hostile\a"
+	if text := activityText(event, true); strings.Contains(text, "\x1b") || !strings.Contains(text, `\u001b`) {
+		t.Fatal("unsafe actor text reached terminal")
+	}
+}
+
 func TestSemanticOutput(t *testing.T) {
 	m := newUI(launch.Info{}, false)
-	m.output = `{"name":"gateway","port":22,"count":-2.5e-3,"active":true,"missing":null,"items":[false],"session":"session-one","detail":"Master verified","error":"refused"}`
+	m.output = `{"name":"gateway","port":22,"count":-2.5e-3,"active":true,"missing":null,"items":[false],"session":"session-one","detail":"Master verified","error":"refused","controller":"agent-one","synchronization":"out-of-sync","recoveryError":"snapshot too large","inputError":"write failed"}`
 	styled := m.styledOutput()
 	if ansi.Strip(styled) != m.output || !strings.Contains(styled, "38;2;180;190;254") || !strings.Contains(styled, "38;2;250;179;135") || !strings.Contains(styled, "38;2;249;226;175") {
 		t.Fatal("JSON text or semantic token roles lost", styled)
@@ -1401,7 +1432,7 @@ func TestSemanticOutput(t *testing.T) {
 	if _, err := screen.Write([]byte(styled)); err != nil {
 		t.Fatal(err)
 	}
-	for _, role := range []struct{ text, color string }{{"{", subtextColor}, {"}", subtextColor}, {"[", subtextColor}, {"]", subtextColor}, {":", subtextColor}, {",", subtextColor}, {"-2.5e-3", "#fab387"}, {"true", "#cba6f7"}, {"false", "#cba6f7"}, {"null", "#cba6f7"}, {`"session-one"`, lavenderColor}, {`"Master verified"`, subtextColor}, {`"refused"`, "#f38ba8"}} {
+	for _, role := range []struct{ text, color string }{{"{", subtextColor}, {"}", subtextColor}, {"[", subtextColor}, {"]", subtextColor}, {":", subtextColor}, {",", subtextColor}, {"-2.5e-3", "#fab387"}, {"true", "#cba6f7"}, {"false", "#cba6f7"}, {"null", "#cba6f7"}, {`"session-one"`, lavenderColor}, {`"Master verified"`, subtextColor}, {`"refused"`, "#f38ba8"}, {`"agent-one"`, lavenderColor}, {`"out-of-sync"`, "#f38ba8"}, {`"snapshot too large"`, "#f38ba8"}, {`"write failed"`, "#f38ba8"}} {
 		assertTextRole(t, screen, image.Rect(0, 0, 200, 2), role.text, role.color)
 	}
 	m.noColor = true
@@ -1431,15 +1462,36 @@ func TestForwardJSONRoles(t *testing.T) {
 	}
 }
 
+func TestSkillInstallJSONRoles(t *testing.T) {
+	m := newUI(launch.Info{}, false)
+	m.output = `{"destination":"/home/operator/.agents/skills","path":"/skills/burrow","backup":"/backups/previous","name":"burrow","state":"applied"}`
+	styled := m.styledOutput()
+	if ansi.Strip(styled) != m.output {
+		t.Fatal("skill result text changed")
+	}
+	screen := vt.NewEmulator(200, 2)
+	defer screen.Close()
+	_, _ = screen.Write([]byte(styled))
+	for _, role := range []struct{ text, color string }{{"/home/operator/.agents/skills", subtextColor}, {"/skills/burrow", subtextColor}, {"/backups/previous", subtextColor}, {`"burrow"`, lavenderColor}, {"applied", "#a6e3a1"}} {
+		assertTextRole(t, screen, image.Rect(0, 0, 200, 2), role.text, role.color)
+	}
+	m.noColor = true
+	if m.styledOutput() != m.output {
+		t.Fatal("NO_COLOR changed skill results")
+	}
+}
+
 func TestConciseSSHRecap(t *testing.T) {
-	result, err := connection.Execute(context.Background(), "/tmp/recap", []string{"connect", "gateway", "nas.example", "alice", "--ssh-config", "/dev/null", "-proxy", "1080"})
+	t.Setenv("TMPDIR", "/tmp") // Real private evidence storage, with a short SSH socket path.
+	workspace := t.TempDir()
+	result, err := connection.Execute(context.Background(), workspace, []string{"connect", "gateway", "nas.example", "alice", "--ssh-config", "/dev/null", "-proxy", "1080"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	review := result.(map[string]string)["review"]
 	for _, plain := range []bool{false, true} {
 		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
-			m := newFrame(launch.Info{Workspace: "/tmp/recap"}, plain, launch.Options{})
+			m := newFrame(launch.Info{Workspace: workspace}, plain, launch.Options{})
 			defer m.terminals.close()
 			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 			m.reviewText = review

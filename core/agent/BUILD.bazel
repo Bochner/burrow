@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+genrule(
+    name = "bundle",
+    srcs = ["//agent:source"],
+    outs = ["burrow-agent.zip"],
+    tools = ["//agent/tools:bundle"],
+    cmd = "$(location //agent/tools:bundle) $@ $(locations //agent:source)",
+    visibility = ["//core/cmd/burrow:__pkg__"],
+)
+
+go_library(
+    name = "agent",
+    srcs = ["install.go"],
+    embedsrcs = [":bundle"],
+    importpath = "github.com/Bochner/burrow/core/agent",
+    visibility = ["//core/cmd/burrow:__pkg__"],
+    deps = ["@org_golang_x_sys//unix"],
+)

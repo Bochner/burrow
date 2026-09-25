@@ -1,0 +1,18 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "bundle",
+    srcs = ["bundle.py"],
+    main = "bundle.py",
+    visibility = ["//core/agent:__pkg__"],
+    legacy_create_init = 0,
+)
+
+py_binary(
+    name = "discovery",
+    srcs = ["discovery.py"],
+    main = "discovery.py",
+    args = ["$(location //core/cmd/burrow:package)"],
+    data = ["//core/cmd/burrow:package"],
+    legacy_create_init = 0,
+)

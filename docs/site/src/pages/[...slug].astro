@@ -1,6 +1,7 @@
 ---
 // Adapted from Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388; Copyright 2026 William Born; Apache-2.0. Changed for Burrow; see docs/site/UPSTREAM.md.
 import DocsLayout from "../layouts/DocsLayout.astro";
+import PageShell from "../layouts/PageShell.astro";
 import { getPage, pages } from "../lib/catalog";
 
 export function getStaticPaths() {
@@ -12,6 +13,8 @@ export function getStaticPaths() {
 const page = getPage(Astro.props.slug);
 ---
 
-<DocsLayout page={page}>
+{page.area === "reports" ? <PageShell area="reports" current="Reports" root="../" tag="// test report" title="Test Report - Burrow" stylesheets={["../assets/report.css"]}>
+  <main id="main-content" class="content"><Fragment set:html={page.body} /></main>
+</PageShell> : <DocsLayout page={page}>
   <Fragment set:html={page.body} />
-</DocsLayout>
+</DocsLayout>}

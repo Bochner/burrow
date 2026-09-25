@@ -1,7 +1,7 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "launch",
-    srcs = ["audit.go", "files_linux.go", "package.go", "daemon_linux.go", "operations_linux.go", "trace.go"],
+    srcs = ["activity.go", "audit.go", "files_linux.go", "package.go", "daemon_linux.go", "operations_linux.go", "trace.go"],
     importpath = "github.com/Bochner/burrow/core/launch",
     visibility = ["//visibility:public"],
     deps = ["@org_golang_x_sys//unix"],

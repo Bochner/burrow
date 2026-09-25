@@ -97,10 +97,11 @@ func rpcBody(conn net.Conn, method string, bodyInput []byte, out any) error {
 		return fmt.Errorf("Hovel %s rejected: HTTP %d", method, response.StatusCode)
 	}
 	limit := int64(1 << 20)
-	if method == "Snapshot" {
+	if method == "Snapshot" || method == "PollLogs" {
 		// The pinned public Snapshot exports all operations and retained logs,
 		// even when the caller only needs one chain's configuration.
-		// ponytail: 64 MiB snapshot ceiling; use a scoped config RPC when Hovel exposes one.
+		// PollLogs likewise returns its entire retained tail without pagination.
+		// ponytail: 64 MiB response ceiling; use scoped/paginated RPCs when available.
 		limit = 64 << 20
 	}
 	body, e := io.ReadAll(io.LimitReader(response.Body, limit+1))

@@ -1,0 +1,32 @@
+def _impl(ctx: TaskContext) -> int:
+    root = ctx.std.env.aspect_root_dir()
+    mode = ctx.args.mode[0]
+    runner = ["run", "//docs/tools/docs:report", "--"]
+    if mode == "verify" and len(ctx.args.mode) == 2:
+        return ctx.std.process.command("aspect").args(runner + ["verify", "--site", root + "/_site", "--commit", ctx.args.mode[1]]).current_dir(root).spawn().wait().code or 0
+    if mode == "coverage":
+        commands = [
+            runner + ["begin", "--suite", "coverage"],
+            ["test", "--coverage", "--coverage-report=" + root + "/.report-input/coverage/coverage.lcov", "--bazel-flag=--build_event_json_file=" + root + "/.report-input/coverage/bep.json", "--bazel-flag=--instrumentation_filter=^//core/(cmd/burrow|connection|launch|reports|agent|terminal)(:|/)", "--bazel-flag=--instrument_test_targets", "--bazel-flag=--nocache_test_results", "--bazel-flag=--flaky_test_attempts=1", "--bazel-flag=--local_test_jobs=2", "//core/cmd/burrow:interaction_test", "//core/connection:forward_control_test", "//core/launch:digest_test", "//core/launch:online_test", "//core/launch:audit_test", "//core/terminal:host_test"],
+        ]
+        for command in commands:
+            status = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait().code or 0
+            if status:
+                break
+        collected = ctx.std.process.command("aspect").args(runner + ["collect", "--suite", "coverage", "--exit-code", str(status)]).current_dir(root).spawn().wait().code or 0
+        return status or collected
+    if mode in ["render", "publish", "release"]:
+        command = runner + ["render", "--site", root + "/_site", "--parity", root + "/docs/tools/docs/parity.json"]
+        if mode != "render":
+            command += ["--require-publishable"]
+        if mode == "release":
+            command += ["--require-parity"]
+        return ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait().code or 0
+    print("expected coverage, render (local evidence), publish (all required evidence), or release (complete agent parity)")
+    return 2
+
+burrow_report = task(
+    args = {"mode": args.positional(default = ["render"], minimum = 0, maximum = 2)},
+    summary = "Collect production Go coverage or attach validated test/coverage/parity evidence to the staged site.",
+    implementation = _impl,
+)

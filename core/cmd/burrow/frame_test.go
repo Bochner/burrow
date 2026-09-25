@@ -151,6 +151,60 @@ func TestShellCommandKeepsSubmittedTarget(t *testing.T) {
 	}
 }
 
+func TestSharedShellCommands(t *testing.T) {
+	for _, args := range [][]string{{"shell-control", "1"}, {"shell-detach", "1"}, {"shell", "gateway", "retained-id"}} {
+		if err := connection.ValidateCommand("/tmp/shared-shell", args); err != nil {
+			t.Fatalf("shared shell command %v: %v", args, err)
+		}
+	}
+}
+
+func TestSharedShellPresentation(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		m := newFrame(launch.Info{Workspace: "/tmp/shared-shell"}, plain, launch.Options{})
+		defer m.terminals.close()
+		tab := &cliTab{id: "1", session: "retained-id", connection: "gateway"}
+		tab.screen = ptyhost.Snapshot{Screen: "SHARED-SCREEN", Visible: true, Shared: &ptyhost.SharedState{
+			Shell:           connection.Shell{ID: "retained-id", State: "running", Controller: "agent-one", Columns: 93, Rows: 27},
+			Synchronization: "snapshot-current",
+		}}
+		m.current().shells, m.current().shell = []*cliTab{tab}, tab
+		m.current().tab, m.current().focus = "shell", "terminal"
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			screen := capturePresentation(t, m, fmt.Sprintf("shared-%dx%d-%t", size.X, size.Y, plain))
+			for _, text := range []string{"SHARED-SCREEN", "OBSERVE", "agent-one", "93×27", "Alt+T"} {
+				if !strings.Contains(screen.String(), text) {
+					t.Fatalf("missing %q at %v: %s", text, size, screen.String())
+				}
+			}
+			if plain && strings.Contains(m.View().Content, "\x1b[") {
+				t.Fatal("color escaped NO_COLOR")
+			}
+			if !plain && size.X == 160 {
+				assertTextRole(t, screen, image.Rect(128, 0, 160, 40), "OBSERVE", "#f9e2af")
+				assertTextRole(t, screen, image.Rect(128, 0, 160, 40), "agent-one", lavenderColor)
+				assertTextRole(t, screen, image.Rect(128, 0, 160, 40), "Alt+T", lavenderColor)
+			}
+		}
+		tab.error = "paste exceeds 4096 bytes; input not sent"
+		m.terminalResult(m.active, cliScreen{tab: tab, screen: tab.screen})
+		if !strings.Contains(m.View().Content, "paste exceeds") {
+			t.Fatal("snapshot hid input refusal")
+		}
+		tab.screen.Shared.Controlled = true
+		tab.screen.Shared.Synchronization = "out-of-sync"
+		tab.screen.Visible = false
+		if !strings.Contains(m.View().Content, "out-of-sync") || m.View().Cursor != nil {
+			t.Fatal("missed output appeared current")
+		}
+		frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
+		if m.current().tab != "" || len(m.current().shells) != 1 {
+			t.Fatal("detach removed the retained tab")
+		}
+	}
+}
+
 func TestLocalShellPresentation(t *testing.T) {
 	for _, noColor := range []bool{false, true} {
 		m := newFrame(launch.Info{Workspace: "/tmp/shell-presentation"}, noColor, launch.Options{})
@@ -220,7 +274,7 @@ func TestLocalShellPresentation(t *testing.T) {
 			m.Update(request())
 		}
 		frameEvent(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
-		if !strings.Contains(m.current().management.output, "Local SSH shell selected") {
+		if !strings.Contains(m.current().management.output, "SSH shell selected") {
 			t.Fatal("shell resume did not acknowledge selection")
 		}
 		m.current().management.output = "Newer command result"
@@ -1193,7 +1247,9 @@ func TestProxyOption(t *testing.T) {
 		}
 	}
 	args := []string{"connect", "gateway", "example.com", "operator", "--ssh-config", "/dev/null", "-proxy"}
-	result, err := connection.Execute(context.Background(), "/tmp/forms", args)
+	t.Setenv("TMPDIR", "/tmp") // Keep the reviewed SSH socket within its path bound.
+	workspace := t.TempDir()
+	result, err := connection.Execute(context.Background(), workspace, args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1204,7 +1260,7 @@ func TestProxyOption(t *testing.T) {
 	if !strings.HasPrefix(review["review"], "SSH command:\n/usr/bin/ssh -F ") || strings.Contains(review["review"], "Generated config:") || !strings.Contains(review["review"], "-D 127.0.0.1:9050") {
 		t.Fatal("recap is not the concise actual command", review)
 	}
-	_, err = connection.Execute(context.Background(), "/tmp/forms", append(args, "1080", "--yes", "--review", review["digest"]))
+	_, err = connection.Execute(context.Background(), workspace, append(args, "1080", "--yes", "--review", review["digest"]))
 	if err == nil || !strings.Contains(err.Error(), "changed after review") {
 		t.Fatal("proxy change was not bound to recap approval", err)
 	}
@@ -1257,7 +1313,7 @@ func TestQuitReviewsAllOpenedConnections(t *testing.T) {
 		m.current().management.noColor = false
 		m.noColor = false
 		screen := capturePresentation(t, m, fmt.Sprintf("%dx%d-quit-connections-color", size.X, size.Y))
-		for value, color := range map[string]string{"WORKSPACE": lavenderColor, "gateway": lavenderColor, "connected": "#a6e3a1", "lost": "#f38ba8"} {
+		for value, color := range map[string]string{"WORKSPACE": lavenderColor, "gateway": lavenderColor, "connected": "#a6e3a1", "lost": "#f38ba8", "0": "#fab387"} {
 			assertTextRole(t, screen, m.dialogBounds(), value, color)
 		}
 		m.noColor = true

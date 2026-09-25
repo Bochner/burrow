@@ -128,6 +128,7 @@ Output JSON includes the captured snapshot's status, budget, stored/received byt
 Original bytes stay in capture; terminal controls and binary data are escaped only for display.
 
 logs / Ctrl+N                      Open workspace log in embedded read-only Vim
+logs --json                        Read the same historical notes as JSON {text}
 Ctrl+N or :q returns to the previous context. Reopening refreshes the snapshot.
 Ctrl+N is reserved in management, file mode and embedded SSH/Hovel/editor tabs.
 Logs persist Burrow operations and shell lifecycle, not interactive shell I/O.
@@ -136,6 +137,9 @@ New target work requires logging; cleanup still runs if logging fails and report
 Logs: WORKSPACE/burrow-logs/operations.log (private). No automatic retention/rotation.
 Authentication secrets are excluded; remote output may contain customer-sensitive data.
 scp NAME [ls|tree|cd|pwd|complete] [PATH] Browse an existing live master (JSON)
+Append --request ID for cancellable discovery; use a fresh ID per request.
+scp NAME cancel ID                 Request cancellation of that exact discovery
+Cancellation affects no transfers; inspect the original discovery outcome.
 In the TUI, scp [NAME] enters file mode; back restores management.
 local [download|upload] PATH         Persist an absolute workspace root (local PATH: download)
 local                               Show effective upload and download roots
@@ -167,7 +171,7 @@ Working transfers are not automatically registered Hovel evidence.
 profiles                            List saved entries and selected collection
 profile create NAME HOST --user USER [options] Save settings without connecting
 profile select NAME                 Inspect saved settings only
-profile connect NAME [--as LIVE] [--yes] [--prompt] Connect a saved profile
+profile connect NAME [--as LIVE] [--yes] [--prompt] [--review HASH] Connect reviewed saved settings
 profile save CONNECTION [--as PROFILE] [--yes] Save authenticated settings
 profile edit NAME HOST --user USER [options] Replace saved settings (--yes confirms)
 profile delete NAME [--yes]          Delete settings; retain live resources
@@ -223,18 +227,51 @@ connect                             Guided connection entry (terminal)
 connect NAME HOST --user USER [options] Create shell-free SSH master
 reconnect NAME HOST --user USER [options] Explicitly replace a lost owned connection
 inspect NAME                        State, endpoint and socket identity
-shell NAME                          Open a local interactive SSH terminal
-shells                              List this frontend's shells in the workspace
-resume ID                           Resume a local shell by ID
-shell-close [ID]                     Close ID, or the last selected local shell
-close NAME [--yes]                   Review/close all owned connection resources
+session create CONNECTION [--columns N --rows N] [--yes] [--review HASH] Review/create a retained Hovel SSH shell
+session list CONNECTION              Discover retained Hovel shells (headless CLI)
+session inspect CONNECTION ID        Read shell identity, lifecycle and output counts
+session close CONNECTION ID [--yes] [--review HASH] Review/close only this retained shell
+session claim CONNECTION ID --request-stdin Claim an unclaimed shell using private JSON
+session takeover CONNECTION ID --request-stdin Replace the observed control generation
+session input CONNECTION ID --request-stdin Send 1..4096 base64 bytes with the current token
+session resize CONNECTION ID --request-stdin Resize with the current token
+session release CONNECTION ID --request-stdin Release control; retain shell and geometry
+session observe CONNECTION ID [OFFSET] Read independent bytes (default position 0)
+session snapshot CONNECTION ID [HISTORY] Recover display; optional 0..1000 history lines
+Retained sessions survive CLI exit and Keep running; connection/manager close ends them.
+Creation uses supported Hovel throws and the existing verified master; no login fallback.
+Headless initial size defaults to 80x24; TUI creation uses the pane dimensions.
+Private commands require piped/file stdin AND stdout. Claim JSON defaults to
+{"label":"agent"}; optional columns/rows retain the current geometry when omitted.
+Takeover also requires the observed generation; old input/resize/release is refused.
+Input uses {"token":"...","data":"BASE64"}; resize uses token, columns, rows;
+release uses token. Tokens never belong in argv, history, logs or evidence.
+An accepted byte count is not a command result. A disappeared controller keeps its
+claim until explicit takeover. Labels do not assert liveness; there is no timeout.
+Observe never consumes another reader's bytes or changes geometry. Gaps remain
+out-of-sync; snapshot returns the current display and a fresh byte position.
+Byte reads are stream-only, never proof of current screen state. Use snapshots
+for current display; raw bytes are not a serialized emulator state.
+Raw Hovel send/read/attach cannot control or observe these shells. Output stays in a
+64 KiB memory suffix; inspect reports received/buffered/dropped counts.
+Loss reports lost/unavailable and uncertain command outcomes; relaunch never restores state.
+Failed creation may leave a prepared session: inspect/list, close explicitly, then review anew.
+
+shell NAME [SESSION_ID]             Create a retained shell, or observe an existing opaque ID
+shells                              Discover retained shells in this workspace
+resume ID                           Select an attached shell by frontend number
+shell-control [ID]                   Explicitly take control and apply pane dimensions
+shell-detach [ID]                    Release this frontend's control; retain the shell
+shell-close [ID]                     Close ID, or the last selected retained shell
+close NAME [--yes] [--review HASH]    Review/close the exact owned connection
 Shells reuse a verified master; no fresh login or authentication fallback.
-Ctrl+] returns to management, keeping the shell; Ctrl+C reaches SSH.
-Select a Shells entry or use resume ID to return; shell-close ends only that client.
+Ctrl+] or Alt+B detaches to management; Ctrl+C reaches SSH only in CONTROL mode.
+Select a Shells entry or use resume ID to return. Alt+T explicitly takes control.
+OBSERVE never sends keys or resizes; controller label, dimensions and sync stay visible.
 Multiple shells share the connection's existing master socket and authentication.
-Shell exit/close preserves the connection. Frontend quit ends local shells.
-Connection close ends its shells, transfers and tunnels. Shell bytes stay local,
-in memory; they are not Hovel-recorded session I/O or collected evidence.
+Shell exit/close preserves the connection. Keep running releases owned claims and
+retains shells; Cancel changes nothing. Close connections tears down reviewed resources.
+Shell bytes stay in bounded owner memory; they are not logs or collected evidence.
 
 Required: NAME HOST --user USER (- uses SSH config user). Positional USER remains accepted, as does:
 connect -ip HOST -port NUMBER -user USER -socket NAME [-ssh-key PATH]
@@ -414,6 +451,9 @@ func ValidateCommand(workspace string, args []string) error {
 		return fmt.Errorf("connection command required")
 	}
 	switch args[0] {
+	case "session":
+		_, _, err := sessionArgs(workspace, args)
+		return err
 	case "chain":
 		return validateChain(workspace, args)
 	case "run":
@@ -437,7 +477,12 @@ func ValidateCommand(workspace string, args []string) error {
 			return fmt.Errorf("expected downloads/transfers [ID] or download-cancel/transfer-cancel ID")
 		}
 		return nil
-	case "logs", "files-history":
+	case "logs":
+		if len(args) != 1 && (len(args) != 2 || args[1] != "--json") {
+			return fmt.Errorf("expected logs [--json]")
+		}
+		return nil
+	case "files-history":
 		if len(args) != 1 {
 			return fmt.Errorf("expected files-history")
 		}
@@ -478,8 +523,8 @@ func ValidateCommand(workspace string, args []string) error {
 		if len(args) != 1 {
 			return fmt.Errorf("%s takes no arguments", args[0])
 		}
-	case "resume", "shell-close":
-		if args[0] == "shell-close" && len(args) == 1 {
+	case "resume", "shell-close", "shell-control", "shell-detach":
+		if args[0] != "resume" && len(args) == 1 {
 			return nil
 		}
 		if len(args) != 2 {
@@ -489,9 +534,22 @@ func ValidateCommand(workspace string, args []string) error {
 		if err != nil || id == 0 || strconv.FormatUint(id, 10) != args[1] {
 			return fmt.Errorf("shell ID must be a positive decimal integer; use shells")
 		}
-	case "inspect", "close", "shell":
-		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && (args[0] != "close" || args[2] != "--yes")) {
-			return fmt.Errorf("expected %s NAME%s", args[0], map[string]string{"close": " [--yes]"}[args[0]])
+	case "close":
+		if len(args) < 2 {
+			return fmt.Errorf("expected close NAME [--yes] [--review HASH]")
+		}
+		if _, _, err := closeOptions(args[2:]); err != nil {
+			return err
+		}
+		_, e := launch.ConnectionPath(workspace, args[1])
+		return e
+	case "inspect", "shell":
+		if args[0] == "shell" && len(args) == 3 {
+			_, _, err := sessionArgs(workspace, []string{"session", "inspect", args[1], args[2]})
+			return err
+		}
+		if len(args) != 2 {
+			return fmt.Errorf("expected %s NAME", args[0])
 		}
 		_, e := launch.ConnectionPath(workspace, args[1])
 		return e
@@ -608,7 +666,23 @@ func closeOwned(ctx context.Context, w string, s State) error {
 }
 
 func closeReview(s State) string {
-	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access, including shells, transfers and tunnels; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.Name)
+	return fmt.Sprintf("Close %s (%s@%s:%d), state %s, master PID %d, socket %s. Ends all owned connection access, including %d retained shells, transfers and tunnels; saved settings and artifacts remain. Repeat close %s --yes to confirm.", s.Name, s.User, s.Host, s.Port, s.State, s.MasterPID, s.Socket, s.ShellCount, s.Name)
+}
+
+func closeOptions(args []string) (bool, string, error) {
+	fs := flag.NewFlagSet("close", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	yes := fs.Bool("yes", false, "confirm selected close")
+	review := fs.String("review", "", "exact connection review digest")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || (*review != "" && (len(*review) != 64 || strings.Trim(*review, "0123456789abcdef") != "")) {
+		return false, "", fmt.Errorf("expected close NAME [--yes] [--review HASH]")
+	}
+	return *yes, *review, nil
+}
+
+func closeDigest(w string, s State) string {
+	b, _ := json.Marshal([]any{w, s.Name, s.Session, s.Generation, s.Creation, s.MasterPID, s.Socket, s.SocketInode, s.State, s.TunnelRevision, s.ShellRevision})
+	return digest(string(b))
 }
 
 // ReviewClose binds the displayed consequence to the exact observed owner.
@@ -626,10 +700,27 @@ func CloseReviewed(ctx context.Context, w string, expected State) (any, error) {
 	if e != nil {
 		return nil, e
 	}
-	if current.Session != expected.Session || current.Generation != expected.Generation || current.Creation != expected.Creation || current.MasterPID != expected.MasterPID || current.Socket != expected.Socket || current.SocketInode != expected.SocketInode || current.State != expected.State || current.TunnelRevision != expected.TunnelRevision {
+	if closeDigest(w, current) != closeDigest(w, expected) {
 		return nil, fmt.Errorf("connection changed after review; inspect and review close again")
 	}
-	if e := closeOwned(ctx, w, expected); e != nil {
+	if expected.Generation != "" {
+		id, e := findManager(ctx, w)
+		if e != nil {
+			return nil, e
+		}
+		// Older managers cannot own this slice's shells. Preserve their existing
+		// explicit close route so an upgrade never requires forceful cleanup.
+		if !id.RetainedShells {
+			if e := closeOwned(ctx, w, expected); e != nil {
+				return nil, e
+			}
+			return map[string]string{"state": "closed", "name": expected.Name}, nil
+		}
+		var result any
+		if e := managerControl(ctx, w, managerIdentity{Session: expected.Session, Generation: expected.Generation}, "close-selected", []string{expected.Creation, closeDigest(w, expected)}, &result); e != nil {
+			return nil, fmt.Errorf("selected close unconfirmed; inspect before retrying: %w", e)
+		}
+	} else if e := closeOwned(ctx, w, expected); e != nil {
 		return nil, e
 	}
 	return map[string]string{"state": "closed", "name": expected.Name}, nil
@@ -644,21 +735,15 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 	if err := ValidateCommand(w, args); err != nil {
 		return nil, err
 	}
-	if args[0] == "connect" || args[0] == "reconnect" {
-		_, approved, _ := Parse(w, args[1:])
-		if !approved {
-			return executeOperation(ctx, w, args, promptSocket)
-		}
-	}
 	// Capture submitted identity and full safe frontend result, including reviews
 	// and pre-dispatch refusals. Owner records carry asynchronous actual outcomes.
-	if args[0] == "run" && (args[1] == "list" || args[1] == "inspect" || args[1] == "output") {
+	if (args[0] == "run" || args[0] == "session") && (args[1] == "list" || args[1] == "inspect" || args[1] == "output" || args[1] == "observe" || args[1] == "snapshot") {
 		return executeOperation(ctx, w, args, promptSocket)
 	}
 	switch args[0] {
-	case "chain", "run", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
+	case "connect", "reconnect", "profile", "chain", "run", "session", "close", "scp", "tunnel", "tunc", "tund", "proxy", "shell":
 		a, err := launch.BeginAudit(w, commandIdentity(args), "submitted request; see owner result", nil)
-		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove") || (args[0] == "run" && (args[1] == "cancel" || args[1] == "close"))
+		cleanup := args[0] == "close" || args[0] == "tund" || (len(args) > 1 && args[1] == "remove") || ((args[0] == "run" || args[0] == "session") && (args[1] == "cancel" || args[1] == "close")) || (args[0] == "scp" && len(args) > 2 && args[2] == "cancel")
 		if err != nil && !cleanup {
 			return nil, err
 		}
@@ -669,16 +754,18 @@ func execute(ctx context.Context, w string, args []string, promptSocket string) 
 			}
 			logErr := a.Record(status, map[string]any{"result": value, "error": fmt.Sprint(failure)})
 			failure = errors.Join(failure, err, logErr)
-			if failure != nil && args[0] == "run" {
+			if failure != nil && (args[0] == "run" || args[0] == "session") {
 				id := ""
 				switch result := value.(type) {
 				case Run:
+					id = result.ID
+				case Shell:
 					id = result.ID
 				case map[string]string:
 					id = result["id"]
 				}
 				if id != "" {
-					failure = fmt.Errorf("run %s: %w; inspect that ID before retrying", id, failure)
+					failure = fmt.Errorf("%s %s: %w; inspect that ID before retrying", args[0], id, failure)
 				}
 			}
 		}()
@@ -690,6 +777,10 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 	if e := ValidateCommand(w, args); e != nil {
 		return nil, e
 	}
+	operation, ok := CommandOperation(args)
+	if !ok {
+		return nil, fmt.Errorf("command has no registered capability")
+	}
 	if args[0] == "profile" && args[1] == "connect" {
 		expanded, e := ProfileConnect(ctx, w, args)
 		if e != nil {
@@ -697,7 +788,9 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		}
 		return execute(ctx, w, expanded, promptSocket)
 	}
-	switch args[0] {
+	switch operation.Dispatch {
+	case "session":
+		return executeSession(ctx, w, args)
 	case "chain":
 		return executeChain(ctx, w, args)
 	case "run":
@@ -733,8 +826,8 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		return executeForward(ctx, w, expanded)
 	case "connections":
 		return List(ctx, w)
-	case "shell-close", "shells", "resume":
-		return nil, fmt.Errorf("%s is frontend-local; use management in the frontend that opened the shell", args[0])
+	case "shell-close", "shells", "resume", "shell-control", "shell-detach":
+		return nil, fmt.Errorf("%s selects frontend tabs; use session commands with opaque IDs headlessly", args[0])
 	case "inspect":
 		return selected(ctx, w, args[1])
 	case "shell":
@@ -753,14 +846,14 @@ func executeOperation(ctx context.Context, w string, args []string, promptSocket
 		if e != nil {
 			return nil, e
 		}
-		review := closeReview(s)
-		if len(args) == 2 {
-			return map[string]string{"review": review}, nil
+		yes, review, _ := closeOptions(args[2:])
+		if !yes {
+			return map[string]string{"review": closeReview(s), "digest": closeDigest(w, s)}, nil
 		}
-		if e = closeOwned(ctx, w, s); e != nil {
-			return nil, e
+		if review != "" && review != closeDigest(w, s) {
+			return nil, fmt.Errorf("connection changed after review; inspect and review close again")
 		}
-		return map[string]string{"state": "closed", "name": s.Name}, nil
+		return CloseReviewed(ctx, w, s)
 	}
 	c, yes, e := Parse(w, args[1:])
 	if e != nil {
@@ -826,7 +919,7 @@ func displaySetting(value, fallback string) string {
 }
 
 func Suggestions(states []State) []string {
-	values := []string{"status", "connect", "connections", "proxy create", "proxy inspect", "proxy remove", "tunnel create", "tunnel list", "tunnel check", "tunnel remove", "tunc", "tund", "shells", "shell-close", "help", "quit"}
+	values := []string{"status", "connect", "connections", "proxy create", "proxy inspect", "proxy remove", "tunnel create", "tunnel list", "tunnel check", "tunnel remove", "tunc", "tund", "shells", "shell-close", "shell-control", "shell-detach", "help", "quit"}
 	for _, s := range states {
 		values = append(values, "proxy inspect "+s.Name)
 		if s.State == "connected" && s.Generation != "" {
