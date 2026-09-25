@@ -57,7 +57,8 @@ with tempfile.TemporaryDirectory(prefix="burrow-agent-") as temporary:
         assert preview["dryRun"] and not destination.exists()
         installed = cli(*args)
         assert installed["bundleSHA256"] == hashlib.sha256((source / "burrow-agent.json").read_bytes()).hexdigest()
-        assert {p.parent.name for p in destination.glob("*/SKILL.md")} == {"burrow", "burrow-inspect"}
+        assert {p.parent.name for p in destination.glob("*/SKILL.md")} == {
+            "burrow", "burrow-inspect", "burrow-run", "burrow-transfer", "burrow-tunnels", "burrow-sessions"}
         before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in destination.rglob("*") if p.is_file()}
         repeated = cli(*args)
         assert all(s["action"] == "unchanged" for s in repeated["skills"])
@@ -70,15 +71,15 @@ with tempfile.TemporaryDirectory(prefix="burrow-agent-") as temporary:
     # A new source release updates every client/scope, retaining old bytes outside
     # discovery. The checks exercise the packaged binary, not installer helpers.
     for path in (source / "skills").glob("*/SKILL.md"):
-        path.write_text(path.read_text().replace('"0.1.0"', '"0.1.1"') + "\nUpdated instructions.\n")
+        path.write_text(path.read_text().replace('"0.2.0"', '"0.2.1"') + "\nUpdated instructions.\n")
     metadata = source / "burrow-agent.json"
-    data = json.loads(metadata.read_text()); data["version"] = "0.1.1"
+    data = json.loads(metadata.read_text()); data["version"] = "0.2.1"
     metadata.write_text(json.dumps(data)); manifest()
     for (host, scope), destination in locations.items():
         args = [host, "--scope", scope, "--source", str(source)]
         old = snapshot(destination)
         updated = cli(*args)
-        assert updated["version"] == "0.1.1" and updated["complete"]
+        assert updated["version"] == "0.2.1" and updated["complete"]
         for skill in updated["skills"]:
             assert skill["action"] == "update" and skill["state"] == "applied"
             backup = Path(skill["backup"])

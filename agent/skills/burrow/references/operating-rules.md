@@ -4,7 +4,7 @@ Within the requested hosts and scope, perform the observations needed to answer
 the question. Existing explicit intent can authorize those reads. Review the
 actual prepared request and satisfy Burrow/Hovel confirmation; successful
 discovery or preparation alone is not execution approval. Add `--yes` only when
-the requested action is authorized, and bind it to the returned review digest.
+the requested action is authorized, and use the advertised review binding (digest, profile revision, or exact immutable ID).
 Changed targets or commands need a new review. Ask for missing intent or scope,
 not repeated permission for work the user already authorized.
 

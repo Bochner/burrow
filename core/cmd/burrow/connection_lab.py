@@ -35,9 +35,11 @@ from core.cmd.burrow.follow_lab import follow_checks
 from core.cmd.burrow.automation_lab import automation_checks
 from core.cmd.burrow.reports_lab import report_checks
 from core.cmd.burrow.chains_lab import chain_checks, dropbear_check, connection_chain_ui
+from core.cmd.burrow.agent_lab import agent_exercise
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("paths", nargs=10, metavar="PATH")
+parser.add_argument("--agent-exercise", metavar="DIRECTORY", help="opt-in external-agent rendezvous and evidence; no model in default gates")
 parser.add_argument("--lifecycle-check", action="store_true", help="check connection management, SOCKS, authentication and failure ownership")
 parser.add_argument("--workspace-check", action="store_true", help="check headless lifecycle with a separate observing TUI")
 parser.add_argument("--smoke", action="store_true", help="check key/trust/retention/close only; not full acceptance")
@@ -207,6 +209,10 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         assert b"-D" not in actual and not first.get("proxyPort")
         assert first["generation"] and first["creation"] and first["runID"]
         assert first["connected"] >= first["dispatch"] > 0
+        if args.agent_exercise:
+            agent_exercise(args.agent_exercise, binary, env, w, first, container, command, burrow, hv, screen_check)
+            burrow(w, "close", "gateway", "--yes")
+            raise SystemExit(0)
         if args.sessions_check or (args.shell_check and not args.shared_tui_check):
             session_checks(burrow, w, first, command, container, wait, options, root, daemons, binary, env)
             if args.sessions_check:

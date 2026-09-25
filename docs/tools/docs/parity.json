@@ -108,7 +108,7 @@
       "targets": [
         "//core/cmd/burrow:agent_test"
       ],
-      "scope": "Packaged offline installation, six locations, conflicts and OS failure recovery; not native discovery.",
+      "scope": "Packaged six-workflow suite: offline installation, six locations, updates, conflicts and OS failure recovery. Native discovery and the external-agent exercise are separate opt-in evidence; route semantics use the production bindings below.",
       "capabilities": [
         "installation.skills"
       ]

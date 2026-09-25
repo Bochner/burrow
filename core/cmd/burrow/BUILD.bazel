@@ -85,7 +85,7 @@ py_test(
 )
 [py_test(
     name = name,
-    srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "workspace_lab.py", "latency_lab.py", "shell_lab.py", "sessions_lab.py", "forward_lab.py", "files_lab.py", "runs_lab.py", "follow_lab.py", "automation_lab.py", "reports_lab.py", "chains_lab.py"],
+    srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "workspace_lab.py", "latency_lab.py", "shell_lab.py", "sessions_lab.py", "forward_lab.py", "files_lab.py", "runs_lab.py", "follow_lab.py", "automation_lab.py", "reports_lab.py", "chains_lab.py", "agent_lab.py"],
     main = "connection_lab.py",
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)", "$(location @shell_lab_vim//file)", "$(location //core/connection:survey_ubuntu.sh)", "$(location @chain_lab_dropbear//file)", "$(location @chain_lab_utmps//file)", "$(location @chain_lab_skalibs//file)"] + (["--" + suite + "-check"] if suite else []),
     data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check", ":legacy_module", "@shell_lab_vim//file", "//core/connection:survey_ubuntu.sh", "@chain_lab_dropbear//file", "@chain_lab_utmps//file", "@chain_lab_skalibs//file"],
