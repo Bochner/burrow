@@ -127,8 +127,9 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          run_id="$(gh run list --workflow hovel-compatibility.yml --commit "$GITHUB_SHA" --status completed --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          run_id="$(gh run list --workflow hovel-compatibility.yml --commit "$HEAD_SHA" --status completed --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
           if [ -n "$run_id" ]; then
             gh run download "$run_id" --name evidence-hovel --dir .report-input || echo 'Advisory evidence unavailable; report will show missing.'
           fi

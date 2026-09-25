@@ -118,7 +118,16 @@ with tempfile.TemporaryDirectory() as scratch:
         for event, key in zip(events, ("targetConfigured", "testResult", "testSummary")):
             event["id"][key]["label"] = "//core/example:check" if suite in ("portable", "coverage") else "//core/cmd/burrow:ssh_" + suite + "_test"
         events[4]["children"][0]["targetConfigured"]["label"] = events[0]["id"]["targetConfigured"]["label"]
-        (destination / "bep.json").write_text("".join(json.dumps(event) + "\n" for event in events))
+        events[0]["configured"]["tag"] = [] if suite in ("portable", "coverage") else ["acceptance", "acceptance-" + suite]
+        partition_events = json.loads(json.dumps(events))
+        if suite == "shell":
+            # The real shell partition also selects its retained-session proof.
+            extra = json.loads(json.dumps(events[:3]))
+            for event, key in zip(extra, ("targetConfigured", "testResult", "testSummary")):
+                event["id"][key]["label"] = "//core/prototype_sessions:check"
+            partition_events += extra
+            partition_events[4]["children"].append({"targetConfigured": {"label": "//core/prototype_sessions:check"}})
+        (destination / "bep.json").write_text("".join(json.dumps(event) + "\n" for event in partition_events))
         if suite == "coverage":
             (destination / "coverage.lcov").write_text("SF:core/launch/example.go\nDA:1,2\nDA:2,0\nend_of_record\nSF:core/prototype_example/fake.go\nDA:1,1\nend_of_record\nSF:core/launch/example_test.go\nDA:1,1\nend_of_record\n")
         run("collect", "--root", root, "--suite", suite, "--exit-code", 0)
@@ -130,6 +139,61 @@ with tempfile.TemporaryDirectory() as scratch:
     assert report["coverage"]["covered"] == 1 and report["coverage"]["total"] == 2
     assert report["parity"]["demonstrated"] == 2
     assert report["parity"]["schemas"] == 2
+    # An optional run for another merge tree cannot block or certify this one.
+    advisory = root / ".report-input/hovel/suite.json"
+    advisory.parent.mkdir()
+    stale = json.loads((directory / "suite.json").read_text())
+    stale["suite"] = "hovel"
+    stale["source"]["commit"] = "0" * 40
+    advisory.write_text(json.dumps(stale))
+    run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable", "--require-parity")
+    with_stale = json.loads((site / "reports/report.json").read_text())
+    assert with_stale["releaseReady"] and with_stale["suites"]["hovel"]["status"] == "MISSING"
+    advisory.unlink()
+    advisory.parent.rmdir()
+    # A proof alone cannot substitute for its partition's production target.
+    shell_evidence = root / ".report-input/shell/suite.json"
+    original_shell = shell_evidence.read_text()
+    proof_only = json.loads(original_shell)
+    proof_only["targets"] = [t for t in proof_only["targets"] if t["label"] == "//core/prototype_sessions:check"]
+    proof_only["selectedTargets"] = [t["label"] for t in proof_only["targets"]]
+    shell_evidence.write_text(json.dumps(proof_only))
+    refused = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity", ok=False)
+    assert "wrong targets for partition: shell" in refused.stderr
+    shell_evidence.write_text(original_shell)
+    for tags in (None, ["acceptance", "acceptance-files"], ["acceptance"], ["acceptance", "acceptance-shell", "acceptance-files"]):
+        invalid = json.loads(original_shell)
+        invalid["targets"][1]["tags"] = tags
+        shell_evidence.write_text(json.dumps(invalid))
+        refused = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
+        assert any(text in refused.stderr for text in ("target tags", "wrong targets", "ambiguous or unclassified"))
+    shell_evidence.write_text(original_shell)
+    # Local all-suite evidence must classify the same graph tags as hosted jobs.
+    run("begin", "--root", root, "--suite", "all")
+    combined, labels, partitions = [], [], []
+    for partition in (root / ".report-input").iterdir():
+        if partition.name in ("coverage", "all", "archive"):
+            continue
+        partitions.append(partition)
+        for line in (partition / "bep.json").read_text().splitlines():
+            event = json.loads(line)
+            if "targetConfigured" in event.get("id", {}):
+                labels.append(event["id"]["targetConfigured"]["label"])
+            if "expanded" not in event and "finished" not in event:
+                combined.append(event)
+    combined += [{"expanded": {}, "children": [{"targetConfigured": {"label": label}} for label in labels]},
+                 {"finished": {"exitCode": {"code": 0}}}]
+    (root / ".report-input/all/bep.json").write_text("".join(json.dumps(event) + "\n" for event in combined))
+    run("collect", "--root", root, "--suite", "all", "--exit-code", 0)
+    for partition in partitions:
+        partition.rename(partition.with_name("saved-" + partition.name))
+    run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable", "--require-parity")
+    combined_report = json.loads((site / "reports/report.json").read_text())
+    assert {t["label"] for t in combined_report["suites"]["shell"]["targets"]} == {"//core/cmd/burrow:ssh_shell_test", "//core/prototype_sessions:check"}
+    assert [t["label"] for t in combined_report["suites"]["portable"]["targets"]] == ["//core/example:check"]
+    (root / ".report-input/all").rename(root / ".report-input/saved-all")
+    for partition in partitions:
+        partition.with_name("saved-" + partition.name).rename(partition)
     # A passing adapter cannot hide a missing check on its headless equivalent.
     alternate = root / ".report-input/partial-parity.json"
     alternate.write_text(json.dumps({"schemaVersion": 1, "groups": [
@@ -141,7 +205,7 @@ with tempfile.TemporaryDirectory() as scratch:
     tab = next(op for op in partial["parity"]["capabilities"] if op["id"] == "example.tab")
     assert tab["semanticStatus"] == "INCOMPLETE" and not partial["releaseReady"]
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity")
-    assert (site / "reports/index.html").read_text().count('<details id="target-') == 11, "coverage repetitions lost their individual evidence"
+    assert (site / "reports/index.html").read_text().count('<details id="target-') == 12, "coverage repetitions lost their individual evidence"
     commit = git("rev-parse", "HEAD").decode().strip()
     run("verify", "--site", site, "--commit", commit)
     run("verify", "--site", site, "--commit", "0" * 40, ok=False)

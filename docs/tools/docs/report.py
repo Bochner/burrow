@@ -87,6 +87,8 @@ def collect(root, suite, exit_code):
             if kind in identity and (kind != "targetConfigured" or event.get("configured", {}).get("testSize")):
                 label = identity[kind]["label"]
                 target = targets.setdefault(label, {"label": label, "status": "MISSING", "attempts": []})
+                if kind == "targetConfigured":
+                    target["tags"] = event["configured"].get("tag", [])
         if "testResult" in event:
             result = event["testResult"]
             attempt = {"identity": identity["testResult"], "status": result.get("status", "MISSING"), "files": []}
@@ -216,6 +218,17 @@ def coverage_summary(data):
             "covered": sum(row["covered"] for row in rows), "total": sum(row["total"] for row in rows)}
 
 
+def target_suite(target):
+    tags = target.get("tags")
+    if not isinstance(tags, list):
+        raise ValueError("missing target tags: " + target["label"])
+    matches = [name for name in SUITES if
+               ("acceptance-" + name in tags if name != "portable" else "acceptance" not in tags)]
+    if len(matches) != 1:
+        raise ValueError("ambiguous or unclassified target: " + target["label"])
+    return matches[0]
+
+
 def report_model(inventory, parity, root=None):
     checks = validate_parity(inventory, parity)
     source = snapshot(root) if root else None
@@ -231,6 +244,10 @@ def report_model(inventory, parity, root=None):
             if not path.exists():
                 continue
             data = json.loads(path.read_text())
+            if name == "hovel" and data.get("source") != source:
+                # Optional runs can share a PR head but test another merge tree.
+                # They remain missing, never evidence for this candidate.
+                continue
             if data["schemaVersion"] != 1 or data["suite"] != name or data["source"] != source:
                 raise ValueError("stale or inconsistent suite evidence: " + name)
             if name != "hovel" and data["environment"]["runID"] != os.environ.get("GITHUB_RUN_ID", ""):
@@ -242,8 +259,12 @@ def report_model(inventory, parity, root=None):
             passed = data["exitCode"] == 0 and data["finished"] and data["targets"] and all(target_status(t, name) == "PASSED" for t in data["targets"])
             if data["status"] != ("PASSED" if passed else "FAILED"):
                 raise ValueError("inconsistent suite status: " + name)
-            if name in SUITES[1:] and {target["label"] for target in data["targets"]} != {"//core/cmd/burrow:ssh_" + name + "_test"}:
-                raise ValueError("wrong targets for partition: " + name)
+            if name in SUITES:
+                # The graph can select additional checks in a partition;
+                # they never replace its mandatory production acceptance target.
+                if (any(target_suite(target) != name for target in data["targets"]) or
+                        (name != "portable" and "//core/cmd/burrow:ssh_" + name + "_test" not in data["selectedTargets"])):
+                    raise ValueError("wrong targets for partition: " + name)
             for target in data["targets"]:
                 if target["status"] != target_status(target, name):
                     raise ValueError("inconsistent target status: " + target["label"])
@@ -263,9 +284,9 @@ def report_model(inventory, parity, root=None):
             if name == "all":
                 # A local full preflight uses exactly the same required target set.
                 for suite in SUITES:
-                    selected = [target for target in data["targets"] if
-                                (target["label"] == "//core/cmd/burrow:ssh_" + suite + "_test" if suite != "portable"
-                                 else not target["label"].startswith("//core/cmd/burrow:ssh_"))]
+                    selected = [target for target in data["targets"] if target_suite(target) == suite]
+                    if suite != "portable" and "//core/cmd/burrow:ssh_" + suite + "_test" not in {target["label"] for target in selected}:
+                        raise ValueError("wrong targets for partition: " + suite)
                     suites[suite] = data | {"targets": selected, "status": data["status"] if selected else "MISSING", "evidence": "all/suite.json"}
             else:
                 if suites[name]["status"] != "MISSING":

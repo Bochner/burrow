@@ -206,6 +206,21 @@ instrumented responsiveness check took 0.849 seconds with individual key events.
 Temporary probes were removed. Failed diagnosis runs remain in local evidence;
 the candidate report and PR record final gates for the exact source revision.
 
+The next candidate, `440334e`, passed all 39 required local targets. Its final
+shell check took 2.009 seconds while another acceptance target ran. Hosted
+[run 36134805372](https://github.com/Bochner/burrow/actions/runs/36134805372)
+passed all ten verification partitions and coverage, but report assembly
+rejected the shell partition's two valid targets: production SSH acceptance and
+the existing retained-session proof. The collector now preserves Bazel's target
+tags; local and hosted reports classify the same graph without assuming one
+target per partition. Each SSH partition still requires its production target,
+and missing, ambiguous or wrong tags are refused. Result completeness, hashes,
+source/run binding and production parity bindings remain enforced. The CLI
+regression reproduces the failure and covers both partitioned and composed
+publication. PR advisory lookup uses the head commit to find the run; downloaded
+evidence must still match the exact tested source revision. Optional diagnostics
+from another merge tree remain missing and cannot block or certify this candidate.
+
 Official Hovel v0.4.3 (`b4190bb`) was inspected on 2026-09-25: its SQLite
 implementation is unchanged and it does not fix #86. The existing patch passed
 SQLite normal and race tests in an isolated v0.4.3 source proof. This is not an
