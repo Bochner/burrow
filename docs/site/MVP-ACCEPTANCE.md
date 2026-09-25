@@ -149,6 +149,23 @@ shell-resume metadata (a controller can resize) and bound headless historical
 log checks to Reports. No runtime retries, replacement state store, new public
 module or dependency was introduced.
 
+The first full #65 preflight at `fb72356` passed 38/39 targets but exposed a
+shell-fixture race after explicit connection close: the observer received the
+acknowledged closed snapshot before registry removal and correctly returned to
+management, while the test required only the alternative `UNVERIFIED` display.
+The fixture now accepts either truthful observation and retains its checks for
+reaped SSH processes, refusal to reopen the closed connection, terminal
+restoration and sibling/evidence preservation. Runtime behavior is unchanged;
+this diagnosed failure remains in the archived candidate evidence.
+
+The focused shell rerun then exposed a separate error-state bug: queued input
+could replace the original audit refusal with a generic blocked-input error,
+leaving the audit detail clipped out of the TUI status line. Shared attachments
+now preserve that original cause and put the audit-failure label first. Input
+remains fenced; explicit takeover, release and owner evidence keep their existing
+contracts. The real SSH audit-failure check retains its refusal and running-shell
+assertions, and the failed run is preserved separately.
+
 ## Explicit follow-up status
 
 | Follow-up | Status and release boundary |

@@ -103,7 +103,7 @@ func (s *Shared) enqueue(value any, reply chan error) error {
 	}
 	if s.inputError != nil && !control && !release && !history {
 		if _, resize := value.(image.Point); !resize {
-			return fmt.Errorf("input refused after an uncertain operation; inspect and explicitly take control again")
+			return s.inputError
 		}
 	}
 	if !control && !release && !history && (!s.state.Shared.Controlled || (s.state.Shared.Synchronization != "snapshot-current" && s.state.Shared.Synchronization != "snapshot-history")) {
@@ -223,7 +223,7 @@ func (s *Shared) refresh() error {
 		s.state.Err = fmt.Errorf("shell LOST; last-known screen; remote outcome uncertain; no reconnect")
 	}
 	if out.Shell.AuditError != "" {
-		s.state.Err = errors.Join(s.state.Err, fmt.Errorf("shell audit incomplete: %s", out.Shell.AuditError))
+		s.state.Err = errors.Join(fmt.Errorf("shell audit incomplete: %s", out.Shell.AuditError), s.state.Err)
 	}
 	return nil
 }
@@ -320,10 +320,10 @@ func (s *Shared) handle(event sharedEvent) error {
 		_, err = s.private(ctx, "resize", connection.ShellResize{Token: event.token, Columns: value.X, Rows: value.Y})
 	default:
 		s.mu.Lock()
-		blocked := s.inputError != nil
+		blocked := s.inputError
 		s.mu.Unlock()
-		if blocked {
-			return fmt.Errorf("queued input refused after an uncertain operation; inspect before taking control")
+		if blocked != nil {
+			return blocked // Preserve the refusal which fenced already-queued input.
 		}
 		s.mu.Lock()
 		s.offset = 0

@@ -35,10 +35,11 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
                               capture_output=True, timeout=3, check=True).stdout.decode()
 
     def wait(needle):
+        needles = needle if isinstance(needle, tuple) else (needle,)
         until = time.monotonic() + 15
         while time.monotonic() < until:
             screen = view()
-            if needle in screen:
+            if any(text in screen for text in needles):
                 return screen
             assert frontend.poll() is None, (frontend.returncode, screen)
         raise AssertionError((needle, screen))
@@ -438,8 +439,12 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
                 else:
                     os.kill(state["masterPID"], signal.SIGKILL)
                 if loss == "close":
-                    wait("UNVERIFIED")
-                    background()
+                    # The observer may receive the acknowledged close before
+                    # registry removal, or lose observation after removal.
+                    # Both revoke input; only a confirmed exit returns to management.
+                    screen = wait(("UNVERIFIED", "Retained SSH shell exited"))
+                    if "Retained SSH shell exited" not in screen:
+                        background()
                 else:
                     wait("LOST")
                     background()
