@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/tree"
 	"github.com/Bochner/burrow/core/connection"
+	"github.com/Bochner/burrow/core/launch"
 )
 
 const fileHelp = `# FILE BROWSING
@@ -260,6 +261,8 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 	f.cancel = stop
 	return func() tea.Msg {
 		defer stop()
+		defer launch.Phase("files-tui-command")()
+		defer func() { launch.Phase("files-tui-ready")() }()
 		roots, err := connection.TransferRoots(ctx, w)
 		var value any
 		if err == nil {
@@ -269,6 +272,8 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 				value, err = connection.Browse(ctx, w, state, query)
 				if err == nil {
 					err = connection.RecordFileCommand(ctx, w, []string{"scp", state.Name, op, query.Path})
+				} else {
+					value = nil
 				}
 			}
 		}
@@ -281,6 +286,7 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 }
 
 func (m *ui) acceptFiles(result fileResult) {
+	defer launch.Phase("files-tui-accept")()
 	f := m.files
 	if f == nil || result.mode != f || result.sequence != f.sequence {
 		return
@@ -316,7 +322,7 @@ func (m *ui) acceptFiles(result fileResult) {
 	if result.roots.Version != 0 {
 		f.roots = result.roots
 	}
-	if result.err != nil {
+	if result.err != nil && result.value == nil {
 		m.output = "REFUSED: " + safe(result.err.Error())
 		return
 	}
@@ -352,6 +358,9 @@ func (m *ui) acceptFiles(result fileResult) {
 		f.tree = &value
 	case connection.FileRoots:
 		m.output = "Workspace roots verified; existing files preserved"
+	}
+	if result.err != nil {
+		m.output = strings.TrimSpace(m.output + "\nWARNING: " + safe(result.err.Error()))
 	}
 	m.input.SetSuggestions(m.suggestions())
 	m.fileMatches()

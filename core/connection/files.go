@@ -101,6 +101,7 @@ func TransferRoots(ctx context.Context, w string) (FileRoots, error) {
 }
 
 func FileHistory(ctx context.Context, w string) ([]string, error) {
+	defer launch.Phase("files-history-read")()
 	var response []struct{ Source, Message string }
 	err := launch.Call(ctx, w, "ActiveLogs", map[string]string{"Operation": "burrow", "Chain": "files"}, &response)
 	out := []string{}
@@ -115,6 +116,7 @@ func FileHistory(ctx context.Context, w string) ([]string, error) {
 // Only successfully executed, validated file commands are submitted here. Never
 // persist speculative completion, rejected input, or authentication responses.
 func RecordFileCommand(ctx context.Context, w string, args []string) error {
+	defer launch.Phase("files-history-write")()
 	if err := ValidateCommand(w, args); err != nil {
 		return err
 	}
@@ -128,23 +130,20 @@ func RecordFileCommand(ctx context.Context, w string, args []string) error {
 	default:
 		return fmt.Errorf("not a file command")
 	}
-	for _, args := range [][]string{{"op", "create", "burrow"}, {"chain", "create", "files"}} {
-		if _, err := launch.HovelCLI(ctx, w, append([]string{"--op", "burrow", "--chain", "files", "--"}, args...)...); err != nil {
-			return err
-		}
-	}
 	var ignored struct{}
-	return launch.Call(ctx, w, "AppendLog", map[string]any{"Operation": "burrow", "Chain": "files", "Entries": []map[string]any{{"Time": time.Now().UTC(), "Kind": "event", "Level": "info", "Source": "burrow-files", "Message": CommandLine(args)}}}, &ignored)
+	// Named append creates missing operation/chain state. A failed acknowledgement
+	// may follow a mutation; never retry it or claim the command was rolled back.
+	if err := launch.Call(ctx, w, "AppendLog", map[string]any{"Operation": "burrow", "Chain": "files", "Entries": []map[string]any{{"Time": time.Now().UTC(), "Kind": "event", "Level": "info", "Source": "burrow-files", "Message": CommandLine(args)}}}, &ignored); err != nil {
+		return fmt.Errorf("file command completed but history unavailable: %w", err)
+	}
+	return nil
 }
 
 func fileCommandResult(ctx context.Context, w string, args []string, value any, err error) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = RecordFileCommand(ctx, w, args); err != nil {
-		return value, fmt.Errorf("file command completed but history unavailable: %w", err)
-	}
-	return value, nil
+	return value, RecordFileCommand(ctx, w, args)
 }
 
 func localArgs(args []string) (area, path string, err error) {

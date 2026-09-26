@@ -14,8 +14,10 @@ import struct
 import subprocess
 import termios
 
+from core.cmd.burrow.file_history_lab import file_rpc
 
-def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfers=False):
+
+def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfers=False, history_fault=False):
     def cli(*args):
         p = subprocess.run([binary, "--workspace", str(workspace), *args], env=env, capture_output=True, check=True)
         return json.loads(p.stdout)
@@ -171,6 +173,8 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfer
         wait(("Remote:", "/tmp/burrow-file-check/sub dir"))
         os.write(outer, b"history\r")
         wait("SCP HISTORY")
+        screen = wait("SCP HISTORY")
+        assert "scp gateway" not in screen and "burrow-history-peer" not in screen, "recall was not projected to the selected connection"
         local=Path(workspace)/"burrow-files/uploads/local dir"
         local.mkdir(exist_ok=True)
         (local/"local.txt").write_text("local fixture")
@@ -208,6 +212,31 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfer
         assert cli("profile", "select", "edit-fixture")["port"] == 2222
         assert cli("inspect", name)["state"] == "connected"
         print("PASS right-click saved connection, real Vim tab, validated save and retained SSH master", flush=True)
+        if history_fault:
+            os.write(outer, ("scp " + name + "\r").encode())
+            wait("FILE MODE")
+            wait("LISTING /config")
+            # Race a CLI and this real TUI against an absent history chain.
+            file_rpc(workspace, "DeleteChain", {"Operation": "burrow", "Chain": "files"})
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(cli, "scp", name, "ls", "/tmp/burrow-file-check/sub dir")
+                os.write(outer, b"ls /tmp/burrow-file-check\r")
+                wait("old.txt")
+                assert pending.result(timeout=15)["entries"] == []
+            retained = cli("files-history")
+            assert sorted(retained) == sorted(["scp " + name + " ls /tmp/burrow-file-check", "scp " + name + " ls '/tmp/burrow-file-check/sub dir'"]), retained
+            # Fail after a real remote browse has returned useful entries.
+            os.write(outer, b"ls /tmp/burrow-file-check/history-append-failure\r")
+            screen = wait("WARNING:")
+            assert "retrieved.txt" in screen and "REFUSED:" not in screen, screen
+            assert cli("files-history") == retained + ["scp " + name + " ls /tmp/burrow-file-check/history-append-failure"]
+            audit = (Path(workspace) / "burrow-logs/operations.log").read_text()
+            assert any("history-append-failure" in record and "Status: completed" in record and "retrieved.txt" in record
+                       for record in audit.split("End record\n\n")), "successful browse audit was lost"
+            file_rpc(workspace, "DeleteChain", {"Operation": "burrow", "Chain": "files"})
+            print("PASS concurrent CLI/TUI first history, browse preserved after uncertain persistence, no retry", flush=True)
+            os.write(outer, b"back\r")
+            wait("SAVED CONNECTIONS")
         os.write(outer, b"quit\r")
         wait("Keep running")
         os.write(outer, b"\r")
@@ -357,7 +386,7 @@ esac
             command("docker", "exec", container, "sh", "-c", reload)
 
 
-def file_checks(burrow, workspace, state, container, command):
+def file_checks(burrow, workspace, state, container, command, options):
     base = "/tmp/burrow-file-check"
     command("docker", "exec", container, "mkdir", "-p", base + "/sub dir", base + "/denied")
     for name in ("old.txt", "α space.txt", ".hidden", "line\nname", "$(false)"):
@@ -370,10 +399,15 @@ def file_checks(burrow, workspace, state, container, command):
     command("docker", "exec", container, "touch", base + "/hostile\x1b]52;c;payload\a")
     current = burrow(workspace, "scp", "gateway")
     assert current["path"].startswith("/"), current
+    history = burrow(workspace, "files-history")
+    burrow(workspace, "scp", "gateway", "complete", current["path"])
+    burrow(workspace, "scp", "gateway", "ls", "/does-not-exist", ok=False)
+    burrow(workspace, "scp", "gateway", "invalid", ok=False)
     cancelled = burrow(workspace, "scp", "gateway", "cancel", "abandoned-discovery")
     assert cancelled["notice"] == "Cancellation requested", cancelled
     refused = burrow(workspace, "scp", "gateway", "ls", base, "--request", "abandoned-discovery", ok=False)
     assert "canceled" in refused, refused
+    assert burrow(workspace, "files-history") == history, "failed browse, completion or cancellation entered history"
     refused = burrow(workspace, "scp", "gateway", "complete", current["path"], "--request", "abandoned-discovery", ok=False)
     assert "canceled" in refused, refused
     assert burrow(workspace, "scp", "gateway", "--request", "fresh-pwd")["path"]
@@ -399,9 +433,21 @@ def file_checks(burrow, workspace, state, container, command):
     assert any("3000" in error for error in bounded["errors"]), bounded["errors"]
     assert len(json.dumps(bounded).encode()) < 1 << 20
     assert burrow(workspace,"inspect","gateway")["masterPID"] == state["masterPID"]
+    command("docker", "exec", container, "mkdir", "/tmp/burrow-history-peer")
+    burrow(workspace, "connect", "history-peer", "127.0.0.1", "tester", *options)
+    deadline = time.monotonic() + 15
+    while burrow(workspace, "inspect", "history-peer")["state"] != "connected":
+        assert time.monotonic() < deadline
+        time.sleep(.05)
+    burrow(workspace, "scp", "history-peer", "ls", "/tmp/burrow-history-peer")
+    assert "scp history-peer ls /tmp/burrow-history-peer" in burrow(workspace, "files-history")
+    assert not any(line.startswith("scp ") for line in burrow(workspace, "history"))
+    burrow(workspace, "close", "history-peer", "--yes")
     print("PASS real same-master SFTP metadata, navigation, denied paths and symlink tree",flush=True)
     download_checks(burrow, workspace, state, container, command)
     upload_checks(burrow, workspace, state, container, command)
+    command("docker", "exec", container, "mkdir", base + "/history-append-failure")
+    command("docker", "exec", container, "touch", base + "/history-append-failure/retrieved.txt")
 
 
 def download_checks(burrow, workspace, state, container, command):

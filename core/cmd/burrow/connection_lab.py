@@ -27,6 +27,8 @@ from core.cmd.burrow.authentication_lab import authentication_matrix
 from core.cmd.burrow.manager_lab import manager_checks, audit_cleanup_checks
 from core.cmd.burrow.workspace_lab import workspace_checks
 from core.cmd.burrow.latency_lab import measure, measure_shells, phase_totals
+from core.cmd.burrow.file_latency import measure_files
+from core.cmd.burrow.file_history_lab import reopen_files
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.sessions_lab import session_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
@@ -59,7 +61,8 @@ parser.add_argument("--reverse-check", action="store_true", help="check real rev
 parser.add_argument("--proxy-check", action="store_true", help="check real connection-owned SOCKS traffic and cleanup")
 parser.add_argument("--measure", action="store_true", help="record production phase samples and separate process traces")
 parser.add_argument("--shell-latency", action="store_true", help="measure normal retained-shell startup, separate from fault acceptance")
-parser.add_argument("--samples", type=int, choices=range(1, 31), help="bounded shell-latency sample count per frontend (default 10)")
+parser.add_argument("--file-latency", action="store_true", help="measure file results through the existing approved master")
+parser.add_argument("--samples", type=int, choices=range(1, 31), help="bounded file/shell latency sample count per case (default 10)")
 parser.add_argument("--phases", action="store_true", help="opt in to shell-latency phase diagnostics")
 parser.add_argument("--processes", action="store_true", help="separate strace process-only shell diagnostic (requires strace)")
 parser.add_argument("--linux-path", action="store_true", help="shell-latency counterfactual: omit WSL Windows PATH entries in this disposable lab only")
@@ -68,8 +71,10 @@ parser.add_argument("--prompt-check", action="store_true", help="check private p
 parser.add_argument("--auth-check", action="store_true", help="check private prompts, cancellation and rejected passwords only")
 args = parser.parse_args()
 parser_args = args
-if (args.samples or args.phases or args.processes or args.linux_path or args.growing_tabs) and not args.shell_latency:
-    parser.error("measurement options require --shell-latency")
+if args.samples and not (args.shell_latency or args.file_latency):
+    parser.error("--samples requires --shell-latency or --file-latency")
+if (args.phases or args.processes or args.linux_path or args.growing_tabs) and not args.shell_latency:
+    parser.error("shell diagnostic options require --shell-latency")
 if args.shared_tui_check:
     args.shell_check = True
 smoke = args.smoke
@@ -115,11 +120,11 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
     binary = str(shutil.copy2(binary, root / "burrow"))
     env = {k: v for k, v in os.environ.items() if not k.startswith(("HOVEL_", "SSH_"))}
     env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
-    if args.shell_latency:
+    if args.shell_latency or args.file_latency:
         env.pop("BURROW_PHASE_TRACE", None)
         if args.linux_path:
             env["PATH"] = os.pathsep.join(p for p in env["PATH"].split(os.pathsep) if not re.match(r"/mnt/[a-z]/", p))
-        if args.phases:
+        if args.phases or args.file_latency:
             env["BURROW_PHASE_TRACE"] = str(root / "phases.jsonl")
     env["AUTOMATION_SECRET_CANARY"] = "AUTOMATION-NOT-A-CREDENTIAL"
     daemons = []
@@ -178,6 +183,9 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             modules = json.loads(hv("module", "list", "--json"))["modules"]
             return sorted(m["id"] for m in modules if m["name"].startswith("burrow"))
         assert catalog() == ["burrow@0.1.0"]
+        if args.files_check or not any(vars(args)[name] for name in vars(args) if name != "paths"):
+            info = reopen_files(w, info, lambda: burrow(w, "--offline", "status"), fault=True)
+            daemons.append(info["pid"])
         timing("fixture and workspace setup")
         if args.measure:
             measure(binary,root,env,container,port,key,command,wait)
@@ -187,6 +195,11 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             full_evidence = True
             measure_shells(binary, root, env, w, burrow, options, wait, screen_check,
                            args.samples or 10, image, wheel, args.processes, args.growing_tabs)
+            raise SystemExit(0)
+        if args.file_latency:
+            full_evidence = True
+            measure_files(binary, root, env, w, burrow, options, wait, screen_check,
+                          args.samples or 10, image, wheel, container, command)
             raise SystemExit(0)
         if args.workspace_check or args.lifecycle_check or not any(vars(args)[name] for name in vars(args) if name != "paths"):
             workspace_checks(binary, env, screen_check, root, w, burrow, wait, options, daemons)
@@ -293,8 +306,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             burrow(w, "close", "runs", "--yes")
             timing("retained remote runs")
         if args.files_check or not (args.lifecycle_check or smoke or args.proxy_check or args.shell_check or args.forward_check or args.reverse_check):
-            file_checks(burrow, w, first, container, command)
-            file_ui(binary, env, screen_check, w)
+            file_checks(burrow, w, first, container, command, options)
+            file_ui(binary, env, screen_check, w, history_fault=True)
             load_checks(burrow, w, container, command, options, binary, env, screen_check)
         if args.files_check:
             burrow(w, "close", "gateway", "--yes")
@@ -977,7 +990,8 @@ launch:
         # see docs/research/retained-consumer-proof.md. Inspect only after exit.
         if forward_evidence or full_evidence or (partition and daemons):
             with closing(sqlite3.connect(w / "workspace.db")) as db:
-                assert db.execute("pragma integrity_check").fetchone() == ("ok",)
+                integrity = db.execute("pragma integrity_check").fetchall()
+                assert integrity == [("ok",)], integrity
                 for tunnel in forward_evidence:
                     plans = [json.loads(row[0]) for row in db.execute("select p.plan_json from throw_plans p join throw_records r on r.plan_id=p.id, json_each(r.throw_json, '$.runs') j where json_extract(j.value, '$.runId')=?", (tunnel["runID"],))]
                     assert len(plans) == 1 and plans[0]["confirmationId"]

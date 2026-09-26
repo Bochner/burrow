@@ -1062,6 +1062,38 @@ func TestFileModeReturnContext(t *testing.T) {
 	}
 }
 
+func TestFileBrowseSurvivesHistoryWriteFailure(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/history-failure"}, plain, launch.Options{})
+			t.Cleanup(m.terminals.close)
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			frameEvent(m, connectionList{states: []connection.State{{Name: "gateway", State: "connected"}}})
+			frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			u := m.current().file
+			t.Cleanup(u.files.cancel)
+			frameEvent(m, fileResult{mode: u.files, sequence: u.files.sequence, operation: "cd",
+				value: connection.FileListing{Path: "/retrieved", Entries: []connection.FileEntry{{Name: "kept.txt"}}},
+				err:   fmt.Errorf("file command completed but history unavailable: Hovel AppendLog rejected: HTTP 500")})
+			view := ansi.Strip(m.View().Content)
+			if !strings.Contains(view, "1 entries") || !strings.Contains(view, "WARNING:") || strings.Contains(view, "REFUSED:") || u.files.remote != "/retrieved" || u.files.listing.Entries[0].Name != "kept.txt" {
+				t.Fatal("successful browse or truthful warning lost", size, view)
+			}
+			if !plain {
+				screen := vt.NewEmulator(size[0], size[1])
+				screen.Write([]byte(m.View().Content))
+				for y, line := range strings.Split(screen.String(), "\n") {
+					if at := strings.Index(line, "WARNING:"); at >= 0 && !colorMatches(screen.CellAt(ansi.StringWidth(line[:at]), y).Style.Fg, warningStyle.GetForeground()) {
+						t.Fatal("history uncertainty lost its warning color")
+					}
+				}
+				screen.Close()
+			}
+		}
+	}
+}
+
 func TestFileResultOriginIsolation(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/files-one"}, true, launch.Options{})
 	t.Cleanup(m.terminals.close)

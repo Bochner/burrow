@@ -132,6 +132,9 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
     def background():
         send(b"\x1d")
         wait("ACTIVE SSH CONNECTIONS")
+        # The table appears before release finishes. Await its result before a
+        # subsequent management command whose output that result could replace.
+        wait(("Shell detached", "Release UNCONFIRMED"))
 
     def resize(width, height):
         nonlocal decoded, reset_decoder
@@ -301,8 +304,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         send(b"\x00\x03")
         wait("00 03")
         command("printf '\\033[?1049h\\033[2J\\033[HREMOTE_%s' SCREEN", "REMOTE_SCREEN")
-        send(b"\x1d")
-        wait("ACTIVE SSH CONNECTIONS")
+        background()
         assert Path(f"/proc/{client}").exists(), "background key closed shell"
 
         command("shell gateway", "SSH: gateway #2")
@@ -322,8 +324,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         wait("REMOTE_SCREEN")
         send(b"\x1b2")
         wait("SECOND_READY")
-        send(b"\x1d")
-        wait("ACTIVE SSH CONNECTIONS")
+        background()
         command("shells", "gateway #1")
         command("resume 1", "REMOTE_SCREEN")
         command("printf '\\033[?1049l'", "RAW_READY")

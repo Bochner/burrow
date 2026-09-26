@@ -383,6 +383,7 @@ func (s *owner) checkMaster() error {
 	}
 	check, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	defer launch.Phase("ssh-master-check")()
 	if exec.CommandContext(check, "/usr/bin/ssh", "-F", "/dev/null", "-S", s.state.Socket, "-O", "check", "unused").Run() != nil {
 		return fmt.Errorf("master check failed; no fresh login attempted")
 	}
