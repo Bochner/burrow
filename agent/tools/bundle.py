@@ -1,4 +1,5 @@
 """Deterministic release skill bundle; the production installer validates it."""
+
 import hashlib
 import json
 from pathlib import Path

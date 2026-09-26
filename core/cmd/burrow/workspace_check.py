@@ -1,4 +1,5 @@
 """Headless workspace selection uses explicit paths and the real pinned daemon."""
+
 import json
 import os
 from pathlib import Path
@@ -12,13 +13,17 @@ import tempfile
 binary, wheel = [str(Path(p).resolve()) for p in sys.argv[1:]]
 with tempfile.TemporaryDirectory(prefix="bw-") as scratch:
     root = Path(scratch)
-    env = dict(os.environ, HOME=scratch, XDG_CACHE_HOME=str(root / "cache"),
-               XDG_DATA_HOME=str(root / "data"), XDG_CONFIG_HOME=str(root / "config"))
+    env = dict(
+        os.environ,
+        HOME=scratch,
+        XDG_CACHE_HOME=str(root / "cache"),
+        XDG_DATA_HOME=str(root / "data"),
+        XDG_CONFIG_HOME=str(root / "config"),
+    )
     daemons = []
 
     def cli(*args, ok=True):
-        p = subprocess.run([binary, *map(str, args)], env=env, capture_output=True,
-                           text=True, timeout=40)
+        p = subprocess.run([binary, *map(str, args)], env=env, capture_output=True, text=True, timeout=40)
         assert (p.returncode == 0) == ok, (args, p.stdout, p.stderr)
         if ok:
             assert not p.stderr, p.stderr
@@ -31,7 +36,9 @@ with tempfile.TemporaryDirectory(prefix="bw-") as scratch:
     try:
         w, missing = root / "w", root / "missing"
         assert cli("workspace", "open", ok=False)["code"] == "invalid_selection"
-        assert cli("--workspace", w, "--workspace", missing, "workspace", "open", ok=False)["code"] == "invalid_selection"
+        assert (
+            cli("--workspace", w, "--workspace", missing, "workspace", "open", ok=False)["code"] == "invalid_selection"
+        )
         assert cli("--workspace", missing, "workspace", "inspect", ok=False)["code"] == "unverified"
         listing = cli("workspace", "list", w, missing)
         assert listing["scope"] == "explicit-paths" and listing["registryAvailable"] is False
@@ -50,14 +57,20 @@ with tempfile.TemporaryDirectory(prefix="bw-") as scratch:
             master, slave = pty.openpty()
             color_env = env | {"TERM": "xterm-256color", "COLORTERM": "truecolor", "NO_COLOR": "1" if plain else ""}
             try:
-                for command, expected, stream in ((["--workspace", str(w), "workspace", "inspect"], 0, "stdout"),
-                                                   (["workspace", "open"], 1, "stderr")):
-                    p = subprocess.run([binary, *command], env=color_env, timeout=20,
-                                       stdout=slave if stream == "stdout" else subprocess.PIPE,
-                                       stderr=slave if stream == "stderr" else subprocess.PIPE)
+                for command, expected, stream in (
+                    (["--workspace", str(w), "workspace", "inspect"], 0, "stdout"),
+                    (["workspace", "open"], 1, "stderr"),
+                ):
+                    p = subprocess.run(
+                        [binary, *command],
+                        env=color_env,
+                        timeout=20,
+                        stdout=slave if stream == "stdout" else subprocess.PIPE,
+                        stderr=slave if stream == "stderr" else subprocess.PIPE,
+                    )
                     assert p.returncode == expected, p
                     data = bytearray()
-                    while select.select([master], [], [], .1)[0]:
+                    while select.select([master], [], [], 0.1)[0]:
                         data.extend(os.read(master, 65536))
                     assert (b"\x1b[38;2;" in data) != plain, data
                     if plain:
@@ -72,7 +85,10 @@ with tempfile.TemporaryDirectory(prefix="bw-") as scratch:
         review = cli("--workspace", w, "workspace", "retire")
         assert review["state"] == "review" and review["connections"] == []
         assert cli("--workspace", w, "workspace", "retire", "--yes", ok=False)["code"] == "review_required"
-        assert cli("--workspace", w, "workspace", "restart", "--yes", "--review", review["digest"], ok=False)["code"] == "review_changed"
+        assert (
+            cli("--workspace", w, "workspace", "restart", "--yes", "--review", review["digest"], ok=False)["code"]
+            == "review_changed"
+        )
         retired = cli("--workspace", w, "workspace", "retire", "--yes", "--review", review["digest"])
         assert retired["state"] == "retired" and retired["owner"] == review["owner"]
         assert cli("--workspace", w, "workspace", "inspect") == info

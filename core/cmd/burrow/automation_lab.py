@@ -1,4 +1,5 @@
 """Local automation through production commands and supported Hovel throws."""
+
 import base64
 import http.client
 import json
@@ -21,7 +22,12 @@ def automation_checks(burrow, workspace, connection, hovel, env, hv, connect_opt
         client.sock.settimeout(15)
         client.sock.connect(str(workspace / "hoveld.sock"))
         try:
-            client.request("POST", "/hovel.daemon.v1.DaemonService/" + method, json.dumps(data), {"Content-Type": "application/json"})
+            client.request(
+                "POST",
+                "/hovel.daemon.v1.DaemonService/" + method,
+                json.dumps(data),
+                {"Content-Type": "application/json"},
+            )
             response = client.getresponse()
             body = response.read()
             assert response.status == 200, body
@@ -38,11 +44,21 @@ def automation_checks(burrow, workspace, connection, hovel, env, hv, connect_opt
             state = run("inspect", run_id)
             if state["state"] == "timed-out":
                 return state
-            time.sleep(.05)
+            time.sleep(0.05)
         raise AssertionError(state)
 
-    result = burrow(workspace, "run", "now", connection["name"], "--local", "--yes", "--",
-                    "/bin/sh", "-c", 'printf "%s\\n" "$BURROW_CONNECTION" "$BURROW_SOCKET"; printf "local error" >&2; exit 3')
+    result = burrow(
+        workspace,
+        "run",
+        "now",
+        connection["name"],
+        "--local",
+        "--yes",
+        "--",
+        "/bin/sh",
+        "-c",
+        'printf "%s\\n" "$BURROW_CONNECTION" "$BURROW_SOCKET"; printf "local error" >&2; exit 3',
+    )
     assert result["execution"] == "local" and result["localExit"] == 3 and result["remoteExit"] is None, result
     assert result["outputComplete"] and result["collection"] == "succeeded", result
     out = burrow(workspace, "run", "output", result["id"], "stdout", "0")
@@ -56,8 +72,18 @@ def automation_checks(burrow, workspace, connection, hovel, env, hv, connect_opt
 
     child_input = Path(burrow(workspace, "local")["upload"]) / "child-input.bin"
     child_input.write_bytes(bytes(range(256)) * 512)  # Larger than a pipe buffer.
-    delayed = run("now", connection["name"], "--local", "--stdin", child_input.name, "--yes", "--", "/bin/sh", "-c",
-                  "exec 3<&0; (sleep 2; printf later; wc -c <&3; printf child-error >&2) & exit 0")
+    delayed = run(
+        "now",
+        connection["name"],
+        "--local",
+        "--stdin",
+        child_input.name,
+        "--yes",
+        "--",
+        "/bin/sh",
+        "-c",
+        "exec 3<&0; (sleep 2; printf later; wc -c <&3; printf child-error >&2) & exit 0",
+    )
     assert output(delayed["id"]) == b"later131072\n" and output(delayed["id"], "stderr") == b"child-error", delayed
     assert delayed["localExit"] == 0 and delayed["outputComplete"], delayed
     run("close", delayed["id"], "--yes")
@@ -80,16 +106,57 @@ def automation_checks(burrow, workspace, connection, hovel, env, hv, connect_opt
     identity = rpc("GetDaemonInfo", {})
     assert identity["workspacePath"] == str(workspace), identity
     chain = workspace / "local-automation.chain.json"
+
     def save(command):
-        chain.write_text(json.dumps({"apiVersion": "hovel.dev/v1alpha1", "kind": "Chain", "metadata": {"name": "local-automation"},
-            "spec": {"mode": "configured", "steps": [{"id": "local", "uses": "module:burrow@0.1.0"}],
-                     "targets": [{"id": "local://selected"}], "config": {"workspace": str(workspace), "command": shlex.join(command)}}}))
+        chain.write_text(
+            json.dumps(
+                {
+                    "apiVersion": "hovel.dev/v1alpha1",
+                    "kind": "Chain",
+                    "metadata": {"name": "local-automation"},
+                    "spec": {
+                        "mode": "configured",
+                        "steps": [{"id": "local", "uses": "module:burrow@0.1.0"}],
+                        "targets": [{"id": "local://selected"}],
+                        "config": {"workspace": str(workspace), "command": shlex.join(command)},
+                    },
+                }
+            )
+        )
 
     def throw(*flags):
-        return subprocess.run([str(hovel), "throw", str(chain), "--workspace", str(workspace), "--daemon-endpoint", str(workspace / "hoveld.sock"), "--json", *flags],
-                              env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=40)
+        return subprocess.run(
+            [
+                str(hovel),
+                "throw",
+                str(chain),
+                "--workspace",
+                str(workspace),
+                "--daemon-endpoint",
+                str(workspace / "hoveld.sock"),
+                "--json",
+                *flags,
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=40,
+        )
 
-    save(["run", "now", connection["name"], "--local", "--yes", "--", "/bin/sh", "-c", "printf chain-output; printf chain-error >&2; exit 7"])
+    save(
+        [
+            "run",
+            "now",
+            connection["name"],
+            "--local",
+            "--yes",
+            "--",
+            "/bin/sh",
+            "-c",
+            "printf chain-output; printf chain-error >&2; exit 7",
+        ]
+    )
     before = run("list")
     for flags, text in [(["--allow-dangerous"], "confirmation"), (["--now"], "dangerous")]:
         rejected = throw(*flags)
@@ -99,7 +166,10 @@ def automation_checks(burrow, workspace, connection, hovel, env, hv, connect_opt
         assert run("list") == before, "rejected throw launched work"
     # Explicit now still obeys the operation's launch-key policy.
     rpc("SetLaunchKeyPolicy", {"operation": "default", "mode": "quorum", "quorum": 2})
-    rpc("AttachEntity", {"id": "local-check-approver", "kind": "cli", "operation": "default", "activeChain": "local-automation"})
+    rpc(
+        "AttachEntity",
+        {"id": "local-check-approver", "kind": "cli", "operation": "default", "activeChain": "local-automation"},
+    )
     try:
         rejected = throw("--allow-dangerous", "--now")
         assert rejected.returncode == 1 and ("approval" in rejected.stderr or "launch" in rejected.stderr), rejected
@@ -122,24 +192,41 @@ def automation_checks(burrow, workspace, connection, hovel, env, hv, connect_opt
     assert len(collected) == 3, collected
     saved_bytes = {a["path"]: (workspace / a["path"]).read_bytes() for a in collected}
     run("close", result["id"], "--yes")
-    assert [a for a in json.loads(hv("artifact", "list", "--json")) if a["runId"] == result["runID"]] == collected, "close removed registered evidence"
+    assert [a for a in json.loads(hv("artifact", "list", "--json")) if a["runId"] == result["runID"]] == collected, (
+        "close removed registered evidence"
+    )
     assert all((workspace / path).read_bytes() == data for path, data in saved_bytes.items())
-    print("PASS saved-chain execution, explicit workspace, confirmation/danger/launch-key refusal and non-JSON errors", flush=True)
+    print(
+        "PASS saved-chain execution, explicit workspace, confirmation/danger/launch-key refusal and non-JSON errors",
+        flush=True,
+    )
 
     # A local driver actually uses the selected master; no inherited launch key or credentials.
     source = Path(burrow(workspace, "local")["upload"]) / "local driver.sh"
-    source.write_text('''test -z "${HOVEL_MODULE_LAUNCH_KEY+x}${SSH_AUTH_SOCK+x}${AUTOMATION_SECRET_CANARY+x}" || exit 90
+    source.write_text("""test -z "${HOVEL_MODULE_LAUNCH_KEY+x}${SSH_AUTH_SOCK+x}${AUTOMATION_SECRET_CANARY+x}" || exit 90
 printf '%s\\n' "$BURROW_CONNECTION"
 /usr/bin/ssh -F "$BURROW_SSH_CONFIG" -S "$BURROW_SOCKET" -o ControlMaster=no -o ProxyCommand=/usr/bin/false -o BatchMode=yes -T "$BURROW_SSH_HOST" 'printf "%s\\n" "$SSH_CONNECTION"'
-''')
+""")
     burrow(workspace, "connect", "local-second", connection["host"], connection["user"], *connect_options)
     deadline = time.monotonic() + 15
     while (second := burrow(workspace, "inspect", "local-second"))["state"] != "connected":
         assert time.monotonic() < deadline, second
-        time.sleep(.05)
+        time.sleep(0.05)
     sockets = []
     for selected in [connection, second]:
-        driver = run("now", selected["name"], "--local", "--script", source.name, "--mode", "stream", "--interpreter", "/bin/sh", "--yes", "--")
+        driver = run(
+            "now",
+            selected["name"],
+            "--local",
+            "--script",
+            source.name,
+            "--mode",
+            "stream",
+            "--interpreter",
+            "/bin/sh",
+            "--yes",
+            "--",
+        )
         assert driver["localExit"] == 0 and driver["remoteExit"] is None, driver
         data = output(driver["id"]).decode().splitlines()
         assert data[0] == selected["name"] and len(data[1].split()) == 4, data
@@ -171,13 +258,21 @@ printf '%s\\n' "$BURROW_CONNECTION"
 
     for timeout, parent_exits in ((False, False), (True, False), (False, True), (True, True)):
         flags = ["--timeout", "2s"] if timeout else []
-        task = run("prepare", connection["name"], "--local", *flags, "--", "/bin/sh", "-c",
-                   "echo $$; sleep 60 & echo $!; " + ("exit 0" if parent_exits else "wait"))
+        task = run(
+            "prepare",
+            connection["name"],
+            "--local",
+            *flags,
+            "--",
+            "/bin/sh",
+            "-c",
+            "echo $$; sleep 60 & echo $!; " + ("exit 0" if parent_exits else "wait"),
+        )
         run("launch", task["id"], "--yes")
         deadline = time.monotonic() + 10
         while not output(task["id"]).count(b"\n") == 2:
             assert time.monotonic() < deadline
-            time.sleep(.05)
+            time.sleep(0.05)
         if parent_exits and not timeout:
             time.sleep(1.2)  # Parent and bounded pipe drain have finished.
             assert run("inspect", task["id"])["state"] == "running", "ordinary child became uncancellable"

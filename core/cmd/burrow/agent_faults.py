@@ -4,6 +4,7 @@ Count renameat2 across the whole process: strace's per-thread ordinal injection
 can miss a replacement when a Go goroutine migrates between OS threads.
 Linux interface: https://man7.org/linux/man-pages/man2/ptrace.2.html
 """
+
 import ctypes
 import errno
 import os
@@ -13,8 +14,10 @@ import tempfile
 
 
 class Registers(ctypes.Structure):
-    _fields_ = [(name, ctypes.c_ulonglong) for name in
-                "r15 r14 r13 r12 rbp rbx r11 r10 r9 r8 rax rcx rdx rsi rdi orig_rax rip cs eflags rsp ss fs_base gs_base ds es fs gs".split()]
+    _fields_ = [
+        (name, ctypes.c_ulonglong)
+        for name in "r15 r14 r13 r12 rbp rbx r11 r10 r9 r8 rax rcx rdx rsi rdi orig_rax rip cs eflags rsp ss fs_base gs_base ds es fs gs".split()
+    ]
 
 
 def failed_rename(argv, cwd, env, fault):
@@ -22,14 +25,19 @@ def failed_rename(argv, cwd, env, fault):
     libc.ptrace.restype = ctypes.c_long
 
     def trace(request, pid, address=0, data=0):
-        result = libc.ptrace(ctypes.c_uint(request), ctypes.c_uint(pid), ctypes.c_void_p(address),
-                            ctypes.c_void_p(data) if isinstance(data, int) else ctypes.byref(data))
+        result = libc.ptrace(
+            ctypes.c_uint(request),
+            ctypes.c_uint(pid),
+            ctypes.c_void_p(address),
+            ctypes.c_void_p(data) if isinstance(data, int) else ctypes.byref(data),
+        )
         if result == -1:
             raise OSError(ctypes.get_errno(), "ptrace: " + os.strerror(ctypes.get_errno()))
 
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as errors:
-        child = subprocess.Popen(argv, cwd=cwd, env=env, stdout=out, stderr=errors,
-                                 preexec_fn=lambda: trace(0, 0))  # PTRACE_TRACEME stops after exec.
+        child = subprocess.Popen(
+            argv, cwd=cwd, env=env, stdout=out, stderr=errors, preexec_fn=lambda: trace(0, 0)
+        )  # PTRACE_TRACEME stops after exec.
         threads, failing = {child.pid}, set()
         count, injected = 0, 0
         try:
@@ -55,18 +63,22 @@ def failed_rename(argv, cwd, env, fault):
                         threads.add(new.value)
                     elif sig == signal.SIGTRAP | 0x80:
                         info = ctypes.create_string_buffer(88)
-                        trace(0x420e, pid, ctypes.sizeof(info), info)  # GET_SYSCALL_INFO
+                        trace(0x420E, pid, ctypes.sizeof(info), info)  # GET_SYSCALL_INFO
                         if info.raw[0] == 1 and int.from_bytes(info.raw[24:32], "little") == 316:
                             count += 1  # renameat2, Linux amd64 release platform.
                             if count == int(fault.rstrip("+")) or (fault.endswith("+") and count > 2):
-                                regs = Registers(); trace(12, pid, data=regs)
+                                regs = Registers()
+                                trace(12, pid, data=regs)
                                 regs.orig_rax = 2**64 - 1  # Skip the actual filesystem mutation.
                                 trace(13, pid, data=regs)
-                                failing.add(pid); injected += 1
+                                failing.add(pid)
+                                injected += 1
                         elif info.raw[0] == 2 and pid in failing:
-                            regs = Registers(); trace(12, pid, data=regs)
+                            regs = Registers()
+                            trace(12, pid, data=regs)
                             regs.rax = (2**64) - errno.EACCES
-                            trace(13, pid, data=regs); failing.remove(pid)
+                            trace(13, pid, data=regs)
+                            failing.remove(pid)
                     elif sig not in (signal.SIGSTOP, signal.SIGTRAP):
                         deliver = sig
                     trace(24, pid, data=deliver)
@@ -88,5 +100,6 @@ def failed_rename(argv, cwd, env, fault):
                         break
                     if pid == child.pid and (os.WIFEXITED(status) or os.WIFSIGNALED(status)):
                         child.returncode = os.waitstatus_to_exitcode(status)
-        out.seek(0); errors.seek(0)
+        out.seek(0)
+        errors.seek(0)
         return subprocess.CompletedProcess(argv, child.returncode, out.read().decode(), errors.read().decode())

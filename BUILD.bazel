@@ -29,6 +29,45 @@ _SOURCES = ["//core/%s:format_sources" % area for area in [
 _GOFMT = "@burrow_go_sdk//:bin/gofmt"
 _ARGS = ["$(location %s)" % _GOFMT] + ["$(locations %s)" % source for source in _SOURCES]
 
+# Explicit package scope; globs discover new drivers without including prototypes.
+_PYTHON_SOURCES = glob([".aspect/*.py", ".github/**/*.py"]) + [
+    "//core/cmd/burrow:python_format_sources",
+    "//docs/tools/docs:python_format_sources",
+    "//agent/tools:python_format_sources",
+]
+_RUFF = "@ruff//:ruff"
+_PYTHON_CONFIG = ".aspect/ruff.toml"
+_PYTHON_ARGS = ["$(location %s)" % path for path in [_RUFF, _PYTHON_CONFIG]] + ["$(locations %s)" % source for source in _PYTHON_SOURCES]
+
+py_binary(
+    name = "python_format",
+    main = ".aspect/python_format.py",
+    srcs = [".aspect/python_format.py"],
+    args = _PYTHON_ARGS,
+    data = [_RUFF, _PYTHON_CONFIG] + _PYTHON_SOURCES,
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "python_format_test",
+    size = "small",
+    main = ".aspect/python_format.py",
+    srcs = [".aspect/python_format.py"],
+    args = _PYTHON_ARGS,
+    data = [_RUFF, _PYTHON_CONFIG] + _PYTHON_SOURCES,
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "python_format_behavior_test",
+    size = "small",
+    main = ".aspect/python_format_test.py",
+    srcs = [".aspect/python_format_test.py", ".aspect/python_format.py"],
+    args = ["$(location %s)" % path for path in [_RUFF, _PYTHON_CONFIG]],
+    data = [_RUFF, _PYTHON_CONFIG],
+    legacy_create_init = 0,
+)
+
 py_binary(
     name = "go_format",
     main = ".aspect/go_format.py",

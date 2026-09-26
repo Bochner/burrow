@@ -1,4 +1,5 @@
 """Exercise the evidence CLI, including failures and publication refusals."""
+
 import json
 import os
 from pathlib import Path
@@ -8,29 +9,67 @@ import tempfile
 
 tool = str(Path(sys.argv[1]).resolve())
 
+
 def run(*args, ok=True):
     result = subprocess.run([tool, *map(str, args)], capture_output=True, text=True, timeout=20)
     assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
     return result
 
+
 with tempfile.TemporaryDirectory() as scratch:
     root = Path(scratch)
+
     def git(*args):
         return subprocess.check_output(["git", "-C", str(root), *args], stderr=subprocess.STDOUT)
+
     git("init", "-q")
     (root / ".gitignore").write_text("/.report-input/\n/_site/\n")
     (root / "core/launch").mkdir(parents=True)
     (root / "core/launch/example.go").write_text("package example\n")
-    inventory = {"schemaVersion": 1, "inputs": {"options": {"type": "object", "description": "Options described only in prose"}}, "results": {"Result": {"type": "object", "properties": {}}},
-                 "provenance": {}, "operations": [{"id": "example.inspect", "category": "example", "summary": "Inspect",
-                 "human": "Inspect button", "agent": {"status": "supported", "syntax": "burrow inspect"},
-                 "inputs": ["options"], "result": "Result", "effects": "Reads", "review": "None", "evidence": []}]}
+    inventory = {
+        "schemaVersion": 1,
+        "inputs": {"options": {"type": "object", "description": "Options described only in prose"}},
+        "results": {"Result": {"type": "object", "properties": {}}},
+        "provenance": {},
+        "operations": [
+            {
+                "id": "example.inspect",
+                "category": "example",
+                "summary": "Inspect",
+                "human": "Inspect button",
+                "agent": {"status": "supported", "syntax": "burrow inspect"},
+                "inputs": ["options"],
+                "result": "Result",
+                "effects": "Reads",
+                "review": "None",
+                "evidence": [],
+            }
+        ],
+    }
     inventory["operations"] += [
-        dict(inventory["operations"][0], id="example.tab", agent={"status": "equivalent", "syntax": "inspect tab", "equivalents": ["example.inspect"]}),
-        dict(inventory["operations"][0], id="example.focus", presentationOnly="Selects the existing tab without changing its resource.", agent={"status": "terminal-only", "syntax": "focus tab"}),
+        dict(
+            inventory["operations"][0],
+            id="example.tab",
+            agent={"status": "equivalent", "syntax": "inspect tab", "equivalents": ["example.inspect"]},
+        ),
+        dict(
+            inventory["operations"][0],
+            id="example.focus",
+            presentationOnly="Selects the existing tab without changing its resource.",
+            agent={"status": "terminal-only", "syntax": "focus tab"},
+        ),
     ]
-    parity = {"schemaVersion": 1, "groups": [{"source": "core/launch/example.go", "targets": ["//core/example:check"],
-              "scope": "Selected inspection outcome", "capabilities": ["example.inspect", "example.tab", "example.focus"]}]}
+    parity = {
+        "schemaVersion": 1,
+        "groups": [
+            {
+                "source": "core/launch/example.go",
+                "targets": ["//core/example:check"],
+                "scope": "Selected inspection outcome",
+                "capabilities": ["example.inspect", "example.tab", "example.focus"],
+            }
+        ],
+    }
     (root / "parity.json").write_text(json.dumps(parity))
     git("add", ".")
     git("-c", "user.name=Report fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
@@ -40,12 +79,20 @@ with tempfile.TemporaryDirectory() as scratch:
     log.write_text('<script>alert("remote")</script>\x1b[31mFAIL\n')
     events = [
         {"id": {"targetConfigured": {"label": "//core/example:check"}}, "configured": {"testSize": "SMALL"}},
-        {"id": {"testResult": {"label": "//core/example:check", "run": 1, "shard": 0, "attempt": 1}},
-         "testResult": {"status": "FAILED", "testActionOutput": [{"name": "test.log", "uri": log.as_uri()}]}},
-        {"id": {"testSummary": {"label": "//core/example:check"}}, "testSummary": {"overallStatus": "FAILED", "totalRunCount": 1}},
+        {
+            "id": {"testResult": {"label": "//core/example:check", "run": 1, "shard": 0, "attempt": 1}},
+            "testResult": {"status": "FAILED", "testActionOutput": [{"name": "test.log", "uri": log.as_uri()}]},
+        },
+        {
+            "id": {"testSummary": {"label": "//core/example:check"}},
+            "testSummary": {"overallStatus": "FAILED", "totalRunCount": 1},
+        },
         {"id": {"buildFinished": {}}, "finished": {"exitCode": {"code": 3}}},
-        {"id": {"pattern": {"pattern": ["//..."]}}, "expanded": {},
-         "children": [{"targetConfigured": {"label": "//core/example:check"}}]},
+        {
+            "id": {"pattern": {"pattern": ["//..."]}},
+            "expanded": {},
+            "children": [{"targetConfigured": {"label": "//core/example:check"}}],
+        },
     ]
     (directory / "bep.json").write_text("".join(json.dumps(event) + "\n" for event in events))
     run("collect", "--root", root, "--suite", "portable", "--exit-code", 3)
@@ -64,7 +111,9 @@ with tempfile.TemporaryDirectory() as scratch:
     (site / "api").mkdir(parents=True)
     (site / "reports").mkdir()
     (site / "api/inventory.json").write_text(json.dumps(inventory))
-    (site / "reports/index.html").write_text('<html><main><!-- burrow-report:start -->old<!-- burrow-report:end --></main></html>')
+    (site / "reports/index.html").write_text(
+        "<html><main><!-- burrow-report:start -->old<!-- burrow-report:end --></main></html>"
+    )
     (site / "search-index.json").write_text(json.dumps([{"href": "reports/", "text": "old"}]))
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json")
     report = json.loads((site / "reports/report.json").read_text())
@@ -77,8 +126,8 @@ with tempfile.TemporaryDirectory() as scratch:
     assert report["parity"]["reachable"] == 2 and report["parity"]["demonstrated"] == 0
     assert report["parity"]["schemas"] == 0, "prose-only object options counted as a documented shape"
     html = (site / "reports/index.html").read_text()
-    assert '&lt;script&gt;alert' in html and '<script>' not in html
-    assert '\\x1b' in html and '\x1b' not in html
+    assert "&lt;script&gt;alert" in html and "<script>" not in html
+    assert "\\x1b" in html and "\x1b" not in html
     assert '<nav aria-label="Report sections">' in html
     before = (site / "reports/index.html").read_bytes()
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable", ok=False)
@@ -105,20 +154,40 @@ with tempfile.TemporaryDirectory() as scratch:
     (site / "api/inventory.json").write_text(json.dumps(inventory))
     events[1]["testResult"]["status"] = "PASSED"
     events[3]["finished"] = {"exitCode": {"name": "SUCCESS"}, "overallSuccess": True}
-    for suite in ("portable", "lifecycle", "files", "reverse", "shell", "chains", "reports", "automation", "follow", "runs", "coverage"):
+    for suite in (
+        "portable",
+        "lifecycle",
+        "files",
+        "reverse",
+        "shell",
+        "chains",
+        "reports",
+        "automation",
+        "follow",
+        "runs",
+        "coverage",
+    ):
         run("begin", "--root", root, "--suite", suite)
         if suite == "portable":
             archived = list((root / ".report-input/archive").glob("portable-*/suite.json"))
             assert len(archived) == 1 and json.loads(archived[0].read_text())["status"] == "FAILED"
-            assert (archived[0].parent / evidence["path"]).read_text() == '<script>alert("remote")</script>\x1b[31mFAIL\n'
+            assert (
+                archived[0].parent / evidence["path"]
+            ).read_text() == '<script>alert("remote")</script>\x1b[31mFAIL\n'
         destination = root / ".report-input" / suite
         log = destination / "raw.log"
         log.write_text("PASS selected real behavior\n")
         events[1]["testResult"]["testActionOutput"][0]["uri"] = log.as_uri()
         for event, key in zip(events, ("targetConfigured", "testResult", "testSummary")):
-            event["id"][key]["label"] = "//core/example:check" if suite in ("portable", "coverage") else "//core/cmd/burrow:ssh_" + suite + "_test"
+            event["id"][key]["label"] = (
+                "//core/example:check"
+                if suite in ("portable", "coverage")
+                else "//core/cmd/burrow:ssh_" + suite + "_test"
+            )
         events[4]["children"][0]["targetConfigured"]["label"] = events[0]["id"]["targetConfigured"]["label"]
-        events[0]["configured"]["tag"] = [] if suite in ("portable", "coverage") else ["acceptance", "acceptance-" + suite]
+        events[0]["configured"]["tag"] = (
+            [] if suite in ("portable", "coverage") else ["acceptance", "acceptance-" + suite]
+        )
         partition_events = json.loads(json.dumps(events))
         if suite == "shell":
             # The real shell partition also selects its retained-session proof.
@@ -129,11 +198,23 @@ with tempfile.TemporaryDirectory() as scratch:
             partition_events[4]["children"].append({"targetConfigured": {"label": "//core/prototype_sessions:check"}})
         (destination / "bep.json").write_text("".join(json.dumps(event) + "\n" for event in partition_events))
         if suite == "coverage":
-            (destination / "coverage.lcov").write_text("SF:core/launch/example.go\nDA:1,2\nDA:2,0\nend_of_record\nSF:core/prototype_example/fake.go\nDA:1,1\nend_of_record\nSF:core/launch/example_test.go\nDA:1,1\nend_of_record\n")
+            (destination / "coverage.lcov").write_text(
+                "SF:core/launch/example.go\nDA:1,2\nDA:2,0\nend_of_record\nSF:core/prototype_example/fake.go\nDA:1,1\nend_of_record\nSF:core/launch/example_test.go\nDA:1,1\nend_of_record\n"
+            )
         run("collect", "--root", root, "--suite", suite, "--exit-code", 0)
         assert json.loads((destination / "suite.json").read_text())["status"] == "PASSED"
     (site / ".source.json").write_text(json.dumps(json.loads((directory / "start.json").read_text())["source"]))
-    run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable", "--require-parity")
+    run(
+        "render",
+        "--root",
+        root,
+        "--site",
+        site,
+        "--parity",
+        root / "parity.json",
+        "--require-publishable",
+        "--require-parity",
+    )
     report = json.loads((site / "reports/report.json").read_text())
     assert report["publishable"] and report["releaseReady"]
     assert report["coverage"]["covered"] == 1 and report["coverage"]["total"] == 2
@@ -146,7 +227,17 @@ with tempfile.TemporaryDirectory() as scratch:
     stale["suite"] = "hovel"
     stale["source"]["commit"] = "0" * 40
     advisory.write_text(json.dumps(stale))
-    run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable", "--require-parity")
+    run(
+        "render",
+        "--root",
+        root,
+        "--site",
+        site,
+        "--parity",
+        root / "parity.json",
+        "--require-publishable",
+        "--require-parity",
+    )
     with_stale = json.loads((site / "reports/report.json").read_text())
     assert with_stale["releaseReady"] and with_stale["suites"]["hovel"]["status"] == "MISSING"
     advisory.unlink()
@@ -158,10 +249,17 @@ with tempfile.TemporaryDirectory() as scratch:
     proof_only["targets"] = [t for t in proof_only["targets"] if t["label"] == "//core/prototype_sessions:check"]
     proof_only["selectedTargets"] = [t["label"] for t in proof_only["targets"]]
     shell_evidence.write_text(json.dumps(proof_only))
-    refused = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity", ok=False)
+    refused = run(
+        "render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity", ok=False
+    )
     assert "wrong targets for partition: shell" in refused.stderr
     shell_evidence.write_text(original_shell)
-    for tags in (None, ["acceptance", "acceptance-files"], ["acceptance"], ["acceptance", "acceptance-shell", "acceptance-files"]):
+    for tags in (
+        None,
+        ["acceptance", "acceptance-files"],
+        ["acceptance"],
+        ["acceptance", "acceptance-shell", "acceptance-files"],
+    ):
         invalid = json.loads(original_shell)
         invalid["targets"][1]["tags"] = tags
         shell_evidence.write_text(json.dumps(invalid))
@@ -181,42 +279,68 @@ with tempfile.TemporaryDirectory() as scratch:
                 labels.append(event["id"]["targetConfigured"]["label"])
             if "expanded" not in event and "finished" not in event:
                 combined.append(event)
-    combined += [{"expanded": {}, "children": [{"targetConfigured": {"label": label}} for label in labels]},
-                 {"finished": {"exitCode": {"code": 0}}}]
+    combined += [
+        {"expanded": {}, "children": [{"targetConfigured": {"label": label}} for label in labels]},
+        {"finished": {"exitCode": {"code": 0}}},
+    ]
     (root / ".report-input/all/bep.json").write_text("".join(json.dumps(event) + "\n" for event in combined))
     run("collect", "--root", root, "--suite", "all", "--exit-code", 0)
     for partition in partitions:
         partition.rename(partition.with_name("saved-" + partition.name))
-    run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable", "--require-parity")
+    run(
+        "render",
+        "--root",
+        root,
+        "--site",
+        site,
+        "--parity",
+        root / "parity.json",
+        "--require-publishable",
+        "--require-parity",
+    )
     combined_report = json.loads((site / "reports/report.json").read_text())
-    assert {t["label"] for t in combined_report["suites"]["shell"]["targets"]} == {"//core/cmd/burrow:ssh_shell_test", "//core/prototype_sessions:check"}
+    assert {t["label"] for t in combined_report["suites"]["shell"]["targets"]} == {
+        "//core/cmd/burrow:ssh_shell_test",
+        "//core/prototype_sessions:check",
+    }
     assert [t["label"] for t in combined_report["suites"]["portable"]["targets"]] == ["//core/example:check"]
     (root / ".report-input/all").rename(root / ".report-input/saved-all")
     for partition in partitions:
         partition.with_name("saved-" + partition.name).rename(partition)
     # A passing adapter cannot hide a missing check on its headless equivalent.
     alternate = root / ".report-input/partial-parity.json"
-    alternate.write_text(json.dumps({"schemaVersion": 1, "groups": [
-        dict(parity["groups"][0], capabilities=["example.inspect"], targets=["//core/example:missing"]),
-        dict(parity["groups"][0], capabilities=["example.tab", "example.focus"]),
-    ]}))
+    alternate.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "groups": [
+                    dict(parity["groups"][0], capabilities=["example.inspect"], targets=["//core/example:missing"]),
+                    dict(parity["groups"][0], capabilities=["example.tab", "example.focus"]),
+                ],
+            }
+        )
+    )
     run("render", "--root", root, "--site", site, "--parity", alternate)
     partial = json.loads((site / "reports/report.json").read_text())
     tab = next(op for op in partial["parity"]["capabilities"] if op["id"] == "example.tab")
     assert tab["semanticStatus"] == "INCOMPLETE" and not partial["releaseReady"]
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity")
-    assert (site / "reports/index.html").read_text().count('<details id="target-') == 12, "coverage repetitions lost their individual evidence"
+    assert (site / "reports/index.html").read_text().count('<details id="target-') == 12, (
+        "coverage repetitions lost their individual evidence"
+    )
     commit = git("rev-parse", "HEAD").decode().strip()
     run("verify", "--site", site, "--commit", commit)
     run("verify", "--site", site, "--commit", "0" * 40, ok=False)
     (site / "reports/index.html").write_text("unverified replacement")
     run("verify", "--site", site, "--commit", commit, ok=False)
-    (site / "reports/index.html").write_text('<main><!-- burrow-report:start --><!-- burrow-report:end --></main>')
+    (site / "reports/index.html").write_text("<main><!-- burrow-report:start --><!-- burrow-report:end --></main>")
     # Required CI success never manufactures agent parity for missing routes.
     inventory["operations"][0]["agent"]["status"] = "unsupported"
     (site / "api/inventory.json").write_text(json.dumps(inventory))
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable")
-    result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity", ok=False)
+    result = run(
+        "render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity", ok=False
+    )
     assert "usable agent routes" in result.stderr
     # Selection comes from the declared graph, independently of result records.
     original = (directory / "suite.json").read_text()
@@ -235,7 +359,9 @@ with tempfile.TemporaryDirectory() as scratch:
         for index, attempt in enumerate(attempts, 1):
             attempt["id"]["testResult"]["attempt"] = index
         events[2]["testSummary"]["totalRunCount"] = len(attempts)
-        (directory / "bep.json").write_text("".join(json.dumps(event) + "\n" for event in [events[0], *attempts, *events[2:]]))
+        (directory / "bep.json").write_text(
+            "".join(json.dumps(event) + "\n" for event in [events[0], *attempts, *events[2:]])
+        )
         run("collect", "--root", root, "--suite", "portable", "--exit-code", 0)
         incomplete = json.loads((directory / "suite.json").read_text())
         assert incomplete["status"] == "FAILED" and incomplete["targets"][0]["status"] == "MISSING"

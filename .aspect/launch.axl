@@ -7,6 +7,8 @@ def _impl(ctx: TaskContext) -> int:
     commands = {
         "format": ["run", "--run-in=./bazel-burrow", "//:go_format", "--", "--write", root],
         "format-check": ["test", "//:go_format_test"],
+        "python-format": ["run", "--run-in=./bazel-burrow", "//:python_format", "--", "--write", root],
+        "python-format-check": ["test", "//:python_format_test", "//:python_format_behavior_test"],
         "agent-discovery": ["run", "//agent/tools:discovery"],
         "agent-exercise": ["run", "--run-in=./bazel-burrow", "//core/cmd/burrow:connection_lab", "--", "--agent-exercise"] + ctx.args.options,
         "run": ["run", "//core/cmd/burrow:burrow", "--"] + ctx.args.options,
@@ -34,7 +36,7 @@ def _impl(ctx: TaskContext) -> int:
     }
     mode = ctx.args.mode[0]
     if mode not in commands:
-        print("expected agent-discovery, agent-exercise, run, check, clean, ssh-check, workspace-check, sessions-check, shared-tui-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, shell-latency, file-latency, package, format, or format-check")
+        print("expected agent-discovery, agent-exercise, run, check, clean, ssh-check, workspace-check, sessions-check, shared-tui-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-smoke, ssh-latency, shell-latency, file-latency, package, format, format-check, python-format, or python-format-check")
         return 2
     if mode == "check":
         commands[mode] += ["//core/cmd/burrow:agent_test", "//core/cmd/burrow:activity_test"]
@@ -46,6 +48,6 @@ burrow = task(
         "mode": args.positional(default = ["check"], minimum = 0, maximum = 1),
         "options": args.trailing_var_args(description = "Burrow options, starting with --workspace PATH."),
     },
-    summary = "Run, check, agent-discovery, agent-exercise, clean build outputs, ssh-smoke, ssh-check, workspace-check, sessions-check, shared-tui-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-latency, shell-latency, file-latency, format, format-check or package the production Linux frontend.",
+    summary = "Run, check, agent-discovery, agent-exercise, clean build outputs, ssh-smoke, ssh-check, workspace-check, sessions-check, shared-tui-check, shell-check, files-check, runs-check, follow-check, reports-check, chains-check, scripts-check, automation-check, forward-check, reverse-check, proxy-check, ssh-latency, shell-latency, file-latency, format, format-check, python-format, python-format-check or package the production Linux frontend.",
     implementation = _impl,
 )

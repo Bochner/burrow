@@ -1,4 +1,5 @@
 """Real SSH shell through the production command and controlling terminal seams."""
+
 import base64
 import json
 import fcntl
@@ -47,32 +48,42 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
     def view():
         nonlocal decoded, reset_decoder, renderer
         if renderer is None:
-            renderer = subprocess.Popen([decoder, *map(str, dimensions), "--stream"],
-                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
+            renderer = subprocess.Popen(
+                [decoder, *map(str, dimensions), "--stream"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0
+            )
             os.set_blocking(renderer.stdin.fileno(), False)
             os.set_blocking(renderer.stdout.fileno(), False)
             decoded, reset_decoder = 0, True
-        if select.select([outer], [], [], .05)[0]:
+        if select.select([outer], [], [], 0.05)[0]:
             # Drain ready PTY chunks before decoding; replaying after each small
             # read makes the fixture fall behind a responsive terminal.
-            until = time.monotonic() + .05
+            until = time.monotonic() + 0.05
             while True:
                 output.extend(os.read(outer, 65536))
                 if time.monotonic() >= until or not select.select([outer], [], [], 0)[0]:
                     break
-        request = json.dumps({"Data": base64.b64encode(output[decoded:]).decode(),
-                              "Width": dimensions[0], "Height": dimensions[1],
-                              "Reset": reset_decoder}).encode() + b"\n"
+        request = (
+            json.dumps(
+                {
+                    "Data": base64.b64encode(output[decoded:]).decode(),
+                    "Width": dimensions[0],
+                    "Height": dimensions[1],
+                    "Reset": reset_decoder,
+                }
+            ).encode()
+            + b"\n"
+        )
         sent, response = 0, bytearray()
         until = time.monotonic() + 3
         while sent < len(request) or not response.endswith(b"\n"):
             remaining = until - time.monotonic()
             assert remaining > 0, "terminal decoder stalled"
-            readable, writable, _ = select.select([renderer.stdout],
-                [renderer.stdin] if sent < len(request) else [], [], remaining)
+            readable, writable, _ = select.select(
+                [renderer.stdout], [renderer.stdin] if sent < len(request) else [], [], remaining
+            )
             assert readable or writable, "terminal decoder stalled"
             if writable:
-                sent += os.write(renderer.stdin.fileno(), request[sent:sent + 4096])
+                sent += os.write(renderer.stdin.fileno(), request[sent : sent + 4096])
             if readable:
                 chunk = os.read(renderer.stdout.fileno(), 65536)
                 assert chunk, "terminal decoder exited without a screen"
@@ -105,6 +116,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         return screen
 
     active_name = "gateway"
+
     def shell_children():
         result = [s["pid"] for s in burrow(workspace, "session", "list", active_name) if s["state"] == "running"]
         assert result, "no owner-retained SSH client"
@@ -148,16 +160,25 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
 
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
     submitted = time.monotonic_ns()
-    frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", "gateway"],
-                                env=env, stdin=slave, stdout=slave, stderr=slave,
-                                preexec_fn=controlling)
+    frontend = subprocess.Popen(
+        [binary, "--workspace", str(workspace), "shell", "gateway"],
+        env=env,
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        preexec_fn=controlling,
+    )
     try:
         if startup is not None:
             for index in range(samples):
                 attachments = index + 1 if growing else min(index + 1, 2)
-                item = {"case": "tui-first" if index == 0 else "tui-additional",
-                        "begin": submitted, "frontend_pid": frontend.pid,
-                        "attachments": attachments, "background_observers": attachments - 1}
+                item = {
+                    "case": "tui-first" if index == 0 else "tui-additional",
+                    "begin": submitted,
+                    "frontend_pid": frontend.pid,
+                    "attachments": attachments,
+                    "background_observers": attachments - 1,
+                }
                 startup.append(item)
                 # Observe actual decoded cells, never dispatch success or raw ANSI.
                 deadline = time.monotonic() + 15
@@ -189,7 +210,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
             for shell in burrow(workspace, "session", "list", "gateway"):
                 assert shell["controller"] == ""
                 burrow(workspace, "session", "close", "gateway", shell["id"], "--yes")
-                assert not Path(f'/proc/{shell["pid"]}').exists()
+                assert not Path(f"/proc/{shell['pid']}").exists()
             same_master()
             return first
         wait("CONTROL")
@@ -207,7 +228,10 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
             os.kill(retained[0]["ownerPID"], signal.SIGCONT)
         wait("snapshot-current")
         wait("CONTROL")
-        assert burrow(workspace, "session", "inspect", "gateway", shared_id)["controlGeneration"] == retained[0]["controlGeneration"]
+        assert (
+            burrow(workspace, "session", "inspect", "gateway", shared_id)["controlGeneration"]
+            == retained[0]["controlGeneration"]
+        )
         os.kill(retained[0]["ownerPID"], signal.SIGSTOP)
         try:
             wait("out-of-sync")
@@ -221,10 +245,14 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         wait("SSH: gateway #1 · CONTROL · snapshot-current")
 
         def private(action, request, ok=True):
-            result = subprocess.run([binary, "--workspace", str(workspace), "session",
-                                     action, "gateway", shared_id, "--request-stdin"],
-                                    input=json.dumps(request), capture_output=True, text=True,
-                                    env=env, timeout=10)
+            result = subprocess.run(
+                [binary, "--workspace", str(workspace), "session", action, "gateway", shared_id, "--request-stdin"],
+                input=json.dumps(request),
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=10,
+            )
             assert (result.returncode == 0) == ok, (action, result.stdout, result.stderr)
             return json.loads(result.stdout if ok else result.stderr)
 
@@ -232,8 +260,9 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
             return private("input", {"token": token, "data": base64.b64encode(data).decode()})
 
         current = burrow(workspace, "session", "inspect", "gateway", shared_id)
-        agent = private("takeover", {"generation": current["controlGeneration"], "label": "agent-one",
-                                     "columns": 93, "rows": 27})
+        agent = private(
+            "takeover", {"generation": current["controlGeneration"], "label": "agent-one", "columns": 93, "rows": 27}
+        )
         wait("OBSERVE")
         agent_input(agent["token"], b"printf 'AGENT_%s\\n' WATCHED\n")
         wait("AGENT_WATCHED")
@@ -256,11 +285,14 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         wait("OBSERVE")
         os.kill(frontend.pid, signal.SIGSTOP)
         try:
-            agent_input(agent["token"], b"printf '\\033[?1049h\\033[2J\\033[HKEPT-SCREEN'; head -c 100000 /dev/zero | tr '\\000' '\\007'; printf '\\033[3;5HRECOVERED-SCREEN'\n")
+            agent_input(
+                agent["token"],
+                b"printf '\\033[?1049h\\033[2J\\033[HKEPT-SCREEN'; head -c 100000 /dev/zero | tr '\\000' '\\007'; printf '\\033[3;5HRECOVERED-SCREEN'\n",
+            )
             deadline = time.monotonic() + 10
             while burrow(workspace, "session", "inspect", "gateway", shared_id)["dropped"] == 0:
                 assert time.monotonic() < deadline
-                time.sleep(.05)
+                time.sleep(0.05)
         finally:
             os.kill(frontend.pid, signal.SIGCONT)
         wait("RECOVERED-SCREEN")
@@ -278,13 +310,16 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         wait("snapshot-current")
         send(b"\x1bt")
         wait("CONTROL")
-        print("PASS TUI/headless takeover both ways, observer isolation, independent dimensions and gap/snapshot recovery", flush=True)
+        print(
+            "PASS TUI/headless takeover both ways, observer isolation, independent dimensions and gap/snapshot recovery",
+            flush=True,
+        )
         first_transport = transport()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 0, 0, 0))
         os.kill(frontend.pid, signal.SIGWINCH)
         # A zero-width outer terminal cannot render a warning; the portable
         # frame check asserts refusal text. Restore it before reading output.
-        time.sleep(.1)
+        time.sleep(0.1)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         os.kill(frontend.pid, signal.SIGWINCH)
         command("printf 'RETAINED='; stty size", "RETAINED=35 98")
@@ -300,7 +335,9 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         command("printf '\\033]52;c;U0VDUkVU\\007SAFE_%s\\n' OUTPUT", "SAFE_OUTPUT")
         assert b"\x1b]52;" not in output
         # Raw NUL and Ctrl+C are delivered, even when the remote terminal is raw.
-        command("stty raw -echo; printf 'RAW_%s' READY; dd bs=1 count=2 2>/dev/null | od -An -tx1; stty sane", "RAW_READY")
+        command(
+            "stty raw -echo; printf 'RAW_%s' READY; dd bs=1 count=2 2>/dev/null | od -An -tx1; stty sane", "RAW_READY"
+        )
         send(b"\x00\x03")
         wait("00 03")
         command("printf '\\033[?1049h\\033[2J\\033[HREMOTE_%s' SCREEN", "REMOTE_SCREEN")
@@ -336,7 +373,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
                 command(f"resume {ident}", f"SSH: gateway #{ident}")
                 if program == "vim":
                     command("vim -u NONE -i NONE --noplugin -n", "VIM - Vi IMproved")
-                    send(f"iVIM_SHELL_{ident}" )
+                    send(f"iVIM_SHELL_{ident}")
                     wait(f"VIM_SHELL_{ident}")
                 elif program == "less":
                     command(f"printf 'LESS_SHELL_{ident}\\n'; seq 1 200 | less", ":")
@@ -363,7 +400,11 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         # Output and ordinary management ticks must continue during attachment.
         # Paste the long setup command as a terminal would; the timed short
         # command below still exercises individual key events.
-        send("\x1b[200~" + "printf 'FLOOD_%s\\n' START; sleep .2; i=0; while [ $i -lt 4000 ]; do echo background-$i; i=$((i+1)); done; printf 'BACKGROUND_%s\\n' COMPLETED" + "\x1b[201~\r")
+        send(
+            "\x1b[200~"
+            + "printf 'FLOOD_%s\\n' START; sleep .2; i=0; while [ $i -lt 4000 ]; do echo background-$i; i=$((i+1)); done; printf 'BACKGROUND_%s\\n' COMPLETED"
+            + "\x1b[201~\r"
+        )
         wait("FLOOD_START")
         background()
         responsive = time.monotonic()
@@ -446,7 +487,9 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         send(b"\r")
         assert frontend.wait(timeout=10) == 0
         assert Path(f"/proc/{client}").exists(), "Keep running ended retained shell"
-        assert all(s["controller"] == "" for s in burrow(workspace, "session", "list", "gateway") if s["state"] == "running")
+        assert all(
+            s["controller"] == "" for s in burrow(workspace, "session", "list", "gateway") if s["state"] == "running"
+        )
         assert termios.tcgetattr(slave) == before
         view()
         assert b"\x1b[?1049l" in output and b"\x1b[?25h" in output
@@ -455,8 +498,14 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         shared_id = retained["id"]
         output.clear()
         decoded, reset_decoder = 0, True
-        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", "gateway", shared_id],
-                                    env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+        frontend = subprocess.Popen(
+            [binary, "--workspace", str(workspace), "shell", "gateway", shared_id],
+            env=env,
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            preexec_fn=controlling,
+        )
         wait("OBSERVE")
         wait("RESIZED=25 68")
         assert burrow(workspace, "session", "inspect", "gateway", shared_id)["pid"] == client
@@ -472,8 +521,14 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         termios.tcsetattr(slave, termios.TCSANOW, before)  # SIGKILL cannot restore a tty.
         output.clear()
         decoded, reset_decoder = 0, True
-        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", "gateway", shared_id],
-                                    env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+        frontend = subprocess.Popen(
+            [binary, "--workspace", str(workspace), "shell", "gateway", shared_id],
+            env=env,
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            preexec_fn=controlling,
+        )
         wait("OBSERVE")
         wait("REATTACHED_SAME")
         send(b"\x1bt")
@@ -497,7 +552,10 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         agent_input(agent["token"], b"printf 'AGENT_STILL_CONTROLS\\n'\n")
         for s in burrow(workspace, "session", "list", "gateway"):
             burrow(workspace, "session", "close", "gateway", s["id"], "--yes")
-        print("PASS observer scrollback, retained reattach, frontend disappearance, cancel and Keep running preserve another controller", flush=True)
+        print(
+            "PASS observer scrollback, retained reattach, frontend disappearance, cancel and Keep running preserve another controller",
+            flush=True,
+        )
     finally:
         if frontend.poll() is None:
             frontend.terminate()
@@ -518,16 +576,21 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
             if state["state"] == "connected":
                 break
             assert time.monotonic() < until, state
-            time.sleep(.1)
+            time.sleep(0.1)
         outer, slave = pty.openpty()
         dimensions[:] = [160, 40]
         output.clear()
         decoded, reset_decoder = 0, True
         before = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
-        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", name],
-                                    env=env, stdin=slave, stdout=slave, stderr=slave,
-                                    preexec_fn=controlling)
+        frontend = subprocess.Popen(
+            [binary, "--workspace", str(workspace), "shell", name],
+            env=env,
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            preexec_fn=controlling,
+        )
         try:
             wait("CONTROL")
             background()
@@ -578,7 +641,10 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
     for path in workspace.rglob("*"):
         if path.is_file():
             assert canary.encode() not in path.read_bytes(), path
-    print("PASS two SSH shells on one master, vim/less/top switching/resize, background output, input/NUL/Ctrl-C, close/exit/reopen/loss, VT isolation, secret exclusion and quit/reaping/restoration", flush=True)
+    print(
+        "PASS two SSH shells on one master, vim/less/top switching/resize, background output, input/NUL/Ctrl-C, close/exit/reopen/loss, VT isolation, secret exclusion and quit/reaping/restoration",
+        flush=True,
+    )
     # Human restart uses a real terminal, explicit confirmation and Hovel close.
     evidence = workspace / "restart-evidence.txt"
     evidence.write_text("preserve this workspace evidence\n")
@@ -589,21 +655,28 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
             deadline = time.monotonic() + 15
             while burrow(workspace, "inspect", "gateway")["state"] != "connected":
                 assert time.monotonic() < deadline, "restart fixture did not connect"
-                time.sleep(.1)
+                time.sleep(0.1)
         outer, slave = pty.openpty()
         dimensions[:] = [160, 40]
         output.clear()
         decoded, reset_decoder = 0, True
         before = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
-        frontend = subprocess.Popen([binary, "--workspace", str(workspace), "restart", *(["--yes"] if reply == "--yes" else [])],
-                                    env=env | ({"NO_COLOR": "", "COLORTERM": "truecolor"} if reply == "cancel" else {}), stdin=slave, stdout=slave, stderr=slave,
-                                    preexec_fn=controlling)
+        frontend = subprocess.Popen(
+            [binary, "--workspace", str(workspace), "restart", *(["--yes"] if reply == "--yes" else [])],
+            env=env | ({"NO_COLOR": "", "COLORTERM": "truecolor"} if reply == "cancel" else {}),
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            preexec_fn=controlling,
+        )
         try:
             if reply != "--yes":
                 wait("Type restart to confirm")
                 if reply == "cancel":
-                    assert b"38;2;166;227;161" in output and b"38;2;180;190;254" in output, "restart recap lost state/name colors"
+                    assert b"38;2;166;227;161" in output and b"38;2;180;190;254" in output, (
+                        "restart recap lost state/name colors"
+                    )
                 else:
                     assert b"\x1b[" not in output, "NO_COLOR restart recap emitted ANSI"
                 same_master()
@@ -616,7 +689,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
                 if reply == "--yes":
                     assert b"Type restart to confirm" not in output
                 assert burrow(workspace, "connections") == []
-                assert not Path(f'/proc/{first["masterPID"]}').exists()
+                assert not Path(f"/proc/{first['masterPID']}").exists()
                 frontend.terminate()
                 frontend.wait(timeout=10)
             assert termios.tcgetattr(slave) == before
@@ -637,7 +710,10 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         if current["state"] == "connected":
             break
         assert time.monotonic() < until, current
-        time.sleep(.1)
+        time.sleep(0.1)
     assert current["generation"] != first["generation"]
-    print("PASS restart cancellation, manager replacement, daemon/evidence preservation and explicit reconnect", flush=True)
+    print(
+        "PASS restart cancellation, manager replacement, daemon/evidence preservation and explicit reconnect",
+        flush=True,
+    )
     return current

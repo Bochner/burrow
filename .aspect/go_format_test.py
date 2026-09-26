@@ -11,8 +11,12 @@ with tempfile.TemporaryDirectory() as directory:
     source = root / "probe.go"
     original = "package probe\nfunc example( ){println(1)}\n"
     source.write_text(original)
-    command = [sys.executable, str(Path(__file__).with_name("go_format.py")),
-               str(Path(sys.argv[1]).resolve()), str(source)]
+    command = [
+        sys.executable,
+        str(Path(__file__).with_name("go_format.py")),
+        str(Path(sys.argv[1]).resolve()),
+        str(source),
+    ]
     checked = subprocess.run(command, capture_output=True, text=True)
     assert checked.returncode == 1, checked
     assert str(source) in checked.stdout, checked.stdout

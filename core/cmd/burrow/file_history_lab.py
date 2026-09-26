@@ -1,4 +1,5 @@
 """Public history observations and offline fault setup in disposable workspaces."""
+
 import http.client
 from contextlib import closing
 import json
@@ -17,8 +18,9 @@ def file_rpc(workspace, method, body):
     client.sock.settimeout(10)
     client.sock.connect(str(workspace / "hoveld.sock"))
     try:
-        client.request("POST", "/hovel.daemon.v1.DaemonService/" + method,
-                       json.dumps(body), {"Content-Type": "application/json"})
+        client.request(
+            "POST", "/hovel.daemon.v1.DaemonService/" + method, json.dumps(body), {"Content-Type": "application/json"}
+        )
         response = client.getresponse()
         data = response.read()
         assert response.status == 200, (method, response.status, data)
@@ -33,13 +35,13 @@ def reopen_files(workspace, info, open_workspace, fault=False):
     deadline = time.monotonic() + 15
     while True:
         try:
-            exited = Path(f'/proc/{info["pid"]}/stat').read_text().split(") ", 1)[1].startswith("Z")
+            exited = Path(f"/proc/{info['pid']}/stat").read_text().split(") ", 1)[1].startswith("Z")
         except FileNotFoundError:
             exited = True
         if exited:
             break
         assert time.monotonic() < deadline, "clean daemon exit timed out"
-        time.sleep(.05)
+        time.sleep(0.05)
     # Preserve dead launch evidence separately. Burrow intentionally refuses
     # stale receipts; this is lab recovery, not a new product restart workflow.
     saved = Path(tempfile.mkdtemp(prefix="file-reopen-", dir=workspace.parent))
@@ -66,5 +68,14 @@ def history_events(workspace):
 def oversize_history(workspace):
     """Exceed Burrow's bounded ActiveLogs read via the real public daemon API."""
     for _ in range(2):
-        file_rpc(workspace, "AppendLog", {"Operation": "burrow", "Chain": "files", "Entries": [
-            {"Kind": "event", "Level": "info", "Source": "history-read-lab", "Message": "x" * (600 * 1024)}]})
+        file_rpc(
+            workspace,
+            "AppendLog",
+            {
+                "Operation": "burrow",
+                "Chain": "files",
+                "Entries": [
+                    {"Kind": "event", "Level": "info", "Source": "history-read-lab", "Message": "x" * (600 * 1024)}
+                ],
+            },
+        )

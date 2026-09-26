@@ -1,9 +1,11 @@
 """Materialize the declared Astro artifact, following Hovel's docs convention."""
+
 import os
 import shutil
 import sys
 from pathlib import Path
 from report import snapshot, write_json
+
 
 # Copied from Hovel c461ba; Copyright 2026 William Born; Apache-2.0.
 # See docs/site/UPSTREAM.md. Aspect runs from the workspace, not the runfiles root.
@@ -23,6 +25,7 @@ def resolve_runfile(raw: str) -> Path:
     if candidate.exists():
         return candidate.resolve()
     raise SystemExit(f"missing assembled site runfile: {raw}")
+
 
 source = resolve_runfile(sys.argv[1])
 workspace = Path(os.environ["BUILD_WORKSPACE_DIRECTORY"]).resolve()

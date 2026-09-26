@@ -1,4 +1,5 @@
 """Public production command checks; no operator workspace or SSH state."""
+
 import os
 from pathlib import Path
 import subprocess
@@ -9,9 +10,11 @@ binary = str(Path(sys.argv[1]).resolve())
 makefile = str(Path(sys.argv[2]).resolve())
 help_result = subprocess.run([binary, "--help"], capture_output=True, text=True)
 assert help_result.returncode == 0, help_result
-for example in ["chain connect target 192.168.10.50 --user alice --password",
-                "chain connect target 192.168.10.50 --user alice --key",
-                "connect target 192.168.10.50 --user alice --password"]:
+for example in [
+    "chain connect target 192.168.10.50 --user alice --password",
+    "chain connect target 192.168.10.50 --user alice --key",
+    "connect target 192.168.10.50 --user alice --password",
+]:
     assert example in help_result.stderr, ("CLI help omitted a concrete example", example)
 for target, expected in {
     "run": 'aspect burrow run -- --workspace "$BURROW_MAKE_WORKSPACE" tui',
@@ -19,61 +22,187 @@ for target, expected in {
     "clean": "aspect burrow clean",
     "check": "aspect burrow-check ci",
 }.items():
-    result = subprocess.run(["/usr/bin/make", "--no-print-directory", "-n", "-f", makefile,
-                             target, "WORKSPACE=/tmp/path with spaces"],
-                            check=True, capture_output=True, text=True)
+    result = subprocess.run(
+        ["/usr/bin/make", "--no-print-directory", "-n", "-f", makefile, target, "WORKSPACE=/tmp/path with spaces"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     assert result.stdout.strip() == expected, result.stdout
 print("PASS human Make shortcuts delegate to Aspect without executing cleanup")
 with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
     workspace = Path(scratch) / "untouched"
-    accepted = subprocess.run([binary, "--workspace", str(workspace), "chain", "connect", "named",
-                               "192.0.2.1", "--user", "tester", "--password"], capture_output=True, text=True)
+    accepted = subprocess.run(
+        [
+            binary,
+            "--workspace",
+            str(workspace),
+            "chain",
+            "connect",
+            "named",
+            "192.0.2.1",
+            "--user",
+            "tester",
+            "--password",
+        ],
+        capture_output=True,
+        text=True,
+    )
     assert accepted.returncode != 0 and "invalid connection" not in accepted.stderr, accepted
     assert not workspace.exists(), "validation started a workspace"
-    for password_args in (["--password", "SYNTHETIC-NOT-A-REAL-SECRET"],
-                          ["--password=SYNTHETIC-NOT-A-REAL-SECRET"],
-                          ["--password", "quoted spaces"], ["--password="],
-                          ["--password=-leading-dash"]):
-        result = subprocess.run([binary, "--workspace", str(workspace), "chain", "connect", "named",
-                                 "192.0.2.1", "--user", "tester", *password_args], capture_output=True, text=True)
-        assert result.returncode != 0 and "invalid connection" not in result.stderr and "terminal" not in result.stderr, result
+    for password_args in (
+        ["--password", "SYNTHETIC-NOT-A-REAL-SECRET"],
+        ["--password=SYNTHETIC-NOT-A-REAL-SECRET"],
+        ["--password", "quoted spaces"],
+        ["--password="],
+        ["--password=-leading-dash"],
+    ):
+        result = subprocess.run(
+            [
+                binary,
+                "--workspace",
+                str(workspace),
+                "chain",
+                "connect",
+                "named",
+                "192.0.2.1",
+                "--user",
+                "tester",
+                *password_args,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert (
+            result.returncode != 0 and "invalid connection" not in result.stderr and "terminal" not in result.stderr
+        ), result
         assert "SYNTHETIC-NOT-A-REAL-SECRET" not in result.stdout + result.stderr
         assert not workspace.exists(), "validation started a workspace"
     for name in ("../escape", "a b", "é", "x" * 25):
-        result = subprocess.run([binary, "--workspace", str(workspace), "connect", name,
-                                 "localhost", "tester", "--yes"], capture_output=True, text=True)
+        result = subprocess.run(
+            [binary, "--workspace", str(workspace), "connect", name, "localhost", "tester", "--yes"],
+            capture_output=True,
+            text=True,
+        )
         assert result.returncode != 0 and "name must" in result.stderr, result
         assert not workspace.exists()
     for args, message in [
         (["chain"], "chain select CONNECTION"),
         (["chain", "select", "../escape"], "name must"),
-        (["chain", "http", "gateway", "gateway/" + "a" * 32, "http://user:SYNTHETIC-NOT-A-REAL-SECRET@example.test/"], "without credentials"),
-        (["chain", "http", "gateway", "gateway/" + "a" * 32, "http://example.test/?token=SYNTHETIC-NOT-A-REAL-SECRET"], "without credentials"),
+        (
+            [
+                "chain",
+                "http",
+                "gateway",
+                "gateway/" + "a" * 32,
+                "http://user:SYNTHETIC-NOT-A-REAL-SECRET@example.test/",
+            ],
+            "without credentials",
+        ),
+        (
+            [
+                "chain",
+                "http",
+                "gateway",
+                "gateway/" + "a" * 32,
+                "http://example.test/?token=SYNTHETIC-NOT-A-REAL-SECRET",
+            ],
+            "without credentials",
+        ),
         (["chain", "http", "gateway", "gateway/" + "a" * 32, "https://example.test/"], "http://HOST"),
         (["chain", "http", "gateway", "other/" + "a" * 32, "http://example.test/"], "complete tunnel"),
         (["chain", "connect", "gateway", "localhost", "tester", "-proxy"], "connection-only"),
-        (["chain", "connect", "gateway", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET", "--key", "/tmp/key"], "choose --password or --key"),
-        (["chain", "connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "required NAME HOST --user USER"),
-        (["connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "required NAME HOST --user USER"),
-        (["chain", "connect", "gateway", "localhost", "--user", "tester", "--password=SYNTHETIC-NOT-A-REAL-SECRET", "--agent", "/tmp/agent"], "choose --password or --key"),
-        (["chain", "connect", "gateway", "localhost", "--user", "tester", "--key", "/tmp/key", "--password"], "choose --password or --key"),
+        (
+            [
+                "chain",
+                "connect",
+                "gateway",
+                "localhost",
+                "tester",
+                "--password",
+                "SYNTHETIC-NOT-A-REAL-SECRET",
+                "--key",
+                "/tmp/key",
+            ],
+            "choose --password or --key",
+        ),
+        (
+            ["chain", "connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"],
+            "required NAME HOST --user USER",
+        ),
+        (
+            ["connect", "gateway", "localhost", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"],
+            "required NAME HOST --user USER",
+        ),
+        (
+            [
+                "chain",
+                "connect",
+                "gateway",
+                "localhost",
+                "--user",
+                "tester",
+                "--password=SYNTHETIC-NOT-A-REAL-SECRET",
+                "--agent",
+                "/tmp/agent",
+            ],
+            "choose --password or --key",
+        ),
+        (
+            ["chain", "connect", "gateway", "localhost", "--user", "tester", "--key", "/tmp/key", "--password"],
+            "choose --password or --key",
+        ),
         (["run"], "run prepare CONNECTION"),
         (["run", "prepare", "gateway", "--local", "--", "relative-tool"], "absolute executable"),
-        (["run", "prepare", "gateway", "--local", "--script", "a.sh", "--mode", "stage", "--interpreter", "/bin/sh", "--"], "does not stage"),
+        (
+            [
+                "run",
+                "prepare",
+                "gateway",
+                "--local",
+                "--script",
+                "a.sh",
+                "--mode",
+                "stage",
+                "--interpreter",
+                "/bin/sh",
+                "--",
+            ],
+            "does not stage",
+        ),
         (["run", "prepare", "gateway", "--local", "--local", "--", "/bin/true"], "run prepare CONNECTION"),
         (["run", "prepare", "gateway", "--local", "--"], "absolute executable"),
         (["run", "prepare", "gateway", "--timeout", "0s", "--", "true"], "timeout must"),
         (["run", "prepare", "gateway", "--timeout", "garbage", "--", "true"], "timeout must"),
         (["run", "prepare", "gateway", "--script", "a.sh", "--", "x"], "explicit --mode"),
         (["run", "prepare", "gateway", "--script", "a.sh", "--mode", "stream", "--", "x"], "absolute --interpreter"),
-        (["run", "prepare", "gateway", "--script", "a.sh", "--mode", "stream", "--interpreter", "/bin/sh", "--stdin", "empty", "--"], "stream mode owns stdin"),
+        (
+            [
+                "run",
+                "prepare",
+                "gateway",
+                "--script",
+                "a.sh",
+                "--mode",
+                "stream",
+                "--interpreter",
+                "/bin/sh",
+                "--stdin",
+                "empty",
+                "--",
+            ],
+            "stream mode owns stdin",
+        ),
         (["run", "prepare", "gateway", "--mode", "stage", "--", "true"], "require --script"),
         (["run", "prepare", "gateway", "--keep", "--", "true"], "explicitly staged"),
         (["run", "prepare", "gateway", "--budget", "0", "--", "true"], "positive byte count"),
         (["run", "prepare", "../escape", "--", "true"], "name must"),
         (["run", "now", "../escape", "--yes", "--", "true"], "name must"),
         (["run", "prepare", "gateway", "--", ""], "command and positive"),
-        (["run", "prepare", "gateway", "--password", "SYNTHETIC-NOT-A-REAL-SECRET", "--", "true"], "run prepare CONNECTION"),
+        (
+            ["run", "prepare", "gateway", "--password", "SYNTHETIC-NOT-A-REAL-SECRET", "--", "true"],
+            "run prepare CONNECTION",
+        ),
         (["run", "launch", "id", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "run prepare CONNECTION"),
         (["run", "output", "id", "stdout", "-1"], "run prepare CONNECTION"),
         (["run", "follow"], "expected run follow ID"),
@@ -88,7 +217,10 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["tunc", "gateway", "l", "8080", "localhost", "0"], "port"),
         (["tunc", "gateway", "l", "*:8080", "localhost", "80"], "literal IP"),
         (["tunc", "gateway", "l", "8080", "bad;command", "80"], "destination"),
-        (["tunc", "gateway", "l", "8080", "localhost", "80", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "forward options"),
+        (
+            ["tunc", "gateway", "l", "8080", "localhost", "80", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"],
+            "forward options",
+        ),
         (["tund", "1", "--yes"], "qualified tunnel ID"),
         (["tunnel", "list", "extra"], "takes no arguments"),
         (["proxy"], "required"),
@@ -108,7 +240,10 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["tunc", "gateway", "r", "00", "localhost", "80"], "port"),
         (["tunc", "gateway", "r", "0", "host\u001b]52;c;bad", "80"], "destination"),
         (["tunc", "gateway", "r", "*:0", "localhost", "80"], "literal IP"),
-        (["tunc", "gateway", "r", "0", "localhost", "80", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"], "forward options"),
+        (
+            ["tunc", "gateway", "r", "0", "localhost", "80", "--password", "SYNTHETIC-NOT-A-REAL-SECRET"],
+            "forward options",
+        ),
         (["tunnel", "create", "gateway", "other", "8080", "localhost", "80"], "direction"),
         (["restart", "--yes"], "restart requires terminal input"),
         (["restart", "--invalid"], "expected restart [--yes]"),
@@ -137,16 +272,35 @@ with tempfile.TemporaryDirectory(prefix="bc-") as scratch:
         (["connect", "valid", "localhost", "tester", "--jump", "bad;command"], "jump"),
         (["connect", "valid", "localhost", "tester", "--key", "/tmp/key", "--port", "0"], "port"),
         (["connect", "valid", "localhost", "tester", "--trust", "not-a-fingerprint"], "invalid connection options"),
-        (["connect", "valid", "localhost", "tester", "--known-hosts", "/tmp/known_hosts"], "invalid connection options"),
+        (
+            ["connect", "valid", "localhost", "tester", "--known-hosts", "/tmp/known_hosts"],
+            "invalid connection options",
+        ),
         (["connect", "valid", "localhost", "tester", "--key", "relative"], "absolute"),
-        (["connect", "valid", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET\n"], "invalid password"),
+        (
+            ["connect", "valid", "localhost", "tester", "--password", "SYNTHETIC-NOT-A-REAL-SECRET\n"],
+            "invalid password",
+        ),
         (["connect", "valid", "localhost", "tester", "--password=" + "x" * 4097], "invalid password"),
     ]:
         result = subprocess.run([binary, "--workspace", str(workspace), *args], capture_output=True, text=True)
         assert result.returncode != 0 and message in result.stderr, result
         assert "SYNTHETIC-NOT-A-REAL-SECRET" not in result.stdout + result.stderr
         assert not workspace.exists()
-    result = subprocess.run([binary, "--workspace", str(Path(scratch) / ("x" * 60)),
-                             "connect", "a" * 24, "localhost", "tester", "--key", "/tmp/key"], capture_output=True, text=True)
+    result = subprocess.run(
+        [
+            binary,
+            "--workspace",
+            str(Path(scratch) / ("x" * 60)),
+            "connect",
+            "a" * 24,
+            "localhost",
+            "tester",
+            "--key",
+            "/tmp/key",
+        ],
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode != 0 and "90 bytes" in result.stderr, result
 print("PASS invalid names refused before workspace mutation")

@@ -1,4 +1,5 @@
 """Exercise repeat staging of read-only build output through the actual script."""
+
 import os
 from pathlib import Path
 import subprocess
@@ -17,14 +18,33 @@ with tempfile.TemporaryDirectory() as scratch:
     subprocess.run(["git", "init", "-q", str(workspace)], check=True)
     (workspace / ".gitignore").write_text("/_site/\n/previous/\n")
     subprocess.run(["git", "-C", str(workspace), "add", ".gitignore"], check=True)
-    subprocess.run(["git", "-C", str(workspace), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(workspace),
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        check=True,
+    )
     for directory in (source, source / "assets", source / ".astro-cache"):
         directory.chmod(0o555)
 
     def stage():
-        return subprocess.run([sys.executable, str(script), str(source)],
-                              env=os.environ | {"BUILD_WORKSPACE_DIRECTORY": str(workspace), "PYTHONPATH": str(Path(sys.argv[1]).absolute().parent)},
-                              capture_output=True, text=True, timeout=10)
+        return subprocess.run(
+            [sys.executable, str(script), str(source)],
+            env=os.environ
+            | {"BUILD_WORKSPACE_DIRECTORY": str(workspace), "PYTHONPATH": str(Path(sys.argv[1]).absolute().parent)},
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
     result = stage()
     assert result.returncode == 0, result.stderr

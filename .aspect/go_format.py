@@ -14,7 +14,8 @@ def main():
     sources = [args.write / path if args.write else path for path in args.sources]
     result = subprocess.run(
         [str(args.gofmt.resolve()), "-w" if args.write else "-l", *map(str, sources)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.stdout:
         print(result.stdout, end="")

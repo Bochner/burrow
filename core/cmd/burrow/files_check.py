@@ -1,4 +1,5 @@
 """Workspace file roots and local navigation through the production CLI."""
+
 import json
 import os
 from pathlib import Path
@@ -16,11 +17,17 @@ with tempfile.TemporaryDirectory(prefix="bf-") as scratch:
     root = Path(scratch)
     workspace = root / "w"
     env = {k: v for k, v in os.environ.items() if not k.startswith(("HOVEL_", "SSH_"))}
-    env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), BURROW_PHASE_TRACE=str(root / "phases.jsonl"))
+    env.update(
+        HOME=scratch,
+        XDG_CACHE_HOME=str(root / "cache"),
+        XDG_CONFIG_HOME=str(root / "config"),
+        BURROW_PHASE_TRACE=str(root / "phases.jsonl"),
+    )
 
     def run(*args, ok=True, w=workspace):
-        result = subprocess.run([binary, "--workspace", str(w), *args], env=env,
-                                capture_output=True, text=True, timeout=40)
+        result = subprocess.run(
+            [binary, "--workspace", str(w), *args], env=env, capture_output=True, text=True, timeout=40
+        )
         assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
         return json.loads(result.stdout) if ok else result.stderr
 
@@ -29,9 +36,11 @@ with tempfile.TemporaryDirectory(prefix="bf-") as scratch:
         snapshot = file_rpc(workspace, "Snapshot", {})
         assert "burrow" not in [op["name"] for op in snapshot["State"].get("operations", [])], snapshot
         barrier = threading.Barrier(2)
+
         def first_write(area):
             barrier.wait(timeout=5)
             return run("lls", area)
+
         with ThreadPoolExecutor(max_workers=2) as pool:
             assert all(result["entries"] == [] for result in pool.map(first_write, ("upload", "download")))
         assert sorted(run("files-history")) == ["lls download", "lls upload"]
@@ -108,10 +117,29 @@ with tempfile.TemporaryDirectory(prefix="bf-") as scratch:
         finally:
             os.kill(other_info["pid"], signal.SIGTERM)
         hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+
         def hv(*args):
-            p = subprocess.run([str(hovel), "run", "--workspace", str(workspace), "--op", "file-check", "--chain", "file-check", "--", *args], env=env, capture_output=True, text=True, timeout=30)
+            p = subprocess.run(
+                [
+                    str(hovel),
+                    "run",
+                    "--workspace",
+                    str(workspace),
+                    "--op",
+                    "file-check",
+                    "--chain",
+                    "file-check",
+                    "--",
+                    *args,
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
             assert p.returncode == 0, (args, p.stdout, p.stderr)
             return p.stdout
+
         hv("op", "create", "file-check")
         hv("chain", "create", "file-check")
         hv("chain", "add", "burrow@0.1.0")

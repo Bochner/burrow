@@ -2,6 +2,12 @@ load("@rules_go//go:def.bzl", "go_binary", "go_test")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
+filegroup(
+    name = "python_format_sources",
+    srcs = glob(["*.py"]),
+    visibility = ["//:__pkg__"],
+)
+
 py_test(
     name = "agent_test",
     srcs = ["agent_check.py", "agent_faults.py"],

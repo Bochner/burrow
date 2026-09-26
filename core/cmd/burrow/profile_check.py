@@ -1,4 +1,5 @@
 """Saved collection behavior through the production command/Hovel seam."""
+
 import json
 import http.client
 import os
@@ -16,10 +17,12 @@ with tempfile.TemporaryDirectory(prefix="bp-") as scratch:
     w = root / "w"
     env = {k: v for k, v in os.environ.items() if not k.startswith(("HOVEL_", "SSH_"))}
     env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"))
+
     def run(*args, ok=True):
         p = subprocess.run([binary, "--workspace", str(w), *args], env=env, capture_output=True, text=True, timeout=40)
         assert (p.returncode == 0) == ok, (args, p.stdout, p.stderr)
         return json.loads(p.stdout) if ok else p.stderr
+
     info = run("--hovel-package", wheel, "status")
     try:
         assert run("profiles")["profiles"] == []
@@ -61,10 +64,22 @@ with tempfile.TemporaryDirectory(prefix="bp-") as scratch:
         # Load must not resolve SSH config (Match exec) or touch the network.
         marker = root / "config-was-evaluated"
         config = root / "ssh-config"
-        config.write_text(f"Match exec \"touch {marker}\"\n User nobody\n")
+        config.write_text(f'Match exec "touch {marker}"\n User nobody\n')
         with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0)); listener.listen(); listener.settimeout(.2)
-            run("profile", "create", "passive", "127.0.0.1", "-", "--port", str(listener.getsockname()[1]), "--ssh-config", str(config))
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            listener.settimeout(0.2)
+            run(
+                "profile",
+                "create",
+                "passive",
+                "127.0.0.1",
+                "-",
+                "--port",
+                str(listener.getsockname()[1]),
+                "--ssh-config",
+                str(config),
+            )
             run("profile", "load", str(backup))
             run("profile", "select", "passive")
             assert not marker.exists(), "load evaluated executable SSH configuration"
@@ -75,72 +90,112 @@ with tempfile.TemporaryDirectory(prefix="bp-") as scratch:
                 pass
         current = backup.read_bytes()
         bad = root / "bad.json"
-        for data in [b"{", b'{"version":99,"profiles":[]}',
-                     b'{"version":1,"profiles":[{"name":"old","host":"host","user":"user","knownHosts":"/tmp/known_hosts"}]}',
-                     b'{"version":1,"profiles":[{"name":"bad","host":"host","user":"user","password":"SECRET-CANARY"}]}']:
-            bad.write_bytes(data); bad.chmod(0o600)
-            error=run("profile", "load", str(bad), ok=False)
+        for data in [
+            b"{",
+            b'{"version":99,"profiles":[]}',
+            b'{"version":1,"profiles":[{"name":"old","host":"host","user":"user","knownHosts":"/tmp/known_hosts"}]}',
+            b'{"version":1,"profiles":[{"name":"bad","host":"host","user":"user","password":"SECRET-CANARY"}]}',
+        ]:
+            bad.write_bytes(data)
+            bad.chmod(0o600)
+            error = run("profile", "load", str(bad), ok=False)
             assert "SECRET-CANARY" not in error
-            assert run("profiles")["path"] == str(backup) and backup.read_bytes()==current
+            assert run("profiles")["path"] == str(backup) and backup.read_bytes() == current
         run("profile", "backup", str(backup), ok=False)
-        assert backup.read_bytes()==current
+        assert backup.read_bytes() == current
         run("profile", "create", "bad", "host", "user", "--password", "SECRET-CANARY", ok=False)
         assert "SECRET-CANARY" not in str(run("history"))
         # Two independent commands must preserve unrelated additions.
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            futures=[pool.submit(run,"profile","create",n,"host","user") for n in ["one","two"]]
+            futures = [pool.submit(run, "profile", "create", n, "host", "user") for n in ["one", "two"]]
             for f in futures:
-                try: f.result()
+                try:
+                    f.result()
                 except AssertionError as e:
                     assert "changed" in str(e), e  # Explicit stale refusal is acceptable; silent loss is not.
-        assert run("profile","select","passive")["host"]=="127.0.0.1"
-        revision=run("profiles")["revision"]
-        run("profile","create","newer","host","user")
-        assert "changed" in run("profile","delete","passive","--yes","--revision",revision,ok=False)
-        assert run("profile","select","passive")
+        assert run("profile", "select", "passive")["host"] == "127.0.0.1"
+        revision = run("profiles")["revision"]
+        run("profile", "create", "newer", "host", "user")
+        assert "changed" in run("profile", "delete", "passive", "--yes", "--revision", revision, ok=False)
+        assert run("profile", "select", "passive")
         readonly = root / "readonly"
         readonly.mkdir(mode=0o700)
-        locked=readonly / "profiles.json"
-        locked.write_bytes(backup.read_bytes());locked.chmod(0o600)
-        run("profile","load",str(locked))
-        before=locked.read_bytes();readonly.chmod(0o500)
+        locked = readonly / "profiles.json"
+        locked.write_bytes(backup.read_bytes())
+        locked.chmod(0o600)
+        run("profile", "load", str(locked))
+        before = locked.read_bytes()
+        readonly.chmod(0o500)
         try:
-            run("profile","create","denied","host","user",ok=False)
-            assert locked.read_bytes()==before
-        finally: readonly.chmod(0o700)
-        run("profile","load",str(backup))
-        link=root / "link.json";link.symlink_to(backup)
-        run("profile","load",str(link),ok=False)
-        assert run("profiles")["path"]==str(backup)
-        history=run("history")
-        run("--offline","status")
-        assert run("profiles")["path"]==str(backup)
-        assert run("history")==history
+            run("profile", "create", "denied", "host", "user", ok=False)
+            assert locked.read_bytes() == before
+        finally:
+            readonly.chmod(0o700)
+        run("profile", "load", str(backup))
+        link = root / "link.json"
+        link.symlink_to(backup)
+        run("profile", "load", str(link), ok=False)
+        assert run("profiles")["path"] == str(backup)
+        history = run("history")
+        run("--offline", "status")
+        assert run("profiles")["path"] == str(backup)
+        assert run("history") == history
         # Registered public SDK module reaches the same command/file, with no SSH.
-        hovel=root / "cache/burrow/hovel/0.4.2/hovel"
+        hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+
         def hv(*args):
-            p=subprocess.run([str(hovel),"run","--workspace",str(w),"--op","profile-check","--chain","profile-check","--",*args],env=env,capture_output=True,text=True,timeout=30)
-            assert p.returncode==0,(p.stdout,p.stderr)
+            p = subprocess.run(
+                [
+                    str(hovel),
+                    "run",
+                    "--workspace",
+                    str(w),
+                    "--op",
+                    "profile-check",
+                    "--chain",
+                    "profile-check",
+                    "--",
+                    *args,
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert p.returncode == 0, (p.stdout, p.stderr)
             return p.stdout
-        hv("op","create","profile-check");hv("chain","create","profile-check")
-        hv("chain","add","burrow@0.1.0");hv("target","add","local")
-        hv("chain","config","set","workspace",str(w))
-        hv("chain","config","set","command","profile create sdk-profile host user")
-        result=json.loads(hv("throw","--now","--allow-dangerous","--json"))
-        assert result["results"][0]["state"]=="succeeded",result
-        assert run("profile","select","sdk-profile")["host"]=="host"
+
+        hv("op", "create", "profile-check")
+        hv("chain", "create", "profile-check")
+        hv("chain", "add", "burrow@0.1.0")
+        hv("target", "add", "local")
+        hv("chain", "config", "set", "workspace", str(w))
+        hv("chain", "config", "set", "command", "profile create sdk-profile host user")
+        result = json.loads(hv("throw", "--now", "--allow-dangerous", "--json"))
+        assert result["results"][0]["state"] == "succeeded", result
+        assert run("profile", "select", "sdk-profile")["host"] == "host"
         assert not marker.exists()
-        assert run("connections")==[]
+        assert run("connections") == []
 
         # Unrelated retained output must not make a tiny saved collection unreadable.
         with socket.socket(socket.AF_UNIX) as sock:
             sock.connect(str(w / "hoveld.sock"))
             client = http.client.HTTPConnection("localhost")
             client.sock = sock
-            body = {"Operation":"profile-check", "Chain":"profile-check", "Entries":[
-                {"Kind":"event","Level":"info","Source":"profile-regression","Message":"x"*65536}
-                for _ in range(17)]}
-            client.request("POST", "/hovel.daemon.v1.DaemonService/AppendLog", json.dumps(body), {"Content-Type":"application/json"})
+            body = {
+                "Operation": "profile-check",
+                "Chain": "profile-check",
+                "Entries": [
+                    {"Kind": "event", "Level": "info", "Source": "profile-regression", "Message": "x" * 65536}
+                    for _ in range(17)
+                ],
+            }
+            client.request(
+                "POST",
+                "/hovel.daemon.v1.DaemonService/AppendLog",
+                json.dumps(body),
+                {"Content-Type": "application/json"},
+            )
             response = client.getresponse()
             assert response.status == 200, response.status
             response.read()
