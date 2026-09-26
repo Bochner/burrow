@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_binary", "go_test")
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -127,9 +127,9 @@ go_binary(
     testonly = True,
 )
 
-go_binary(
-    name = "burrow",
-    visibility = ["//core/prototype_manager:__pkg__", "//core/prototype_sessions:__pkg__", "//docs/site:__pkg__", "//docs/tools/docs:__pkg__"],
+go_library(
+    name = "burrow_lib",
+    importpath = "github.com/Bochner/burrow/core/cmd/burrow",
     srcs = ["agent.go", "activity.go", "capabilities.go", "workspace.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "shared_shells.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go"],
     deps = [
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",
@@ -142,6 +142,22 @@ go_binary(
         "@com_github_charmbracelet_x_term//:term", "@com_github_charmbracelet_colorprofile//:colorprofile",
     ],
 )
+go_binary(
+    name = "burrow",
+    embed = [":burrow_lib"],
+    visibility = ["//core/prototype_manager:__pkg__", "//core/prototype_sessions:__pkg__", "//docs/site:__pkg__", "//docs/tools/docs:__pkg__"],
+)
+
+# Match Hovel's wheel build: no host libc dependency in the Go executable.
+go_binary(
+    name = "burrow_linux_amd64",
+    embed = [":burrow_lib"],
+    goos = "linux",
+    goarch = "amd64",
+    pure = "on",
+    visibility = ["//core/tools/release:__pkg__"],
+)
+
 pkg_tar(
     name = "package",
     visibility = ["//agent/tools:__pkg__"],

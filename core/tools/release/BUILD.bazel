@@ -1,0 +1,43 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+
+_INPUTS = ["//core/cmd/burrow:burrow_linux_amd64", "//:VERSION", "@hovel_sdk//:LICENSE"]
+_ARGS = ["$(location %s)" % path for path in _INPUTS]
+
+py_binary(
+    name = "wheel",
+    srcs = ["build_wheel.py"],
+    main = "build_wheel.py",
+    args = _ARGS,
+    data = _INPUTS,
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "wheel_test",
+    srcs = ["wheel_test.py", "build_wheel.py"],
+    args = _ARGS + ["$(location @pipx//file)", "$(location @hovel_linux_wheel//file)"],
+    data = _INPUTS + ["@pipx//file", "@hovel_linux_wheel//file"],
+    size = "medium",
+    tags = ["no-sandbox"],
+    legacy_create_init = 0,
+)
+
+py_binary(
+    name = "release",
+    srcs = ["release.py"],
+    data = ["//:VERSION"],
+    legacy_create_init = 0,
+)
+
+filegroup(
+    name = "python_format_sources",
+    srcs = glob(["*.py"]),
+    visibility = ["//:__pkg__"],
+)
+
+py_test(
+    name = "release_test",
+    srcs = ["release_test.py", "release.py"],
+    size = "small",
+    legacy_create_init = 0,
+)

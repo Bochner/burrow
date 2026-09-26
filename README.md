@@ -83,6 +83,13 @@ preserved proofs, pins, results and commands that preceded the production code.
 
 ## Develop
 
+Current source can also build a pipx-installable wheel with
+`aspect burrow-release build`; validate it with `aspect burrow-release check`.
+Install the resulting `dist/burrow_ssh-*.whl` with pipx. The proposed public
+distribution is `burrow-ssh`, while the command remains `burrow`; PyPI
+publication is pending. See [release preparation](docs/site/src/content/spec/releasing.html)
+for the one-time Trusted Publisher setup and build-only rehearsal.
+
 For human use, the Makefile offers shortcuts (GNU Make must be installed):
 
 ```sh

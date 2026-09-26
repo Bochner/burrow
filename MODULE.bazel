@@ -32,6 +32,15 @@ use_repo(npm, "npm")
 # SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# pipx 1.17.6 (MIT), upstream standalone zipapp and GitHub asset SHA256.
+# Test tool only; Burrow's wheel has no Python runtime dependencies.
+http_file(
+    name = "pipx",
+    urls = ["https://github.com/pypa/pipx/releases/download/1.17.6/pipx.pyz"],
+    sha256 = "63b10dd9a15a57ec4066e29388d1e83565be4b127bd1cf6e3f150fcc39ded8b2",
+    downloaded_file_path = "pipx.pyz",
+)
+
 http_file(
     name = "hovel_linux_wheel",
     downloaded_file_path = "hovel.whl",

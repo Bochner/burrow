@@ -13,7 +13,7 @@ py_test(
 )
 
 # This target checks the metadata build graph, not document accuracy.
-exports_files(["Makefile"])
+exports_files(["Makefile", "VERSION"])
 filegroup(
     name = "research",
     srcs = glob(["docs/**/*.md"]) + [
@@ -34,6 +34,7 @@ _PYTHON_SOURCES = glob([".aspect/*.py", ".github/**/*.py"]) + [
     "//core/cmd/burrow:python_format_sources",
     "//docs/tools/docs:python_format_sources",
     "//agent/tools:python_format_sources",
+    "//core/tools/release:python_format_sources",
 ]
 _RUFF = "@ruff//:ruff"
 _PYTHON_CONFIG = ".aspect/ruff.toml"
