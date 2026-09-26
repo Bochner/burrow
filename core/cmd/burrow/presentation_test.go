@@ -993,6 +993,157 @@ func TestFileTabsAndContextMenus(t *testing.T) {
 	}
 }
 
+func TestFileModeReturnContext(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			for _, recalled := range []bool{false, true} {
+				m := newFrame(launch.Info{Workspace: "/tmp/file-return"}, plain, launch.Options{})
+				t.Cleanup(m.terminals.close)
+				frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+				m.updateManagement(m.active, connectionList{states: []connection.State{{Name: "gateway", State: "connected"}}})
+				m.updateManagement(m.active, profilesReady{history: []string{"status", "help"}})
+				u := &m.current().management
+				u.output = "first line\nsecond line\nretained output\nfourth line"
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+				frameEvent(m, tea.PasteMsg{Content: "draft notes"})
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+				want := "draft note"
+				if recalled {
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+					want = "status"
+				}
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyLeft})
+				before := m.View().Content
+				for _, exit := range []string{"back", "exit", "ctrl+c"} {
+					// Exercise the existing in-place transition with a populated prompt;
+					// frame file tabs normally start this transition with a fresh UI.
+					u.openFiles("gateway")
+					t.Cleanup(u.files.cancel)
+					frameEvent(m, tea.PasteMsg{Content: "temporary file draft"})
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+					frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+					if u.files == nil || u.busy || u.input.Value() != "temporary file draft" {
+						t.Fatal("cancelling browse must retain the file prompt")
+					}
+					if exit == "ctrl+c" {
+						frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+					} else {
+						frameEvent(m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+						frameEvent(m, tea.PasteMsg{Content: exit})
+						frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+					}
+					if u.files != nil || u.input.Value() != want || m.View().Content != before {
+						t.Fatalf("%s lost prompt or scrolled output (%v, plain=%t, recalled=%t)", exit, size, plain, recalled)
+					}
+				}
+				frameEvent(m, tea.KeyPressMsg{Code: '!', Text: "!"})
+				if got := u.input.Value(); got != want[:len(want)-1]+"!"+want[len(want)-1:] {
+					t.Fatal("return lost editing cursor", got)
+				}
+				if recalled {
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+					if u.input.Value() != "help" {
+						t.Fatal("return lost recall position")
+					}
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+					if u.input.Value() != "draft note" {
+						t.Fatal("return lost pre-recall draft")
+					}
+				} else {
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+					if u.input.Value() != "help" {
+						t.Fatal("return lost command history")
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestFileResultOriginIsolation(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/files-one"}, true, launch.Options{})
+	t.Cleanup(m.terminals.close)
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	send := func(workspace string, msg tea.Msg) {
+		frameEvent(m, m.dispatch(workspace, func() tea.Msg { return msg })())
+	}
+	one := m.active
+	two := "/tmp/files-two"
+	send(one, workspaceOpened{info: launch.Info{Workspace: two}})
+	state := connection.State{Name: "gateway", State: "connected", Creation: "original", Generation: "one"}
+	send(one, connectionList{states: []connection.State{state}})
+	send(two, connectionList{states: []connection.State{state}})
+	frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	first := m.current().file
+	t.Cleanup(first.files.cancel)
+	frameEvent(m, tea.PasteMsg{Content: "first draft"})
+	result := fileResult{mode: first.files, sequence: first.files.sequence, operation: "cd", value: connection.FileListing{Path: "/first"}, history: []string{"scp gateway pwd"}}
+	delayed := m.dispatch(one, func() tea.Msg { return result })()
+	m.selectWorkspace(1)
+	frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	second := m.current().file
+	t.Cleanup(second.files.cancel)
+	frameEvent(m, tea.PasteMsg{Content: "second draft"})
+	before := m.View().Content
+	frameEvent(m, delayed)
+	if m.active != two || m.current().file != second || m.View().Content != before {
+		t.Fatal("background file result changed the selected workspace/tab")
+	}
+	m.selectWorkspace(0)
+	m.activate("file-tab:0")
+	if first.input.Value() != "first draft" || first.files.remote != "/first" {
+		t.Fatal("background file result lost its originating tab or draft")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+	if first.input.Value() != "pwd" {
+		t.Fatal("background file history did not reach its originating tab")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	if first.input.Value() != "first draft" {
+		t.Fatal("background file history lost the tab draft")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+	frameEvent(m, tea.PasteMsg{Content: "ls"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	t.Cleanup(first.files.cancel)
+	result.sequence = first.files.sequence
+	result.value = connection.FileListing{Path: "/stale"}
+	result.history = []string{"scp gateway tree /stale"}
+	frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	before = m.View().Content
+	send(one, result)
+	if m.View().Content != before || first.files.remote != "/first" {
+		t.Fatal("cancelled browse result changed the retained file view")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if len(m.current().fileViews) != 0 || m.current().tab != "" {
+		t.Fatal("leaving files did not close the originating tab")
+	}
+	state.Generation = "replacement"
+	send(one, connectionList{states: []connection.State{state}})
+	frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	replacement := m.current().file
+	t.Cleanup(replacement.files.cancel)
+	frameEvent(m, tea.PasteMsg{Content: "replacement draft"})
+	before = m.View().Content
+	send(one, result)
+	send(one, fileDiscovery{mode: result.mode, listing: connection.FileListing{Notice: "stale discovery"}})
+	frameEvent(m, delayed)
+	if m.current().file != replacement || m.View().Content != before || replacement.files.remote != "~" {
+		t.Fatal("closed tab result changed a replacement view")
+	}
+	m.selectWorkspace(1)
+	m.activate("file-tab:0")
+	if second.input.Value() != "second draft" || second.files.remote != "~" {
+		t.Fatal("replacement view changed another workspace's file context")
+	}
+}
+
 func TestFilePresentation(t *testing.T) {
 	for _, plain := range []bool{false, true} {
 		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {

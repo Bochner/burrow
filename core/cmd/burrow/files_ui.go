@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/tree"
@@ -56,7 +57,7 @@ F1 / Esc\tClose help
 
 // Navigation is frontend state; roots and transport identity remain workspace-owned.
 type fileMode struct {
-	saved                    ui
+	saved                    fileReturnState
 	state                    connection.State
 	roots                    connection.FileRoots
 	remote, upload, download string
@@ -72,6 +73,15 @@ type fileMode struct {
 	edit                     uint64
 	lookup                   bool
 	nextLookup               time.Time
+}
+
+type fileReturnState struct {
+	input        textinput.Model
+	history      []string
+	historyIndex int
+	draft        string
+	output       string
+	outputOffset int
 }
 
 type fileObservation struct {
@@ -104,7 +114,10 @@ func (m *ui) openFiles(name string) tea.Cmd {
 		if state.Name != name || state.State != "connected" {
 			continue
 		}
-		saved := *m
+		saved := fileReturnState{
+			input: m.input, history: m.history, historyIndex: m.historyIndex,
+			draft: m.draft, output: m.output, outputOffset: m.outputOffset,
+		}
 		m.files = &fileMode{saved: saved, state: state, remote: "~", cache: map[string]fileObservation{}}
 		m.history, m.historyIndex, m.draft = nil, 0, ""
 		m.input.Placeholder = "ls · cd · tree · local · back"
