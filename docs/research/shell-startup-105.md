@@ -237,7 +237,7 @@ seconds seen in Hovel process startup.
    outliers at five to seven attachments while host load rose; it still ended
    around 877 ms at ten. This implicates frontend scheduling/observer work as an
    additional attribution target, but does not separate rendering, polling and
-   host contention. #106 should measure CPU/RPC/snapshot costs before changing
+   host contention. #107 should measure CPU/RPC/snapshot costs before changing
    the current 50 ms per-attachment sampler. No notification/polling rewrite or
    universal latency promise follows from these startup samples.
 
