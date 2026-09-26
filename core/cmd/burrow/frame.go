@@ -295,14 +295,11 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	switch v := msg.(type) {
 	case tea.KeyPressMsg:
 		u = w.activeUI()
-		if u.files == nil && u.follow == nil && key.Matches(v, enter) && !u.busy {
-			args, err := connection.Split(u.input.Value())
-			if err == nil && len(args) > 1 && args[0] == "run" && args[1] == "follow" {
-				return m.openFollow(args)
-			}
-		}
 		if key.Matches(v, enter) && !u.busy {
 			args, err := connection.Split(u.input.Value())
+			if err == nil && u.files == nil && u.follow == nil && len(args) > 1 && args[0] == "run" && args[1] == "follow" {
+				return m.openFollow(args)
+			}
 			if err == nil && len(args) > 0 && (args[0] == "reports" || args[0] == "report") {
 				if err := connection.ValidateCommand(path, args); err != nil {
 					u.output = "REFUSED: " + safe(err.Error())
@@ -319,10 +316,7 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 				u.input.Reset()
 				return m.openDownloads()
 			}
-		}
-		if u.files != nil && key.Matches(v, enter) && !u.busy {
-			args, err := connection.Split(u.input.Value())
-			if err == nil && len(args) > 0 {
+			if err == nil && u.files != nil && len(args) > 0 {
 				if args[0] == "get" || args[0] == "mget" || args[0] == "put" {
 					return m.reviewDownload(u, args)
 				}
@@ -338,10 +332,7 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 					})
 				}
 			}
-		}
-		if u.files == nil && key.Matches(v, enter) && !u.busy {
-			args, err := connection.Split(u.input.Value())
-			if err == nil && len(args) == 2 && args[0] == "scp" {
+			if err == nil && u.files == nil && len(args) == 2 && args[0] == "scp" {
 				return m.openFileTab(args[1])
 			}
 		}

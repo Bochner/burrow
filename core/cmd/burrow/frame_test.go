@@ -117,6 +117,29 @@ func TestCompletionCyclesOriginalMatches(t *testing.T) {
 	}
 }
 
+func TestEnterRoutingRejectsInvalidInput(t *testing.T) {
+	for _, files := range []bool{false, true} {
+		for _, line := range []string{`report "unfinished`, `run follow "unfinished`, `scp "unfinished`, `get "unfinished`, "report", "reports extra", "report one two"} {
+			t.Run(fmt.Sprintf("files=%t/%s", files, line), func(t *testing.T) {
+				m := newFrame(launch.Info{Workspace: "/tmp/enter-validation"}, true, launch.Options{})
+				defer m.terminals.close()
+				frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+				if files {
+					m.updateManagement(m.active, connectionList{states: []connection.State{{Name: "gateway", State: "connected"}}})
+					m.openFileTab("gateway")
+				}
+				u := m.current().activeUI()
+				u.busy = false
+				u.input.SetValue(line)
+				_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+				if cmd != nil || m.modal != "" || !strings.HasPrefix(u.output, "REFUSED:") {
+					t.Fatalf("invalid submission routed: modal=%q output=%q command=%t", m.modal, u.output, cmd != nil)
+				}
+			})
+		}
+	}
+}
+
 func TestShellCommandKeepsSubmittedTarget(t *testing.T) {
 	for _, command := range []string{"shell-close 2", "resume 2", "shell-close"} {
 		t.Run(command, func(t *testing.T) {

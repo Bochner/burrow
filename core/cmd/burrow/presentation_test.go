@@ -1603,6 +1603,37 @@ func TestCompletionPresentation(t *testing.T) {
 	}
 }
 
+func TestRetainedShellCompletionGuidance(t *testing.T) {
+	if got := completionDescription("shells"); got != "Discover retained shells in this workspace" {
+		t.Fatal("incorrect retained-shell inventory guidance", got)
+	}
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+			for _, check := range []struct{ prefix, candidate, description string }{
+				{"res", "resume 2", "Focus an attached shell tab by ID"},
+				{"shell-c", "shell-close 2", "Close retained shell; preserve connection"},
+			} {
+				m := newFrame(launch.Info{Workspace: "/tmp/shell-guidance"}, plain, launch.Options{})
+				defer m.terminals.close()
+				frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+				m.current().shells = []*cliTab{{id: "2", connection: "gateway", session: "retained-id"}}
+				frameEvent(m, tea.PasteMsg{Content: check.prefix})
+				u := &m.current().management
+				if !slices.Contains(u.input.MatchedSuggestions(), check.candidate) {
+					t.Fatal("dynamic shell candidate missing", u.input.MatchedSuggestions())
+				}
+				if got := completionDescription(check.candidate); got != check.description {
+					t.Fatal("incorrect attachment guidance", got)
+				}
+				screen := capturePresentation(t, m, fmt.Sprintf("shell-guidance-%s-%dx%d-%t", check.prefix, size.X, size.Y, plain))
+				if !strings.Contains(screen.String(), check.candidate) || (size.X >= 160 && !strings.Contains(screen.String(), check.description)) {
+					t.Fatal("missing shell completion guidance", screen.String())
+				}
+			}
+		}
+	}
+}
+
 func TestCommandRecommendationScope(t *testing.T) {
 	m := newUI(launch.Info{}, true)
 	for _, command := range []string{"connections", "profiles", "shells", "tunnel list"} {
