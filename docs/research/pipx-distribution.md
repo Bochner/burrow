@@ -12,7 +12,14 @@ artifacts were published. Focused Aspect checks passed for offline pinned-pipx
 installation, upgrade/uninstall preservation, real CLI/Hovel/embedded skills,
 deterministic wheels and RECORDs, static Linux amd64 executable, release-tag
 guards, workflow syntax, Python formatting and the generated site. Standards
-and Spec reviews both reported zero findings. Final full preflight follows.
+and Spec reviews both reported zero findings. Final `aspect burrow-check
+preflight` at `69dede2` passed all 45 required targets, including every SSH
+partition, the wheel/release checks and documentation. Evidence collection
+completed successfully; #86's existing advisory exception is unchanged.
+The local wheel is
+`dist/burrow_ssh-0.2.1.dev0-py3-none-manylinux_2_28_x86_64.whl`.
+The online publication and PyPI attestation/digest path remains unexecuted
+until the owner registers the pending publisher and authorizes a release.
 
 ## Recommendation
 

@@ -38,8 +38,16 @@ existing portable CI/preflight gates. No partition or #86 exception changed.
 - After formatting, `aspect burrow-check preflight portable` passed all 33
   targets, including three setup/terminal repetitions and docs/agent checks.
   `aspect burrow-site check` passed both targets. Standards and Spec reviews
-  each reported zero findings. The final full preflight will also cover the
-  separately requested pipx release preparation before session completion.
+  each reported zero findings.
+- Final `aspect burrow-check preflight` at `69dede2` passed all 45 required
+  targets, uncached with no failed-test retries: all nine production SSH
+  partitions, three setup/terminal repetitions, docs/tooling, formatting and
+  the two new pipx/release checks. Collection completed successfully. This
+  also completes the after-formatting production comparison against the
+  41-target baseline; no existing failure occurred in either required run.
+  The scoped #86 advisory exception remains unchanged.
+- The separately requested pipx preparation extends the same formatting scope
+  to `core/tools/release/*.py`; it does not reformat additional existing files.
 
 ## Actual changed-file inventory
 
