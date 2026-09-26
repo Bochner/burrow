@@ -1,0 +1,3947 @@
+{
+  "provenance": {
+    "source_revision": "524c51c2e930b23e7dfa221fa268c4d630aacc34",
+    "tracked_diff_sha256": "370ce7f27644c05670adc7e2c5da2556e860311da0225a2c55edb7290c6fc5ec",
+    "lab_sources_sha256": {
+      "attachment_cost.py": "87d492e638892d8e92cf4d6918804a0f01493e2a6db0ad84c078e42703dd5a8c",
+      "connection_lab.py": "1f82f5956e63cd9947f576d7106b0eec15495b94532d994b44a0c9e0ae442b23",
+      "shell_lab.py": "70b27d5ed901d2872103e1236d9aa9ec2be1300a4ef8b8b72b63c58c0b6c866e"
+    },
+    "binary_sha256": "d322d743c58e6a0747ce697d0be8be2c50d065e28129e5b9b407326923464ff7",
+    "wheel_sha256": "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933",
+    "pins": {
+      "MODULE.bazel": "module(\n    name = \"burrow\",\n    version = \"0.0.0\",\n)\n\n# Documentation toolchain pins match Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388.\nbazel_dep(name = \"aspect_rules_js\", version = \"3.2.2\")\nbazel_dep(name = \"rules_nodejs\", version = \"6.7.5\")\nbazel_dep(name = \"rules_python\", version = \"2.2.0\")\n\npython = use_extension(\"@rules_python//python/extensions:python.bzl\", \"python\")\npython.toolchain(python_version = \"3.12\")\n\nnode = use_extension(\"@rules_nodejs//nodejs:extensions.bzl\", \"node\")\nnode.toolchain(node_version_from_nvmrc = \"//docs/site:.nvmrc\")\nuse_repo(node, \"nodejs_toolchains\")\n\npnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"pnpm\")\npnpm.pnpm(pnpm_version_from = \"//docs/site:package.json\")\nuse_repo(pnpm, \"pnpm\")\n\nnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"npm\")\nnpm.npm_translate_lock(\n    name = \"npm\",\n    npmrc = \"//docs/site:.npmrc\",\n    pnpm_lock = \"//docs/site:pnpm-lock.yaml\",\n    run_lifecycle_hooks = False,\n)\nuse_repo(npm, \"npm\")\n\n# Pinned runtime v0.4.2 (c461ba282a8a); GitHub asset digest.\n# SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.\nhttp_file = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_file\")\n\n# pipx 1.17.6 (MIT), upstream standalone zipapp and GitHub asset SHA256.\n# Test tool only; Burrow's wheel has no Python runtime dependencies.\nhttp_file(\n    name = \"pipx\",\n    urls = [\"https://github.com/pypa/pipx/releases/download/1.17.6/pipx.pyz\"],\n    sha256 = \"63b10dd9a15a57ec4066e29388d1e83565be4b127bd1cf6e3f150fcc39ded8b2\",\n    downloaded_file_path = \"pipx.pyz\",\n)\n\nhttp_file(\n    name = \"hovel_linux_wheel\",\n    downloaded_file_path = \"hovel.whl\",\n    sha256 = \"7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933\",\n    urls = [\"https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl\"],\n)\n\n# Real full-screen SSH acceptance only: Alpine 3.24 x86_64 Vim executable.\n# Alpine aports b7c31805c49a6e75b725aee8601e2e99e1d693e9; Vim license.\n# The lab uses -u NONE -i NONE --noplugin, without runtime scripts or xxd.\nhttp_file(\n    name = \"shell_lab_vim\",\n    downloaded_file_path = \"vim.apk\",\n    sha256 = \"6677af51cdce462afaf06af353acfe059b4a3c68c4257a539121c3ce46d25c68\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/vim-9.2.1091-r0.apk\"],\n)\n\n# Dropbear interoperability fixture only, Alpine 3.24 x86_64 (MIT).\n# aports e56a1d711fb2dd69206223dcdfd609d91d40ad02; shared libraries ISC.\n# Executed inside the digest-pinned OpenSSH lab image, never installed on hosts.\nhttp_file(\n    name = \"chain_lab_dropbear\",\n    downloaded_file_path = \"dropbear.apk\",\n    sha256 = \"cba11fe37aa85d7259ae44d494544e869bb58879e35124d0ba33b32c3b1201d7\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/dropbear-2026.91-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_utmps\",\n    downloaded_file_path = \"utmps.apk\",\n    sha256 = \"497f0f1cb51f0e6c1acc338fded0dc7722b1d43ea17bdb749f0d556794f8b2d8\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/utmps-libs-0.1.3.3-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_skalibs\",\n    downloaded_file_path = \"skalibs.apk\",\n    sha256 = \"3301f6ccbeaea49cdd966c7e636898a8612fb8fe964a15f24f6d204b3944c3f3\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/skalibs-libs-2.15.0.0-r0.apk\"],\n)\n\n# Disposable external SDK proof, pinned to the research baseline.\nbazel_dep(name = \"rules_go\", version = \"0.61.1\")\nbazel_dep(name = \"gazelle\", version = \"0.51.3\")\nbazel_dep(name = \"rules_pkg\", version = \"1.2.0\")\n\ngo_sdk = use_extension(\"@rules_go//go:extensions.bzl\", \"go_sdk\")\ngo_sdk.download(name = \"burrow_go_sdk\", version = \"1.26.5\")\nuse_repo(go_sdk, \"burrow_go_sdk\")\n\ngo_deps = use_extension(\"@gazelle//:extensions.bzl\", \"go_deps\")\ngo_deps.from_file(go_mod = \"//core/prototype_sdk:go.mod\")\nuse_repo(go_deps, \"com_github_charmbracelet_colorprofile\", \"com_github_charmbracelet_x_ansi\", \"com_github_charmbracelet_x_term\", \"com_github_charmbracelet_x_vt\", \"com_github_pkg_sftp\", \"land_charm_bubbles_v2\", \"land_charm_bubbletea_v2\", \"land_charm_lipgloss_v2\", \"org_golang_x_crypto\", \"org_golang_x_sys\")\nuse_repo(go_deps, \"com_github_charmbracelet_ultraviolet\", \"land_charm_huh_v2\", \"land_charm_glamour_v2\")\n\nhttp_archive = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_archive\")\n\n# Ruff 0.16.3 (MIT), matching Hovel 541e78ada0af's sdk/python/uv.lock.\n# Linux amd64 release asset; SHA256 from Astral's GitHub release metadata.\nhttp_archive(\n    name = \"ruff\",\n    urls = [\"https://github.com/astral-sh/ruff/releases/download/0.16.3/ruff-x86_64-unknown-linux-gnu.tar.gz\"],\n    sha256 = \"7ab3b978d2c0b1c96b2323d4e5c4f35284ae1cdf35d2f7399595c74c805f5fa3\",\n    strip_prefix = \"ruff-x86_64-unknown-linux-gnu\",\n    build_file_content = \"exports_files([\\\"ruff\\\"])\",\n)\n\n# Workflow syntax/expression checks: rhysd/actionlint v1.7.12, MIT;\n# SHA256 from the upstream GitHub release asset (Linux amd64 operator baseline).\nhttp_archive(\n    name = \"actionlint\",\n    urls = [\"https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz\"],\n    sha256 = \"8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8\",\n    build_file_content = \"exports_files([\\\"actionlint\\\"])\",\n)\n\nhttp_archive(\n    name = \"hovel_sdk\",\n    build_file = \"//core/prototype_sdk:hovel.BUILD.bazel\",\n    patch_cmds = [\"rm sdk/go/hovel/BUILD.bazel\"],\n    sha256 = \"9080e5060787f4ba5ee6715611e10112af2af316318369b748c9f566c1f3b6e9\",\n    strip_prefix = \"hovel-a4cbfdf7769a9551695088c11061e3cabc368e07\",\n    type = \"tar.gz\",\n    urls = [\"https://codeload.github.com/vibepwners/hovel/tar.gz/a4cbfdf7769a9551695088c11061e3cabc368e07\"],\n)\n",
+      ".bazelversion": "9.1.1\n",
+      ".aspect/version.axl": "version(\"2026.33.3\")\n",
+      ".bazelrc": "common --announce_rc\ntest --test_output=errors\n\ntry-import %workspace%/.bazelrc.user\n"
+    },
+    "image": "linuxserver/openssh-server@sha256:47f82202bcbffe214cea77dc7f5ed24b875e81ce6ebf0e0368e2954727bf5116",
+    "build": "Aspect fastbuild",
+    "machine": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "cpu_count": 32,
+    "cpu_model": "AMD Ryzen 9 9950X3D 16-Core Processor",
+    "memory": [
+      "MemTotal:       32630472 kB",
+      "MemFree:         4734268 kB",
+      "MemAvailable:   21536212 kB"
+    ],
+    "load_start": [
+      12.34375,
+      12.9306640625,
+      13.11865234375
+    ],
+    "traced": true,
+    "interval_seconds": 5,
+    "repeats": 3,
+    "cpu_clock_ticks_per_second": 100,
+    "cpu": "process utime+stime from /proc/PID/stat; frontend and sum of retained shell owners separately, excludes Hovel daemons, connection manager, SSH children, remote workload and VT decoder; percent of one logical CPU",
+    "counts": "completed rpcBody attempts by public method (including GetDaemonInfo identity checks); ownerCommand returns by verb; frontend PID only, bounded by monotonic completion timestamps; no counts inferred when tracing disabled",
+    "bytes": "UTF-8 byte length of ownerCommand snapshot Stdout JSON payload; excludes outer RPC JSON escaping/envelope, HTTP headers and Unix transport; not wire bytes",
+    "workload": "one local approved OpenSSH master; 1,2,4 retained shells, each with one TUI controller attachment; idle then controlled 10-line/s ASCII output per shell; visible last shell, all tabs hidden in same-workspace management, then all tabs in background workspace while empty workspace management is focused",
+    "geometry": "160x40 outer TUI; all retained shells 98x35",
+    "collection": "drain and decode real PTY throughout each interval; read process ticks at boundaries; no CLI probes inside observation windows; trace read/aggregation after each window; 1s settle per placement; enabled vs disabled runs bound overhead, not a causal subtraction",
+    "limits": "fixed ascending attachment counts and placement order, warmed local fixture, at most 5 repeats, 1800s outer lab timeout; CPU tick quantization and boundary skew; no product tab-count/CPU guarantee"
+  },
+  "samples": [
+    {
+      "attachments": 1,
+      "placement": "visible",
+      "workload": "idle",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699623244862786,
+      "end": 699628254844491,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 183,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 430,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 2.47,
+          "percent": 49.30157723999114
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 13,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 27,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.14,
+          "percent": 2.7944213820237893
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 713,
+        "rpc:ListSessions": 130,
+        "rpc:RunSessionCommand": 212,
+        "command:inspect": 100,
+        "command:snapshot": 100,
+        "rpc:ActiveLogs": 9,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "rpc:Snapshot": 5,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 466000
+    },
+    {
+      "attachments": 1,
+      "placement": "visible",
+      "workload": "idle",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699628258725254,
+      "end": 699633271154593,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 430,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 673,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 2.43,
+          "percent": 48.479486405783334
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 27,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 41,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.14,
+          "percent": 2.793056829962826
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 713,
+        "rpc:ListSessions": 127,
+        "rpc:RunSessionCommand": 216,
+        "command:inspect": 100,
+        "command:snapshot": 100,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 8,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 466000
+    },
+    {
+      "attachments": 1,
+      "placement": "visible",
+      "workload": "idle",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699633274232374,
+      "end": 699638321475376,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 673,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 910,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 2.37,
+          "percent": 46.95632841654094
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 41,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 54,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.13,
+          "percent": 2.5756635840296718
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 695,
+        "rpc:ListSessions": 124,
+        "rpc:RunSessionCommand": 212,
+        "command:inspect": 101,
+        "command:snapshot": 101,
+        "rpc:ActiveLogs": 7,
+        "rpc:Snapshot": 4,
+        "command:identity": 5,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 470660
+    },
+    {
+      "attachments": 1,
+      "placement": "hidden",
+      "workload": "idle",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699639377910552,
+      "end": 699644422158590,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 960,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 1132,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.72,
+          "percent": 34.09824392144611
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 55,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 57,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.02,
+          "percent": 0.39649120838890833
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 119,
+        "rpc:ActiveLogs": 7,
+        "rpc:ListSessions": 28,
+        "rpc:RunSessionCommand": 20,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "rpc:Snapshot": 4,
+        "command:identity": 5,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 23300
+    },
+    {
+      "attachments": 1,
+      "placement": "hidden",
+      "workload": "idle",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699644422943530,
+      "end": 699649439814835,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 1132,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 1321,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.89,
+          "percent": 37.672881863968804
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 57,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 61,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.04,
+          "percent": 0.7973096690787049
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 163,
+        "rpc:ListSessions": 39,
+        "rpc:Snapshot": 6,
+        "rpc:ActiveLogs": 10,
+        "rpc:RunSessionCommand": 26,
+        "command:identity": 8,
+        "command:downloads": 2,
+        "command:list": 3,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "command:tunnels": 3
+      },
+      "snapshot_payload_bytes": 23300
+    },
+    {
+      "attachments": 1,
+      "placement": "hidden",
+      "workload": "idle",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699649440701519,
+      "end": 699654490514789,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 1321,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 1493,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.72,
+          "percent": 34.060665375850625
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 61,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 63,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.02,
+          "percent": 0.3960542485564026
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 124,
+        "rpc:ListSessions": 28,
+        "rpc:RunSessionCommand": 22,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "rpc:Snapshot": 4,
+        "rpc:ActiveLogs": 7,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 23300
+    },
+    {
+      "attachments": 1,
+      "placement": "background-workspace",
+      "workload": "idle",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699655527924821,
+      "end": 699660539856179,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 1540,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 1707,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.67,
+          "percent": 33.32048826515472
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 65,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 67,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.02,
+          "percent": 0.39904776365454764
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 123,
+        "rpc:ListSessions": 28,
+        "rpc:RunSessionCommand": 22,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "rpc:Snapshot": 4,
+        "rpc:ActiveLogs": 7,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 23300
+    },
+    {
+      "attachments": 1,
+      "placement": "background-workspace",
+      "workload": "idle",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699660540542497,
+      "end": 699665590290358,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 1707,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 1879,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.72,
+          "percent": 34.06110656105885
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 67,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 70,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.03,
+          "percent": 0.594089067925445
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 135,
+        "rpc:ListSessions": 34,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 8,
+        "rpc:RunSessionCommand": 20,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "command:identity": 5,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 23300
+    },
+    {
+      "attachments": 1,
+      "placement": "background-workspace",
+      "workload": "idle",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699665591147391,
+      "end": 699670607010929,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 1879,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 2054,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.75,
+          "percent": 34.889306432323444
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 70,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 72,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.02,
+          "percent": 0.3987349306551251
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 148,
+        "rpc:ListSessions": 33,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 9,
+        "rpc:RunSessionCommand": 26,
+        "command:identity": 8,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2,
+        "command:inspect": 5,
+        "command:snapshot": 5
+      },
+      "snapshot_payload_bytes": 23300
+    },
+    {
+      "attachments": 1,
+      "placement": "visible",
+      "workload": "output",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699672118166234,
+      "end": 699677118546414,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 2148,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 2389,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 2.41,
+          "percent": 48.19633534344583
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 77,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 92,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.15,
+          "percent": 2.9997719093431012
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 713,
+        "rpc:ListSessions": 130,
+        "rpc:RunSessionCommand": 212,
+        "command:inspect": 100,
+        "command:snapshot": 100,
+        "rpc:ActiveLogs": 9,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "rpc:Snapshot": 5,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 465983
+    },
+    {
+      "attachments": 1,
+      "placement": "visible",
+      "workload": "output",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699677120744542,
+      "end": 699682151942884,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 2389,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 2627,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 2.38,
+          "percent": 47.30483352508626
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 92,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 106,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.14,
+          "percent": 2.782637266181545
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 719,
+        "rpc:ListSessions": 128,
+        "rpc:RunSessionCommand": 218,
+        "command:inspect": 101,
+        "command:snapshot": 101,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 8,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 470945
+    },
+    {
+      "attachments": 1,
+      "placement": "visible",
+      "workload": "output",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699682154692567,
+      "end": 699687168418840,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 2627,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 2864,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 2.37,
+          "percent": 47.27023118040892
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 106,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 120,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.14,
+          "percent": 2.792334331332173
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 706,
+        "rpc:ListSessions": 129,
+        "rpc:RunSessionCommand": 210,
+        "command:inspect": 100,
+        "command:snapshot": 100,
+        "rpc:ActiveLogs": 8,
+        "rpc:Snapshot": 5,
+        "command:identity": 5,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 466361
+    },
+    {
+      "attachments": 1,
+      "placement": "hidden",
+      "workload": "output",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699688210510076,
+      "end": 699693236575348,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 2907,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 3087,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.8,
+          "percent": 35.81330330164482
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 121,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 124,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.03,
+          "percent": 0.5968883883607471
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 135,
+        "rpc:ActiveLogs": 8,
+        "rpc:ListSessions": 34,
+        "rpc:Snapshot": 5,
+        "rpc:RunSessionCommand": 20,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "command:identity": 5,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 23320
+    },
+    {
+      "attachments": 1,
+      "placement": "hidden",
+      "workload": "output",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699693237496702,
+      "end": 699698262676588,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 3087,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 3270,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.83,
+          "percent": 36.41660679846158
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 124,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 127,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.03,
+          "percent": 0.5969935540731407
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 148,
+        "rpc:ActiveLogs": 9,
+        "rpc:ListSessions": 33,
+        "rpc:RunSessionCommand": 26,
+        "command:identity": 8,
+        "command:downloads": 2,
+        "rpc:Snapshot": 5,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:inspect": 5,
+        "command:snapshot": 5
+      },
+      "snapshot_payload_bytes": 23320
+    },
+    {
+      "attachments": 1,
+      "placement": "hidden",
+      "workload": "output",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699698263787428,
+      "end": 699703303900659,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 3270,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 3450,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.8,
+          "percent": 35.7134833584456
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 127,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 131,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.04,
+          "percent": 0.7936329635210133
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 139,
+        "rpc:ListSessions": 34,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 8,
+        "rpc:RunSessionCommand": 22,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 23320
+    },
+    {
+      "attachments": 1,
+      "placement": "background-workspace",
+      "workload": "output",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699704344562505,
+      "end": 699709354514089,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 3491,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 3663,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.72,
+          "percent": 34.331669102213816
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 132,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 135,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.03,
+          "percent": 0.5988081820153572
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 139,
+        "rpc:ListSessions": 34,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 8,
+        "rpc:RunSessionCommand": 22,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 23320
+    },
+    {
+      "attachments": 1,
+      "placement": "background-workspace",
+      "workload": "output",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699709355273019,
+      "end": 699714405583126,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 3663,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 3835,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.72,
+          "percent": 34.057314571950506
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 135,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 138,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.03,
+          "percent": 0.5940229285805321
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 139,
+        "rpc:ActiveLogs": 8,
+        "rpc:ListSessions": 32,
+        "rpc:RunSessionCommand": 24,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "rpc:Snapshot": 5,
+        "command:identity": 7,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 23320
+    },
+    {
+      "attachments": 1,
+      "placement": "background-workspace",
+      "workload": "output",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731
+      ],
+      "begin": 699714406492710,
+      "end": 699719421482204,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 3835,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 4011,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 1.76,
+          "percent": 35.09478937305228
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 138,
+              "starttime": "69962101"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 142,
+              "starttime": "69962101"
+            }
+          },
+          "seconds": 0.04,
+          "percent": 0.7976088493875518
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 144,
+        "rpc:ActiveLogs": 9,
+        "rpc:ListSessions": 35,
+        "rpc:RunSessionCommand": 22,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "command:inspect": 5,
+        "command:snapshot": 5,
+        "rpc:Snapshot": 5,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 23320
+    },
+    {
+      "attachments": 2,
+      "placement": "visible",
+      "workload": "idle",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699721960876666,
+      "end": 699726976389421,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 4247,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 4633,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.86,
+          "percent": 76.96122387789642
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 149,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 11,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 153,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 25,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.18,
+          "percent": 3.588865362181698
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 743,
+        "rpc:ListSessions": 132,
+        "rpc:RunSessionCommand": 226,
+        "command:inspect": 105,
+        "command:snapshot": 105,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 8,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 489350
+    },
+    {
+      "attachments": 2,
+      "placement": "visible",
+      "workload": "idle",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699726979091642,
+      "end": 699731994275716,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 4633,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 5016,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.83,
+          "percent": 76.36808427143686
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 153,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 25,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 155,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 41,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.18,
+          "percent": 3.589100566281627
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 741,
+        "rpc:ListSessions": 135,
+        "rpc:RunSessionCommand": 222,
+        "command:inspect": 106,
+        "command:snapshot": 106,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 5,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 494010
+    },
+    {
+      "attachments": 2,
+      "placement": "visible",
+      "workload": "idle",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699731997129312,
+      "end": 699737011172060,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 5016,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 5406,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.9,
+          "percent": 77.7815466682176
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 155,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 41,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 158,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 53,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.15,
+          "percent": 2.9915979487776
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 748,
+        "rpc:ListSessions": 133,
+        "rpc:RunSessionCommand": 226,
+        "command:inspect": 105,
+        "command:snapshot": 105,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 9,
+        "command:identity": 8,
+        "command:list": 3,
+        "command:downloads": 2,
+        "command:tunnels": 3
+      },
+      "snapshot_payload_bytes": 489350
+    },
+    {
+      "attachments": 2,
+      "placement": "hidden",
+      "workload": "idle",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699738051870177,
+      "end": 699743102294724,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 5470,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 5783,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.13,
+          "percent": 61.97498786234217
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 158,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 54,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 161,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 57,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.06,
+          "percent": 1.1880189366583165
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 177,
+        "rpc:ActiveLogs": 9,
+        "rpc:ListSessions": 38,
+        "rpc:RunSessionCommand": 36,
+        "command:identity": 8,
+        "command:downloads": 2,
+        "rpc:Snapshot": 5,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:inspect": 10,
+        "command:snapshot": 10
+      },
+      "snapshot_payload_bytes": 46650
+    },
+    {
+      "attachments": 2,
+      "placement": "hidden",
+      "workload": "idle",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699743103637870,
+      "end": 699748135539442,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 5783,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 6095,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.12,
+          "percent": 62.00439248178522
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 161,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 57,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 164,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 59,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.05,
+          "percent": 0.9936601359260453
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 170,
+        "rpc:ListSessions": 39,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 8,
+        "rpc:RunSessionCommand": 32,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 46650
+    },
+    {
+      "attachments": 2,
+      "placement": "hidden",
+      "workload": "idle",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699748136527799,
+      "end": 699753185401110,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 6095,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 6411,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.16,
+          "percent": 62.58822127929603
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 164,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 59,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 167,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 63,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.07,
+          "percent": 1.386447939731241
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 169,
+        "rpc:ListSessions": 37,
+        "rpc:RunSessionCommand": 34,
+        "command:inspect": 10,
+        "rpc:ActiveLogs": 8,
+        "command:snapshot": 10,
+        "rpc:Snapshot": 5,
+        "command:identity": 7,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 46650
+    },
+    {
+      "attachments": 2,
+      "placement": "background-workspace",
+      "workload": "idle",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699754227790576,
+      "end": 699759269777459,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 6478,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 6784,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.06,
+          "percent": 60.690360189499124
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 167,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 64,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 170,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 66,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.05,
+          "percent": 0.9916725521159989
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 169,
+        "rpc:ListSessions": 37,
+        "rpc:RunSessionCommand": 33,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "rpc:ActiveLogs": 8,
+        "rpc:Snapshot": 5,
+        "command:identity": 7,
+        "command:list": 3,
+        "command:tunnels": 2,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 46650
+    },
+    {
+      "attachments": 2,
+      "placement": "background-workspace",
+      "workload": "idle",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699759271059803,
+      "end": 699764296564085,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 6784,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 7097,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.13,
+          "percent": 62.28230689626144
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 170,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 66,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 173,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 69,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.06,
+          "percent": 1.1939100363500594
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 174,
+        "rpc:ListSessions": 40,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 9,
+        "rpc:RunSessionCommand": 32,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 46650
+    },
+    {
+      "attachments": 2,
+      "placement": "background-workspace",
+      "workload": "idle",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699764297863170,
+      "end": 699769336781459,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 7097,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 7399,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.02,
+          "percent": 59.933498159568984
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 173,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 69,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 176,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 71,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.05,
+          "percent": 0.9922764595955131
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 153,
+        "rpc:ListSessions": 33,
+        "rpc:RunSessionCommand": 32,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "rpc:Snapshot": 4,
+        "command:identity": 6,
+        "rpc:ActiveLogs": 7,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 46650
+    },
+    {
+      "attachments": 2,
+      "placement": "visible",
+      "workload": "output",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699771268747884,
+      "end": 699776268991495,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 7591,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 7996,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 4.05,
+          "percent": 80.9960536940727
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 179,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 77,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 182,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 92,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.18,
+          "percent": 3.5998246086254535
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 763,
+        "rpc:ListSessions": 139,
+        "rpc:RunSessionCommand": 226,
+        "command:inspect": 105,
+        "command:snapshot": 105,
+        "rpc:Snapshot": 6,
+        "rpc:ActiveLogs": 10,
+        "command:identity": 8,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 489307
+    },
+    {
+      "attachments": 2,
+      "placement": "visible",
+      "workload": "output",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699776272394076,
+      "end": 699781302012984,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 7996,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 8378,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.82,
+          "percent": 75.95008826461968
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 182,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 92,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 185,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 106,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.17,
+          "percent": 3.3799777499961636
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 729,
+        "rpc:ListSessions": 129,
+        "rpc:RunSessionCommand": 224,
+        "command:inspect": 106,
+        "command:snapshot": 106,
+        "rpc:Snapshot": 4,
+        "rpc:ActiveLogs": 7,
+        "command:identity": 6,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 494268
+    },
+    {
+      "attachments": 2,
+      "placement": "visible",
+      "workload": "output",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699781304614643,
+      "end": 699786318450962,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 8378,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 8774,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.96,
+          "percent": 78.98143752705941
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 185,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 106,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 189,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 122,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.2,
+          "percent": 3.9889614912656266
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 756,
+        "rpc:ListSessions": 138,
+        "rpc:RunSessionCommand": 224,
+        "command:inspect": 105,
+        "command:snapshot": 105,
+        "rpc:Snapshot": 6,
+        "rpc:ActiveLogs": 9,
+        "command:identity": 7,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 489681
+    },
+    {
+      "attachments": 2,
+      "placement": "hidden",
+      "workload": "output",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699787360578388,
+      "end": 699792403051624,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 8836,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 9152,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.16,
+          "percent": 62.667660334608065
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 189,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 122,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 192,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 126,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.07,
+          "percent": 1.3882076656400522
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 185,
+        "rpc:ListSessions": 43,
+        "rpc:Snapshot": 6,
+        "rpc:ActiveLogs": 9,
+        "rpc:RunSessionCommand": 34,
+        "command:identity": 7,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 46640
+    },
+    {
+      "attachments": 2,
+      "placement": "hidden",
+      "workload": "output",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699792404350668,
+      "end": 699797419574631,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 9152,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 9459,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.07,
+          "percent": 61.2136172312351
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 193,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 126,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 196,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 129,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.06,
+          "percent": 1.1963573400241387
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 156,
+        "rpc:ListSessions": 33,
+        "rpc:RunSessionCommand": 32,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "rpc:Snapshot": 4,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 46640
+    },
+    {
+      "attachments": 2,
+      "placement": "hidden",
+      "workload": "output",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699797420826754,
+      "end": 699802430106404,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 9460,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 9776,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.16,
+          "percent": 63.08292251162301
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 196,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 129,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 199,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 132,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.06,
+          "percent": 1.1977770097143607
+        }
+      },
+      "operations": {
+        "rpc:ListSessions": 44,
+        "rpc:GetDaemonInfo": 189,
+        "rpc:RunSessionCommand": 36,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "rpc:Snapshot": 6,
+        "rpc:ActiveLogs": 9,
+        "command:identity": 8,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 46640
+    },
+    {
+      "attachments": 2,
+      "placement": "background-workspace",
+      "workload": "output",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699803477612456,
+      "end": 699808521624926,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 9838,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 10148,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.1,
+          "percent": 61.4590074556259
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 201,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 133,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 204,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 137,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.07,
+          "percent": 1.387784039320585
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 189,
+        "rpc:ListSessions": 43,
+        "rpc:RunSessionCommand": 36,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "rpc:Snapshot": 6,
+        "command:identity": 8,
+        "rpc:ActiveLogs": 9,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 46643
+    },
+    {
+      "attachments": 2,
+      "placement": "background-workspace",
+      "workload": "output",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699808522619082,
+      "end": 699813537160620,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 10148,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 10446,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 2.98,
+          "percent": 59.42716751706365
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 204,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 137,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 207,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 141,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.07,
+          "percent": 1.395940176575321
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 150,
+        "rpc:ListSessions": 33,
+        "rpc:RunSessionCommand": 30,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "rpc:ActiveLogs": 7,
+        "rpc:Snapshot": 4,
+        "command:identity": 5,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 46655
+    },
+    {
+      "attachments": 2,
+      "placement": "background-workspace",
+      "workload": "output",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719
+      ],
+      "begin": 699813538036213,
+      "end": 699818555124641,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 10446,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 10759,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 3.13,
+          "percent": 62.38678159491272
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 207,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 141,
+              "starttime": "69972031"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 211,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 143,
+              "starttime": "69972031"
+            }
+          },
+          "seconds": 0.06,
+          "percent": 1.1959127462283587
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 189,
+        "rpc:ListSessions": 43,
+        "rpc:RunSessionCommand": 36,
+        "command:inspect": 10,
+        "command:snapshot": 10,
+        "rpc:Snapshot": 6,
+        "rpc:ActiveLogs": 9,
+        "command:identity": 8,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 46655
+    },
+    {
+      "attachments": 4,
+      "placement": "visible",
+      "workload": "idle",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699822778574270,
+      "end": 699827789362027,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 11323,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 11962,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 6.39,
+          "percent": 127.52485856287285
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 219,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 152,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 10,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 12,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 222,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 155,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 13,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 25,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.22,
+          "percent": 4.3905272118672976
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 787,
+        "rpc:ListSessions": 139,
+        "rpc:RunSessionCommand": 242,
+        "command:inspect": 115,
+        "command:snapshot": 115,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "rpc:Snapshot": 4,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 536225
+    },
+    {
+      "attachments": 4,
+      "placement": "visible",
+      "workload": "idle",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699827792313510,
+      "end": 699832806159661,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 11963,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 12604,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 6.41,
+          "percent": 127.84596509251767
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 222,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 155,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 13,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 25,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 225,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 158,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 16,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 39,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.23,
+          "percent": 4.587296719388309
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 811,
+        "rpc:ListSessions": 145,
+        "rpc:RunSessionCommand": 245,
+        "command:inspect": 116,
+        "command:snapshot": 115,
+        "rpc:Snapshot": 6,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 7,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 536225
+    },
+    {
+      "attachments": 4,
+      "placement": "visible",
+      "workload": "idle",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699832810068805,
+      "end": 699837839776749,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 12606,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 13250,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 6.44,
+          "percent": 128.0392434650675
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 225,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 158,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 16,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 40,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 227,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 161,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 18,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 54,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.21,
+          "percent": 4.175192721686983
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 800,
+        "rpc:ListSessions": 143,
+        "rpc:RunSessionCommand": 244,
+        "command:inspect": 116,
+        "command:snapshot": 116,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "rpc:Snapshot": 4,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 540895
+    },
+    {
+      "attachments": 4,
+      "placement": "hidden",
+      "workload": "idle",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699838894885202,
+      "end": 699843940422346,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 13361,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 13901,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.4,
+          "percent": 107.02527492878566
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 228,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 162,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 19,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 55,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 230,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 164,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 22,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 58,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.1,
+          "percent": 1.981949535718253
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 233,
+        "rpc:ListSessions": 50,
+        "rpc:Snapshot": 5,
+        "rpc:ActiveLogs": 9,
+        "rpc:RunSessionCommand": 52,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 93335
+    },
+    {
+      "attachments": 4,
+      "placement": "hidden",
+      "workload": "idle",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699843941787402,
+      "end": 699848956758056,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 13901,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 14431,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.3,
+          "percent": 105.68356956929863
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 230,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 164,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 22,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 58,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 233,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 168,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 25,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 60,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.12,
+          "percent": 2.392835537418082
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 214,
+        "rpc:ListSessions": 43,
+        "rpc:RunSessionCommand": 52,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "rpc:Snapshot": 4,
+        "command:identity": 6,
+        "rpc:ActiveLogs": 7,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 93335
+    },
+    {
+      "attachments": 4,
+      "placement": "hidden",
+      "workload": "idle",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699848958484032,
+      "end": 699853983474518,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 14431,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 14972,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.41,
+          "percent": 107.66189538214381
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 233,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 168,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 25,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 60,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 236,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 170,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 27,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 63,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.1,
+          "percent": 1.990053519078444
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 245,
+        "rpc:ListSessions": 53,
+        "rpc:Snapshot": 6,
+        "rpc:RunSessionCommand": 54,
+        "command:identity": 7,
+        "rpc:ActiveLogs": 9,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 93335
+    },
+    {
+      "attachments": 4,
+      "placement": "background-workspace",
+      "workload": "idle",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699855027146764,
+      "end": 699860042265201,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 15077,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 15609,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.32,
+          "percent": 106.07924950985561
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 237,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 170,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 28,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 64,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 239,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 173,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 31,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 67,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.11,
+          "percent": 2.1933679409932547
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 245,
+        "rpc:ListSessions": 53,
+        "rpc:Snapshot": 6,
+        "rpc:RunSessionCommand": 54,
+        "command:identity": 7,
+        "rpc:ActiveLogs": 9,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 93335
+    },
+    {
+      "attachments": 4,
+      "placement": "background-workspace",
+      "workload": "idle",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699860043551945,
+      "end": 699865074421669,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 15609,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 16140,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.31,
+          "percent": 105.54835031144604
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 239,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 173,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 31,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 67,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 242,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 176,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 34,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 70,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.12,
+          "percent": 2.3852734533660125
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 217,
+        "rpc:ListSessions": 44,
+        "rpc:RunSessionCommand": 52,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "rpc:Snapshot": 4,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 93335
+    },
+    {
+      "attachments": 4,
+      "placement": "background-workspace",
+      "workload": "idle",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699865075962475,
+      "end": 699870108084994,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 16140,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 16664,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.24,
+          "percent": 104.13100993100046
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 242,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 176,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 34,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 70,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 246,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 178,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 37,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 73,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.12,
+          "percent": 2.3846796167404682
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 250,
+        "rpc:ListSessions": 53,
+        "rpc:RunSessionCommand": 56,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "rpc:Snapshot": 6,
+        "command:identity": 8,
+        "rpc:ActiveLogs": 9,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 93335
+    },
+    {
+      "attachments": 4,
+      "placement": "visible",
+      "workload": "output",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699873002323624,
+      "end": 699878034662185,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 17072,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 17722,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 6.5,
+          "percent": 129.1646005372968
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 249,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 181,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 40,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 79,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 253,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 185,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 44,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 94,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.27,
+          "percent": 5.365298791549251
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 819,
+        "rpc:ListSessions": 149,
+        "rpc:RunSessionCommand": 245,
+        "command:inspect": 116,
+        "command:snapshot": 115,
+        "rpc:ActiveLogs": 9,
+        "rpc:Snapshot": 6,
+        "command:identity": 7,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 536155
+    },
+    {
+      "attachments": 4,
+      "placement": "visible",
+      "workload": "output",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699878038410925,
+      "end": 699883068704090,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 17723,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 18369,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 6.46,
+          "percent": 128.4219386048447
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 253,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 185,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 44,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 94,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 255,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 189,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 47,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 108,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.23,
+          "percent": 4.572298123701902
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 788,
+        "rpc:ListSessions": 139,
+        "rpc:RunSessionCommand": 242,
+        "command:inspect": 115,
+        "command:snapshot": 115,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "rpc:Snapshot": 4,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 536473
+    },
+    {
+      "attachments": 4,
+      "placement": "visible",
+      "workload": "output",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699883073137758,
+      "end": 699888084488410,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 18370,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 19005,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 6.35,
+          "percent": 126.7123464502679
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 255,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 189,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 47,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 108,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 259,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 193,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 50,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 124,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.27,
+          "percent": 5.387769061664936
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 788,
+        "rpc:ListSessions": 139,
+        "rpc:RunSessionCommand": 242,
+        "command:inspect": 115,
+        "command:snapshot": 115,
+        "rpc:Snapshot": 4,
+        "command:identity": 6,
+        "rpc:ActiveLogs": 7,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 536550
+    },
+    {
+      "attachments": 4,
+      "placement": "hidden",
+      "workload": "output",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699889145175730,
+      "end": 699894173808007,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 19130,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 19690,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.6,
+          "percent": 111.36228881983132
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 260,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 193,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 51,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 124,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 263,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 197,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 55,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 128,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.15,
+          "percent": 2.982918450531196
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 213,
+        "rpc:ListSessions": 43,
+        "rpc:RunSessionCommand": 52,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "rpc:Snapshot": 4,
+        "command:identity": 6,
+        "rpc:ActiveLogs": 7,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 93320
+    },
+    {
+      "attachments": 4,
+      "placement": "hidden",
+      "workload": "output",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699894175330597,
+      "end": 699899224731270,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 19690,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 20255,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.65,
+          "percent": 111.8944675991253
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 263,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 197,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 55,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 128,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 266,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 200,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 58,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 132,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.13,
+          "percent": 2.5745629713073077
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 246,
+        "rpc:ListSessions": 53,
+        "rpc:RunSessionCommand": 54,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "rpc:Snapshot": 6,
+        "command:identity": 7,
+        "rpc:ActiveLogs": 9,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 93320
+    },
+    {
+      "attachments": 4,
+      "placement": "hidden",
+      "workload": "output",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699899226245200,
+      "end": 699904274623484,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 20255,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 20812,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.57,
+          "percent": 110.33246097371891
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 266,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 200,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 58,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 132,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 271,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 204,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 62,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 135,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.16,
+          "percent": 3.1693346060673298
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 223,
+        "rpc:ListSessions": 45,
+        "rpc:RunSessionCommand": 54,
+        "command:inspect": 21,
+        "command:snapshot": 21,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "rpc:Snapshot": 4,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 97984
+    },
+    {
+      "attachments": 4,
+      "placement": "background-workspace",
+      "workload": "output",
+      "repeat": 0,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699905327472186,
+      "end": 699910342532474,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 20927,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 21456,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.29,
+          "percent": 105.48228129296619
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 271,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 204,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 63,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 135,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 274,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 208,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 66,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 139,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.14,
+          "percent": 2.7915915654093135
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 217,
+        "rpc:ListSessions": 44,
+        "rpc:RunSessionCommand": 52,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "rpc:ActiveLogs": 8,
+        "command:identity": 6,
+        "command:downloads": 2,
+        "rpc:Snapshot": 4,
+        "command:list": 2,
+        "command:tunnels": 2
+      },
+      "snapshot_payload_bytes": 93329
+    },
+    {
+      "attachments": 4,
+      "placement": "background-workspace",
+      "workload": "output",
+      "repeat": 1,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699910343915070,
+      "end": 699915375461700,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 21456,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 21989,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.33,
+          "percent": 105.93164273228648
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 274,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 208,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 66,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 139,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 278,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 212,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 69,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 143,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.15,
+          "percent": 2.9811906960305756
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 250,
+        "rpc:ListSessions": 53,
+        "rpc:RunSessionCommand": 56,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "rpc:Snapshot": 6,
+        "command:identity": 8,
+        "rpc:ActiveLogs": 9,
+        "command:list": 3,
+        "command:tunnels": 3,
+        "command:downloads": 2
+      },
+      "snapshot_payload_bytes": 93335
+    },
+    {
+      "attachments": 4,
+      "placement": "background-workspace",
+      "workload": "output",
+      "repeat": 2,
+      "frontend_pid": 1671647,
+      "owner_pids": [
+        1671731,
+        1672719,
+        1675429,
+        1675590
+      ],
+      "begin": 699915377152075,
+      "end": 699920385930553,
+      "cpu": {
+        "frontend": {
+          "start": {
+            "1671647": {
+              "ticks": 21990,
+              "starttime": "69962080"
+            }
+          },
+          "end": {
+            "1671647": {
+              "ticks": 22517,
+              "starttime": "69962080"
+            }
+          },
+          "seconds": 5.27,
+          "percent": 105.2152740063742
+        },
+        "owners": {
+          "start": {
+            "1671731": {
+              "ticks": 278,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 212,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 69,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 143,
+              "starttime": "69982106"
+            }
+          },
+          "end": {
+            "1671731": {
+              "ticks": 282,
+              "starttime": "69962101"
+            },
+            "1672719": {
+              "ticks": 215,
+              "starttime": "69972031"
+            },
+            "1675429": {
+              "ticks": 73,
+              "starttime": "69982016"
+            },
+            "1675590": {
+              "ticks": 146,
+              "starttime": "69982106"
+            }
+          },
+          "seconds": 0.14,
+          "percent": 2.7950926681010233
+        }
+      },
+      "operations": {
+        "rpc:GetDaemonInfo": 209,
+        "rpc:ListSessions": 43,
+        "rpc:RunSessionCommand": 50,
+        "command:inspect": 20,
+        "command:snapshot": 20,
+        "rpc:ActiveLogs": 7,
+        "rpc:Snapshot": 4,
+        "command:identity": 5,
+        "command:list": 2,
+        "command:tunnels": 2,
+        "command:downloads": 1
+      },
+      "snapshot_payload_bytes": 93335
+    }
+  ],
+  "failures": [
+    {
+      "type": "TimeoutError",
+      "completed_samples": 54
+    }
+  ],
+  "timeouts": 1,
+  "load_end": [
+    14.52294921875,
+    13.3056640625,
+    13.1376953125
+  ]
+}

@@ -173,9 +173,15 @@ def shell_checks(
 
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
     submitted = time.monotonic_ns()
+    # Opt-in metadata tracing for the bounded visibility regression below.
+    # Measurement modes retain their own tracing policy and unchanged workload.
+    visibility_trace = workspace / "hidden-refresh.jsonl"
+    frontend_env = env
+    if startup is None and interaction is None and attachments is None:
+        frontend_env = env | {"BURROW_ATTACHMENT_TRACE": str(visibility_trace)}
     frontend = subprocess.Popen(
         [binary, "--workspace", str(workspace), "shell", "gateway"],
-        env=env,
+        env=frontend_env,
         stdin=slave,
         stdout=slave,
         stderr=slave,
@@ -250,6 +256,30 @@ def shell_checks(
         wait(":~$")
         retained = burrow(workspace, "session", "list", "gateway")
         assert len(retained) == 1 and retained[0]["controller"].startswith("tui-"), retained
+
+        def snapshots_for_interval():
+            begin = time.monotonic_ns()
+            until = time.monotonic() + 1.2
+            while time.monotonic() < until:
+                view()
+            end = time.monotonic_ns()
+            return sum(
+                r["pid"] == frontend.pid and begin <= r["at"] <= end and r["operation"] == "command:snapshot"
+                for r in map(json.loads, visibility_trace.read_text().splitlines())
+            )
+
+        visible_snapshots = snapshots_for_interval()
+        send(b"\x1b[<0;5;4M\x1b[<0;5;4m")  # Workspace selection retains control.
+        wait("ACTIVE SSH CONNECTIONS")
+        hidden_snapshots = snapshots_for_interval()
+        assert visible_snapshots >= 5 and hidden_snapshots < visible_snapshots / 3, (
+            "hidden attachment kept polling at foreground rate",
+            visible_snapshots,
+            hidden_snapshots,
+        )
+        print(f"PASS hidden polling: {visible_snapshots} visible / {hidden_snapshots} hidden snapshots", flush=True)
+        send(b"\x1b1")
+        wait("SSH: gateway #1 · CONTROL · snapshot-current")
         command("printf 'INITIAL='; stty size", "INITIAL=35 98")
         shared_id = retained[0]["id"]
         # Temporary owner unavailability must not discard this attachment's
@@ -293,12 +323,59 @@ def shell_checks(
             return private("input", {"token": token, "data": base64.b64encode(data).decode()})
 
         current = burrow(workspace, "session", "inspect", "gateway", shared_id)
+        send(b"\x1b[<0;5;4M\x1b[<0;5;4m")
+        wait("ACTIVE SSH CONNECTIONS")
         agent = private(
             "takeover", {"generation": current["controlGeneration"], "label": "agent-one", "columns": 93, "rows": 27}
         )
-        wait("OBSERVE")
         agent_input(agent["token"], b"printf 'AGENT_%s\\n' WATCHED\n")
+        send(b"\x1b1")
+        wait("OBSERVE")
         wait("AGENT_WATCHED")
+        # An observer returning from a hidden alternate screen must classify
+        # navigation using the fresh owner modes, not the cached screen.
+        agent_input(agent["token"], b"printf '\\033[?1049h\\033[2J\\033[HALT_%s\\n' READY\n")
+        wait("ALT_READY")
+        send(b"\x1b[<0;5;4M\x1b[<0;5;4m")
+        wait("ACTIVE SSH CONNECTIONS")
+
+        def latest_snapshot():
+            return max(
+                r["at"]
+                for r in map(json.loads, visibility_trace.read_text().splitlines())
+                if r["pid"] == frontend.pid and r["operation"] == "command:snapshot"
+            )
+
+        # Start just after a hidden observation, leaving almost the entire
+        # hidden interval ahead. CLI observations do not update the TUI cache.
+        previous = latest_snapshot()
+        deadline = time.monotonic() + 15
+        while latest_snapshot() == previous:
+            assert time.monotonic() < deadline, "hidden observation stopped"
+            view()
+        agent_input(agent["token"], b"printf '\\033[?1049l'; seq 1 100; printf 'HIDDEN_%s\\n' NORMAL\n")
+        deadline = time.monotonic() + 15
+        while burrow(workspace, "session", "snapshot", "gateway", shared_id)["screen"]["alternate"]:
+            assert time.monotonic() < deadline, "owner did not leave alternate screen"
+        selected = time.monotonic_ns()
+        # Hold the selection RPC briefly so the key reaches the frontend while
+        # its old alternate-screen observation is still cached.
+        os.kill(retained[0]["ownerPID"], signal.SIGSTOP)
+        try:
+            send(b"\x1b1\x1b[5;2~")
+            until = time.monotonic() + 0.15
+            while time.monotonic() < until:
+                view()
+        finally:
+            os.kill(retained[0]["ownerPID"], signal.SIGCONT)
+        wait("snapshot-history")
+        assert latest_snapshot() > selected, "selection reused only a cached observation"
+        # Fixture bound below the hidden interval, not a remote latency SLA.
+        selection_seconds = (time.monotonic_ns() - selected) / 1e9
+        assert selection_seconds < 0.75, "selection waited for hidden polling"
+        print(f"PASS fresh observer navigation after hidden mode change: {selection_seconds:.3f}s", flush=True)
+        send(b"\x1b[1;2F")
+        wait("HIDDEN_NORMAL")
         # An observer's keyboard and local dimensions must not affect the owner.
         send("OBSERVER_MUST_NOT_WRITE\r")
         resize(120, 30)
@@ -460,6 +537,11 @@ def shell_checks(
         wait("History 1000/1000")
         wait("snapshot-history")
         assert "background-" in view()
+        send(b"\x1b[<0;5;4M\x1b[<0;5;4m")
+        wait("ACTIVE SSH CONNECTIONS")
+        send(b"\x1b1")
+        wait("History 1000/1000")
+        wait("snapshot-history")
         history = burrow(workspace, "session", "snapshot", "gateway", shared_id, "1000")
         assert history["screen"]["historyLines"] == history["screen"]["scrollOffset"] == 1000
         assert not history["screen"]["visible"] and history["shell"]["controller"] == ""

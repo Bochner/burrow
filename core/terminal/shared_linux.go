@@ -48,6 +48,10 @@ type Shared struct {
 	cancel              context.CancelFunc
 	input               chan sharedEvent
 	done                chan struct{}
+	visible             bool
+	refreshPending      bool
+	visibility          chan struct{}
+	updates             chan struct{}
 }
 
 type sharedEvent struct {
@@ -64,7 +68,7 @@ type Release struct{}
 type historyMove struct{ event any }
 
 func Attach(ctx context.Context, workspace, name, id string) (*Shared, error) {
-	s := &Shared{workspace: workspace, name: name, id: id, input: make(chan sharedEvent, 128), done: make(chan struct{})}
+	s := &Shared{workspace: workspace, name: name, id: id, input: make(chan sharedEvent, 128), done: make(chan struct{}), visibility: make(chan struct{}, 1), updates: make(chan struct{}, 1)}
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.state.Shared = &SharedState{Shell: connection.Shell{ID: id, Workspace: workspace, Connection: connection.State{Name: name}}, Synchronization: "out-of-sync"}
 	if err := s.refresh(); err != nil {
@@ -75,6 +79,22 @@ func Attach(ctx context.Context, workspace, name, id string) (*Shared, error) {
 	return s, nil
 }
 
+// SetVisible changes only observation cadence. Attachments start hidden; selecting
+// one wakes its serialized refresh without changing control or shell lifetime.
+func (s *Shared) SetVisible(visible bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.visible == visible {
+		return
+	}
+	s.visible = visible
+	s.refreshPending = s.refreshPending || visible
+	select {
+	case s.visibility <- struct{}{}:
+	default:
+	}
+}
+
 func (s *Shared) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -83,6 +103,24 @@ func (s *Shared) Snapshot() Snapshot {
 	shared := *v.Shared
 	v.Shared = &shared
 	return v
+}
+
+// WaitSnapshot coalesces local observation updates for this attachment's viewer.
+// Owner output draining and the independent observer position are unaffected.
+func (s *Shared) WaitSnapshot(ctx context.Context) Snapshot {
+	select {
+	case <-s.updates:
+	case <-s.done:
+	case <-ctx.Done():
+	}
+	return s.Snapshot()
+}
+
+func (s *Shared) notify() {
+	select {
+	case s.updates <- struct{}{}:
+	default:
+	}
 }
 
 func (s *Shared) Send(value any) error {
@@ -97,19 +135,16 @@ func (s *Shared) enqueue(value any, reply chan error) error {
 	}
 	_, control := value.(Control)
 	_, release := value.(Release)
-	if _, ok := s.scroll(value); ok {
-		value = historyMove{value}
-	}
-	_, history := value.(historyMove)
+	_, history := s.scroll(value)
 	if s.controlPending {
 		return fmt.Errorf("shell control change pending; wait before input or detach")
 	}
-	if s.inputError != nil && !control && !release && !history {
+	if s.inputError != nil && !control && !release && !history && !s.refreshPending {
 		if _, resize := value.(image.Point); !resize {
 			return s.inputError
 		}
 	}
-	if !control && !release && !history && (!s.state.Shared.Controlled || (s.state.Shared.Synchronization != "snapshot-current" && s.state.Shared.Synchronization != "snapshot-history")) {
+	if !control && !release && !history && !s.refreshPending && (!s.state.Shared.Controlled || (s.state.Shared.Synchronization != "snapshot-current" && s.state.Shared.Synchronization != "snapshot-history")) {
 		if _, resize := value.(image.Point); resize {
 			return nil
 		} // Observer geometry is local only.
@@ -127,6 +162,7 @@ func (s *Shared) enqueue(value any, reply chan error) error {
 		if release {
 			s.releasing = true
 			s.state.Shared.Controlled = false
+			s.notify()
 		}
 		return nil
 	default:
@@ -180,6 +216,8 @@ func (s *Shared) refresh() error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.notify()
+	s.refreshPending = false
 	if err != nil {
 		s.state.Shared.Shell.State = "unverified"
 		if errors.Is(err, connection.ErrShellUnavailable) {
@@ -234,12 +272,22 @@ func (s *Shared) refresh() error {
 
 func (s *Shared) run() {
 	defer close(s.done)
-	// ponytail: 50 ms snapshot polling; use owner notifications if measured RPC
-	// or rendering cost requires it. Each attachment has its own observation.
-	ticker := time.NewTicker(50 * time.Millisecond)
+	// ponytail: hidden observations lag by up to one second plus RPC time;
+	// owner notifications can replace polling if the remaining cost warrants it.
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
 		select {
+		case <-s.visibility:
+			s.mu.Lock()
+			visible := s.visible
+			s.mu.Unlock()
+			interval := time.Second
+			if visible {
+				interval = 50 * time.Millisecond
+				_ = s.refresh()
+			}
+			ticker.Reset(interval)
 		case <-s.ctx.Done():
 			s.mu.Lock()
 			token := s.token
@@ -264,6 +312,7 @@ func (s *Shared) run() {
 				s.releasing = false
 			}
 			s.mu.Unlock()
+			s.notify()
 			if event.reply != nil {
 				event.reply <- err
 			}
@@ -274,10 +323,26 @@ func (s *Shared) run() {
 }
 
 func (s *Shared) handle(event sharedEvent) error {
+	// Selection and input may arrive together. Refresh before encoding input,
+	// even if select chose the input queue before the visibility wake-up.
+	s.mu.Lock()
+	refresh := s.refreshPending
+	s.mu.Unlock()
+	if refresh {
+		if err := s.refresh(); err != nil {
+			return err
+		}
+	}
 	ctx, cancel := context.WithTimeout(s.ctx, 3*time.Second)
 	defer cancel()
 	s.mu.Lock()
 	token, modes := s.token, append([]int{}, s.modes...)
+	if _, history := s.scroll(event.value); history {
+		event.value = historyMove{event.value}
+	}
+	// Enqueuing release hides CONTROL immediately, but earlier queued input
+	// retains its authority until that release is processed in order.
+	ready := token != "" && s.state.Shared.Shell.State == "running" && (s.state.Shared.Synchronization == "snapshot-current" || s.state.Shared.Synchronization == "snapshot-history")
 	s.mu.Unlock()
 	_, history := event.value.(historyMove)
 	if _, control := event.value.(Control); !control && !history && (event.token == "" || event.token != token) {
@@ -322,8 +387,14 @@ func (s *Shared) handle(event sharedEvent) error {
 			}
 		}
 	case image.Point:
+		if !ready {
+			return nil // An unverified observer cannot change owner geometry.
+		}
 		_, err = s.private(ctx, "resize", connection.ShellResize{Token: event.token, Columns: value.X, Rows: value.Y})
 	default:
+		if !ready {
+			return fmt.Errorf("shell observation unverified or not controlled; input refused")
+		}
 		s.mu.Lock()
 		blocked := s.inputError
 		s.mu.Unlock()

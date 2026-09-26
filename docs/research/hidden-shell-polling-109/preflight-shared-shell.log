@@ -1,0 +1,37 @@
+exec ${PAGER:-/usr/bin/less} "$0" || exit 1
+Executing tests from //core/cmd/burrow:ssh_shell_test
+-----------------------------------------------------------------------------
+TIMING fixture and workspace setup: 2.0s (total 2.0s)
+TIMING connect unknown submission-to-CLI-return: 0.465s
+TIMING connect gateway submission-to-CLI-return: 0.288s
+PASS independent CLI readers, concurrent takeover, stale authority and release
+PASS explicit current-screen recovery after byte-history truncation
+PASS initial/live geometry, private validation, Ctrl+C, slow reader, backpressure and close/input race
+TIMING connect shell-peer submission-to-CLI-return: 0.296s
+TIMING connect native-close submission-to-CLI-return: 0.327s
+TIMING connect audit-close submission-to-CLI-return: 0.322s
+TIMING connect target submission-to-CLI-return: 0.469s
+TIMING connect target submission-to-CLI-return: 0.476s
+TIMING connect target submission-to-CLI-return: 0.464s
+TIMING connect target submission-to-CLI-return: 0.473s
+TIMING connect target submission-to-CLI-return: 0.476s
+PASS retained remote PIDs, launcher exit, selected/connection/manager close, stale/wrong-owner refusal, bounded flood and loss
+TIMING connect restricted submission-to-CLI-return: 0.343s
+TIMING connect forward-owner submission-to-CLI-return: 0.342s
+TIMING reconnect forward-owner submission-to-CLI-return: 0.368s
+PASS reviewed local forward, real traffic, retained inventory and selected removal
+PASS hidden polling: 25 visible / 1 hidden snapshots
+PASS fresh observer navigation after hidden mode change: 0.200s
+PASS TUI/headless takeover both ways, observer isolation, independent dimensions and gap/snapshot recovery
+TIMING shell switch and input during 4,000-line background output: 0.751s
+PASS observer scrollback, retained reattach, frontend disappearance, cancel and Keep running preserve another controller
+TIMING connect shell-close submission-to-CLI-return: 0.377s
+TIMING connect shell-master submission-to-CLI-return: 0.381s
+TIMING connect shell-frontend submission-to-CLI-return: 0.387s
+PASS two SSH shells on one master, vim/less/top switching/resize, background output, input/NUL/Ctrl-C, close/exit/reopen/loss, VT isolation, secret exclusion and quit/reaping/restoration
+TIMING connect gateway submission-to-CLI-return: 0.700s
+TIMING connect gateway submission-to-CLI-return: 0.722s
+PASS restart cancellation, manager replacement, daemon/evidence preservation and explicit reconnect
+TIMING acceptance before cleanup: 118.8s (total 120.8s)
+PASS post-shutdown database integrity and confirmed Hovel forwarding evidence
+TIMING fixture cleanup: 1.2s (total 122.0s)

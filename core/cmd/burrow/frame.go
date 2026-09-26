@@ -451,6 +451,7 @@ func (m *frame) selectFileTab(u *ui) {
 	}
 }
 func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	defer m.updateShellVisibility()
 	switch v := msg.(type) {
 	case spinner.TickMsg:
 		if m.attempt == nil || m.modal != "auth" || m.question != nil {
