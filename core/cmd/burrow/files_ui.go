@@ -69,6 +69,8 @@ type fileMode struct {
 	cancel                   context.CancelFunc
 	discoveryRequest         string
 	historyView              bool
+	historyLoaded            bool
+	historyErr               error
 	cache                    map[string]fileObservation
 	matches                  []string
 	edit                     uint64
@@ -108,6 +110,7 @@ type fileResult struct {
 	roots           connection.FileRoots
 	err             error
 	history         []string
+	historyErr      error
 }
 
 func (m *ui) openFiles(name string) tea.Cmd {
@@ -280,8 +283,8 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 		if changed, ok := value.(connection.FileRoots); ok {
 			roots = changed
 		}
-		history, _ := connection.FileHistory(ctx, w)
-		return fileResult{mode: f, sequence: seq, operation: op, area: area, value: value, roots: roots, err: err, history: history}
+		history, historyErr := connection.FileHistory(ctx, w)
+		return fileResult{mode: f, sequence: seq, operation: op, area: area, value: value, roots: roots, err: err, history: history, historyErr: historyErr}
 	}
 }
 
@@ -294,7 +297,9 @@ func (m *ui) acceptFiles(result fileResult) {
 	m.busy = false
 	f.cancel = nil
 	f.request = ""
-	if result.history != nil {
+	f.historyErr = result.historyErr
+	if result.historyErr == nil {
+		f.historyLoaded = true
 		m.history = nil
 		for _, line := range result.history {
 			args, e := connection.Split(line)
@@ -561,6 +566,13 @@ func (m ui) fileContent(w int) string {
 		b.WriteString(m.paint(errorStyle, strings.ToUpper(status)+" · previous listing retained; reconnect explicitly") + "\n")
 	}
 	b.WriteByte('\n')
+	if f.historyErr != nil {
+		status, style := "Recall unavailable", errorStyle
+		if f.historyLoaded {
+			status, style = "Recall outdated · last loaded", warningStyle
+		}
+		b.WriteString(m.paint(style, status+": "+safe(f.historyErr.Error())) + "\n")
+	}
 	for _, field := range [][2]string{{"Remote", f.remote}, {"Download root", f.roots.Download}, {"Upload root", f.roots.Upload}} {
 		value := field[1]
 		if value == "" {
@@ -587,6 +599,9 @@ func (m ui) fileContent(w int) string {
 	}
 	if f.historyView {
 		b.WriteString(m.paint(heading, "SCP HISTORY") + "\n")
+		if f.historyLoaded && f.historyErr == nil && len(m.history) == 0 {
+			b.WriteString(m.paint(secondary, "No saved commands") + "\n")
+		}
 		for _, line := range m.history[min(m.outputOffset, len(m.history)):] {
 			b.WriteString(m.syntax(safe(line), false) + "\n")
 		}

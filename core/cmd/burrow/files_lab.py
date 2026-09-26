@@ -14,7 +14,7 @@ import struct
 import subprocess
 import termios
 
-from core.cmd.burrow.file_history_lab import file_rpc
+from core.cmd.burrow.file_history_lab import file_rpc, oversize_history
 
 
 def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfers=False, history_fault=False):
@@ -45,9 +45,53 @@ def file_ui(binary, env, decoder, workspace, name="gateway", slow=None, transfer
         raise AssertionError((needle, screen))
     try:
         wait(name)
+        if history_fault:
+            original_history = cli("files-history")
+            oversize_history(workspace)
+            failed = subprocess.run([binary, "--workspace", str(workspace), "files-history"],
+                                    env=env, capture_output=True, text=True, timeout=15)
+            assert failed.returncode != 0 and "ActiveLogs response exceeds" in failed.stderr, failed
         os.write(outer, ("scp " + name + "\r").encode())
         wait("FILE MODE")
         wait("LISTING /config")
+        if history_fault:
+            wait("Recall unavailable")
+            os.write(outer, b"history\r")
+            screen = wait("SCP HISTORY")
+            assert "Recall unavailable" in screen and "No saved commands" not in screen, screen
+            file_rpc(workspace, "DeleteChain", {"Operation": "burrow", "Chain": "files"})
+            cli("lls", "upload")
+            os.write(outer, b"ls /config\r")
+            wait("SCP HISTORY", present=False)
+            wait("Recall unavailable", present=False)
+            assert cli("files-history") == ["lls upload", "scp " + name + " ls /config"]
+            oversize_history(workspace)
+            os.write(outer, b"ls /tmp/burrow-file-check\r")
+            screen = wait("Recall outdated")
+            assert "old.txt" in screen, screen
+            os.write(outer, b"history\r")
+            screen = wait("SCP HISTORY")
+            assert "Recall outdated" in screen and "lls upload" in screen and "ls /config" in screen, screen
+            assert "ls /tmp/burrow-file-check" not in screen, "failed read replaced retained recall"
+            os.write(outer, b"draft\x1b[A")
+            wait(("╰─", "ls /config"))
+            os.write(outer, b"\x1b[B")
+            wait(("╰─", "draft"))
+            file_rpc(workspace, "DeleteChain", {"Operation": "burrow", "Chain": "files"})
+            cli("lls", "download")
+            os.write(outer, b"\x15ls /config\r")
+            wait("SCP HISTORY", present=False)
+            wait("Recall outdated", present=False)
+            os.write(outer, b"history\r")
+            screen = wait("SCP HISTORY")
+            assert "lls download" in screen and "lls upload" not in screen, screen
+            os.write(outer, b"ls /config\r")
+            wait("SCP HISTORY", present=False)
+            wait("LISTING /config")
+            file_rpc(workspace, "AppendLog", {"Operation": "burrow", "Chain": "files", "Entries": [
+                {"Kind": "event", "Level": "info", "Source": "burrow-files", "Message": line}
+                for line in original_history]})
+            print("PASS real CLI/TUI history read failure, retained recall and draft, refreshed recall without reopening", flush=True)
         if not slow and not transfers:
             log_path = Path(workspace)/"burrow-logs/operations.log"
             before_log = log_path.read_bytes()

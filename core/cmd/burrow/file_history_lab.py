@@ -61,3 +61,10 @@ def reopen_files(workspace, info, open_workspace, fault=False):
 
 def history_events(workspace):
     return file_rpc(workspace, "ActiveLogs", {"Operation": "burrow", "Chain": "files"}) or []
+
+
+def oversize_history(workspace):
+    """Exceed Burrow's bounded ActiveLogs read via the real public daemon API."""
+    for _ in range(2):
+        file_rpc(workspace, "AppendLog", {"Operation": "burrow", "Chain": "files", "Entries": [
+            {"Kind": "event", "Level": "info", "Source": "history-read-lab", "Message": "x" * (600 * 1024)}]})

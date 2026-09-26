@@ -1094,6 +1094,87 @@ func TestFileBrowseSurvivesHistoryWriteFailure(t *testing.T) {
 	}
 }
 
+func TestFileHistoryReadFailureRecovery(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/history-read"}, plain, launch.Options{})
+			t.Cleanup(m.terminals.close)
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, connectionList{states: []connection.State{{Name: "gateway", State: "connected"}}})
+			frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			u := m.current().file
+			t.Cleanup(u.files.cancel)
+			result := fileResult{mode: u.files, sequence: u.files.sequence, operation: "cd",
+				value:      connection.FileListing{Path: "/retrieved", Entries: []connection.FileEntry{{Name: "kept.txt"}}},
+				historyErr: fmt.Errorf("Hovel ActiveLogs rejected: HTTP 500")}
+			check := func(status, name string) {
+				t.Helper()
+				screen := capturePresentation(t, m, fmt.Sprintf("history-read-%s-%dx%d-%t", name, size.X, size.Y, plain))
+				if !strings.Contains(screen.String(), status) {
+					t.Fatal("missing recall status", status, screen.String())
+				}
+				if strings.HasPrefix(status, "Recall") && !plain {
+					role := "#f9e2af"
+					if status == "Recall unavailable" {
+						role = "#f38ba8"
+					}
+					assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y), status, role)
+				}
+			}
+			frameEvent(m, result)
+			check("Recall unavailable", "initial-failure")
+			if !strings.Contains(ansi.Strip(m.View().Content), "1 entries") || u.files.remote != "/retrieved" {
+				t.Fatal("history read failure hid successful browse")
+			}
+			frameEvent(m, tea.PasteMsg{Content: "history"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			check("Recall unavailable", "unknown-history")
+			if strings.Contains(ansi.Strip(m.View().Content), "No saved commands") {
+				t.Fatal("failed read claimed empty history")
+			}
+			result.historyErr = nil
+			frameEvent(m, result) // A successful nil slice is known empty too.
+			check("No saved commands", "empty")
+			result.historyErr = fmt.Errorf("read failed again")
+			frameEvent(m, result)
+			check("Recall outdated", "empty-outdated")
+			result.historyErr = nil
+			result.history = []string{"scp peer tree /private", "lls upload", "scp gateway pwd"}
+			frameEvent(m, result)
+			check("lls upload", "populated")
+			if strings.Contains(ansi.Strip(m.View().Content), "/private") || strings.Contains(ansi.Strip(m.View().Content), "Recall outdated") {
+				t.Fatal("recovery lost scoping or kept the error")
+			}
+			frameEvent(m, tea.PasteMsg{Content: "draft"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+			result.historyErr = fmt.Errorf("read failed")
+			result.history = []string{"scp gateway tree /partial"}
+			frameEvent(m, result)
+			check("Recall outdated", "retained")
+			if !slices.Equal(u.history, []string{"lls upload", "pwd"}) || u.input.Value() != "lls upload" {
+				t.Fatal("failed read replaced recall or current input")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+			if u.input.Value() != "pwd" {
+				t.Fatal("failed read moved recall position")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+			if u.input.Value() != "draft" {
+				t.Fatal("failed read lost draft")
+			}
+			result.historyErr = nil
+			result.history = []string{"scp gateway ls /recovered"}
+			frameEvent(m, result)
+			if !slices.Equal(u.history, []string{"ls /recovered"}) || strings.Contains(ansi.Strip(m.View().Content), "Recall outdated") {
+				t.Fatal("successful read did not replace recall and clear its warning")
+			}
+		}
+	}
+}
+
 func TestFileResultOriginIsolation(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/files-one"}, true, launch.Options{})
 	t.Cleanup(m.terminals.close)
@@ -1125,9 +1206,15 @@ func TestFileResultOriginIsolation(t *testing.T) {
 	if m.active != two || m.current().file != second || m.View().Content != before {
 		t.Fatal("background file result changed the selected workspace/tab")
 	}
+	result.historyErr = fmt.Errorf("background history read failed")
+	result.history = []string{}
+	send(one, result)
+	if m.View().Content != before {
+		t.Fatal("background history failure changed the selected workspace/tab")
+	}
 	m.selectWorkspace(0)
 	m.activate("file-tab:0")
-	if first.input.Value() != "first draft" || first.files.remote != "/first" {
+	if first.input.Value() != "first draft" || first.files.remote != "/first" || !strings.Contains(ansi.Strip(m.View().Content), "Recall outdated") {
 		t.Fatal("background file result lost its originating tab or draft")
 	}
 	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
