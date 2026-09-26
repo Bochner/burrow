@@ -163,7 +163,10 @@ func HovelDispatch(ctx context.Context, workspace string, args ...string) ([]byt
 		return nil, e
 	}
 	defer dir.Close()
-	if e = lock(ctx, dir); e != nil {
+	locked := Phase("dispatch-lock")
+	e = lock(ctx, dir)
+	locked()
+	if e != nil {
 		return nil, e
 	}
 	if e = ctx.Err(); e != nil {
@@ -184,7 +187,10 @@ func HovelCLI(ctx context.Context, workspace string, args ...string) ([]byte, er
 	}
 	var out, diagnostic bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &diagnostic
-	if e = cmd.Run(); e != nil {
+	ran := Phase("hovel-process:" + cliVerb(args))
+	e = cmd.Run()
+	ran()
+	if e != nil {
 		return nil, fmt.Errorf("Hovel operation refused or failed; inspect the workspace throw history (no automatic retry)")
 	}
 	if _, e = Status(ctx, workspace); e != nil {

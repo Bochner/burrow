@@ -1,7 +1,7 @@
 """Disposable pinned OpenSSH container; actual Burrow -> Hovel -> module path."""
 import base64
 import argparse
-from contextlib import closing
+from contextlib import closing, ExitStack
 import hashlib
 import http.client
 import fcntl
@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import signal
 import pty
+import re
 import select
 import shlex
 import shutil
@@ -25,7 +26,7 @@ import time
 from core.cmd.burrow.authentication_lab import authentication_matrix
 from core.cmd.burrow.manager_lab import manager_checks, audit_cleanup_checks
 from core.cmd.burrow.workspace_lab import workspace_checks
-from core.cmd.burrow.latency_lab import measure, phase_totals
+from core.cmd.burrow.latency_lab import measure, measure_shells, phase_totals
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.sessions_lab import session_checks
 from core.cmd.burrow.forward_lab import forward_checks, reverse_checks, forward_ui
@@ -57,9 +58,18 @@ parser.add_argument("--forward-check", action="store_true", help="check real loc
 parser.add_argument("--reverse-check", action="store_true", help="check real reverse forwarding only")
 parser.add_argument("--proxy-check", action="store_true", help="check real connection-owned SOCKS traffic and cleanup")
 parser.add_argument("--measure", action="store_true", help="record production phase samples and separate process traces")
+parser.add_argument("--shell-latency", action="store_true", help="measure normal retained-shell startup, separate from fault acceptance")
+parser.add_argument("--samples", type=int, choices=range(1, 31), help="bounded shell-latency sample count per frontend (default 10)")
+parser.add_argument("--phases", action="store_true", help="opt in to shell-latency phase diagnostics")
+parser.add_argument("--processes", action="store_true", help="separate strace process-only shell diagnostic (requires strace)")
+parser.add_argument("--linux-path", action="store_true", help="shell-latency counterfactual: omit WSL Windows PATH entries in this disposable lab only")
+parser.add_argument("--growing-tabs", action="store_true", help="shell-latency adjacent workload: retain all background observers instead of holding two attachments")
 parser.add_argument("--prompt-check", action="store_true", help="check private prompt and sibling-control responsiveness only")
 parser.add_argument("--auth-check", action="store_true", help="check private prompts, cancellation and rejected passwords only")
 args = parser.parse_args()
+parser_args = args
+if (args.samples or args.phases or args.processes or args.linux_path or args.growing_tabs) and not args.shell_latency:
+    parser.error("measurement options require --shell-latency")
 if args.shared_tui_check:
     args.shell_check = True
 smoke = args.smoke
@@ -74,6 +84,8 @@ def timing(stage):
     stage_started = now
 
 def interrupted(signum, _frame):
+    if signum == signal.SIGALRM:
+        raise TimeoutError("acceptance timed out")
     raise SystemExit(f"acceptance interrupted by signal {signum}")
 for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
     signal.signal(signum, interrupted)
@@ -103,6 +115,12 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
     binary = str(shutil.copy2(binary, root / "burrow"))
     env = {k: v for k, v in os.environ.items() if not k.startswith(("HOVEL_", "SSH_"))}
     env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
+    if args.shell_latency:
+        env.pop("BURROW_PHASE_TRACE", None)
+        if args.linux_path:
+            env["PATH"] = os.pathsep.join(p for p in env["PATH"].split(os.pathsep) if not re.match(r"/mnt/[a-z]/", p))
+        if args.phases:
+            env["BURROW_PHASE_TRACE"] = str(root / "phases.jsonl")
     env["AUTOMATION_SECRET_CANARY"] = "AUTOMATION-NOT-A-CREDENTIAL"
     daemons = []
     children = []
@@ -112,7 +130,8 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
     key = root / "client key"
     command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key)
     try:
-        container = command("docker", "run", "-d", "--rm", "--publish", "127.0.0.1::2222",
+        container = command("docker", "run", "-d", "--rm", "--cidfile", root / "container.id", "--label", "dev.burrow.lab=connection",
+                            "--label", f"dev.burrow.lab.pid={os.getpid()}", "--publish", "127.0.0.1::2222",
                             "--env", "USER_NAME=tester", "--env", "PASSWORD_ACCESS=true",
                             "--env", "PUBLIC_KEY_FILE=/client.pub", "--mount",
                             f"type=bind,src={key}.pub,dst=/client.pub,readonly", image).strip()
@@ -137,7 +156,11 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(base64.b64decode(hostkey[1])).digest()).decode().rstrip("=")
         def burrow(w, *args, ok=True):
             submitted = time.monotonic()
-            out = command(binary, "--workspace", w, *args, env=env, ok=ok)
+            prefix = []
+            if parser_args.processes and args[:2] == ("session", "create") and "--yes" in args:
+                prefix = ["strace", "--kill-on-exit", "-f", "-ttt", "-T", "-e", "trace=process,connect,fsync,fdatasync,clock_nanosleep",
+                          "-o", str(root / f"shell-process-{time.monotonic_ns()}.trace")]
+            out = command(*prefix, binary, "--workspace", w, *args, env=env, ok=ok)
             if ok and args[0] in ("connect", "reconnect") and "--yes" in args:
                 # Response can precede authentication: never label this dispatch
                 # or full connection latency. --measure records the separate phases.
@@ -160,6 +183,11 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
             measure(binary,root,env,container,port,key,command,wait)
             raise SystemExit(0)
         options = ["--key", str(key), "--port", str(port), "--yes"]
+        if args.shell_latency:
+            full_evidence = True
+            measure_shells(binary, root, env, w, burrow, options, wait, screen_check,
+                           args.samples or 10, image, wheel, args.processes, args.growing_tabs)
+            raise SystemExit(0)
         if args.workspace_check or args.lifecycle_check or not any(vars(args)[name] for name in vars(args) if name != "paths"):
             workspace_checks(binary, env, screen_check, root, w, burrow, wait, options, daemons)
             timing("headless workspace lifecycle")
@@ -902,32 +930,51 @@ launch:
         timing("failure ownership and evidence")
         print("PASS production key/agent auth, trust, cancellation, ownership, cross-workspace isolation, loss/reconnect, bounded logs and truthful close", flush=True)
     finally:
+        signal.alarm(0)  # Cleanup has its own bounded subprocess/transition waits.
         timing("acceptance before cleanup")
-        # Preserve daemon failures even if fixture teardown itself fails.
+        # Every cleanup runs even if artifact preservation or another cleanup fails.
         # These are disposable test workspaces, never the operator's workspace.
-        if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
-            if (root / "phases.jsonl").exists():
-                shutil.copy2(root / "phases.jsonl", Path(directory) / "phases.jsonl")
-            for log in root.glob("*/burrow-launch.log"):
-                shutil.copy2(log, Path(directory) / (log.parent.name + "-daemon.log"))
-        for child in children:
-            child.terminate()
-            child.wait(timeout=10)
-        for pid in daemons:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-        if container:
-            command("docker", "rm", "-f", container)
-        # Live Python SQLite readers previously reproduced database corruption;
-        # see docs/research/retained-consumer-proof.md. Inspect only after exit.
         def exited(pid):
             try:
                 return Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1].startswith("Z")
             except FileNotFoundError:
                 return True
-        wait(lambda: all(exited(pid) for pid in daemons))
+
+        def stop_daemon(pid):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            wait(lambda: exited(pid))
+
+        def stop_child(child):
+            child.terminate()
+            child.wait(timeout=10)
+
+        def remove_container():
+            owned = container
+            if owned is None and (root / "container.id").exists():
+                observed = (root / "container.id").read_text().strip()
+                if re.fullmatch(r"[a-f0-9]{64}", observed):
+                    owned = observed
+            if owned:
+                command("docker", "rm", "-f", "-v", owned)
+                assert owned not in command("docker", "ps", "-aq", "--no-trunc").split()
+
+        with ExitStack() as cleanup:
+            cleanup.callback(remove_container)
+            for pid in daemons:
+                cleanup.callback(stop_daemon, pid)
+            for child in children:
+                cleanup.callback(stop_child, child)
+            if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
+                for artifact in [root / "phases.jsonl", *root.glob("shell-process-*.trace")]:
+                    if artifact.exists():
+                        shutil.copy2(artifact, Path(directory) / artifact.name)
+                for log in root.glob("*/burrow-launch.log"):
+                    shutil.copy2(log, Path(directory) / (log.parent.name + "-daemon.log"))
+        # Live Python SQLite readers previously reproduced database corruption;
+        # see docs/research/retained-consumer-proof.md. Inspect only after exit.
         if forward_evidence or full_evidence or (partition and daemons):
             with closing(sqlite3.connect(w / "workspace.db")) as db:
                 assert db.execute("pragma integrity_check").fetchone() == ("ok",)

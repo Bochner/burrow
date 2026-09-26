@@ -105,6 +105,7 @@ func run(args []string) (failure error) {
 		return fmt.Errorf("legacy connection-module entry point retired; use Burrow connect for reviewed manager submission; existing retained owners remain available through connections/inspect/close")
 	}
 	if len(args) == 1 && args[0] == "module" {
+		launch.Phase("module-ready")()
 		hovel.Serve(connection.Module{})
 		return nil
 	}

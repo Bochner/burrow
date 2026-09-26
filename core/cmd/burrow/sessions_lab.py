@@ -11,6 +11,30 @@ import subprocess
 import time
 
 
+def session_startup(burrow, w, records, count, wait):
+    """Normal CLI startup only; faults remain in session_checks below."""
+    master = burrow(w, "inspect", "gateway")
+    for _ in range(count):
+        item = {"case": "cli", "review_begin": time.monotonic_ns()}
+        records.append(item)
+        review = burrow(w, "session", "create", "gateway")
+        item["review_ready"] = time.monotonic_ns()
+        assert review["digest"]
+        # Synthetic human think time, excluded from system startup work.
+        time.sleep(.2)
+        item["begin"] = time.monotonic_ns()
+        shell = burrow(w, "session", "create", "gateway", "--yes", "--review", review["digest"])
+        item["dispatch_return"] = time.monotonic_ns()
+        item.update(owner_pid=shell["ownerPID"], shell_pid=shell["pid"])
+        assert shell["state"] == "running" and shell["runID"]
+        wait(lambda: ":~$" in burrow(w, "session", "snapshot", "gateway", shell["id"])["screen"]["text"])
+        item["prompt_observed"] = time.monotonic_ns()
+        current = burrow(w, "inspect", "gateway")
+        assert (current["masterPID"], current["socketInode"]) == (master["masterPID"], master["socketInode"])
+        burrow(w, "session", "close", "gateway", shell["id"], "--yes")
+        assert not Path(f'/proc/{shell["pid"]}').exists()
+
+
 def session_checks(burrow, w, first, command, container, wait, options, root, daemons, binary, env):
     # A controlled login startup proves real remote shell PIDs without exposing
     # any input back door before the shared-controller implementation.

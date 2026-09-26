@@ -17,6 +17,146 @@ import termios
 import time
 
 
+def measure_shells(binary, root, env, workspace, burrow, options, wait, decoder, count, image, wheel, processes, growing):
+    from core.cmd.burrow.sessions_lab import session_startup
+    from core.cmd.burrow.shell_lab import shell_checks
+
+    report = {
+        "provenance": {
+            "machine": platform.platform(), "cpu_count": os.cpu_count(),
+            "load_start": os.getloadavg(), "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
+            "wheel_sha256": hashlib.sha256(Path(wheel).read_bytes()).hexdigest(),
+            "image": image, "build": "Aspect fastbuild", "phases": "BURROW_PHASE_TRACE" in env,
+            "process_trace": processes,
+            "growing_tabs": growing,
+            "windows_path_entries": sum(bool(re.match(r"/mnt/[a-z]/", p)) for p in env["PATH"].split(os.pathsep)),
+            "workload": "local disposable SSH; key authentication; one approved master; sequential CLI shells closed after each; TUI first shell retained as background observer; later shells closed after each unless growing_tabs=true",
+            "geometry": "CLI 80x24; TUI outer 160x40, shell 98x35",
+            "human_wait": "CLI review-to-submission includes synthetic 200ms; TUI shell command has no review dialog",
+            "observation": "CLOCK_MONOTONIC ns; CLI snapshot prompt is not paint; TUI decoded VT prompt cells include up to 50ms read/drain polling and decoder overhead",
+            "p95": "nearest rank, sorted[ceil(0.95*n)-1]; n=1 is descriptive only",
+            "timeouts": "CLI 60s; connection transition 20s; TUI prompt 15s; whole lab 1800s",
+        },
+        "connections": [], "samples": [], "failures": [], "timeouts": 0,
+    }
+    source = Path(os.environ["BUILD_WORKSPACE_DIRECTORY"])
+    report["provenance"].update(
+        source_revision=subprocess.check_output(["git", "-C", source, "rev-parse", "HEAD"], text=True).strip(),
+        tracked_diff_sha256=hashlib.sha256(subprocess.check_output(["git", "-C", source, "diff", "HEAD", "--", "core", ".aspect"])).hexdigest(),
+        pins={name: (source / name).read_text() for name in ("MODULE.bazel", ".bazelversion", ".aspect/version.axl", ".bazelrc")},
+        cpu_model=next((line.split(":", 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines() if line.startswith("model name")), "unknown"),
+        memory=Path("/proc/meminfo").read_text().splitlines()[:3],
+        directory_shape="fresh disposable workspace; zero retained shell records before CLI; CLI closed records kept by Hovel; TUI previous shells retained",
+    )
+    try:
+        if processes:
+            report["initialization"] = []
+            for executable, arguments in ((binary, ["--help"]), (str(root / "cache/burrow/hovel/0.4.2/hovel"), ["version"])):
+                for path_mode in ("inherited", "linux-only"):
+                    diagnostic_env = dict(env, GODEBUG="inittrace=1")
+                    if path_mode == "linux-only":
+                        diagnostic_env["PATH"] = os.pathsep.join(p for p in env["PATH"].split(os.pathsep) if not re.match(r"/mnt/[a-z]/", p))
+                    for _ in range(3):
+                        begin = time.monotonic_ns()
+                        result = subprocess.run([executable, *arguments], env=diagnostic_env, capture_output=True, text=True, timeout=15)
+                        assert result.returncode == 0
+                        # Only Go runtime metadata; no arbitrary stderr or output.
+                        initialization = re.findall(r"^init (\S+) @([\d.]+) ms, ([\d.]+) ms clock, (\d+) bytes, (\d+) allocs$", result.stderr, re.M)
+                        assert initialization
+                        report["initialization"].append({"executable": Path(executable).name, "path": path_mode, "ns": time.monotonic_ns()-begin,
+                                                         "packages": [{"package": p, "at_ms": float(at), "ms": float(ms), "bytes": int(b), "allocs": int(a)} for p, at, ms, b, a in initialization]})
+        for name, temperature in (("cold", "cold-manager"), ("gateway", "warm-manager")):
+            item = {"case": temperature, "review_begin": time.monotonic_ns()}
+            report["connections"].append(item)
+            review = burrow(workspace, "connect", name, "127.0.0.1", "tester", *options[:-1])
+            item["review_ready"] = time.monotonic_ns()
+            assert review["review"]
+            time.sleep(.2)
+            item["begin"] = time.monotonic_ns()
+            burrow(workspace, "connect", name, "127.0.0.1", "tester", *options)
+            item["dispatch_return"] = time.monotonic_ns()
+            def connected():
+                state = burrow(workspace, "inspect", name)
+                assert state["state"] != "lost"
+                return state if state["state"] == "connected" else None
+            state = wait(connected)
+            item["connected"] = state["connected"]
+            item["connected_observed"] = time.monotonic_ns()
+            if name == "cold":
+                burrow(workspace, "close", name, "--yes")
+        session_startup(burrow, workspace, report["samples"], count, wait)
+        shell_checks(binary, workspace, env, decoder, burrow, state, options,
+                     startup=report["samples"], samples=count, growing=growing)
+        burrow(workspace, "close", "gateway", "--yes")
+        assert burrow(workspace, "connections") == []
+        correlate_shell_phases(report, root)
+        report["cleanup"] = "shell clients reaped; master unchanged during samples; all connections explicitly closed"
+    except BaseException as error:
+        # No exception arguments: subprocess failures can contain private input.
+        report["failures"].append({"type": type(error).__name__, "completed_samples": sum("visible" in r or "prompt_observed" in r for r in report["samples"])})
+        report["timeouts"] += int(isinstance(error, (TimeoutError, subprocess.TimeoutExpired)) or "timed out" in str(error) or "stalled" in str(error))
+        raise
+    finally:
+        report["load_end"] = os.getloadavg()
+        groups = {}
+        for item in report["connections"] + report["samples"]:
+            for end, start in (("review_ready", "review_begin"), ("begin", "review_ready"), ("dispatch_return", "begin"),
+                               ("connected", "begin"), ("prompt_observed", "begin"), ("visible", "begin")):
+                if end in item and start in item:
+                    groups.setdefault(item["case"] + ":" + end + "-" + start, []).append((item[end] - item[start]) / 1e6)
+            for phase, total in item.get("phase_totals", {}).items():
+                groups.setdefault(item["case"] + ":phase-total:" + phase, []).append(total["ns"] / 1e6)
+        report["summary_ms"] = {name: {"n": len(v), "median": statistics.median(v), "p95": sorted(v)[math.ceil(.95 * len(v))-1]} for name, v in groups.items()}
+        output = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", root)) / "shell-startup.json"
+        output.write_text(json.dumps(report, indent=2) + "\n")
+        print("SHELL_STARTUP " + json.dumps({"artifact": str(output), "summary_ms": report["summary_ms"], "failures": report["failures"]}
+                                            if "TEST_UNDECLARED_OUTPUTS_DIR" in os.environ else report), flush=True)
+
+
+def correlate_shell_phases(report, root):
+    phase_file = root / "phases.jsonl"
+    if report["provenance"]["phases"]:
+        assert phase_file.exists(), "requested startup phases missing"
+    if phase_file.exists():
+        phases = [json.loads(line) for line in phase_file.read_text().splitlines()]
+        report["phase_trace_sha256"] = hashlib.sha256(phase_file.read_bytes()).hexdigest()
+        for item in report["connections"] + report["samples"]:
+            if "begin" not in item:
+                continue
+            high = item.get("visible", item.get("prompt_observed", item.get("connected_observed", item["begin"])))
+            window = [p for p in phases if item["begin"] <= p["begin"] <= high]
+            throws = [p for p in window if p["phase"].startswith("manager-throw:")]
+            # Keep raw boundary/setup spans and aggregate other caller RPCs.
+            # Background polling overlaps startup; these are not additive costs.
+            setup = {"call:" + name for name in ("CreateOperation", "CreateChain", "AddModule", "AddTarget", "SetChainConfig")}
+            item["phases"] = [p for p in window if p["phase"].startswith(("shell-", "module", "manager-throw:", "hovel-", "dispatch-lock"))
+                              or (p["phase"] in setup and any(p["pid"] == t["pid"] and t["begin"] <= p["begin"] < t["begin"]+t["ns"] for t in throws))]
+            item["caller_rpc_totals"] = {}
+            for p in window:
+                if p["phase"].startswith("call:") and throws and p["pid"] == throws[0]["pid"]:
+                    entry = item["caller_rpc_totals"].setdefault(p["phase"], {"count": 0, "ns": 0})
+                    entry["count"] += 1
+                    entry["ns"] += p["ns"]
+            item["phase_totals"] = {}
+            for p in item["phases"]:
+                entry = item["phase_totals"].setdefault(p["phase"], {"count": 0, "ns": 0})
+                entry["count"] += 1
+                entry["ns"] += p["ns"]
+            if item["case"] in ("cli", "tui-first", "tui-additional") and not report["failures"]:
+                names = [t["phase"] for t in throws]
+                assert names == ["manager-throw:shell-prepare", "manager-throw:shell-start"], names
+                for name in ("shell-sdk-allocation", "shell-adoption-observation", "shell-ssh-start", "shell-first-output"):
+                    assert item["phase_totals"][name]["count"] == 1, (item["case"], name)
+                prepare, start = throws
+                assert prepare["begin"] + prepare["ns"] <= start["begin"]
+                adoption = next(p for p in item["phases"] if p["phase"] == "shell-adoption-observation")
+                ssh = next(p for p in item["phases"] if p["phase"] == "shell-ssh-start")
+                output = next(p for p in item["phases"] if p["phase"] == "shell-first-output")
+                assert prepare["begin"] + prepare["ns"] <= adoption["begin"] < adoption["begin"] + adoption["ns"] <= ssh["begin"]
+                assert ssh["pid"] == output["pid"] == item["owner_pid"]
+                assert ssh["begin"] + ssh["ns"] <= output["begin"] + output["ns"] <= high
+
+
 def phase_totals(path, offset, low, high):
     """Sum traced phases that began inside one monotonic window, by name."""
     totals = {}

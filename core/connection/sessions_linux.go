@@ -179,6 +179,7 @@ func executeSession(ctx context.Context, w string, args []string) (any, error) {
 	if privateShellCommand(args[1]) {
 		return nil, fmt.Errorf("private request required; use the headless CLI with --request-stdin")
 	}
+	defer launch.Phase("shell-lifecycle:" + args[1])()
 	state, err := selected(ctx, w, args[2])
 	if err != nil {
 		return nil, err
@@ -317,7 +318,9 @@ func shellAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 	case "shell-prepare":
 		// Register through Module.Run, as required by Hovel's session adoption.
 		s := &retainedShell{record: Shell{Workspace: w, Connection: connection, RunID: ctx.RunID, OwnerPID: os.Getpid(), State: "prepared", Columns: request.Columns, Rows: request.Rows, Cleanup: "not requested"}}
+		allocated := launch.Phase("shell-sdk-allocation")
 		ref, err := ctx.OpenSession(s, hovel.WithName(connection.Name), hovel.WithKind(shellKind), hovel.WithTransport("ssh"), hovel.WithCapabilities("close"))
+		allocated()
 		if err != nil {
 			return hovel.Result{}, err
 		}
@@ -345,6 +348,7 @@ func shellAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {
 // Called with the manager admission lock held. The session is registered before
 // launch, so close and launch never race an untracked SSH subprocess.
 func (m *manager) shellControl(c context.Context, req hovel.PayloadCommandRequest) (Shell, error) {
+	defer launch.Phase("shell-owner:" + req.Command)()
 	if len(req.Args) < 3 {
 		return Shell{}, fmt.Errorf("exact connection and shell required")
 	}
@@ -388,7 +392,9 @@ func (m *manager) shellControl(c context.Context, req hovel.PayloadCommandReques
 		if json.Unmarshal([]byte(req.Args[3]), &expected) != nil || expected.Connection != shell.Connection || expected.Columns != shell.Columns || expected.Rows != shell.Rows || live.State != "connected" || live.MasterPID != expected.Connection.MasterPID || live.SocketInode != expected.Connection.SocketInode || req.Args[4] == "" {
 			return shell, fmt.Errorf("shell connection changed; no launch")
 		}
+		adopted := launch.Phase("shell-adoption-observation")
 		observed, err := inspectShell(c, m.Workspace, live.Name, shell.ID)
+		adopted()
 		if err != nil || observed.Connection != shell.Connection || observed.OwnerPID != shell.OwnerPID || observed.State != "prepared" {
 			return shell, fmt.Errorf("shell preparation unavailable or already launched; inspect instead of retrying")
 		}
@@ -565,6 +571,7 @@ func (s *retainedShell) RunPayloadCommand(req hovel.PayloadCommandRequest) (hove
 // Own the PTY directly: SDK PTYSession has an unbounded intermediate queue.
 // Output never waits for a reader; only token-fenced input reaches this PTY.
 func (s *retainedShell) start(runID string) error {
+	defer launch.Phase("shell-pty-start")()
 	if err := shellGeometry(s.record.Columns, s.record.Rows); err != nil {
 		return err
 	}
@@ -614,7 +621,9 @@ func (s *retainedShell) start(runID string) error {
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
+		launched := launch.Phase("shell-ssh-start")
 		err := cmd.Start()
+		launched()
 		started <- err
 		if err != nil {
 			close(s.done)
@@ -667,9 +676,14 @@ func (s *retainedShell) start(runID string) error {
 func (s *retainedShell) drain(pty *os.File) {
 	defer close(s.drained)
 	buf := make([]byte, 4096)
+	first := launch.Phase("shell-first-output")
 	for {
 		n, err := pty.Read(buf)
 		if n > 0 {
+			if first != nil {
+				first()
+				first = nil
+			}
 			s.mu.Lock()
 			s.screen.Write(buf[:n])
 			s.record.Received += uint64(n)

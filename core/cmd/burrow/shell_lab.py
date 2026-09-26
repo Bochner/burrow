@@ -14,7 +14,7 @@ import termios
 import time
 
 
-def shell_checks(binary, workspace, env, decoder, burrow, first, options):
+def shell_checks(binary, workspace, env, decoder, burrow, first, options, startup=None, samples=10, growing=False):
     outer, slave = pty.openpty()
     before = termios.tcgetattr(slave)
     dimensions = [160, 40]
@@ -144,10 +144,51 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options):
         os.kill(frontend.pid, signal.SIGWINCH)
 
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+    submitted = time.monotonic_ns()
     frontend = subprocess.Popen([binary, "--workspace", str(workspace), "shell", "gateway"],
                                 env=env, stdin=slave, stdout=slave, stderr=slave,
                                 preexec_fn=controlling)
     try:
+        if startup is not None:
+            for index in range(samples):
+                attachments = index + 1 if growing else min(index + 1, 2)
+                item = {"case": "tui-first" if index == 0 else "tui-additional",
+                        "begin": submitted, "frontend_pid": frontend.pid,
+                        "attachments": attachments, "background_observers": attachments - 1}
+                startup.append(item)
+                # Observe actual decoded cells, never dispatch success or raw ANSI.
+                deadline = time.monotonic() + 15
+                while "visible" not in item or "control_visible" not in item:
+                    assert time.monotonic() < deadline, "startup prompt timed out"
+                    screen = view()
+                    observed = time.monotonic_ns()
+                    if "CONTROL" in screen:
+                        item.setdefault("control_visible", observed)
+                    if ":~$" in screen:
+                        item.setdefault("visible", observed)
+                retained = burrow(workspace, "session", "list", "gateway")
+                assert len(retained) == attachments and all(s["state"] == "running" for s in retained)
+                item["owner_pid"] = next(s["ownerPID"] for s in retained if s["controller"])
+                item["shell_pid"] = next(s["pid"] for s in retained if s["controller"])
+                same_master()
+                background()
+                wait("Shell detached")
+                if index > 0 and not growing:
+                    command("shell-close 2", "Retained SSH shell closed (gateway #2)")
+                if index + 1 < samples:
+                    submitted = time.monotonic_ns()
+                    send("shell gateway\r")
+            send(b"\x03")
+            wait("Keep running")
+            send(b"\r")
+            assert frontend.wait(timeout=10) == 0
+            assert termios.tcgetattr(slave) == before
+            for shell in burrow(workspace, "session", "list", "gateway"):
+                assert shell["controller"] == ""
+                burrow(workspace, "session", "close", "gateway", shell["id"], "--yes")
+                assert not Path(f'/proc/{shell["pid"]}').exists()
+            same_master()
+            return first
         wait("CONTROL")
         wait(":~$")
         retained = burrow(workspace, "session", "list", "gateway")
