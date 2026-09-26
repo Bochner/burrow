@@ -29,6 +29,7 @@ from core.cmd.burrow.manager_lab import manager_checks, audit_cleanup_checks
 from core.cmd.burrow.workspace_lab import workspace_checks
 from core.cmd.burrow.latency_lab import measure, measure_shells, phase_totals
 from core.cmd.burrow.file_latency import measure_files
+from core.cmd.burrow.interaction_latency import measure_interactions
 from core.cmd.burrow.file_history_lab import reopen_files
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.sessions_lab import session_checks
@@ -88,6 +89,9 @@ parser.add_argument(
 parser.add_argument(
     "--samples", type=int, choices=range(1, 31), help="bounded file/shell latency sample count per case (default 10)"
 )
+parser.add_argument(
+    "--interaction-latency", action="store_true", help="measure bounded shared-shell input to visible echo"
+)
 parser.add_argument("--phases", action="store_true", help="opt in to shell-latency phase diagnostics")
 parser.add_argument(
     "--processes", action="store_true", help="separate strace process-only shell diagnostic (requires strace)"
@@ -110,9 +114,11 @@ parser.add_argument(
 )
 args = parser.parse_args()
 parser_args = args
-if args.samples and not (args.shell_latency or args.file_latency):
-    parser.error("--samples requires --shell-latency or --file-latency")
-if (args.phases or args.processes or args.linux_path or args.growing_tabs) and not args.shell_latency:
+if args.samples and not (args.shell_latency or args.file_latency or args.interaction_latency):
+    parser.error("--samples requires a latency workload")
+if args.phases and not (args.shell_latency or args.interaction_latency):
+    parser.error("--phases requires --shell-latency or --interaction-latency")
+if (args.processes or args.linux_path or args.growing_tabs) and not args.shell_latency:
     parser.error("shell diagnostic options require --shell-latency")
 if args.shared_tui_check:
     args.shell_check = True
@@ -186,7 +192,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         NO_COLOR="1",
         TERM="xterm-256color",
     )
-    if args.shell_latency or args.file_latency:
+    if args.shell_latency or args.file_latency or args.interaction_latency:
         env.pop("BURROW_PHASE_TRACE", None)
         if args.linux_path:
             env["PATH"] = os.pathsep.join(p for p in env["PATH"].split(os.pathsep) if not re.match(r"/mnt/[a-z]/", p))
@@ -330,6 +336,12 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
                 wheel,
                 args.processes,
                 args.growing_tabs,
+            )
+            raise SystemExit(0)
+        if args.interaction_latency:
+            full_evidence = True
+            measure_interactions(
+                binary, root, env, w, burrow, options, wait, screen_check, args.samples or 10, image, wheel
             )
             raise SystemExit(0)
         if args.file_latency:

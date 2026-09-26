@@ -107,6 +107,7 @@ func SessionCommand(ctx context.Context, w string, args []string, input io.Reade
 	if len(args) != 5 || args[0] != "session" || args[4] != "--request-stdin" {
 		return nil, fmt.Errorf("private shell request required")
 	}
+	defer launch.Phase("shell-private:" + args[1])()
 	raw, err := io.ReadAll(io.LimitReader(input, shellRequestLimit+1))
 	if err != nil || len(raw) > shellRequestLimit {
 		return nil, fmt.Errorf("private shell request exceeds 8192 bytes or cannot be read")
@@ -227,6 +228,7 @@ func (s *retainedShell) sharedCommand(req hovel.PayloadCommandRequest) (any, err
 		}
 	}
 	if req.Command == "snapshot" && len(req.Args) <= 1 && req.InputData == "" && req.InputEncoding == "" {
+		defer launch.Phase("shell-snapshot")()
 		offset := 0
 		if len(req.Args) == 1 {
 			var err error
@@ -363,7 +365,9 @@ func (s *retainedShell) sharedCommand(req hovel.PayloadCommandRequest) (any, err
 		if err := s.pty.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			return nil, fmt.Errorf("shell input deadline unavailable; input refused")
 		}
+		written := launch.Phase("shell-pty-write")
 		n, err := s.pty.Write(input.Data)
+		written()
 		result.AcceptedBytes, result.Backpressure = n, errors.Is(err, os.ErrDeadlineExceeded)
 		if err != nil && !result.Backpressure {
 			result.InputError = "PTY write failed; only the reported prefix was accepted; inspect before continuing"

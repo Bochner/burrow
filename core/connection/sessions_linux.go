@@ -680,6 +680,7 @@ func (s *retainedShell) drain(pty *os.File) {
 	for {
 		n, err := pty.Read(buf)
 		if n > 0 {
+			drained := launch.Phase("shell-output-drain")
 			if first != nil {
 				first()
 				first = nil
@@ -697,6 +698,7 @@ func (s *retainedShell) drain(pty *os.File) {
 			s.record.Buffered = len(s.data)
 			s.record.Dropped = s.record.Received - uint64(len(s.data))
 			s.mu.Unlock()
+			drained()
 		}
 		if err != nil {
 			return

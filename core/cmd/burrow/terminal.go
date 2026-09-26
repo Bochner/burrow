@@ -648,6 +648,9 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 			return nil
 		} // Explicit close reports after reaping.
 		v.tab.screen = v.screen
+		if v.screen.Shared != nil {
+			launch.Phase("shell-frontend-accept")()
+		}
 		v.tab.prepareChainInput()
 		if v.tab.connection != "" && v.screen.Exited {
 			if v.tab.logs != nil {
@@ -714,6 +717,9 @@ func (m *frame) sendTerminal(event any) {
 	tab := m.current().activeTerminal()
 	if tab == nil || tab.pending || tab.host == nil {
 		return
+	}
+	if tab.screen.Shared != nil {
+		defer launch.Phase("shell-frontend-input")()
 	}
 	if press, ok := event.(uv.KeyPressEvent); ok && press.Code == 'c' && press.Mod == uv.ModCtrl && tab == m.current().cli && m.attempt != nil && m.attempt.chain && m.attempt.path == m.active {
 		m.attempt.cancel()

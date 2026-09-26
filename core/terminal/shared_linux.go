@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Bochner/burrow/core/connection"
+	"github.com/Bochner/burrow/core/launch"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
@@ -54,6 +55,7 @@ type sharedEvent struct {
 	token      string
 	generation uint64
 	reply      chan error
+	queued     func()
 }
 
 // Control explicitly takes over the last observed generation at this geometry.
@@ -76,6 +78,7 @@ func Attach(ctx context.Context, workspace, name, id string) (*Shared, error) {
 func (s *Shared) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer launch.Phase("shell-frontend-sample")()
 	v := s.state
 	shared := *v.Shared
 	v.Shared = &shared
@@ -115,7 +118,7 @@ func (s *Shared) enqueue(value any, reply chan error) error {
 	if text, ok := value.(string); ok && len(text) > 4096 {
 		return fmt.Errorf("paste exceeds 4096 bytes; input not sent")
 	}
-	event := sharedEvent{value: value, token: s.token, generation: s.state.Shared.Shell.ControlGeneration, reply: reply}
+	event := sharedEvent{value: value, token: s.token, generation: s.state.Shared.Shell.ControlGeneration, reply: reply, queued: launch.Phase("shell-input-queue")}
 	select {
 	case s.input <- event:
 		if control {
@@ -164,6 +167,7 @@ func (s *Shared) private(ctx context.Context, action string, request any) (conne
 }
 
 func (s *Shared) refresh() error {
+	defer launch.Phase("shell-refresh")()
 	ctx, cancel := context.WithTimeout(s.ctx, 3*time.Second)
 	defer cancel()
 	s.mu.Lock()
@@ -247,6 +251,7 @@ func (s *Shared) run() {
 			}
 			return
 		case event := <-s.input:
+			event.queued()
 			err := s.handle(event)
 			s.mu.Lock()
 			if err != nil {
@@ -335,7 +340,9 @@ func (s *Shared) handle(event sharedEvent) error {
 		if len(data) > 4096 {
 			return fmt.Errorf("encoded input exceeds 4096 bytes; input not sent")
 		}
+		input := launch.Phase("shell-input-rpc")
 		result, err = s.private(ctx, "input", connection.ShellInput{Token: event.token, Data: data})
+		input()
 		if err == nil && (result.AcceptedBytes != len(data) || result.Backpressure || result.InputError != "") {
 			err = fmt.Errorf("input incomplete: %d/%d bytes accepted; inspect shell before continuing", result.AcceptedBytes, len(data))
 		}

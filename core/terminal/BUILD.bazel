@@ -4,7 +4,7 @@ go_library(
     srcs = ["host_linux.go", "shared_linux.go"],
     importpath = "github.com/Bochner/burrow/core/terminal",
     visibility = ["//visibility:public"],
-    deps = ["//core/connection", "@com_github_charmbracelet_ultraviolet//:ultraviolet", "@com_github_charmbracelet_x_ansi//:ansi", "@com_github_charmbracelet_x_vt//:vt", "@org_golang_x_sys//unix"],
+    deps = ["//core/connection", "//core/launch", "@com_github_charmbracelet_ultraviolet//:ultraviolet", "@com_github_charmbracelet_x_ansi//:ansi", "@com_github_charmbracelet_x_vt//:vt", "@org_golang_x_sys//unix"],
 )
 go_test(
     name = "host_test",

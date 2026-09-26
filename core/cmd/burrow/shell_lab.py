@@ -15,7 +15,9 @@ import termios
 import time
 
 
-def shell_checks(binary, workspace, env, decoder, burrow, first, options, startup=None, samples=10, growing=False):
+def shell_checks(
+    binary, workspace, env, decoder, burrow, first, options, startup=None, samples=10, growing=False, interaction=None
+):
     outer, slave = pty.openpty()
     before = termios.tcgetattr(slave)
     dimensions = [160, 40]
@@ -100,7 +102,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
             if any(text in screen for text in needles):
                 return screen
             assert frontend.poll() is None, (frontend.returncode, screen)
-        raise AssertionError((needle, screen))
+        raise TimeoutError((needle, screen))
 
     def command(text, expected):
         send(text + "\r")
@@ -168,7 +170,29 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
         stderr=slave,
         preexec_fn=controlling,
     )
+
+    def finish_measurement():
+        send(b"\x03")
+        wait("Keep running")
+        send(b"\r")
+        assert frontend.wait(timeout=10) == 0
+        assert termios.tcgetattr(slave) == before
+        for shell in burrow(workspace, "session", "list", "gateway"):
+            assert shell["controller"] == ""
+            burrow(workspace, "session", "close", "gateway", shell["id"], "--yes")
+            assert not Path(f"/proc/{shell['pid']}").exists()
+        same_master()
+
     try:
+        if interaction is not None:
+            wait("CONTROL")
+            wait(":~$")
+            shells = burrow(workspace, "session", "list", "gateway")
+            assert len(shells) == 1
+            interaction(send, view, wait, frontend.pid, shells[0])
+            background()
+            finish_measurement()
+            return first
         if startup is not None:
             for index in range(samples):
                 attachments = index + 1 if growing else min(index + 1, 2)
@@ -202,16 +226,7 @@ def shell_checks(binary, workspace, env, decoder, burrow, first, options, startu
                 if index + 1 < samples:
                     submitted = time.monotonic_ns()
                     send("shell gateway\r")
-            send(b"\x03")
-            wait("Keep running")
-            send(b"\r")
-            assert frontend.wait(timeout=10) == 0
-            assert termios.tcgetattr(slave) == before
-            for shell in burrow(workspace, "session", "list", "gateway"):
-                assert shell["controller"] == ""
-                burrow(workspace, "session", "close", "gateway", shell["id"], "--yes")
-                assert not Path(f"/proc/{shell['pid']}").exists()
-            same_master()
+            finish_measurement()
             return first
         wait("CONTROL")
         wait(":~$")
