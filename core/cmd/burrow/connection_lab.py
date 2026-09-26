@@ -30,6 +30,7 @@ from core.cmd.burrow.workspace_lab import workspace_checks
 from core.cmd.burrow.latency_lab import measure, measure_shells, phase_totals
 from core.cmd.burrow.file_latency import measure_files
 from core.cmd.burrow.interaction_latency import measure_interactions
+from core.cmd.burrow.attachment_cost import measure_attachments
 from core.cmd.burrow.file_history_lab import reopen_files
 from core.cmd.burrow.shell_lab import shell_checks
 from core.cmd.burrow.sessions_lab import session_checks
@@ -92,6 +93,7 @@ parser.add_argument(
 parser.add_argument(
     "--interaction-latency", action="store_true", help="measure bounded shared-shell input to visible echo"
 )
+parser.add_argument("--attachment-cost", action="store_true", help="measure bounded idle/background attachment work")
 parser.add_argument("--phases", action="store_true", help="opt in to shell-latency phase diagnostics")
 parser.add_argument(
     "--processes", action="store_true", help="separate strace process-only shell diagnostic (requires strace)"
@@ -114,10 +116,12 @@ parser.add_argument(
 )
 args = parser.parse_args()
 parser_args = args
-if args.samples and not (args.shell_latency or args.file_latency or args.interaction_latency):
+if args.attachment_cost and args.samples and args.samples > 5:
+    parser.error("--attachment-cost permits at most 5 repeats per case")
+if args.samples and not (args.shell_latency or args.file_latency or args.interaction_latency or args.attachment_cost):
     parser.error("--samples requires a latency workload")
-if args.phases and not (args.shell_latency or args.interaction_latency):
-    parser.error("--phases requires --shell-latency or --interaction-latency")
+if args.phases and not (args.shell_latency or args.interaction_latency or args.attachment_cost):
+    parser.error("--phases requires --shell-latency, --interaction-latency or --attachment-cost")
 if (args.processes or args.linux_path or args.growing_tabs) and not args.shell_latency:
     parser.error("shell diagnostic options require --shell-latency")
 if args.shared_tui_check:
@@ -192,11 +196,14 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         NO_COLOR="1",
         TERM="xterm-256color",
     )
-    if args.shell_latency or args.file_latency or args.interaction_latency:
+    if args.shell_latency or args.file_latency or args.interaction_latency or args.attachment_cost:
         env.pop("BURROW_PHASE_TRACE", None)
+        env.pop("BURROW_ATTACHMENT_TRACE", None)
         if args.linux_path:
             env["PATH"] = os.pathsep.join(p for p in env["PATH"].split(os.pathsep) if not re.match(r"/mnt/[a-z]/", p))
-        if args.phases or args.file_latency:
+        if args.attachment_cost and args.phases:
+            env["BURROW_ATTACHMENT_TRACE"] = str(root / "attachments.jsonl")
+        elif args.phases or args.file_latency:
             env["BURROW_PHASE_TRACE"] = str(root / "phases.jsonl")
     env["AUTOMATION_SECRET_CANARY"] = "AUTOMATION-NOT-A-CREDENTIAL"
     daemons = []
@@ -336,6 +343,12 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
                 wheel,
                 args.processes,
                 args.growing_tabs,
+            )
+            raise SystemExit(0)
+        if args.attachment_cost:
+            full_evidence = True
+            measure_attachments(
+                binary, root, env, w, burrow, options, wait, screen_check, args.samples or 3, image, wheel, daemons
             )
             raise SystemExit(0)
         if args.interaction_latency:
@@ -1369,7 +1382,11 @@ launch:
             for child in children:
                 cleanup.callback(stop_child, child)
             if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
-                for artifact in [root / "phases.jsonl", *root.glob("shell-process-*.trace")]:
+                for artifact in [
+                    root / "phases.jsonl",
+                    root / "attachments.jsonl",
+                    *root.glob("shell-process-*.trace"),
+                ]:
                     if artifact.exists():
                         shutil.copy2(artifact, Path(directory) / artifact.name)
                 for log in root.glob("*/burrow-launch.log"):

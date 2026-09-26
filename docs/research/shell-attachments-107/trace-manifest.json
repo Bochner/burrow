@@ -1,0 +1,7 @@
+{
+  "path": "/tmp/burrow-107-traced/attachments.jsonl",
+  "sha256": "5cde6c8162f2e9830741133d0a67dfa20f6c7c27faf1c9f148e7737946c7413a",
+  "bytes": 14344410,
+  "records": 178029,
+  "retention": "Full event trace retained locally; committed traced.json contains raw per-window operation counts, payload totals and process ticks."
+}

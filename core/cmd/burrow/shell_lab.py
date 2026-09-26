@@ -16,7 +16,18 @@ import time
 
 
 def shell_checks(
-    binary, workspace, env, decoder, burrow, first, options, startup=None, samples=10, growing=False, interaction=None
+    binary,
+    workspace,
+    env,
+    decoder,
+    burrow,
+    first,
+    options,
+    startup=None,
+    samples=10,
+    growing=False,
+    interaction=None,
+    attachments=None,
 ):
     outer, slave = pty.openpty()
     before = termios.tcgetattr(slave)
@@ -184,6 +195,13 @@ def shell_checks(
         same_master()
 
     try:
+        if attachments is not None:
+            wait("CONTROL")
+            wait(":~$")
+            attachments(send, view, wait, command, frontend.pid)
+            background()
+            finish_measurement()
+            return first
         if interaction is not None:
             wait("CONTROL")
             wait(":~$")

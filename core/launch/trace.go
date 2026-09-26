@@ -16,10 +16,11 @@ import (
 // program constants, validated command verbs, public RPC method names or a
 // Hovel CLI verb; inputs, paths, workspace identities and secrets never enter
 // the trace. Tracing never changes control flow or skips a check.
-var trace = openTrace()
+var trace = openTrace("BURROW_PHASE_TRACE")
+var attachmentTrace = openTrace("BURROW_ATTACHMENT_TRACE")
 
-func openTrace() *os.File {
-	path := os.Getenv("BURROW_PHASE_TRACE")
+func openTrace(variable string) *os.File {
+	path := os.Getenv(variable)
 	if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return nil
 	}
@@ -34,6 +35,15 @@ func openTrace() *os.File {
 		return nil
 	}
 	return f
+}
+
+// AttachmentMetric records only a fixed operation name and payload length in
+// the opt-in attachment lab. Negative bytes mean a count-only event. The lab
+// bounds collection time; no terminal contents or private requests are logged.
+func AttachmentMetric(operation string, bytes int) {
+	if attachmentTrace != nil {
+		fmt.Fprintf(attachmentTrace, "{\"pid\":%d,\"operation\":%q,\"at\":%d,\"bytes\":%d}\n", os.Getpid(), operation, Monotonic(), bytes)
+	}
 }
 
 // Monotonic returns CLOCK_MONOTONIC nanoseconds, comparable across processes
