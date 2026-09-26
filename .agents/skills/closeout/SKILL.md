@@ -1,7 +1,6 @@
 ---
 name: closeout
-description: "Verify the current issue, close it when complete, and identify the next issue to implement."
-disable-model-invocation: true
+description: "After issue implementation is verified, reviewed, and committed, verify completion, close the issue, and identify the next issue to implement."
 ---
 
 # Closeout

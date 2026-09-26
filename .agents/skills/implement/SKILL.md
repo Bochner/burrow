@@ -13,3 +13,6 @@ Run typechecking regularly, single test files regularly, and the full test suite
 Once done, use /code-review to review the work.
 
 Commit your work to the current branch.
+
+For issue-backed work, finish with [closeout](../closeout/SKILL.md). This
+authorizes its completion comment and tracker updates for proven-complete work.
