@@ -77,7 +77,8 @@ bazel_dep(name = "gazelle", version = "0.51.3")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.26.5")
+go_sdk.download(name = "burrow_go_sdk", version = "1.26.5")
+use_repo(go_sdk, "burrow_go_sdk")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//core/prototype_sdk:go.mod")

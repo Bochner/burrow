@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 
 _WORKFLOWS = glob([".github/workflows/*.yml", ".github/workflows/*.yaml"], allow_empty = True)
 
@@ -21,4 +21,39 @@ filegroup(
         "CONTEXT.md",
         "README.md",
     ],
+)
+
+_SOURCES = ["//core/%s:format_sources" % area for area in [
+    "agent", "cmd/burrow", "connection", "launch", "reports", "terminal",
+]]
+_GOFMT = "@burrow_go_sdk//:bin/gofmt"
+_ARGS = ["$(location %s)" % _GOFMT] + ["$(locations %s)" % source for source in _SOURCES]
+
+py_binary(
+    name = "go_format",
+    main = ".aspect/go_format.py",
+    srcs = [".aspect/go_format.py"],
+    args = _ARGS,
+    data = [_GOFMT] + _SOURCES,
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "go_format_test",
+    size = "small",
+    srcs = [".aspect/go_format.py"],
+    main = ".aspect/go_format.py",
+    args = _ARGS,
+    data = [_GOFMT] + _SOURCES,
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "go_format_behavior_test",
+    main = ".aspect/go_format_test.py",
+    size = "small",
+    srcs = [".aspect/go_format_test.py", ".aspect/go_format.py"],
+    args = ["$(location %s)" % _GOFMT],
+    data = [_GOFMT],
+    legacy_create_init = 0,
 )

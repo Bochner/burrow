@@ -186,3 +186,9 @@ py_test(
     tags = ["no-sandbox"],
     legacy_create_init = 0,
 )
+
+filegroup(
+    name = "format_sources",
+    srcs = glob(["*.go"]),
+    visibility = ["//:__pkg__"],
+)

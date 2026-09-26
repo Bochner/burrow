@@ -14,3 +14,9 @@ go_test(
     srcs = ["forward_control_test.go"],
     embed = [":connection"],
 )
+
+filegroup(
+    name = "format_sources",
+    srcs = glob(["*.go"]),
+    visibility = ["//:__pkg__"],
+)
