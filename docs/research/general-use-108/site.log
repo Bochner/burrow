@@ -1,0 +1,31 @@
+→ 🎬 Running burrow-site task
+→ 🎬 Running test task
+
+→ 🔧 Setup · Running setup
+
+→ 🧪 Test · Spawning bazel test
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 2 targets (0 packages loaded, 0 targets configured)
+Analyzing: 2 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 2 targets (0 packages loaded, 5288 targets configured).
+INFO: Found 2 test targets...
+INFO: Elapsed time: 0.537s, Critical Path: 0.01s
+INFO: 1 process: 1267 action cache hit, 1 internal.
+INFO: Build completed successfully, 1 total action
+INFO: 
+//docs/tools/docs:site_test                                     (cached) PASSED in 0.3s
+//docs/tools/docs:stage_site_test                               (cached) PASSED in 0.6s
+
+Executed 0 out of 2 tests: 2 tests pass.
+INFO: Build Event Protocol files produced successfully.
+
+→ ✅ Passed test task in 800ms · Tests passed (cached)
+    🔧 Setup    0ms  Prepare the task environment
+    🧪 Test   799ms  Run bazel tests
+
+→ ✅ Passed burrow-site task in 950ms

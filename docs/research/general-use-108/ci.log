@@ -1,0 +1,145 @@
+→ 🎬 Running burrow-check task
+→ 🎬 Running build task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Spawning bazel build
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 9 targets (0 packages loaded, 0 targets configured)
+Analyzing: 9 targets (0 packages loaded, 2 targets configured)
+
+DEBUG: /home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/external/rules_python+/python/private/py_executable.bzl:1498:14: 
+======================================================================
+WARNING: Target @@rules_pkg+//pkg/private/tar:build_tar is using implicit __init__.py creation.
+  This diabolic behavior is deprecated and will be disabled by default in a
+  future release.
+  See https://github.com/bazel-contrib/rules_python/issues/2945
+
+  Ensure all __init__.py files are explicitly created and
+  added to the srcs or deps of your targets.
+
+  Disable implicit creation by setting:
+    legacy_create_init = 0
+  on the target, or globally by setting:
+    --incompatible_default_to_explicit_init_py
+======================================================================
+INFO: Analyzed 9 targets (0 packages loaded, 2923 targets configured).
+INFO: Found 9 targets...
+INFO: Elapsed time: 0.393s, Critical Path: 0.01s
+INFO: 1 process: 201 action cache hit, 1 internal.
+INFO: Build completed successfully, 1 total action
+INFO: 
+INFO: Build Event Protocol files produced successfully.
+
+→ ✅ Passed build task in 538ms · Successful build
+    🔧 Setup    0ms  Prepare the task environment
+    🔨 Build  537ms  Build bazel targets
+→ 🎬 Running test task
+
+→ 🔧 Setup · Running setup
+
+→ 🧪 Test · Spawning bazel test
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 36 targets (0 packages loaded, 0 targets configured)
+Analyzing: 36 targets (0 packages loaded, 14 targets configured)
+
+INFO: Analyzed 36 targets (0 packages loaded, 6687 targets configured).
+[1,774 / 1,809] 1 / 36 tests; Testing //docs/tools/docs:stage_site_test; 1s linux-sandbox ... (32 actions, 3 running)
+[1,777 / 1,809] 4 / 36 tests; Testing //core/prototype_agent:check; 0s linux-sandbox ... (32 actions, 3 running)
+[1,781 / 1,809] 8 / 36 tests; Testing //docs/tools/docs:report_test; 1s linux-sandbox ... (28 actions, 3 running)
+[1,786 / 1,809] 13 / 36 tests; Testing //docs/tools/docs:report_test; 2s linux-sandbox ... (23 actions, 2 running)
+[1,787 / 1,809] 14 / 36 tests; Testing //docs/tools/docs:report_test; 4s linux-sandbox ... (22 actions, 2 running)
+[1,787 / 1,809] 14 / 36 tests; Testing //docs/tools/docs:report_test; 7s linux-sandbox ... (22 actions, 3 running)
+[1,789 / 1,809] 16 / 36 tests; Testing //docs/tools/docs:report_test; 8s linux-sandbox ... (20 actions, 2 running)
+[1,789 / 1,809] 16 / 36 tests; Testing //docs/tools/docs:report_test; 9s linux-sandbox ... (20 actions, 3 running)
+[1,790 / 1,809] 17 / 36 tests; Testing //core/cmd/burrow:agent_test; 4s linux-sandbox ... (19 actions, 2 running)
+[1,790 / 1,809] 17 / 36 tests; Testing //core/cmd/burrow:agent_test; 7s linux-sandbox ... (19 actions, 3 running)
+[1,792 / 1,809] 19 / 36 tests; Testing //core/cmd/burrow:agent_test; 8s linux-sandbox ... (17 actions, 2 running)
+[1,792 / 1,809] 19 / 36 tests; Testing //core/cmd/burrow:agent_test; 9s linux-sandbox ... (17 actions, 3 running)
+[1,796 / 1,809] 23 / 36 tests; Testing //core/cmd/burrow:activity_test; 1s local ... (13 actions, 2 running)
+[1,796 / 1,809] 23 / 36 tests; Testing //core/cmd/burrow:activity_test; 5s local ... (13 actions, 3 running)
+[1,797 / 1,809] 24 / 36 tests; Testing //core/cmd/burrow:activity_test; 6s local ... (12 actions, 2 running)
+[1,797 / 1,809] 24 / 36 tests; Testing //core/cmd/burrow:activity_test; 13s local ... (12 actions, 3 running)
+[1,798 / 1,809] 25 / 36 tests; Testing //core/cmd/burrow:activity_test; 14s local ... (11 actions, 3 running)
+[1,799 / 1,809] 26 / 36 tests; Testing //core/cmd/burrow:activity_test; 16s local ... (10 actions, 3 running)
+[1,800 / 1,809] 27 / 36 tests; Testing //core/cmd/burrow:activity_test; 17s local ... (9 actions, 2 running)
+[1,800 / 1,809] 27 / 36 tests; Testing //core/cmd/burrow:activity_test; 24s local ... (9 actions, 3 running)
+[1,801 / 1,809] 28 / 36 tests; Testing //core/cmd/burrow:setup_test; 9s local ... (8 actions, 2 running)
+[1,801 / 1,809] 28 / 36 tests; Testing //core/cmd/burrow:setup_test; 11s local ... (8 actions, 3 running)
+[1,802 / 1,809] 29 / 36 tests; Testing //core/cmd/burrow:setup_test; 13s local ... (7 actions, 2 running)
+[1,802 / 1,809] 29 / 36 tests; Testing //core/cmd/burrow:setup_test; 23s local ... (7 actions, 2 running)
+[1,802 / 1,809] 29 / 36 tests; Testing //core/cmd/burrow:setup_test; 39s local ... (7 actions, 3 running)
+FAIL: //core/launch:hovel_wal_test (Exit 1) (see /home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/testlogs/core/launch/hovel_wal_test/test.log)
+INFO: From Testing //core/launch:hovel_wal_test:
+==================== Test output for //core/launch:hovel_wal_test:
+--- FAIL: TestFirstOnlineWorkspace (0.27s)
+    online_test.go:78: live Hovel daemon 1557139 has lost SQLite WAL lifetime lock: type=2 owner=0
+FAIL
+================================================================================
+[1,806 / 1,809] 33 / 36 tests, 1 failed; Testing //core/cmd/burrow:interaction_test; 29s linux-sandbox ... (3 actions, 2 running)
+[1,806 / 1,809] 33 / 36 tests, 1 failed; Testing //core/cmd/burrow:interaction_test; 39s linux-sandbox ... (3 actions, 2 running)
+[1,806 / 1,809] 33 / 36 tests, 1 failed; Testing //core/cmd/burrow:interaction_test; 55s linux-sandbox ... (3 actions running)
+[1,807 / 1,809] 34 / 36 tests, 1 failed; Testing //core/cmd/burrow:terminal_test; 27s local ... (2 actions running)
+[1,807 / 1,809] 34 / 36 tests, 1 failed; Testing //core/cmd/burrow:terminal_test; 36s local ... (2 actions running)
+[1,808 / 1,809] 35 / 36 tests, 1 failed; Testing //core/tools/release:wheel_test; 12s local
+[1,808 / 1,809] 35 / 36 tests, 1 failed; Testing //core/tools/release:wheel_test; 13s local
+INFO: Found 36 test targets...
+INFO: Elapsed time: 116.824s, Critical Path: 114.23s
+INFO: 44 processes: 1605 action cache hit, 3 internal, 41 linux-sandbox, 26 local.
+INFO: Build completed, 1 test FAILED, 44 total actions
+INFO: 
+//:go_format_behavior_test                                               PASSED in 0.7s
+//:go_format_test                                                        PASSED in 0.2s
+//:python_format_behavior_test                                           PASSED in 0.6s
+//:python_format_test                                                    PASSED in 0.2s
+//:workflow_test                                                         PASSED in 0.1s
+//core/cmd/burrow:activity_test                                          PASSED in 24.2s
+//core/cmd/burrow:agent_test                                             PASSED in 9.7s
+//core/cmd/burrow:capabilities_test                                      PASSED in 2.6s
+//core/cmd/burrow:connection_test                                        PASSED in 3.5s
+//core/cmd/burrow:files_test                                             PASSED in 4.7s
+//core/cmd/burrow:interaction_test                                       PASSED in 55.4s
+//core/cmd/burrow:manager_compatibility_test                             PASSED in 1.6s
+//core/cmd/burrow:profile_test                                           PASSED in 8.1s
+//core/cmd/burrow:setup_test                                             PASSED in 39.8s
+//core/cmd/burrow:terminal_test                                          PASSED in 36.9s
+//core/cmd/burrow:workspace_test                                         PASSED in 2.2s
+//core/connection:forward_control_test                                   PASSED in 0.2s
+//core/launch:audit_test                                                 PASSED in 0.2s
+//core/launch:digest_test                                                PASSED in 0.2s
+//core/launch:online_test                                                PASSED in 0.3s
+//core/prototype_agent:check                                             PASSED in 0.5s
+//core/prototype_sdk:protocol_test                                       PASSED in 0.3s
+//core/prototype_sdk:reuse_test                                          PASSED in 4.9s
+//core/prototype_terminal:check                                          PASSED in 0.1s
+//core/prototype_terminal:cli_test                                       PASSED in 0.2s
+//core/prototype_terminal:terminal_test                                  PASSED in 0.4s
+//core/prototype_terminal:vt_cli_test                                    PASSED in 1.0s
+//core/prototype_terminal:vt_test                                        PASSED in 0.1s
+//core/prototype_transport:direct_script_test                            PASSED in 0.0s
+//core/terminal:host_test                                                PASSED in 0.5s
+//core/tools/release:release_test                                        PASSED in 1.4s
+//core/tools/release:wheel_test                                          PASSED in 13.9s
+//docs/tools/docs:report_test                                            PASSED in 9.7s
+//docs/tools/docs:site_test                                              PASSED in 0.3s
+//docs/tools/docs:stage_site_test                                        PASSED in 0.6s
+//core/launch:hovel_wal_test                                             FAILED in 0.3s
+  /home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/testlogs/core/launch/hovel_wal_test/test.log
+
+Executed 36 out of 36 tests: 35 tests pass and 1 fails locally.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+INFO: Build Event Protocol files produced successfully.
+
+→ ❌ Failed test task (exit code 3) in 1m 57s · Tests failed
+    🔧 Setup     0ms  Prepare the task environment
+    🧪 Test   1m 57s  Run bazel tests (failed)
+
+→ ❌ Failed burrow-check task (exit code 3) in 1m 57s
