@@ -10,8 +10,10 @@ the owner waived #65's manual shared-workspace walkthrough and accepted the
 delivered MVP using its verified release evidence; #65 is closed.
 The owner approved releasing MVP 4 with Hovel compatibility
 issue [#86](https://github.com/Bochner/burrow/issues/86) as a known limitation:
-three upstream diagnostics are advisory, while all production acceptance,
-normal startup and documentation checks remain required. Merge remains
+three upstream diagnostics are advisory. The owner subsequently extended that
+temporary exception to SSH follow acceptance until an official fixed runtime
+is pinned and verified. Other production acceptance, normal startup and
+documentation checks remain required; advisory failures remain visible. Merge remains
 owner-controlled.
 
 ## Established scope

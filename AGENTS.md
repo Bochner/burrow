@@ -64,7 +64,7 @@ When editing the Pages book, components, assets, or deployment workflow, read
 - `aspect help`: discover the checked-in workflows.
 - `aspect burrow-check`: metadata, documentation, SDK, daemon reuse and production SSH gate; requires Docker and OpenSSH client tools.
 - `aspect burrow-check ci`: builds production packages and proofs and runs portable checks without Docker.
-- `aspect burrow-check preflight`: the required GitHub release gate; runs routine tests uncached, including nine SSH partitions, and repeats the setup/terminal race checks three times without failed-test retries. The three `hovel-followup` targets are a scoped #86 release exception, available through the manually dispatched Hovel compatibility workflow.
+- `aspect burrow-check preflight`: local rehearsal of the GitHub release gate; runs routine tests uncached, including nine SSH partitions, and repeats the setup/terminal race checks three times without failed-test retries. The three `hovel-followup` targets are a scoped #86 release exception, available through the manually dispatched Hovel compatibility workflow. The owner also made the SSH `follow` suite advisory in hosted CI under #86; its failures remain visible in Reports. Local preflight still returns its failures. Restore both exceptions after an official fixed runtime is pinned and verified.
 - `aspect burrow ssh-check`: production connection acceptance against a declared, digest-pinned disposable OpenSSH Docker server.
 - `aspect burrow-check preflight hovel`: run the three advisory #86 diagnostics. The default full gate still includes them; restore them to the required gate after an official runtime fix is pinned and verified.
 - `aspect burrow-site check`: generated book, links/assets, and search checks.

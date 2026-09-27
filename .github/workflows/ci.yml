@@ -38,6 +38,12 @@ jobs:
           repository-cache: ${{ matrix.suite == 'portable' && 'burrow-portable' || 'burrow-ssh' }}
       # Each declared acceptance partition runs once; known UI races repeat.
       - run: aspect burrow-check preflight "${{ matrix.suite }}"
+        id: preflight
+        # Owner-approved #86 exception until a fixed official Hovel runtime is verified.
+        continue-on-error: ${{ matrix.suite == 'follow' }}
+      - name: Report advisory follow failure
+        if: matrix.suite == 'follow' && steps.preflight.outcome == 'failure'
+        run: echo '::warning::SSH follow failed (advisory under issue #86); see test-results-follow and the test report.'
       - run: aspect burrow-site stage
         if: matrix.suite == 'portable'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1; matches Hovel

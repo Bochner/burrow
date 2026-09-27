@@ -223,6 +223,56 @@ with tempfile.TemporaryDirectory() as scratch:
     assert report["coverage"]["covered"] == 1 and report["coverage"]["total"] == 2
     assert report["parity"]["demonstrated"] == 2
     assert report["parity"]["schemas"] == 2
+    # #86: failed follow evidence stays failed, but does not block publication.
+    follow = root / ".report-input/follow"
+    follow_events = [json.loads(line) for line in (follow / "bep.json").read_text().splitlines()]
+    follow.rename(root / ".report-input/saved-follow")
+    run("begin", "--root", root, "--suite", "follow")
+    (follow / "raw.log").write_text("FAIL upstream Hovel SQLite crash\n")
+    follow_events[1]["testResult"]["status"] = "FAILED"
+    follow_events[2]["testSummary"]["overallStatus"] = "FAILED"
+    follow_events[3]["finished"]["exitCode"] = {"code": 3}
+    (follow / "bep.json").write_text("".join(json.dumps(event) + "\n" for event in follow_events))
+    run("collect", "--root", root, "--suite", "follow", "--exit-code", 3)
+    follow_parity = root / ".report-input/follow-parity.json"
+    bound = json.loads(json.dumps(parity))
+    bound["groups"][0]["targets"].append("//core/cmd/burrow:ssh_follow_test")
+    follow_parity.write_text(json.dumps(bound))
+    run(
+        "render", "--root", root, "--site", site, "--parity", follow_parity, "--require-publishable", "--require-parity"
+    )
+    advisory_report = json.loads((site / "reports/report.json").read_text())
+    assert advisory_report["releaseReady"] and advisory_report["suites"]["follow"]["advisory"]
+    assert advisory_report["suites"]["follow"]["status"] == "FAILED"
+    assert advisory_report["parity"]["demonstrated"] == 0
+    assert all(op["semanticStatus"] == "INCOMPLETE" for op in advisory_report["parity"]["capabilities"])
+    assert "FAIL upstream Hovel SQLite crash" in (site / "reports/index.html").read_text()
+    # The exception cannot excuse missing required behavior on the same capability.
+    bound["groups"][0]["targets"].append("//core/example:missing")
+    follow_parity.write_text(json.dumps(bound))
+    run(
+        "render",
+        "--root",
+        root,
+        "--site",
+        site,
+        "--parity",
+        follow_parity,
+        "--require-publishable",
+        "--require-parity",
+        ok=False,
+    )
+    # Required suite failures still prevent publication.
+    portable_path = directory / "suite.json"
+    portable_original = portable_path.read_text()
+    failed_portable = json.loads(portable_original)
+    failed_portable.update(status="FAILED", exitCode=3, finished=False)
+    portable_path.write_text(json.dumps(failed_portable))
+    run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable", ok=False)
+    portable_path.write_text(portable_original)
+    follow.rename(root / ".report-input/archive/failed-follow")
+    (root / ".report-input/saved-follow").rename(follow)
+    follow_parity.unlink()
     # An optional run for another merge tree cannot block or certify this one.
     advisory = root / ".report-input/hovel/suite.json"
     advisory.parent.mkdir()

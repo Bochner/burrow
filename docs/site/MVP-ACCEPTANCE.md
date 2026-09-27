@@ -111,13 +111,16 @@ No claim of equal numerical coverage or exhaustive semantic equivalence is made.
 
 ## Required evidence and acceptance status
 
-- Candidate preflight: require every production partition to pass. The generated
+- Candidate preflight: require every non-advisory production partition to pass. The generated
   report and #65 closeout identify the exact commit and outcomes; this source
   mapping alone is not execution evidence. Preserve failed runs before any new attempt.
 - Coverage and staged API/Reports: require the exact unchanged candidate and
   `aspect burrow-report release`; the required CI report job enforces this gate.
-- Separate #86 diagnostics: record the candidate's actual results; the exception covers
-  only the three tagged diagnostic targets, not production SSH/follower failures.
+- #86 exception: record actual results. Following the v0.2.0 acceptance, the owner
+  extended the three-diagnostic exception to SSH follow in PR #110 until an
+  official fixed runtime is pinned and verified. Follow still runs automatically;
+  its failures remain visible and earn no passing behavior credit. Other production
+  SSH failures remain required.
 - Native skills: #64 verified all six skills installed and updated in Codex and
   Claude user/project scopes; OpenCode was absent. This is prior evidence.
 - Owner walkthrough: the 2026-09-25 deferral was superseded by the owner's
@@ -126,7 +129,7 @@ No claim of equal numerical coverage or exhaustive semantic equivalence is made.
 
 ## Runner stability and regression review
 
-The required pipeline runs ten independent partitions without matrix fail-fast,
+The pipeline runs ten independent partitions (nine required, follow advisory) without matrix fail-fast,
 retains failure artifacts for 14 days, repeats setup/terminal checks three times,
 and permits no failed-test retries. Only the three tagged #86 diagnostics run
 in the manually dispatched advisory workflow. Local report regeneration archives previous inputs
@@ -137,8 +140,9 @@ Reviewed prior hosted failures
 (WAL lifetime and the two retained-manager proofs) and
 [`35488920596`](https://github.com/Bochner/burrow/actions/runs/35488920596)
 (retained-manager refusal and a production reports daemon loss). The existing
-scoped exception covers the former diagnostics. Production daemon loss remains
-known and is not excused by that tag or by a later passing run. The #65 portable
+scoped exception originally covered only the former diagnostics; the subsequent
+owner decision makes follow advisory too. Production daemon loss remains known
+and is not resolved by an exception or a later passing run. The #65 portable
 development gate reproduced the WAL diagnostic; it is not evidence of a new fix.
 
 New checks use public CLI/SSH and report-generation boundaries. They exposed
@@ -226,14 +230,15 @@ Official Hovel v0.4.3 (`b4190bb`) was inspected on 2026-09-25: its SQLite
 implementation is unchanged and it does not fix #86. The existing patch passed
 SQLite normal and race tests in an isolated v0.4.3 source proof. This is not an
 official runtime release or a shipped Burrow dependency. Burrow keeps its exact
-official v0.4.2 runtime pin and the existing three-diagnostic exception. Required
-production failures still block promotion; the known runtime risk remains.
+official v0.4.2 runtime pin. The subsequent owner-approved PR #110 exception
+adds SSH follow to the three advisory diagnostics; other production failures
+still block promotion. The known runtime risk remains.
 
 ## Explicit follow-up status
 
 | Follow-up | Status and release boundary |
 | --- | --- |
-| #86 SQLite WAL lock lifetime | Open upstream defect; three diagnostics advisory by owner decision. Prior required SIGBUS failures remain known, including the #64 follower run; a passing retry does not resolve them. Official runtime fix/pin and restoration of the strict gate remain outstanding. |
+| #86 SQLite WAL lock lifetime | Open upstream defect; three diagnostics and SSH follow advisory by owner decision until a fixed official runtime is verified. Prior required SIGBUS failures remain known, including the #64 follower run; a passing retry does not resolve them. Official runtime fix/pin and restoration of the strict gate remain outstanding. |
 | #28 daemon compatibility | Open upstream contract; only verified Burrow-started pinned daemons are supported. General local/remote attachment remains deferred. |
 | #29 terminal geometry | Open upstream native API; accepted typed public session commands implement Burrow's geometry contract now (#87/#93–96). |
 | #30 lifetime module logging | Open upstream; bounded diagnostics and operation evidence remain distinct. No claim that suppressed SDK logs are retained. |

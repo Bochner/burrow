@@ -15,6 +15,8 @@ import unicodedata
 from urllib.parse import unquote, urlsplit
 
 SUITES = ("portable", "lifecycle", "files", "reverse", "shell", "chains", "reports", "automation", "follow", "runs")
+# Owner-approved #86 exception; restore after a fixed official runtime is verified.
+ADVISORY_SUITES = ("follow", "hovel")
 PRODUCTION = re.compile(r"^core/(cmd/burrow|connection|launch|reports|agent|terminal)/[^/]+\.go$")
 START, END = "<!-- burrow-report:start -->", "<!-- burrow-report:end -->"
 
@@ -304,7 +306,7 @@ def report_model(inventory, parity, root=None):
     checks = validate_parity(inventory, parity)
     source = snapshot(root) if root else None
     suites = {
-        name: {"status": "MISSING", "advisory": name == "hovel", "targets": []}
+        name: {"status": "MISSING", "advisory": name in ADVISORY_SUITES, "targets": []}
         for name in (*SUITES, "coverage", "hovel")
     }
     evidence = {}
@@ -359,7 +361,7 @@ def report_model(inventory, parity, root=None):
                         raise ValueError("duplicate target evidence: " + target["label"])
                     target_results[target["label"]] = target
             evidence[name + "/suite.json"] = path.read_bytes()
-            data["advisory"] = name == "hovel"
+            data["advisory"] = name in ADVISORY_SUITES
             if name == "all":
                 # A local full preflight uses exactly the same required target set.
                 for suite in SUITES:
@@ -370,6 +372,7 @@ def report_model(inventory, parity, root=None):
                         raise ValueError("wrong targets for partition: " + suite)
                     suites[suite] = data | {
                         "targets": selected,
+                        "advisory": suite in ADVISORY_SUITES,
                         "status": data["status"] if selected else "MISSING",
                         "evidence": "all/suite.json",
                     }
@@ -410,6 +413,7 @@ def report_model(inventory, parity, root=None):
                         "target": label,
                         "scope": group["scope"],
                         "status": target.get("status", "MISSING"),
+                        "advisory": label == "//core/cmd/burrow:ssh_follow_test",
                         "sha256": source["files"].get(group["source"]) if source else None,
                     }
                 )
@@ -423,7 +427,16 @@ def report_model(inventory, parity, root=None):
         schema = shaped(inventory["results"][op["result"]], inventory["results"]) and all(
             shaped(inventory["inputs"][name], inventory["results"]) for name in op["inputs"]
         )
-        capabilities.append(op | {"checks": bindings, "semanticStatus": status, "schemaDocumented": schema})
+        capabilities.append(
+            op
+            | {
+                "checks": bindings,
+                "semanticStatus": status,
+                "requiredChecksPassed": bool(bindings)
+                and all(item["status"] == "PASSED" or item["advisory"] for item in bindings),
+                "schemaDocumented": schema,
+            }
+        )
     by_id = {op["id"]: op for op in capabilities}
     for op in capabilities:
         equivalents = [by_id[name] for name in op["agent"].get("equivalents", [])]
@@ -434,6 +447,9 @@ def report_model(inventory, parity, root=None):
         )
         if equivalents:
             op["schemaDocumented"] = all(item["schemaDocumented"] for item in equivalents)
+            op["requiredChecksPassed"] = op["requiredChecksPassed"] and all(
+                item["requiredChecksPassed"] for item in equivalents
+            )
             if any(item["semanticStatus"] != "PASSED" for item in equivalents) and op["semanticStatus"] == "PASSED":
                 op["semanticStatus"] = "INCOMPLETE"
     operational = [op for op in capabilities if not op.get("presentationOnly")]
@@ -449,7 +465,7 @@ def report_model(inventory, parity, root=None):
         source
         and not source["dirty"]
         and coverage["status"] == "MEASURED"
-        and all(suites[name]["status"] == "PASSED" for name in (*SUITES, "coverage"))
+        and all(suite["status"] == "PASSED" for suite in suites.values() if not suite["advisory"])
     )
     return {
         "schemaVersion": 1,
@@ -460,8 +476,8 @@ def report_model(inventory, parity, root=None):
         "provenance": inventory["provenance"],
         "publishable": publishable,
         "releaseReady": publishable
-        and parity_result["demonstrated"] == parity_result["total"]
-        and all(op["semanticStatus"] == "PASSED" for op in capabilities),
+        and parity_result["reachable"] == parity_result["total"]
+        and all(op["requiredChecksPassed"] for op in capabilities),
     }, evidence
 
 
@@ -519,7 +535,7 @@ def render_html(report, evidence):
         + "</p>",
         "<p>Final agent parity: "
         + (
-            "all required capabilities have usable routes and selected passing behavior evidence; owner acceptance remains separate."
+            "usable routes and required behavior evidence passed under the #86 exception; advisory outcomes and owner acceptance remain separate."
             if report["releaseReady"]
             else "incomplete. This report does not claim milestone completion."
         )
@@ -621,6 +637,7 @@ def render_html(report, evidence):
                         + safe_text(item["scope"])
                         + "<br>"
                         + safe_text(item["status"])
+                        + (" (advisory #86)" if item["advisory"] else "")
                         + "</p>"
                         for item in op["checks"]
                     ),
@@ -628,7 +645,7 @@ def render_html(report, evidence):
                 for op in parity["capabilities"]
             ],
         ),
-        '</section><section id="suites"><h2>Required and advisory suites</h2><p>The three Hovel #86 diagnostics are advisory under the accepted release exception. Missing advisory evidence is shown explicitly; it never substitutes for a required suite.</p>',
+        '</section><section id="suites"><h2>Required and advisory suites</h2><p>The SSH follow suite and three Hovel #86 diagnostics are advisory until an official fixed runtime is pinned and verified. Failed or missing advisory evidence stays visible and earns no passing behavior credit; it never substitutes for a required check.</p>',
         table(
             ["Suite", "Requirement", "Status", "Targets / metadata"],
             [
@@ -712,7 +729,7 @@ def render(root, site, parity, require_publishable=False, require_parity=False):
         )
     if require_parity and not model["releaseReady"]:
         raise ValueError(
-            "final release requires usable agent routes and passing behavior evidence for every capability"
+            "final release requires usable agent routes and passing required behavior evidence for every capability"
         )
     page = site / "reports/index.html"
     body = page.read_text()

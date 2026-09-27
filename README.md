@@ -129,7 +129,7 @@ Useful commands:
 | Command | Description |
 | --- | --- |
 | `aspect burrow-check` | Run metadata, documentation, SDK, daemon reuse and production SSH checks; requires Docker and OpenSSH client tools. |
-| `aspect burrow-check preflight` | Run the required release gate, repeating only setup and terminal checks three times; no cached test results or failed-test retries. Hovel #86 diagnostics run separately. |
+| `aspect burrow-check preflight` | Rehearse release checks locally, repeating only setup and terminal checks three times; no cached test results or failed-test retries. Hovel #86 diagnostics run separately; hosted CI treats follow as advisory. |
 | `aspect burrow-check preflight SUITE` | Run one GitHub partition: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow or runs. The Hovel follow-up proofs are excluded from these required partitions. |
 | `aspect burrow-check preflight hovel` | Run the advisory WAL-lock regression and two Docker-backed manager proofs tracked in #86. |
 | `aspect burrow-check ci` | Build production packages and proofs and run portable checks without Docker. |
@@ -143,7 +143,9 @@ Useful commands:
 
 PR and main CI run ten independent `aspect burrow-check preflight SUITE`
 jobs, each capped at 15 minutes. The required `repository` check runs even
-after failure and succeeds only when every partition succeeds. Full and
+after failure and requires every partition except the owner-approved #86 follow exception.
+Follow still runs on every PR and main push; failures produce a warning and retain
+their actual status in Reports without blocking CI. Other checks remain required. Full and
 preflight gates allow at most two local test processes; preflight repeats
 setup and terminal checks three times, while the SIGTERM regression already
 exercises 40 cycles inside its unit check. Guided field transitions repeat three
@@ -153,9 +155,9 @@ targets and reports real failures without blocking the required release gate.
 Use Actions → Hovel compatibility → Run workflow for these opt-in diagnostics;
 pushes and PRs run the required gate, and unrun diagnostics show as missing in Reports.
 This is a scoped exception for [#86](https://github.com/Bochner/burrow/issues/86);
-restore those checks to the required gate after an official Hovel fix is pinned
+restore follow and those diagnostics to the required gate after an official Hovel fix is pinned
 and verified. `aspect burrow-check` remains the strict full gate, including
-these diagnostics. The portable job stages `docs-base`; the report job combines matching test and
+these diagnostics; local preflight also returns follow failures. The portable job stages `docs-base`; the report job combines matching test and
 coverage evidence, enforces operational agent parity through `burrow-report release`,
 and publishes the verified `docs-site` artifact. Every job retains logs, XML,
 terminal captures and available phase/daemon logs as `test-results-SUITE` for
