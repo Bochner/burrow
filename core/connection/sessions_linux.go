@@ -286,16 +286,24 @@ func shellState(ctx context.Context, w string, ref hovel.SessionRef) (Shell, err
 }
 
 func inspectShell(ctx context.Context, w, name, id string) (Shell, error) {
-	refs, err := shellRefs(ctx, w)
+	ref, err := findShell(ctx, w, name, id)
 	if err != nil {
 		return Shell{}, err
 	}
+	return shellState(ctx, w, ref)
+}
+
+func findShell(ctx context.Context, w, name, id string) (hovel.SessionRef, error) {
+	refs, err := shellRefs(ctx, w)
+	if err != nil {
+		return hovel.SessionRef{}, err
+	}
 	for _, ref := range refs {
 		if ref.ID == id && ref.ModuleID == "burrow@0.1.0" && ref.Kind == shellKind && ref.Name == name {
-			return shellState(ctx, w, ref)
+			return ref, nil
 		}
 	}
-	return Shell{}, ErrShellUnavailable
+	return hovel.SessionRef{}, ErrShellUnavailable
 }
 
 func shellAdapter(ctx *hovel.Context, w string) (hovel.Result, error) {

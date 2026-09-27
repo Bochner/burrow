@@ -1,0 +1,39 @@
+exec ${PAGER:-/usr/bin/less} "$0" || exit 1
+Executing tests from //core/cmd/burrow:ssh_shell_test
+-----------------------------------------------------------------------------
+TIMING fixture and workspace setup: 1.9s (total 1.9s)
+TIMING connect unknown submission-to-CLI-return: 0.483s
+TIMING connect gateway submission-to-CLI-return: 0.293s
+SHELL_DISCOVERY {"action": "observe", "counts": {"rpc:GetDaemonInfo": 5, "rpc:ListSessions": 1, "rpc:RunSessionCommand": 1, "command:observe": 1}}
+SHELL_DISCOVERY {"action": "snapshot", "counts": {"rpc:GetDaemonInfo": 5, "rpc:ListSessions": 1, "rpc:RunSessionCommand": 1, "command:snapshot": 1}}
+PASS independent CLI readers, concurrent takeover, stale authority and release
+PASS explicit current-screen recovery after byte-history truncation
+PASS initial/live geometry, private validation, Ctrl+C, slow reader, backpressure and close/input race
+TIMING connect shell-peer submission-to-CLI-return: 0.322s
+TIMING connect native-close submission-to-CLI-return: 0.326s
+TIMING connect audit-close submission-to-CLI-return: 0.338s
+TIMING connect target submission-to-CLI-return: 0.478s
+TIMING connect target submission-to-CLI-return: 0.479s
+TIMING connect target submission-to-CLI-return: 0.450s
+TIMING connect target submission-to-CLI-return: 0.456s
+TIMING connect target submission-to-CLI-return: 0.467s
+PASS retained remote PIDs, launcher exit, selected/connection/manager close, stale/wrong-owner refusal, bounded flood and loss
+TIMING connect restricted submission-to-CLI-return: 0.358s
+TIMING connect forward-owner submission-to-CLI-return: 0.360s
+TIMING reconnect forward-owner submission-to-CLI-return: 0.382s
+PASS reviewed local forward, real traffic, retained inventory and selected removal
+PASS hidden polling: 24 visible / 1 hidden snapshots
+PASS fresh observer navigation after hidden mode change: 0.193s
+PASS TUI/headless takeover both ways, observer isolation, independent dimensions and gap/snapshot recovery
+TIMING shell switch and input during 4,000-line background output: 0.767s
+PASS observer scrollback, retained reattach, frontend disappearance, cancel and Keep running preserve another controller
+TIMING connect shell-close submission-to-CLI-return: 0.392s
+TIMING connect shell-master submission-to-CLI-return: 0.385s
+TIMING connect shell-frontend submission-to-CLI-return: 0.397s
+PASS two SSH shells on one master, vim/less/top switching/resize, background output, input/NUL/Ctrl-C, close/exit/reopen/loss, VT isolation, secret exclusion and quit/reaping/restoration
+TIMING connect gateway submission-to-CLI-return: 0.705s
+TIMING connect gateway submission-to-CLI-return: 0.699s
+PASS restart cancellation, manager replacement, daemon/evidence preservation and explicit reconnect
+TIMING acceptance before cleanup: 120.5s (total 122.4s)
+PASS post-shutdown database integrity and confirmed Hovel forwarding evidence
+TIMING fixture cleanup: 3.1s (total 125.4s)

@@ -1,0 +1,2299 @@
+{
+  "environment": {
+    "os": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "python": "3.12.13",
+    "runAttempt": "",
+    "runID": ""
+  },
+  "exitCode": 0,
+  "finished": true,
+  "schemaVersion": 1,
+  "selectedTargets": [
+    "//:go_format_behavior_test",
+    "//:go_format_test",
+    "//:python_format_behavior_test",
+    "//:python_format_test",
+    "//:workflow_test",
+    "//core/cmd/burrow:activity_test",
+    "//core/cmd/burrow:agent_test",
+    "//core/cmd/burrow:capabilities_test",
+    "//core/cmd/burrow:connection_test",
+    "//core/cmd/burrow:files_test",
+    "//core/cmd/burrow:interaction_test",
+    "//core/cmd/burrow:manager_compatibility_test",
+    "//core/cmd/burrow:profile_test",
+    "//core/cmd/burrow:setup_test",
+    "//core/cmd/burrow:ssh_automation_test",
+    "//core/cmd/burrow:ssh_chains_test",
+    "//core/cmd/burrow:ssh_files_test",
+    "//core/cmd/burrow:ssh_follow_test",
+    "//core/cmd/burrow:ssh_lifecycle_test",
+    "//core/cmd/burrow:ssh_reports_test",
+    "//core/cmd/burrow:ssh_reverse_test",
+    "//core/cmd/burrow:ssh_runs_test",
+    "//core/cmd/burrow:ssh_shell_test",
+    "//core/cmd/burrow:terminal_test",
+    "//core/cmd/burrow:workspace_test",
+    "//core/connection:forward_control_test",
+    "//core/launch:audit_test",
+    "//core/launch:digest_test",
+    "//core/launch:online_test",
+    "//core/prototype_agent:check",
+    "//core/prototype_sdk:protocol_test",
+    "//core/prototype_sdk:reuse_test",
+    "//core/prototype_sessions:check",
+    "//core/prototype_terminal:check",
+    "//core/prototype_terminal:cli_test",
+    "//core/prototype_terminal:terminal_test",
+    "//core/prototype_terminal:vt_cli_test",
+    "//core/prototype_terminal:vt_test",
+    "//core/prototype_transport:direct_script_test",
+    "//core/terminal:host_test",
+    "//core/tools/release:release_test",
+    "//core/tools/release:wheel_test",
+    "//docs/tools/docs:report_test",
+    "//docs/tools/docs:site_test",
+    "//docs/tools/docs:stage_site_test"
+  ],
+  "source": {
+    "commit": "34e79fe3ad61dcccc8eb17ce82a8dfe019601e4a",
+    "dirty": true,
+    "files": {
+      ".agents/skills/LICENSE": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+      ".agents/skills/UPSTREAM.md": "790bd2d56c055eab0f4a16fad823aa6be8a1cb076dd191e772d888ec7c897ba1",
+      ".agents/skills/ask-matt/PHASE-BOUNDARIES.md": "a8aa20158609ef39e2b308b6ba0660c91066838d07a867202e63a7744a88a3ed",
+      ".agents/skills/ask-matt/SKILL.md": "b25d86fb36b1d294eeead5d7db529f86135f9671f2afcd607579a63bb2213769",
+      ".agents/skills/ask-matt/agents/openai.yaml": "bdffbc5a0a99ed1b6ef3253d251d755fd18162b9845972e380007f844b09b05c",
+      ".agents/skills/closeout/SKILL.md": "9f8fb5dd8d97e71e8c5e0ee2097902fdbef3831aa3184a286aa83e47dd722cb2",
+      ".agents/skills/closeout/agents/openai.yaml": "0df890a48e736082549201749313d3b54c3716aad7ee772b447b66a6153d83cb",
+      ".agents/skills/code-review/SKILL.md": "47f4e52c21694def9c7c11cbfbf891ca35eac7a93e395797515be3c8a409ae50",
+      ".agents/skills/code-review/agents/openai.yaml": "8229ca854e11dc8e6aef2131ee03f31fb1561cf905fab9ccc325180cf3331352",
+      ".agents/skills/codebase-design/DEEPENING.md": "f3dd099ce99289bd213914d8ee3e2429b78309c3957ca4583f7659551b1d53c1",
+      ".agents/skills/codebase-design/DESIGN-IT-TWICE.md": "8e740bf98446dbd4dfdc132ac4346d9a7eedaf93de6a495889171cf7f99f16bd",
+      ".agents/skills/codebase-design/SKILL.md": "2c20617f87ec8af6a434859f381b2f061a69b530444e74eb39e78bb016a6d1e2",
+      ".agents/skills/codebase-design/agents/openai.yaml": "edebc9e4fcfe102114012575eaa9600b9b5fd08c311664f389c36e7bc717740f",
+      ".agents/skills/diagnosing-bugs/SKILL.md": "77f3cf31bc99b2f49af943222526531fcc9fc41d047626d3640e875e85af3e84",
+      ".agents/skills/diagnosing-bugs/agents/openai.yaml": "3e430dbe4334a87597488c060cb3dc3786bb00c9182877d6f5ec41f62490e90b",
+      ".agents/skills/diagnosing-bugs/scripts/hitl-loop.template.sh": "35103539fc36873eea36074769ad454f9379d6fc8b2dc0e26ce987fd3bfe5503",
+      ".agents/skills/domain-modeling/ADR-FORMAT.md": "944c92aa790e8fbdc9199640b170979abb8a34ba8d0fe18c2a01a63bce140ca0",
+      ".agents/skills/domain-modeling/CONTEXT-FORMAT.md": "17ab16ce783e4d2801ee52fd9acdf550cbf44de65ae76797a93943bbedf22a13",
+      ".agents/skills/domain-modeling/SKILL.md": "327a2b50620e2fd70abc6893cd6965e76b20f8d0adb0dc2c8d5eb3845efb643e",
+      ".agents/skills/domain-modeling/agents/openai.yaml": "f6bf2aa996c6e6f53fdd0708e18a0d16a56aed8322cca59fedbe3c0d2c75f06b",
+      ".agents/skills/golang-tui/SKILL.md": "a5b0da4cd4fbbec2e71075b15769fec725714b6c6871d89a6f55582d6a5bdcc5",
+      ".agents/skills/golang-tui/references/child-model-composition.md": "1ff936aa0b7bb8ec9c425a2d56740748f819cb8fcc6b5d45c5aa3614fb0d9eff",
+      ".agents/skills/golang-tui/references/clipboard.md": "b87734a7aa67ae381fdd68f84cb09129e56d63f81f5ae287ae70910996a41d75",
+      ".agents/skills/golang-tui/references/configuration.md": "fd9f83078fb2e4d6134fc60458eccb6543030dd7a1dc82d3ae706c655325902e",
+      ".agents/skills/golang-tui/references/elm-architecture.md": "0e601f1ca2e52248f1432efa2da5be30d63b838f952dfc5b18f4f1ba71e488b2",
+      ".agents/skills/golang-tui/references/exec-external.md": "33c94555690daf414f4dc182041c2166ce4c899b0120f3a756ae1030f8900d42",
+      ".agents/skills/golang-tui/references/images.md": "6ca498817353f1ae2202a78db16ddce414d55645aeb4c8ac4a78cbf3268d8b10",
+      ".agents/skills/golang-tui/references/keymaps.md": "8de3aabb0c2dd1cc6bf508475627508017f507f9e6af5c4b63421a629924cc4a",
+      ".agents/skills/golang-tui/references/libraries/beeep.md": "afa14e74288de3afd7a14f88af8352646a980703e4c605ca0e1a36bcb69c2a12",
+      ".agents/skills/golang-tui/references/libraries/bubbles-v2.md": "395466fdaf46a4f5b141aa5e89e0ae84c487557eb05277398ba8477846463e9a",
+      ".agents/skills/golang-tui/references/libraries/bubbletea-v2-examples.md": "17323bdc69662c465c4e781001f6389f0a09be68640c3cf998db19d59bfd5fcb",
+      ".agents/skills/golang-tui/references/libraries/bubbletea-v2.md": "9778142eff211cdb26893752e8b4b0318d3c78ee74af997db9a1a10b5275a850",
+      ".agents/skills/golang-tui/references/libraries/bubbletint-v2.md": "c5964841f6a137472caf91a42a721e40450716f4c1c2d9f7496579a1e8e5f949",
+      ".agents/skills/golang-tui/references/libraries/chroma-v2.md": "6ee35924356d6ecdef22f0366e4c306a707ee8eb057073800b88c51d426b47ed",
+      ".agents/skills/golang-tui/references/libraries/go-nf.md": "439b84ea00d8cfeaee0bc76391d78b121aeaad3dab54ee465d718bca3e30f2ac",
+      ".agents/skills/golang-tui/references/libraries/lipgloss-v2.md": "c02db2206e89070102f66704be9b049005b3cf374ff186e872cca7a2dc09a473",
+      ".agents/skills/golang-tui/references/libraries/steep.md": "6da3c23c2d961890db3d03f54923194bab7cf68eeb2689978ed754bd1af4a889",
+      ".agents/skills/golang-tui/references/model-update.md": "2a8e855af38f2f773d1b91cf4e84120e0312fb6e9f7d4d6cb50824bf3fb2ca32",
+      ".agents/skills/golang-tui/references/performance.md": "d7c799018dbe38831c3a44290d182578e6dff6d32aee0179a818feea7000b65e",
+      ".agents/skills/golang-tui/references/project-structure.md": "767b0a72c3fa419a5d64fd1f80f25bf3d5fb15ffb6b27c8992bf6b550e26d81d",
+      ".agents/skills/golang-tui/references/terminal-standards.md": "ddadbeb8c330f22eeba8ef29ea7e83d266c7397ca62837af193a553d39a85075",
+      ".agents/skills/golang-tui/references/troubleshooting.md": "21f050154542d9ae0b964621612f875662dc10e17820545372b6129ace12970b",
+      ".agents/skills/golang-tui/references/view-styling.md": "efd504c99d68c606c98a55d52151194a4b0cd2abca8c416b3e2fcaf3fe96474f",
+      ".agents/skills/grill-me/SKILL.md": "caaf8b8de1684f96e26b28f3c29189db5c89cce4b73e1c93d86164f66ef88637",
+      ".agents/skills/grill-me/agents/openai.yaml": "c061e39c3e0f9d865fb1b97556d485704af2a8a58f4b8221a8917a5c2074a32b",
+      ".agents/skills/grill-with-docs/SKILL.md": "7de372c13488f1ee96cc11cd8907b56b6809cc93eef776eeddd37de6b6cbe3fe",
+      ".agents/skills/grill-with-docs/agents/openai.yaml": "94cd0ab161fb468a836349f5ed482ba58ce8e709a05c57ce533d739dbd35cca9",
+      ".agents/skills/grilling/SKILL.md": "10ff989e7498b23b5acb49d5048f11dcd906757d2f79c5cdf8a00001381296f2",
+      ".agents/skills/grilling/agents/openai.yaml": "1411d7df7d99b7e621a1ff8283c8133cc2464be63d064e52d8ce169c6800ee9b",
+      ".agents/skills/handoff/SKILL.md": "7c62de979fdc7ac32fb5ddb2146156c917f80ee070d30fadc9d40343c4b6ed25",
+      ".agents/skills/handoff/agents/openai.yaml": "5c479fd562c691851690e8b18c8501045bef0943c10743d636b2fae26add1d28",
+      ".agents/skills/implement/SKILL.md": "37c409bdd43db80602bce9c6e082fd91ffdc96ca7b65f5ee2b241c7b1d7b36d0",
+      ".agents/skills/implement/agents/openai.yaml": "8970a8596ade0c28ab427f41a4ea242d6bdf6186c59ebf55e1238dbecaab79dc",
+      ".agents/skills/improve-codebase-architecture/HTML-REPORT.md": "581e8bb5a521e46bbda8ca7e19b15948bed882187108092ebb90c62513b77528",
+      ".agents/skills/improve-codebase-architecture/SKILL.md": "d1ac25511a936ff4250a48dbcefda363837d6bb9321b3cba73df99fa37270a75",
+      ".agents/skills/improve-codebase-architecture/agents/openai.yaml": "c8cb20f68ebf0edb4e497bc11ae5fcaa196004e661cd189015b04f4109ced7f1",
+      ".agents/skills/prototype/LOGIC.md": "f61c7d249e786a79ef289018901c348271e1798dd0b0bc5607b5c6f4d4a01ab9",
+      ".agents/skills/prototype/SKILL.md": "714de632d116bb73f65cdb5a882db15b9369a6713b9a47c0fad827848f0bfbe3",
+      ".agents/skills/prototype/UI.md": "723211e878acbc7b6ff09755263f3295cde724ba902ff0064da41eed51d45ad3",
+      ".agents/skills/prototype/agents/openai.yaml": "5af65e43ab41a350436697b81e27b7f848d36782043b73c322bb2c9fa9cc55dc",
+      ".agents/skills/research/SKILL.md": "985569f15739c713d6784887c3d186d4ef9ac85bec5ad9c068d25bf0739928e4",
+      ".agents/skills/research/agents/openai.yaml": "9b4c470d63221c1f68f22df70b83e2f12401b317babe0d1b7b5f24a974474d0d",
+      ".agents/skills/resolving-merge-conflicts/SKILL.md": "9d8114f8ef0b31f535a265fc05c364bd8cf2e2895a830040e06c22acb11f54b0",
+      ".agents/skills/resolving-merge-conflicts/agents/openai.yaml": "a1f4f96838f2ed6282eb28abbbf99029cb8fadce552baf53da90a025b8bffddf",
+      ".agents/skills/setup-matt-pocock-skills/SKILL.md": "2bcd89e97777cdb705914424e39c97d5db524c8eb4eafac8120778a07774f0ec",
+      ".agents/skills/setup-matt-pocock-skills/agents/openai.yaml": "9527de0110541c45712319025155aeab8dc7d77c6ed6e5e83271bab1851ab939",
+      ".agents/skills/setup-matt-pocock-skills/domain.md": "edc6d6131fdffc4b7135704f5262124fc43355c95f61b7399dc5a4db643e28ca",
+      ".agents/skills/setup-matt-pocock-skills/issue-tracker-github.md": "afd6852a80185217bd28aa5cbe456bef1e85be25be7bd1fba382d5b8ee428325",
+      ".agents/skills/setup-matt-pocock-skills/issue-tracker-gitlab.md": "ea175f73d193b3f55819c0ed9bbccf6ee0e70ad8f928e3d7607596c53380acd6",
+      ".agents/skills/setup-matt-pocock-skills/issue-tracker-local.md": "7dcda20a2eb4bdc89b95d1143423c0691309921cadae3132e6424f371030506e",
+      ".agents/skills/setup-matt-pocock-skills/triage-labels.md": "4f53c9b40ce2651e3611aa090eaedbd6dbc9b71ef8c5f7e65eac0d8263190d0d",
+      ".agents/skills/tdd/SKILL.md": "cb01f66bebfaa25fa1f88e6b7e769cd9fd9f35b1120b8563749820738814c927",
+      ".agents/skills/tdd/agents/openai.yaml": "ea6f01cf1b8c06a4b0f5b649d74b1b8ce8685e72af1b38d70d877693e092af0b",
+      ".agents/skills/tdd/mocking.md": "3ceb807fdf4a47d6a93d4d9a891e5ba6d362a6247bd08adc451feebfc17361ef",
+      ".agents/skills/tdd/tests.md": "859f9e592c188fda4fc7277dd180e4ce9c7a2e13f6efe1f6f29eccc9d28c106a",
+      ".agents/skills/teach/GLOSSARY-FORMAT.md": "9b99859ec28437668130d8f2ce5a342938970f8a1ed4fd38c3eab4f4b5fff210",
+      ".agents/skills/teach/LEARNING-RECORD-FORMAT.md": "701fa34b6748aa89e6c960ffb815257f481a7d77fb2900f9028f7edf3fdd6052",
+      ".agents/skills/teach/MISSION-FORMAT.md": "8cacbb3c0644d3ae0ea4965564797099401a6930a23f7cf462918576587f2418",
+      ".agents/skills/teach/RESOURCES-FORMAT.md": "e9cacf34026e11a8d1c8f9de88abe5bcbf654f4ebdb25cae8c0de0d5f48f44ec",
+      ".agents/skills/teach/SKILL.md": "a32df9dcdfc0c4fdc1c98e1ed3940c5f56b84c1aa90ff60346f32b8b53915b43",
+      ".agents/skills/teach/agents/openai.yaml": "5856f3ae8aec742f1499c640aecdd5f1d6af5fa210a7c6ec794de8263a6f733f",
+      ".agents/skills/to-questionnaire/SKILL.md": "b5eb929842ee0e93d867c5e906d183d350f2f2d149eaeaa86967d94d8eda1d3b",
+      ".agents/skills/to-questionnaire/agents/openai.yaml": "9e8a06c38c8842eea8d4922cb9d1ead8e3ace647bab259b943c994a1b4742bc2",
+      ".agents/skills/to-spec/SKILL.md": "43ad9cf318e5e7d3d1fa360253a37021796dc87a0c2e595ad262661a10f85088",
+      ".agents/skills/to-spec/agents/openai.yaml": "1c5b4d1e3d8e52287ef19cc2742fdbbfae1914ac75d33af3e4c8174f08cc55bb",
+      ".agents/skills/to-tickets/SKILL.md": "5c9fba69845c2519b9b35b9af42ae5142c21f8ca15ac2123dc2722002c8058ae",
+      ".agents/skills/to-tickets/agents/openai.yaml": "21bc6215fffcd7614e9f772bb1760e87cc5fc7dcc707e7d282bc9414267a6090",
+      ".agents/skills/triage/AGENT-BRIEF.md": "7f5f87fed3033df1b06e083c480f3e847b1fbb0647746b8a4c6a50f9f26ef44f",
+      ".agents/skills/triage/OUT-OF-SCOPE.md": "1fbf9b432130c6380aa65813b55553cfda150309b27c595e183f8e335b8a190d",
+      ".agents/skills/triage/SKILL.md": "623a2ed692bdc77d2090e2a3dea3b627dd722ad3bbaca0be83aada75292c8fc4",
+      ".agents/skills/triage/agents/openai.yaml": "2e683717720cf456d165d0bb1a68bb600d0b6a8ccb61841c172e50d26f95351c",
+      ".agents/skills/tui-design/SKILL.md": "fb9420bbf1cdc036be4d59e0e64289a2be571be004e8a96e114b3cec08c67d7d",
+      ".agents/skills/tui-design/references/app-patterns.md": "c01d2d95276a500b239c3f0ecb4b05a21fc4dde748fa60069711e119e22c51b4",
+      ".agents/skills/tui-design/references/visual-catalog.md": "ef02846fce14458431c953be6f12c03816d0b74f1442787ba109d4cd643b07c6",
+      ".agents/skills/wait-what/SKILL.md": "e3f44e3ccbc0e7b62f20ba70b295fc9c9f4aa3f96c77168faee1c71bacbf4215",
+      ".agents/skills/wait-what/agents/openai.yaml": "b41faadf741d51e4ea184148b2d1854d93f947aaf754c7844f70a00f04194999",
+      ".agents/skills/wayfinder/SKILL.md": "fee6e1d0c50f0e736b4ef8a599060c959afae904c9a97d82c97f049fcc3aa0f1",
+      ".agents/skills/wayfinder/agents/openai.yaml": "88bc81a11a6d52ac67aeaa76b8b619e387020d47c5133a4dd4927fd15c4ad073",
+      ".agents/skills/wizard/SKILL.md": "bdf31d48211ea559878f95a4f344aeabf8d85897488ba564382bab0b000daac1",
+      ".agents/skills/wizard/agents/openai.yaml": "98f44d682d58e262f160dc59a8befc365e0aa65820dd0261864af26aa8e59d83",
+      ".agents/skills/wizard/template.sh": "33cbe9dfb1d0e9185b60248a52aabed14bc64785a00cac695e302e739dd6c153",
+      ".agents/skills/writing-for-agents/SKILL-MECHANICS.md": "c768e6307c7c10728c401c213f2c4ba71c542127eeb7ad2956aabd15a0fa0059",
+      ".agents/skills/writing-for-agents/SKILL.md": "551adca942227b44192edba88acd4e8db911f0121ce58ad16944ccf6a896a74a",
+      ".agents/skills/writing-for-agents/agents/openai.yaml": "eacb24b2a618cfb81dacb0416f4fdd75ddf3a8060f8ddb99aae1b1e301907e4b",
+      ".aspect/check.axl": "a3c2cd05159c498d23620fc93d0f81e27de06ef8e5382f108b70c73feba6fa53",
+      ".aspect/config.axl": "b65c434ddeb2a37eef40cd7bb8fe200e9299489bd4de384407fd0b0ccc3ffdf0",
+      ".aspect/go_format.py": "fa4df5222a831522fe6a0710c6fa33e030a784e6021814b6eb402c37a7ac07c2",
+      ".aspect/go_format_test.py": "2008a7788654e94bf4bdf4d56efa030c53967fbed596cc435cde8e449622f440",
+      ".aspect/launch.axl": "4efe3ef3e55c08937a306664068d70c98e5e6a6a65ab0e40332eaff931312a66",
+      ".aspect/prototype.axl": "474a38b30c762ae7afb4859fe5978a8da18034edbed6e9a9eec57d6a7d1694bb",
+      ".aspect/python_format.py": "d14e8fcf4b1b2c89a44fe0b61880ba4df5ef7c22983c35fd480f987b8b0aed48",
+      ".aspect/python_format_test.py": "1c661b62f1571629d6d74831076d5b2146967efb2fe0e1ee5cda5c10540fa60d",
+      ".aspect/release.axl": "0944923f0ff867063f2c7d813e0a55adf496bb28026c15d62c974185507b1b6e",
+      ".aspect/report.axl": "bbe1ff231b54e103fefc8bf13da411ed3776a71ad017c8c7c735b489d6cae591",
+      ".aspect/ruff.toml": "0aa6d5c9f31fa27feb371fb18ee5e00953dd7aa223929216eccdca1e0104c3f9",
+      ".aspect/site.axl": "96d35063123fc0d1111c9b793f0b713d92c57be02e4bcaf2fe30ddd7ccd85b59",
+      ".aspect/version.axl": "287133e2b1c3e0d64bf4cf0605c73065abc84251d384638559866aee70a81612",
+      ".bazelrc": "9fca50bedf15f099e88c16caf8ffe157c3ba369790c1743e1eb57ec532c8f888",
+      ".bazelversion": "7b6188c072705b1c51d6ccdedea92238feb4199b75c58b321c5b632d981b0aba",
+      ".claude/skills/ask-matt": "bce2cdcec341b1fe7ff529c15b5fb2133f43ab8facd2cbe63924a67983a90fa2",
+      ".claude/skills/closeout": "50f6906f1eda4a7fcf8e1e3f5d1469b6e91c3f9b97d45ebb6dc2e5d68d414a1d",
+      ".claude/skills/code-review": "d5622c89fc695a20ab08cab65f699e60a61b03c98a1157dddede6c3223046fe2",
+      ".claude/skills/codebase-design": "c8e27d591fde66134a4bd3ec874a94dc177f84c2e5fded25a44f1451035a0d9d",
+      ".claude/skills/diagnosing-bugs": "085b786bdafcb055917aef4f416d43b95732403f206c373dacdde5c11a089f03",
+      ".claude/skills/domain-modeling": "0b689c037d1c08e959cfa779e048428880f5dc7db465505a01c7c9a45c73a9ad",
+      ".claude/skills/golang-tui": "6a977d812328128811502a34bcaa5bb90665b368c409966c9e6c630c1f07a15e",
+      ".claude/skills/grill-me": "af51e44c5c80d58855b86d22e8d4cb0796494e49ee98dc4843916a1fd01a96b2",
+      ".claude/skills/grill-with-docs": "17663405af7fa4d2085add65bfb5ac5d65bc194ce262be6ee1608b595d4af4d2",
+      ".claude/skills/grilling": "1b0a29e18138348e857dd770c59ef15aa4aab4eb4de83da944d2d70bcf726992",
+      ".claude/skills/handoff": "aa0553f3a272836fce015355cda84fbe811a2c3938b7491395b620f94102412d",
+      ".claude/skills/implement": "88cce976a052eb699670b36de9adb8ca6f886a3f986bd7c01c68b13e5f8af61f",
+      ".claude/skills/improve-codebase-architecture": "11969aff70fa9ff2abc03c3dda18e661eb238aa49b2b475da8de5e44026c903e",
+      ".claude/skills/prototype": "e4a6d4fdc7b9b623872da271da24af4819ffc0582010eb10d3bf162e6637050a",
+      ".claude/skills/research": "7f0cbe9e2c97c3e147c99e63157eb8bc73e5ea40a7a03fa6f4861c1792cdc555",
+      ".claude/skills/resolving-merge-conflicts": "e24cde29903bd1fae7ba6fc2c3fbcf3ada2a2263ddeda56fbb0a14a6bd69b6c9",
+      ".claude/skills/setup-matt-pocock-skills": "7174f6556aea2c37a06ab099365d602ab086ad31edc1a502198557205d7e9cde",
+      ".claude/skills/tdd": "ab3477624a3f4f1c3a2e74eaeaf2cbf70e0c9cc4d198a1aac16dfa9739683f70",
+      ".claude/skills/teach": "32565527079fb8312b8953462abc85f6bcec998649b1e6b9395eaa33e8a3e16d",
+      ".claude/skills/to-questionnaire": "0147d067bb2dabe15af624d4fe5f4e964bcf90808b2784e15c178e03b7aa52dc",
+      ".claude/skills/to-spec": "e7936cf52078c59500a7075904e3c5f98761d93427b4d36f2b0627e752b77500",
+      ".claude/skills/to-tickets": "bbdb9545d817c93183de66bc49aee475a6b0eaf0501d1cc0b161d0ba89160608",
+      ".claude/skills/triage": "4f2f9a797be4a048d10d064b2aeb69204456ad0027abbc0348935ee4e6d3466f",
+      ".claude/skills/tui-design": "e75b88153389b294e8c01e94d90f12b69739a840b579efe75577b1382dc571c5",
+      ".claude/skills/wait-what": "4a21ddae774c280eb915879da781c395153ac67117a46c2e0f81ef86b8412bea",
+      ".claude/skills/wayfinder": "75afb4a462bc407130ee31be82ee01947997837d717f0e1ee7a4e72398f6f4dd",
+      ".claude/skills/wizard": "637c01e4bea2f852e21426d744fa0e1390739887ffe9ddaebeadfe571c07dc3e",
+      ".claude/skills/writing-for-agents": "dfe848c455f2b47847efc17c0c01b3fe45b86c1d66f17da745795fe5c4488e9c",
+      ".github/check_workflows.py": "66accdbac1905efeb6ebff5e361a08e945ef464dd5c1a8370cc0c242297a46a8",
+      ".github/workflows/ci.yml": "2b2c73eb3c9da649fe0884002a2c221ffdf0fde273682a0ece79d878f8812261",
+      ".github/workflows/hovel-compatibility.yml": "5bde0b05a3a288856b2cf8db5aa4e8f1c4c2ecfca6ba5ef35a1d05075b5b79af",
+      ".github/workflows/pages.yml": "add26ea7159ef5c094bc74c8d997f84e0b288e1ffb2648762ce4f66c27853b96",
+      ".github/workflows/release.yml": "18a1d7abfe408725cde8a1048f3b396ef78b9278c11c14e0621869e9f260a898",
+      ".gitignore": "e81fab8df2b46a7f22421eeeebb4462f6b7050f1b26228b489f7285c8f2dc689",
+      "AGENTS.md": "572ee2d34ea6b396d52ede2422758b096e258b5381412ea3980057b2fa443e9b",
+      "BUILD.bazel": "c9e2701aa243711d96e1d9ac72b2ae6a7ebfcb9d90a012cee6cda266f0595733",
+      "CLAUDE.md": "a54ff182c7e8acf56acfd6e4b9c3ff41e2c41a31c9b211b2deb9df75d9a478f9",
+      "CONTEXT.md": "61fe7575eeb9f208c8250be5dc4f3775213a716d5d4b4f9f6d259b3363451d34",
+      "CONTRIBUTING.md": "75ec762789748975c72a876347b86bb03c1fd83444cbed13075c8062be81f338",
+      "MODULE.bazel": "c3787a81a2536ef633c4da0cfe94f1cb34e1537f5c962173d894c3f89ec0b6b3",
+      "MODULE.bazel.lock": "a55d68f05ba77c501286b21f5a940c6788784bb6d729412347f5b02afbd6270d",
+      "Makefile": "2cb97b4c040d60aff1d6c07719f42532b2040dc98ec0e715d75e459e645ae71f",
+      "README.md": "5e34bb446e83d0a88c8b11158c23e7dd707bd7b3352c1f131934ae3f4a29abb4",
+      "REPO.bazel": "6bde177caa6ec85c144ae17f61970cd7f6fdba18153c74071e65dd615d39ab15",
+      "SECURITY.md": "26d91113f6835e2a134f85a3ef2b436c193518e6ed0980aa186e70d4b03f3c17",
+      "VERSION": "2d9471f03533a503db3c7d740e0e6b44a7402bfc28ab4242a615ebdbae33cd89",
+      "agent/BUILD.bazel": "c135bff32d5422ce3e6f5c2279e57c618b7f6a25fc0bd4f066eeb6a3c5181bfb",
+      "agent/burrow-agent.json": "418d2b022590e22bfe5f8b66539bdbd0db46ca3eb5b1d6af94a01f684424d277",
+      "agent/skills/burrow-inspect/SKILL.md": "be0899d54ca0cc3b08a619da845d17f16560f0dde1c4deb87ca7ceee3c3aaa02",
+      "agent/skills/burrow-inspect/references/commands.md": "09fd54bdb7c88300ba4eec23772a92eb1f3503b2ef89f33be11baa8fe8be721b",
+      "agent/skills/burrow-run/SKILL.md": "91a71ef08e7e976ae63c026debd7f83c4e869a10238e77649a3e17fa0ba73e08",
+      "agent/skills/burrow-run/references/scripts.md": "af48b19231dc59de9d5b4c4f2eeebaa8444ca6b140f851ca80873305c2779008",
+      "agent/skills/burrow-sessions/SKILL.md": "6ae8e48ef760b1747e6f87ab264d787274376827dce2e8a8def54bebaa0f11ca",
+      "agent/skills/burrow-sessions/references/control.md": "90150b4c86aa5b080ca7b2cb82f0efc23704965f9697f17355e2a65c80ebaf5e",
+      "agent/skills/burrow-transfer/SKILL.md": "152e91d55d2a5ad14198553f6938e184c277a001914bd92c7a314f17fc124c4c",
+      "agent/skills/burrow-tunnels/SKILL.md": "e15539130b20e98fbd09f512b6be188502174e45424eccc97fd8995074d4171e",
+      "agent/skills/burrow/SKILL.md": "30ce9263baff9e5e04eed265be28b6e9d754347efc192864c9eb7e53f9edb3e3",
+      "agent/skills/burrow/references/connections.md": "9407111d1d06c3a6579b2f1bd206b66b681f57dc75fad3f4ec72fa6c2a4f4e18",
+      "agent/skills/burrow/references/operating-rules.md": "839e9b5d7b24eab73d0131d8329acdc1ccc0447bab4b145562394314592d7f0c",
+      "agent/tools/BUILD.bazel": "f68fc962eacd11c87a04d097a98b581af4f3d20acddbd3baf545a1099e6b623c",
+      "agent/tools/bundle.py": "f963bd7c1d428f9f10ba14e7fae03104de8bb7e75ad02310667c5706f68940b8",
+      "agent/tools/discovery.py": "a5bc1e9edc0d0970d12a592683291406162fb3b7cbe74148fb5abbc3c76a83e0",
+      "core/agent/BUILD.bazel": "b3b4f84a8f1e1330dfa1b266a3753a0f8ee08ecacbbf1cb356cd7b99d95a41f4",
+      "core/agent/install.go": "aa73d22bab371b971f1f6db96421d04b141e76c957d6058dfaac8dd32c18b7d0",
+      "core/cmd/burrow/BUILD.bazel": "e1b6edfe35a134b1ba34b90b94ea11bf893b8c1e8718bb0b4debb801cceb0266",
+      "core/cmd/burrow/activity.go": "50ae02d51869671bda84a5432bcdcf902c3ca65e2de23cc9a346eb97b0ab0576",
+      "core/cmd/burrow/activity_check.py": "4735703a4f773516d8af6cce0971892819e998b3d1ca49a6f9722bd56d9a3d2a",
+      "core/cmd/burrow/agent.go": "3a54fc2490098a8fb01d01420e38d5453a732e3fe8b31347eb5c1127a19adf65",
+      "core/cmd/burrow/agent_check.py": "0d1cf2d1d5df492dcdfc6a09f3c55c1932a01c278cd277b3838119ff26e0e7db",
+      "core/cmd/burrow/agent_faults.py": "af4dd3203c061b3aa0e4726629c9db27fe72af8a90a8e56c7090719f5d4cb4fe",
+      "core/cmd/burrow/agent_lab.py": "4afca66f498115abb3926c9bf7978b70c6585b3e2104078ba2ff4d4bfce5109c",
+      "core/cmd/burrow/attachment_cost.py": "f1570653cc2273aabdb4f9d4649190dba8e2a4b632dabd18cd9ac495bd158082",
+      "core/cmd/burrow/auth.go": "b7b647bd08f23ae40cf08e02001fdac0d2ebed2b01089390c1a6bb07c9ac52ae",
+      "core/cmd/burrow/auth_signal_test.go": "c6810c1d48601b6ec50da7b9704e5c89f158e62dc53beba1d5a23336065af40b",
+      "core/cmd/burrow/authentication_lab.py": "11f8fa00a37b3f7d12f227683328106f2a66a770d783887578d904481a0bca51",
+      "core/cmd/burrow/automation_lab.py": "9d6f43508e92162ac1be660eaf207f6b8261a7c15c998bcbfd10348b096fc966",
+      "core/cmd/burrow/capabilities.go": "8819ab33654278b8c404a3b400acec25e8de6815582e6538263a2f0047a6f0c7",
+      "core/cmd/burrow/capabilities_check.py": "90b93da5624c19882ef48a8fed98c8d2856e836a8fb98af936824b7c81276184",
+      "core/cmd/burrow/chains_lab.py": "43fef3b857c6bb8a6f6d9affcc2c6fdc17eff16148e3518168daab0b56221d81",
+      "core/cmd/burrow/collected_notes.go": "d12dc683fba80a99f13b8bc40cb058ea50bcc58e0b9eb69d8805d3f1847196d4",
+      "core/cmd/burrow/connection_check.py": "8d5b5f9713e8219fea4766eed6c52d6ed7426ce97f921577705ee5317a4a5923",
+      "core/cmd/burrow/connection_lab.py": "1f82f5956e63cd9947f576d7106b0eec15495b94532d994b44a0c9e0ae442b23",
+      "core/cmd/burrow/demo.go": "f9c9e98de2e77ee88be2f38ea4a3f5887941e400184d163d28ec90fb2c13f74d",
+      "core/cmd/burrow/downloads_ui.go": "e917d679ade4e4f3402f333e390fe8072dca761cd412f2df408637358a5a449a",
+      "core/cmd/burrow/editor.go": "ef0c1bdef4e712c8851effab4a86e1e9f4654e9f9ee0ad7951155f127c91f592",
+      "core/cmd/burrow/file_history_lab.py": "e63fb31b11d709e16f089d19c51efcb642a4826a39a5ef7d631d79da552d839c",
+      "core/cmd/burrow/file_latency.py": "2a2704b9a9d8a98394f1f47171081ca34b5f28b457685eee2d3bf0a8e68568e0",
+      "core/cmd/burrow/files_check.py": "c71e25cab4c24ad1e4d6f1509614ac80831ed6abb81ab9c91b06b42b7e192989",
+      "core/cmd/burrow/files_lab.py": "1a5d3c893d3b8260512b1ff520e376e0bece0763e65a569c20de52667dcecc29",
+      "core/cmd/burrow/files_ui.go": "97bc986f39eb7a68d78d34a82a8bb43436f249e90bd944bcbd3e766312f05a9c",
+      "core/cmd/burrow/follow_lab.py": "d611f9a77f2829fe1d31c2ae2fcf376d3d97eae24650743c4db02d99e8c0005f",
+      "core/cmd/burrow/follow_ui.go": "8fac59f818eaff282d455f53070ad8709638342a32a63fbd8012c3f42f08b477",
+      "core/cmd/burrow/forms.go": "0a0e5f7760fb10fac1b39db3f14289e5f7a4b3d2593d1625f3a823b22970576c",
+      "core/cmd/burrow/forward_lab.py": "a19e0b32f2297b95d227186b82b97e892f8076cde1f0ce738e5aa57ee4e78be8",
+      "core/cmd/burrow/frame.go": "8603b51e6a07e290158ef6978346906b014291dbb3fc4220d21ff9de94f31f52",
+      "core/cmd/burrow/frame_test.go": "15e8b7253a7cf11e2fce784f124703e152c3bbfcf84f8f593d9f1996eb70e31f",
+      "core/cmd/burrow/interaction_latency.py": "815d4c0101d16c52580bee82dd79472643ffb051706cfc6fa7f415a03c699b70",
+      "core/cmd/burrow/latency_lab.py": "b133841786f5246727765deafa3fd7b002bf50c190b66d230feea4dd2b71dd54",
+      "core/cmd/burrow/legacy_module.go": "e31412852dbe29acc31a985b99879c1da5b3c1d1a7db72ac4fdf79baf5766621",
+      "core/cmd/burrow/log_notes.go": "1cc3a3fd97a17c14e47d093218111cb532f150b684be0619d951aed228abe5f7",
+      "core/cmd/burrow/logs.go": "89241f0ffb194202903837dea5da54d98bece6ed2eb86309b8e9f1df0f34e62f",
+      "core/cmd/burrow/main.go": "e8ba4414ddad06a2a703c8071c4934d91ba587430066fde1d07c2085f5cd4ebd",
+      "core/cmd/burrow/manager_compatibility_check.py": "936daa13dfe7cbe351e39efa4fe804ae2eb8f7ef6a44e2fdcdfc5a0de5a91228",
+      "core/cmd/burrow/manager_lab.py": "8a79c3daecf652f1101b95d5bbbdfef28a7b60a34ddb4d9b8f88f54313511cb2",
+      "core/cmd/burrow/presentation_test.go": "c22fe41113c50b88d43545d03d031411e35e1e5a204fcc86c2f91903d3f85129",
+      "core/cmd/burrow/profile_check.py": "9ac6e7192c6406dc0dd1d827d2513b8f55e2fffb46a890fbcfdcafb18f3944a7",
+      "core/cmd/burrow/profile_ui.go": "1961a82ccf5171ccc6e6a701ea57d4b16947ceac7623c6712751e6a5dcdffe99",
+      "core/cmd/burrow/quit.go": "c5b1f215c5b39b7851795a8a4c03482f9a64db6c02caf4352bf93e1c0f07931a",
+      "core/cmd/burrow/reports_lab.py": "bd8d3527ada35fc1633c5c8800ae0471149aa4bae29b9d93e7760bd4ed80ec36",
+      "core/cmd/burrow/reports_test.go": "3b0d423624ba9fee3096b07d5ecef518d458a52503c1a6715b179027601ad809",
+      "core/cmd/burrow/reports_ui.go": "be134893051cc2d41075c25ea83e38c11e345d13cb06b2d227bcfd4a60a3b3bd",
+      "core/cmd/burrow/runs_lab.py": "a79338a73ff540985eb39f020b316df3e277d0b75190a2076636d85fe66572f9",
+      "core/cmd/burrow/screen_check.go": "f1c5974de206b339592ca26fe83db6893a529aa0cce32d01bd1b5ae0046744d2",
+      "core/cmd/burrow/selection.go": "9ca68e718de21bfd2ee89cae585f34d9beabbf81f4d3c5fb9ef20d0d09cbc200",
+      "core/cmd/burrow/sessions_lab.py": "b19d4bb7359cf282c58e1b4022270d2eb6ad9d2dd07aa4c399ae4664302ed07f",
+      "core/cmd/burrow/setup_check.py": "548558e1a6f09a7d1c513527c48285ba9a56aacea6be101f176368ccc059984f",
+      "core/cmd/burrow/shared_shells.go": "bf84aa272f20b4a34737cd591cb244365451f01e74d15712ca54ef19349a23e7",
+      "core/cmd/burrow/shell_lab.py": "70b27d5ed901d2872103e1236d9aa9ec2be1300a4ef8b8b72b63c58c0b6c866e",
+      "core/cmd/burrow/terminal.go": "facf9ccb3b12e2bf79a6181c80bb5f2c6e63279bc6872a9a69623f1362d59ba9",
+      "core/cmd/burrow/terminal_check.py": "333337b915ecf05a9c423fdaab1c2ef8e2c9ae42827d4c9224ee2797542a85d4",
+      "core/cmd/burrow/theme.go": "5f60f5829fe71b83cf240fc36618ddcc5edd3fc647b1a04aee6c59f052ccfe8a",
+      "core/cmd/burrow/tui.go": "1a06a84f785c3ba361087e7fd5cfe5cb26d750945a70c29403005f2f97017795",
+      "core/cmd/burrow/workspace.go": "ee988dacaca6e6cd5452303b3b7c2e519684aef1e42aed30e283dee0c2ef5374",
+      "core/cmd/burrow/workspace_check.py": "dbddc1a716599df51989b8ec97e79a39cb9bba6c34c6447ec951b4e2f1f9905a",
+      "core/cmd/burrow/workspace_lab.py": "037763a5daf60350230ea4b1b8ad7abba11802d5f88d9fdd47bc73027da45ec1",
+      "core/connection/BUILD.bazel": "1ba7ebf965649186e6603685d0a490f60734d15807d55a8d71641a90748dfa6d",
+      "core/connection/activity.go": "9618a41b89c35f27ab7e2752d7c30af28250522f6f4566669fe7c3f57aff08e7",
+      "core/connection/audit.go": "70cde72ff7e5125e9cdc43c6b287e6eb8e5da5425fae5ae26c2915aa397e4ddd",
+      "core/connection/capabilities.go": "ec8face816b88c08caba78888972306d586d6b0ea0f8419091b5c546f73f6db9",
+      "core/connection/chains.go": "b016f2456347a67baaf8b9c1e9bab1bd309f0666087d5620f241f66c1a93f3ad",
+      "core/connection/commands.go": "5849213ac51f9460cf940324da63c6bd2cb6ebb7ca7e00fcce0f35505a626a3a",
+      "core/connection/connection_linux.go": "2116aa37a03bc3bd5c2546ae5bb53ada8cef64825254176ebd182d32fad38ac8",
+      "core/connection/downloads.go": "e5061d9c73cf928ec570c11afdca9870ec7266d50d9a1096ddffeaa19f650d81",
+      "core/connection/files.go": "12f81d4833ffc4b5a05e7fe2ca40ccb5e49f8d36563c1b52f012e9266240a5f0",
+      "core/connection/forward.go": "112e87e2b0d8a3409031dbccccc22c2ba62bb83a9565594c53eb51de71ce8c5b",
+      "core/connection/forward_control_test.go": "309bedce2f2d2913b22de4d136c700350df4d7a6f68a9863896a2b3272e61b6d",
+      "core/connection/hovel-module.yaml": "7c595f72824b93d64bc29333d425d49220b3a34fe4422bfe3799187f891be5a4",
+      "core/connection/lab-image.txt": "37ddf54b54253c8ed34b1b5a558352a365d857477af7bf9b8653a2394022a288",
+      "core/connection/manager.go": "0b335a160a7148594d96d28a3a00a0a20a8738dafe478adfd64fef8d12b4c761",
+      "core/connection/module.go": "f181be12ff65de7e6a5df23ad4570706465a9ade02ddb76dbe29414b2dec0539",
+      "core/connection/profiles.go": "f5b21339ecc75d875430ebf665fa4dccb13628b79066e4841be48ea8708b8a1b",
+      "core/connection/prompt_linux.go": "68bfcdc3de1c2eab2bf769b458718d247ba5bd67f0e39e145bd0ebf5acf571b0",
+      "core/connection/proxy.go": "761bc1b651d250568687e9358fd99dcec9df641abc84210f86a4988560061e8e",
+      "core/connection/remote_files.go": "7a428d1bf0b9c0ec13a931fbae8c98d3d0abe291173ebb13661c6e5c74f9d09c",
+      "core/connection/runs.go": "97a78e12e831e326308a0a12e087f41d1ebd36cd4b55c558e47da266cf99a2bc",
+      "core/connection/scripts.go": "49e5972f6985a9cfbc8b8f2d56c339a71894b9f278a488a0e55cffa29f1d4fd7",
+      "core/connection/session_control_linux.go": "5d4130bd86f444d22b59263f91ab6989582a6f9b7dba913d4a603214c05ae4ed",
+      "core/connection/sessions_linux.go": "6d73bac4659c34e9039019b2ca6852f3dbf860a4bc124bcc8765e3771f7c6f3a",
+      "core/connection/ssh_config.go": "3f1cff882ccad880fd0ef06c47b3fa33a8fa8425a6dd7a8988e6087a0ffcfaff",
+      "core/connection/survey.go": "2459b27d09a5790fa71cfe623b41b866d2e26382dba3ecff16b161aa7ca692be",
+      "core/connection/survey_ubuntu.sh": "3cbb28c1724b7553e47ebcde5972e09339daaf348a5e730d37b8b7500f4e0ffb",
+      "core/launch/BUILD.bazel": "003097ed23c11fc7275e0f2dab6bd731493aef8710aba822471f94c4f6e7717b",
+      "core/launch/activity.go": "cc299df72abd3a0e0a1aaabbc44762dd7e5decab97f3fb0ed5876c2ff4d940d7",
+      "core/launch/audit.go": "fe78612f2fb45dbaa2fbdb658fc93c4c25c50bc61dc28b8587c84eae8feed3ac",
+      "core/launch/audit_test.go": "e51716bbb4fd62897c5e31f5151fc621b2d0af7f42e53be1d53b0f31f539ea28",
+      "core/launch/daemon_linux.go": "cbecc449d0f115f74994f9945bec60e80b37a223dc5e9ef8e2c5f51104a13cc1",
+      "core/launch/digest_test.go": "e4b0ea5682b7da1981f9d57bad15b3962bc671ac4e043080640cd4760b0d3204",
+      "core/launch/files_linux.go": "230bb5158738580fc9d4cd6691d42f86e362ecfc90aea4215ce69b3e821b2547",
+      "core/launch/online_test.go": "cea81877e96d478c6491952549b14687441a9dc4ba468fb24bc8c212882f0793",
+      "core/launch/operations_linux.go": "953be8c54138ed2091b93966a2a385e9a2dbdc9b4b4ebdf6ccf44f3d795d05ba",
+      "core/launch/package.go": "afb3f256bf8e5bb52105b915f464cc7bf65233a91f3d07ea6288638c4cf6da36",
+      "core/launch/rpc_test.go": "571a46c7ee906dca86873f7b2bd27ddd88372911adb702cb9a3c662bd0ce92b8",
+      "core/launch/trace.go": "90120faf464adf07f7b5bd7a2f0ae14f7dddc0f0b08edb0e1c7523c3cc256a36",
+      "core/prototype_agent/BUILD.bazel": "b1cffa40c8a6b70d13f421402c88dcbe7e8e262d6e4a7a04a8b7ba61061d9d7d",
+      "core/prototype_agent/README.md": "e72c46226810b3d49f9ac246a8c944a932f7476c7eda3437d99909c27541f3b6",
+      "core/prototype_agent/agent/skills/burrow-tunnels/SKILL.md": "df55ffd8c8b2813281342947ea6474dd1fbb2ae72ec3bc7a3b1715170758ce47",
+      "core/prototype_agent/agent/skills/burrow/SKILL.md": "b4d8485ae8d758bc121e3e8d229c083220ee9b326638747806c47ae858830f8a",
+      "core/prototype_agent/check.py": "24d6d9465edcf96396e7df2ad695168039ef7cf5e791ac3c9859a13d305c22d9",
+      "core/prototype_agent/discovery.py": "5809cdebab89377f991ea1381153373b7887430b39021fbc6545ff5ff3002bae",
+      "core/prototype_agent/install.py": "60dfdfa30b03689f15e7cf60562c3b48ee6cbe0ebbc7e6e9f0f600664022381f",
+      "core/prototype_manager/BUILD.bazel": "a1f410af309d2d9b72b6ccc2064d24c5dbe2cc5727dcbc39006877bc7833a77d",
+      "core/prototype_manager/README.md": "995b82b08cf30507d24d584ba5df4a2c26e94a32802494a9910dc1abfaae4741",
+      "core/prototype_manager/baseline.go": "1168dcbad31d2c5914b2023b6a8afb798cfa7e7466440036f24acd575281ffd5",
+      "core/prototype_manager/baseline_source/commands.go": "860673d4afab66e72d4a46efaed68e72dbd189a770aa25fe2ca7abbd3a2da44d",
+      "core/prototype_manager/baseline_source/connection_linux.go": "0075e69b4169d8e3bbdec1dc87a3eaebe7fe159feba7aaa368720d737735d089",
+      "core/prototype_manager/baseline_source/hovel-module.yaml": "32e02c64adb14536fdd6bb67a5e7d4926fc225e78707cda27a5fa79d5d40f098",
+      "core/prototype_manager/baseline_source/module.go": "c41a973208641cce383bcfa985609056359309db470c7a435f953f5d5fc3e1c6",
+      "core/prototype_manager/baseline_source/profiles.go": "d9f5181b5f03cea0f916ab91c25c6e81dab2aeffb379ee890c178940a3fac36f",
+      "core/prototype_manager/baseline_source/prompt_linux.go": "7d7e671284ef70e62234c99e0dcc2baee1297307893050871f686fb34c6b2a5d",
+      "core/prototype_manager/baseline_source/ssh_config.go": "285f3c1e471f8b0ea20ddaef2593cc104cf004bf9e7f69addf6cb190210f27d4",
+      "core/prototype_manager/check.py": "b8186652c875e356967e7ebd509ced99b61f82bc6b2f86cb65b519a9c79ef857",
+      "core/prototype_manager/consumer.go": "ed10c09a919501f31d9e580a79b3bb2b6bdef342da89e111a94a3adf4183b29a",
+      "core/prototype_manager/consumer_check.py": "1888a962b15eaf61bf1fa9f02620197d7b499454531729e61eed2cc4da75e8aa",
+      "core/prototype_manager/instrument.py": "40036bfa9b2855a0455880c0fb6f3d7d8f348918849e73ee1031a03baefa890b",
+      "core/prototype_manager/latency.py": "17897a8afd050e542a104a08df781c36c8a8ed7efe8a30a159dc853cb5875e71",
+      "core/prototype_manager/main.go": "92d66e785543f1dd56d2f6e238a456e79b670898a4e7516add977240944d42a7",
+      "core/prototype_manager/ssh.go": "105b12399332db0f5ea816cbb955c7e5e1ca04e94f7d358732709646c03e127f",
+      "core/prototype_sdk/BUILD.bazel": "f15ca74fc0e6700b626f9c782062421091705726c6da2e344a97a39d23017835",
+      "core/prototype_sdk/README.md": "97d6c6295dee386916a594c9ff6d228a68695146c673799d09e78ccdab5f34e7",
+      "core/prototype_sdk/REUSE.md": "312b85f131e6cf08a434e6a6d1587eec80b642c0942e8b41a4a1526d29085445",
+      "core/prototype_sdk/SETUP.md": "5ddd28389e3902a9894e87b87cc7c02a0ff4296a76a7fb6f0c9faffc662ca8f1",
+      "core/prototype_sdk/frontend.py": "f5dd7ef60b42e518a205bfce74ccb7364d3e05e66739f476097f0c724c6a7937",
+      "core/prototype_sdk/go.mod": "196c89c6ac775f14062b031246287d3ad7bfbf14d2a02bd3ff5ad65dc44df2f0",
+      "core/prototype_sdk/go.sum": "9c50a76d3342478bee2d69e6df86c12352fcef3a21c574f2fe863b4bbf055757",
+      "core/prototype_sdk/hovel-module.yaml": "f8788f26a196fd285d39a0ecfff1a484291761cdff79c5bcc390c1699ce9f69f",
+      "core/prototype_sdk/hovel.BUILD.bazel": "ca72581f420f7dc807141dadd1686b1c7fc75d16204e45efa598e949af850de7",
+      "core/prototype_sdk/integration.py": "d686c76d2ebb404955b9d94baba13707d11e58a33948931f4ef04a616cb6f898",
+      "core/prototype_sdk/main.go": "3d5dd0d3038690fdd264132fbb3d28208babc033cb8cd8849d163baff73b275a",
+      "core/prototype_sdk/protocol_test.py": "3549b93c784626eaaf3e6c52cd8c9494b9a5eababa04142b9a1ebfb257b751f2",
+      "core/prototype_sdk/reuse.py": "b1d6d17e8e16340ed1285edadab8fec601b916cd2f3802a0f763a2d04254a4cd",
+      "core/prototype_sdk/setup.py": "2a94af5513595e8243e5532208689aa3f1cdf7496d4f8d2be8e846bc25903d82",
+      "core/prototype_sessions/BUILD.bazel": "a468e48bebef12d319005333cacbbbbe291ffd97a9442c2bfaa182e6b2d52657",
+      "core/prototype_sessions/README.md": "2a9c14aa60943489ecc94fc84e420cc9d0c4d2d6914331c95a9893e7fe56d5b3",
+      "core/prototype_sessions/check.py": "55c935a949fb0ceda673f61cbfb799b9393c070de5f6af4f1088f526f13f205c",
+      "core/prototype_sessions/control.go": "4e763c7a18a6aa0337fbe57ab071f5143a3133131cd1c2a85293e48f042196d2",
+      "core/prototype_sessions/main.go": "92ea89ecfcbd1c572cad092c72af1646ce5b33c51c04e21b1ed2694863555dea",
+      "core/prototype_terminal/BUILD.bazel": "7758838144f2b0c370fda0ec1d146194ea151c7e516d452c9b7808c8f752bd00",
+      "core/prototype_terminal/README.md": "7b0de8b673d0e50ca2315a6217040f4efe279158313c3c143a7cbc5a827eeb87",
+      "core/prototype_terminal/app.go": "80ab698cf5f252addac8f22a24f2f33e6032dece14ea45c1de6232d5d0fb2c94",
+      "core/prototype_terminal/batch.go": "cbf1176fd0e4f90bfc73d52ed79d0e592d446de560f0928e0592ff0ec1f9ee6e",
+      "core/prototype_terminal/check.cjs": "66cb31c2c50f095e3cacd141261851486a50be3bf413bce0b5c9874c872411d3",
+      "core/prototype_terminal/cli_check.py": "66d46036a5f92511163be3986479ec0b0d38cc41204685c829a1f6c1cdabacef",
+      "core/prototype_terminal/commands.go": "1e75fa3590b55d7142e4fca19df4bb68fe0780dbc1b27c7a054ea41005bb79e4",
+      "core/prototype_terminal/design.go": "9cf905619541dd36c35fe6268022626bac98b5797ac2f218e92ac18baf4af9a7",
+      "core/prototype_terminal/help.go": "fc3dc5083b342d71a1e7ab08176c5c7e7086e2514128e89fd1edb47591c647b9",
+      "core/prototype_terminal/index.html": "9d80a3fe8662e3db043f69c31a92c1d81474a0292a4e133cc0e89c8fbb310bbf",
+      "core/prototype_terminal/main.go": "5e5ac06611d643a28c5faef109b8d7b7669e657a1734d9636b4ad56505d66eca",
+      "core/prototype_terminal/screen_linux.go": "03af4a32ab029ed006d2696c0c3f4724054ef9273739c1bbe94aae7c9179fbe1",
+      "core/prototype_terminal/shell_linux.go": "ab3ba8de73f27058f11af13d04f40b47b4c993a57dd396b137ce7e2f58df33ac",
+      "core/prototype_terminal/terminal_test.go": "a0c2339870c2182384affd5a50e2ba9aaa84c7d3ddf9f439021960796a48a0a8",
+      "core/prototype_terminal/vt_cli_check.py": "e99d74c89c0cf97ab4f8398cce4e2f947992aa844020438729f477fedb38ebd5",
+      "core/prototype_terminal/vt_test.go": "126d0df2bf4848d3d4e5d6e1880a9cb05e78bae5ad0776c6a22935009e980ed0",
+      "core/prototype_transport/BUILD.bazel": "812aed3254d43ca2e2242691b2fa91f6ea1ee8ad3df88d50ceeec8235f96b7ee",
+      "core/prototype_transport/MESH_BOUNDARY.md": "2bf7130872a615bdb2fdd1e1942551561d3b1fbee40c9769898e7ce539097204",
+      "core/prototype_transport/OWNERSHIP.md": "e91d598ab134903f34081b0668f1c782cd4e980a31a9efefc905af2592bf25a4",
+      "core/prototype_transport/README.md": "714add578ff1bd4e5c589d5ab971a663172dd374dc3355ea61ada370c3c43e1c",
+      "core/prototype_transport/SCRIPT_BOUNDARY.md": "3507d383f02934998b415145993108c3c2e293f2d5f98a73fc3f5e61f6b54033",
+      "core/prototype_transport/check.py": "18aa2f16622f93a09aa05cce739208635ad8433505ca1ee31dbe526f6056b833",
+      "core/prototype_transport/direct_script.go": "244b7e09d50799bfd049a1f96a1b007629c0ba82b585673b91755e0f9948ba68",
+      "core/prototype_transport/direct_script_test.go": "2f72ed650191ecdc84f08715346a6ae26bf49bbaef4ec3f3dc06135ced8c3d36",
+      "core/prototype_transport/hovel-module.yaml": "7302f5f0c8c4f4650ec51a877f68caa39ed316897fe50c13c886e43bc0334742",
+      "core/prototype_transport/lab.py": "62354ebfcf6c4325c76e0a4daacdca001ae339a70c3c12accc22a9e9c4a20bda",
+      "core/prototype_transport/live.py": "cc6b776da62b39c3f80579ec23f96f2a18fece57e44acc4f8ecb2a2c8c7ff01a",
+      "core/prototype_transport/local_terminal.py": "605ea601c0c76521e619c2ef13749d7467254b13b5917a39ce4b16f21bd2ab7d",
+      "core/prototype_transport/main.go": "9a7bb3275c777eb87cb047171024c8c1536b7552c6123b504ef323d386e70f8d",
+      "core/prototype_transport/ownership.go": "4933f6b0ff2e563dd99673ffb23a71299387ff4d2380f87c228e66e9f6fb9538",
+      "core/prototype_transport/retained_script.go": "7c55913058194c199363bbc78eb4dc51cbd32fada15dee3b1450ac2d8469ddc4",
+      "core/prototype_transport/script_boundary.go": "544eed05cc22091de209ae2609a8f4d4e47a2296dab2a12ef117994b6b116b78",
+      "core/prototype_transport/script_fixture.py": "d09640610c712b2dc7284621946b3321612fcb880953e9c0d66eea5fa3647fbc",
+      "core/prototype_transport/tunnel_boundary.go": "9d1842a82b09640537f129f7c74e350d7d0b9a735b536001f46cd26f6ca7960d",
+      "core/reports/BUILD.bazel": "1a6d8162d3b4ca4f0dbff246ca1ae2874829168259b6f801a25bcf14028cc279",
+      "core/reports/reports.go": "e3b8f7e2d0a53138f94b6a706eaa866a73e6e142f524d0f84b1bf291fa648063",
+      "core/terminal/BUILD.bazel": "9b09891f047b2f48963175c821d0f436b9b08a7a6f1d3b446d522bf5b9e100b0",
+      "core/terminal/host_linux.go": "3ab7d24c60db84c8785c362ee3aa97fd2255bc28d848f04291c7a9919e0dc7ea",
+      "core/terminal/host_test.go": "f5bbdd646fb3f8f41148dc4642e471543bf6d89a6a838e5d4b4677e0897f6870",
+      "core/terminal/shared_linux.go": "2ab08370dd49f323d91d76886840169defcdbefe8b118d169acdf4a1181615a4",
+      "core/terminal/shared_test.go": "e7dcd76b1c1305e0fe4ea23ca9dfd7369cdd17a545659eb8cb3c4097785b37c6",
+      "core/tools/release/BUILD.bazel": "2233dd3515f0a36ccd5b52f45b3c0c992c1b238d9c07cfc8583edb9e590d3470",
+      "core/tools/release/UPSTREAM.md": "44a183ead8e7a31a95810da5e9a63be291a52117ca186ab17e0c82029516f719",
+      "core/tools/release/build_wheel.py": "2de71fe6c1e116c214ae2a95ca57f0acffe2de368efedcae5ff8d903a3bf3794",
+      "core/tools/release/release.py": "b664cb82bd778062506e2cece268c76fb0458e62e4a6f75bd4cece7dc7fb08a9",
+      "core/tools/release/release_test.py": "739c99022469ca4be2fbe5d8ce538b38a1e09831efa26b3bc77f9ea3c7646e1b",
+      "core/tools/release/wheel_test.py": "f37f8a7fb14a9726181dc05d6723c04ba51c141e7cbfa37e2ccfc233c89c9b63",
+      "docs/adr/0001-manual-connection-approval.md": "c04843143056f04c923dc56a2f5ffa0efd09dc81302e98f6b628f26132d4a667",
+      "docs/adr/0002-shared-interactive-sessions.md": "258af5cfb16d31c3fd4a650681529c89cd98c0db677183cf1d2b0aa819c6511b",
+      "docs/agents/docs.md": "43ca489af1a16d0021b668d7eb47d80d5e85c49241b864567ce59372e068ab55",
+      "docs/agents/domain.md": "60ce1dd382385bc986d5c19735b2a942a103c6e18e96b18f0bd9d22d73b75def",
+      "docs/agents/issue-tracker.md": "f896815148128aa3dd53631461221e2e9abefb731fd19b871aafd2d970c5c039",
+      "docs/agents/triage-labels.md": "54763a27866f91ce8edbd7aa7aab1a3aba369d21f832a46eb358b9da05faff98",
+      "docs/agents/tui.md": "04df5e35eb7b84812fad7f033d8909c2da4b2ebcbb21a108e6a526965b3da40b",
+      "docs/assets/burrow.prompt.md": "51d0519c4f315125e8354ad6317270a330aea47e3fbfab21c90ba99e9af5b203",
+      "docs/research/agent-workflows.md": "68aede4076dc18e20d7eef0d2d746018bd45920f48bbd6bea4ba7a1b51eb1d34",
+      "docs/research/charm-operator-feedback.md": "c789f275ee74636d2a6ec4538fdc46725db7083bfdb17e77c4961829f975886e",
+      "docs/research/command-first-interaction.md": "26c42240bcf2852a3414d7ad51e3f99ea5becbe05e98dee41615c490680e5840",
+      "docs/research/connection-latency-baseline-measurements.json": "3eee47f0b50a0887f996314b801bddad569a0bf37dac22f4287b0739ec34fe68",
+      "docs/research/connection-latency-measurements.json": "7579f53a5496403baa433ceffb2848b7884f4b84f263e49e25dd423cc83d4887",
+      "docs/research/connection-latency-profile.md": "fd362d7b4f155e8ace3ebe622662ad3fa07cd5ab2df4c8391741516065c7b4e7",
+      "docs/research/dropbear-chain.md": "539a2eb9183e180bcde45a7e5b32881f16ffcec4e5d8d7e6f23a4b011fec321d",
+      "docs/research/external-sdk.md": "ddee08745da1bc8cc60b70509373370351012d92e5934443751873f0c4ebc856",
+      "docs/research/fast-connection-control-contract.md": "afefb39fb5d3608f0b883634e48831f7b17a08158169d8152c155ae28cb788dd",
+      "docs/research/file-history-100.md": "5b94164baf6352702d6c736cc4ff61442d7f719c252a5af43024349736904a55",
+      "docs/research/file-history-100/after.json": "8ae4c5594cc98a4b342e05bd5027ab5a890c3b5ba5ce7f75a100692354c7d9d7",
+      "docs/research/file-history-100/before.json": "e80e4115dc5ca92c6407c59e8b45bd66ce34c0a7ab29b12490c20c066df34715",
+      "docs/research/file-history-100/restore-baseline.patch": "c3d2198112545c793a322f90cea87f5de2d110ab832ffa5d15509168c29c839c",
+      "docs/research/general-use-108.md": "455cef43e00457db105ba7d667ecc0c09c6a29eb6c332176f26979f204d571d9",
+      "docs/research/general-use-108/checks.json": "42e0160b2c2db1eb99982271a302ffb03727abf54a837739d5a2e2b304f73459",
+      "docs/research/general-use-108/ci.log": "295af9a031f2632084655f0d02476019151d66d61859f3bcaa904e0cc1ef4bbb",
+      "docs/research/general-use-108/hovel.log": "98c3c2478dab17fcecf159c9f7ad0396847339250feebf6e9867201d3537146b",
+      "docs/research/general-use-108/measurements.json": "ea1f652f79e2d995561e4b4957b8a17ef0dd941e68ecbd0214ea36de320851b3",
+      "docs/research/general-use-108/preflight.json": "fda6301526497ec84bd75e091eeded522f6a6053a7f8a1dc5f4e511e69e13f7c",
+      "docs/research/general-use-108/preflight.log": "a3f1a0c48bdc69fcbf0727de6cbf6f80e8d9f822aca1b5665ccf112d7af482cb",
+      "docs/research/general-use-108/site.log": "ccb3f7a01923f85593b26e10db9dee592e774ca3b2affe6f8451e002f169ec59",
+      "docs/research/general-use-108/ssh_files_test.log": "2816439855e146f1161801582bec1d3afea0026292c1dfbc00f23be6ff46a658",
+      "docs/research/general-use-108/ssh_shell_test.log": "a767a2dbf534481f712c5e0ccde539b57808d5450e826a4050c17974628b4787",
+      "docs/research/general-use-audit-instrumentation.patch": "b42d9de96601d252461cf1585fe7849afa0bc877cef22cddae8a3a559b0fc1bb",
+      "docs/research/general-use-audit-measurements.json": "baba641d1225682189cf895527b9c4b692234d5a408cbdeed02bbf99090ca6c0",
+      "docs/research/general-use-command-catalog.md": "cda65e09a250671b3273e50b2e5e5d32ef6183d8c46da95a04ec2ffb3797fc7b",
+      "docs/research/general-use-file-history.md": "308c7b0a8b8612f45d405458dad07e707d9873407610812e7c2ce862439d2fe6",
+      "docs/research/general-use-file-transport.md": "d603004b5a8d4bc22a2c96e1f4f78c74c1cb2f939170926bba547fecf1bd05c6",
+      "docs/research/general-use-quality-gates.md": "1f54227d89b9ad833ed7bf301d97c4526159db8e17c18837903fed5a68db71e3",
+      "docs/research/general-use-research-verification.md": "0f9549cc5b2207a908ad605e0b3037632b263ff707973f843baaa243d53c7569",
+      "docs/research/general-use-shell-startup.md": "fa1adae35a02b11e7fb7ec75b4017dc08bbc6eaac4a5612952d9bf440304a2a2",
+      "docs/research/general-use-shell-updates.md": "71a1c4a0e5c7ce7cadfd54e588af8e4c934969dce59f2039478e1a430ec22a14",
+      "docs/research/general-use-spec-preparation.md": "cb6803c928e8003fa92a935bfec12981687e40a46b125d313d0db145291243fa",
+      "docs/research/general-use-workspace-tabs.md": "bef3d9304c95dc715b542c7ba7d32ed10fa5201bbc3c1b87ab5e948b89ec863e",
+      "docs/research/herdr-charm-capabilities.md": "fc662feb4ae2ca1c771526bbab3030879fc49022844a0e2d5166addecd9b6693",
+      "docs/research/herdr-hovel-integration.md": "311f07a9c1fb6a28d4f6241557838d0e57718d843b9e9e02a025cc88a607467c",
+      "docs/research/herdr-layout-baseline.md": "6011b113c15c2e9f1ee8ee6a9d0ef61bd1cd74d45abbc2a0666a5e73432dbf7d",
+      "docs/research/herdr-sidebar-polish.md": "4baff65dd28a97b674325b7fdc75e11d66403850690bdcb536430394da968904",
+      "docs/research/herdr-terminal-state.md": "ec6af081eb0c4c5429759b9a7099c627e1058b1046cae9fdf0f1ab5a1cebfa5e",
+      "docs/research/herdr-tui-plan.md": "a8e1e7058ccdb4304e97ca94efcbe719ead3257545b8cad8ba17f740b633adf7",
+      "docs/research/hidden-shell-polling-109.md": "ba96b08ca87a28c0dab9ace14f7c6b9ce048ca52ed8f0bb0bc1895da1f72d2a2",
+      "docs/research/hidden-shell-polling-109/after.json": "1944a63b5169192037f4e7b476d83c6b8586a124a26dead6eda23f1a4302bb78",
+      "docs/research/hidden-shell-polling-109/before.json": "260262a66c94a1269cc9b42e47058e24a684eb96f7f59b3e7e6665576ce9e1d9",
+      "docs/research/hidden-shell-polling-109/hovel.json": "3bebfd380d4cbccb393313d41c83d24a18cfd2760ec7cdb2ff9d304e8eb55304",
+      "docs/research/hidden-shell-polling-109/hovel.log": "b9b5f523e0e50e8125f22f7b81b6a1755b17add7a2a2260a8e56f759309763d1",
+      "docs/research/hidden-shell-polling-109/polling-only.json": "b4343f5a5fda9e9d1e72c54da51b8b2b79e295b2b70d55fb7835e6ef1beef15a",
+      "docs/research/hidden-shell-polling-109/polling-only.log": "e2d6af571b37cf92c6cd75ad26efe1260c8e595f1f7dc38bbe48614cfbd04d3d",
+      "docs/research/hidden-shell-polling-109/preflight-shared-shell.log": "f9a872fa093d33237cc0da38400395b95ebb4973cf771a96873ed6287edffde4",
+      "docs/research/hidden-shell-polling-109/preflight.json": "e517bc6ccfec793ce84315c1e33e68e143d00986cfc94667eb6aed35f640f24d",
+      "docs/research/hidden-shell-polling-109/preflight.log": "ff807392b9a370420455018f655035ad51e2d80cd8ad5303c68bf4c8a51c1b7d",
+      "docs/research/hidden-shell-polling-109/shared-tui.log": "fa340a8956df2d79952a2f552d59766b6ca1aba7a223406636ee5f38223f52a6",
+      "docs/research/hidden-shell-polling-109/summary.json": "2c9fa548a0677e9b6d90c6a537fde6a43aeda32a150521d404e84372764ebadb",
+      "docs/research/hovel-credentials.md": "f02212643f3630f3aa197a723d61610f7bc00a25b1df8d6ac009ffc1692d6667",
+      "docs/research/hovel-daemon-compatibility-handoff.md": "b663bd714ae6120972cdebe74280dd81dd83a5cf41fdf864810c6b5f94839367",
+      "docs/research/hovel-events.md": "cc3d3fe77be23d7d4d8bdc2ca860d36f0cde6d469e0956ab52a5c6d98a02d1c6",
+      "docs/research/hovel-integration.md": "18cc434e1393352486942b40aa3d5249a1a497d0f54803ea7ca59394eca8c21b",
+      "docs/research/hovel-lazyssh-interaction.md": "1421f2ea46e0b94c004604dbe1603259bdb66cc48644f387f64e4916812c89cf",
+      "docs/research/hovel-lifecycle.md": "d4dd07517da5a0024b1eba87ab4be2f2516c22be0338651dffe2335700a47a5b",
+      "docs/research/hovel-ssh-mesh-boundary.md": "7a35fb5e0f2c861604e33dc0778bcc6a113c6ceb32000ba9e765ff6c063b26d9",
+      "docs/research/hovel-wal-lock-fix.patch": "ea7cc4d15abd3c9173feb5175eee5f7fbf15831d2503a48ed5f9b5fef1cb3734",
+      "docs/research/lazyssh-parity.md": "d29bb0429e6e6a918c8bcdc2578443c84288facb3bbd9b8c4ea97d2f387b301b",
+      "docs/research/lazyssh-table-metadata.md": "d213b1bfaebf8fc16eacb320f57f0939539d10176ffd909c1f134c567f1b8930",
+      "docs/research/libraries.md": "b1c9181ac28be965d872dd9bdbc4ce53d94ec76097b04516c3b6bc4871fbfdfe",
+      "docs/research/mvp4-ci-preflight.md": "ac6db01ea567f0fb73fd15aa0fe48cea350837ba399c3c4a25192b72a01a94ed",
+      "docs/research/pipx-distribution.md": "30c34f479b4fda4e201181791d960ca17e209218d89fd81ae72aec84646cd949",
+      "docs/research/prototype-evidence.md": "b8969286196f0a365710f167220a3e253d6aebb5750177ebef7513ef9ff8e17c",
+      "docs/research/python-formatting-verification.md": "8a9a219e42e4b7359a063e4a10d5ab373501b52e4894faf5c3449be40c0b3509",
+      "docs/research/retained-consumer-proof.md": "e146eed6869918b464043a0b0bd5e49fe6d4be053fe1b5fa3fa3067e58bb84bf",
+      "docs/research/retained-manager-integration-measurements.json": "f280c55c208d4383230f75e3617849577a30e4d63a09d179628d61fbfb38202b",
+      "docs/research/retained-manager-integration.md": "8ebe454a110eed86470136a16fde58c6764cc6413924ca828a86551a721535b9",
+      "docs/research/retained-manager-measurements.json": "14bc6d348e2a2bf6bb03cf61f4990b50fba97d469f678c2130d6b58f6c3e514c",
+      "docs/research/retained-manager-proof.md": "348ff63233f5bb75879948339de2a98ae12c854645ffabbf31b30af1dd29c9cf",
+      "docs/research/saved-connection-decision.md": "4f3b4a288c155cea57a65d49a876333511dd2609e1b820779106e861e18a7265",
+      "docs/research/saved-profile-hovel-options.md": "24fa59b8482f145cd75e6bae05fe5227198da9a1789c006acef0a9bf1b056b75",
+      "docs/research/scp-listing-metadata.md": "957fc9963e6af0f560451d4dac67ac952767dba0a68412afd2fd5c03c7798f72",
+      "docs/research/shared-session-contract.md": "cb4cc17e32a1f68615ff7b413d547ffc099549cf929f43e888cdfe132b503524",
+      "docs/research/shell-attachments-107.md": "0e8c53f532163194251ff7cb414f2e7d32cb83b1102ffe0ec86a830de68bac8d",
+      "docs/research/shell-attachments-107/owner-probe.json": "782e131d035ea62ed08df4374d79bee212002d1d4079b5773608e854992acc11",
+      "docs/research/shell-attachments-107/summary.json": "d316c5ef6b52e108fdb194ca27a5e18c66909226daf8e5f76130ec4f941a591f",
+      "docs/research/shell-attachments-107/trace-manifest.json": "924c98d84714aa57943a6dec2a2930934a79039dd23cc6349831d9ec35b39568",
+      "docs/research/shell-attachments-107/traced.json": "f68a7f9e37e516fa82b31c53edc5b0eec9f9a3f9740e07e2f898ccbacfb055ff",
+      "docs/research/shell-attachments-107/untraced.json": "afcbf26ff9c9d19ce1bb867c3c819c6903081ca0d7dbe2a69b089834ac69fcbb",
+      "docs/research/shell-discovery-row20.md": "05d64e5b4407b5200ced75e01bd6ce7e2c26bb0cb50ed7530f6167cc46723451",
+      "docs/research/shell-discovery-row20/after.json": "7ac7d3d2519cbfe8630301c355d866a95de547c363028b9de0b6ccd5d18aa980",
+      "docs/research/shell-discovery-row20/burrow-row20-focused.log": "37e8f1ff1f5d34be3214e8cf1973872c8ff7cf964971336d5fa8a78c3e21b79a",
+      "docs/research/shell-discovery-row20/burrow-row20-green.log": "937e03114d2984c1cb18d7cbaf30afbd0edd12878feae4f342e37db1d4b88515",
+      "docs/research/shell-discovery-row20/burrow-row20-red.log": "f85b9df6544e876769e0f306fab9a40b65dc2ccbec9cd67916adc0c06a836e0c",
+      "docs/research/shell-interaction-106.md": "9daf9c3bd0018d87d650b4dae333b8f4c4f8551b2b68b282adb1d83dcb3fbe62",
+      "docs/research/shell-interaction-106/phased-1.json": "a357d4533b285105fc5ca2be159e53fcbfbff11577250c660a5a5cb79ca72fd4",
+      "docs/research/shell-interaction-106/phased-2.json": "138c0afe961ac564f3b96a13a683fd4ee0d37544e389f72933d3c56e60963f01",
+      "docs/research/shell-interaction-106/timeout-probe.json": "457edaf5b7e586046e728cf17e0aab94ecaff638d5c146bc1f1475ccbd23dbde",
+      "docs/research/shell-interaction-106/untraced-1.json": "f6ace545e904855bfdb44c4173e630b64f3ae9bb559272344bf721bc7c10a0b6",
+      "docs/research/shell-interaction-106/untraced-2.json": "867ae6d2185b507411379cc5f54eabfb784c7e1234f6863897cd3c060329a2ab",
+      "docs/research/shell-startup-105.md": "a07b688eccbd031a7c2150e080540957e3dfbfafb3353a48d9fd64406ad935de",
+      "docs/research/shell-startup-105/fixed-clean.json": "82c08e9d009b8fc02f547d5471c93249bba2a664c4334f558ced9d608d0e2cad",
+      "docs/research/shell-startup-105/fixed-inherited.json": "f49b65c3d38407b66bf1bc8eac340a4e004c7c5165edaf291bf4cc5ce3186fc2",
+      "docs/research/shell-startup-105/growing-linux-path.json": "7135fa9558042701685275347bb843f7df677f42ab968f035ddbff0d38102384",
+      "docs/research/shell-startup-105/growing-phases.json": "fc2642589942f1072de80080c954ec9b324c527c603fb12bf691bfa29e014993",
+      "docs/research/shell-startup-105/growing-untraced.json": "fad0645366d43703cb1d2b9e789886fe529bf1f3a1db299054056392eb4d88e9",
+      "docs/research/shell-startup-105/processes-and-init.json": "93d0a33ab7f2546bdfba51b2e3a0b85563ce19bd92e78d9fb7636cf591df1f3e",
+      "docs/research/shell-startup-105/processes.trace": "bbfd576e0a8bb073fe2bbbe05ba903a125c35b8662e3c95c7c384383a14dd62f",
+      "docs/research/sources.md": "f57e5ee5f1488b419accf643b45a0159bd2f05aaf7619f53c8bfb59d4575f062",
+      "docs/research/structured-markdown-reports.md": "13f9bdf54fc06bbed47ad506cfb4f145dc103e114d33217b2787d7b6f82231c6",
+      "docs/research/sysadmin-tui-patterns.md": "41e1bd2b2587335e36dc2843508def97ce0b21601a8f68665c7f19f98ad489d2",
+      "docs/research/terminal-design.md": "55907e59d1e045f0f05c5d757e662605eb7d0956dd8fffa1f9703e249d9b493e",
+      "docs/research/terminal-mvp-coverage.md": "08f339dfd05bd699ef85cc67f86e5fd5ebe92752a4e1af01e2f82b5655b7dc16",
+      "docs/research/ui-reference-repair.md": "b93e10849b92281b66715aef58b52cfdf35bc0623e62e6401d54eb5fa98a1e85",
+      "docs/research/workspace-location-and-chains.md": "5ffc2db75ba48ef4d50280dbc546be68be71f5cf85e69ec81a26689b2b9c59a5",
+      "docs/site/.npmrc": "00ad5b38d93c83cf82b077f16cf97680163097859760f1bebc8a6e32f51711cf",
+      "docs/site/.nvmrc": "a0e27aeeac42d6102f4ff2bce40d8fb011c07e5cb28eff3c9d77e68df29e5dd6",
+      "docs/site/BOOK-AUDIT.md": "e96128d86f919ec6f2294f07538d9f68ea62fd1cefbae3352eaab0526ef6fc51",
+      "docs/site/BUILD.bazel": "e12cc1fdd95a99a0a4e1a97c5a1021a19dbc67aa9dbd5ad336d0fc54df71c4f3",
+      "docs/site/DISTRIBUTION-FOLLOWUP.md": "70d2f8ae2dc7f97eccbd48d6d67b40e6d6f11d715b04f7df442ef5b02e0d3ff2",
+      "docs/site/MVP-ACCEPTANCE.md": "4e37acb8eacf65d46845831f5b7c55457d530399f7659f05efa09d2b65ba6eb6",
+      "docs/site/UPSTREAM.md": "7cde507f64e703a8f0f3552178cd7c16734f09736fb5dc328b74a712b2d7a09c",
+      "docs/site/astro.config.mjs": "5c5d4535e0a605967a57a5a508bc7f21f760e08e20f98dba1f6bdda65afce71e",
+      "docs/site/package.json": "30da9cf880c71790efb95d13f96637783887d945f5f39817bf59d5c2202fe2c9",
+      "docs/site/pnpm-lock.yaml": "ded6f0b4c566a6a78d9887a589f048c88a7563768b5b415c1c624d6250d3c607",
+      "docs/site/public/.nojekyll": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "docs/site/public/LICENSE-HOVEL": "bf1581813703996ad84610111f3df8876ac9702a753a09beede990ec6e5c5339",
+      "docs/site/public/assets/burrow.png": "2044f3baf207e48c58b4d7e4a9684f88210b310655750e5e8d0f31443af4285f",
+      "docs/site/public/assets/report.css": "3838a43d54ee1003e218dbed7382b1a0470ced8ffd799f65e0394683e242bb29",
+      "docs/site/public/assets/site.css": "564ebfe6d4284fd4ea23df7abf8d7081afd45d13af8f443487baba90997b77c7",
+      "docs/site/src/components/BookContents.astro": "f8ed6514003979d4c0091356d7349d4134e5bdfd87cdbba0f912116212b3f734",
+      "docs/site/src/components/SearchDialog.astro": "496cad1c4ed8ce76240692106e549383074b2468bfbd1460c5389e900317baa3",
+      "docs/site/src/components/Sidebar.astro": "5f6f7742bd9b6a0650b6ad339e650316f6348194fd629cfcfd26d958613cf4e7",
+      "docs/site/src/components/SiteFooter.astro": "9f7e65f10828f005c147036461e2c05bc63e37a0f17e7118d064ec0b116604b3",
+      "docs/site/src/components/SiteHeader.astro": "58cd4ffc17c6bda517c12eaa921ffbc64cd7002ab7c6f8a785ba45fa12ca78b3",
+      "docs/site/src/content/index.html": "0345b05d608e98acb2a34a8cd531d20b8908110238719ffe7f29a39dc360867f",
+      "docs/site/src/content/spec/agent-skills.html": "12eb58317e964f681f31f6d707531e090aa20d8f2b20c3e6d933f89de3908969",
+      "docs/site/src/content/spec/automation.html": "70f641ec9be26b80074c86aefd3a16d6205500d13027690883e8eed4562734db",
+      "docs/site/src/content/spec/chains.html": "e80b729aec9a1cd68ae503e7ebc486ebd1e4147419af21ae57d4d2c3f6cb1c0f",
+      "docs/site/src/content/spec/connections.html": "06ab93958bdb79a809554a0d1ed3c710f6221a9b06344acacd7d2a3e36463ad3",
+      "docs/site/src/content/spec/development-guide.html": "4c77ebbaad8cf7daaa7fa29088acd81018cb9a4911fa92527a18330924c17480",
+      "docs/site/src/content/spec/embedded-terminal.html": "c3f43b7fd365f0a11c4b149b9323bb846897d4474626c635748ad437f9f2ff85",
+      "docs/site/src/content/spec/files.html": "423b23da445349025796c966a55268eb7559f0022a2b2bcb9fd51985198280db",
+      "docs/site/src/content/spec/forwarding.html": "d1f301e84827f469220dc4d6a0e68e2a4d356ee3e0c7ec3042455e64704a33a2",
+      "docs/site/src/content/spec/hovel-integration.html": "5da2165fdab44cba0d5450581a0a5cd4b2fb4106e55674c5f66258cf0e79ce7a",
+      "docs/site/src/content/spec/index.html": "e04a954731035c201216995caf8317d0d0f2d6fb6ffe6727ecb229cb0f82658a",
+      "docs/site/src/content/spec/launch.html": "2cec6ce5a21155fbaba17ac9a12c1840b89b8439d550a48709b56fc97f5a9f68",
+      "docs/site/src/content/spec/lifecycle.html": "60d088a26f19f8f391972bac185fc308a21493273b4751d9616d9bc2c7e95ec0",
+      "docs/site/src/content/spec/logs.html": "12dacf5554338c7020345cc07b418d40358c6c74dad2085027a3922c254d2748",
+      "docs/site/src/content/spec/profiles.html": "0b5e073ad243f6f65a412e271b39eeb93b946f9760ba096d420aeef2fb3998c6",
+      "docs/site/src/content/spec/releasing.html": "36cbfe6d1da9867e366590cb584b0740e6a9af2b32d1f386d97be106c78b942b",
+      "docs/site/src/content/spec/reports.html": "0883034159622ab9f668d0c0e7aad1574c1e24c705f4fab5dbf9e6782f96175f",
+      "docs/site/src/content/spec/runs.html": "e1b9f529a9674ee9b2a8819ec4078017376e401eb41411a7731b75f675dd548c",
+      "docs/site/src/content/spec/safety.html": "37ed2c967c61ecb90e2715aefca4695a781792a251180b287c8e1e9c4be80b96",
+      "docs/site/src/content/spec/shells.html": "8137f1878369ec97f9b025ba8362955902f8603124f21b550b0875be6484076f",
+      "docs/site/src/content/spec/troubleshooting.html": "b8e798ed13042a693aadacf75d50c01acad30cde7657cf6b904a50f1aa1f36fd",
+      "docs/site/src/content/spec/user-guide.html": "61deeef348e8ef623026a6740e4d7b35c51b87c4ef166887089fd30aa07a5304",
+      "docs/site/src/content/spec/workspace-navigation.html": "4c1e615720edae7468fd9d1956193241bd4d28e26dfc20746100599e1277d617",
+      "docs/site/src/layouts/DocsLayout.astro": "2eee1dbf3724f35ca338adff4ef68c343e65d88237316dc551e6663917415aaf",
+      "docs/site/src/layouts/PageShell.astro": "e4e430a757d0becc6b1d05198fdc43d1a001332a0ce47e1e657189cf2f695e06",
+      "docs/site/src/lib/api.ts": "9deadb969e009477c7bdfa45f2405594c9f61fa927b1a354ed2c3b35ebeea04b",
+      "docs/site/src/lib/catalog.ts": "5933e6aad1a28565a0b97a80232de4391549a38f006692ad500857ecfe17a318",
+      "docs/site/src/pages/[...slug].astro": "e8ba8c908e35f3b2a1bcbaeeb0b5a0388fbeeb635e99421c5d11ad3cc63743b5",
+      "docs/site/src/pages/api/inventory.json.ts": "8dd56365fb115225c033b4e541a6be0d355bca3c2878f1b3ffc060b7e8f092a4",
+      "docs/site/src/pages/index.astro": "da3ed7c5c3be3bdfd4f420b985688ed26a677e8a3a834a89cb7a90fbb71c366d",
+      "docs/site/src/pages/reports/report.json.ts": "79c04413e5fb2a6dfbc5b68a63c56e1764e22e887042f7fb3b27868c900facd3",
+      "docs/site/src/pages/search-index.json.ts": "b210f0fb882b2327a18181ad058c8e8970f3fad9ad396b858dc96d76e0bae00f",
+      "docs/site/tsconfig.json": "974b0a3b37e52f3649d9df63e72e374794e9e797c8ae61eca4812f844406f7ef",
+      "docs/tools/docs/BUILD.bazel": "6881ea3f3ec6abb159b770d895fdf53ce890e01600cc5af5fd83bfd1e54f1fec",
+      "docs/tools/docs/parity.json": "2ef4a656958d0b692fafcba92365ae37ac3cba13e400052e84ed3e8fbba28d33",
+      "docs/tools/docs/report.py": "0a8b48fa004988f2062b8f454133a686f52f04360e1a33c3c2937ae773b1c8d1",
+      "docs/tools/docs/report_test.py": "6d293067f928a03b3faa29fa8d2292cd4fbf5c9b9ce86fa8694d412129397593",
+      "docs/tools/docs/site_test.py": "724da0affb42e8366a0039d7e36d7267e644d6ed286b64d3c4def9271687480d",
+      "docs/tools/docs/stage_site.py": "8857b2f667c563b1bc04da79400cb643919ce818cea08eb828947961a5e101e3",
+      "docs/tools/docs/stage_site_test.py": "cfe04606be0f20a1b0886df7117c218c96c8b8766d0840546a37a396c8c0a87e",
+      "docs/wayfinder-map-draft.md": "45c4bdd54cf24ebf59a576c3b9ca2b067cbe41bfad6f2eccee848b593aee4316",
+      "docs/wayfinder-start.md": "290f930ff7ec9fa1960634d29b30817f46bb3cbb7a4c6c0c44cb0b78a4951367"
+    },
+    "pins": {
+      ".aspect/version.axl": {
+        "content": "version(\"2026.33.3\")\n",
+        "sha256": "287133e2b1c3e0d64bf4cf0605c73065abc84251d384638559866aee70a81612"
+      },
+      ".bazelversion": {
+        "content": "9.1.1\n",
+        "sha256": "7b6188c072705b1c51d6ccdedea92238feb4199b75c58b321c5b632d981b0aba"
+      },
+      "MODULE.bazel": {
+        "content": "module(\n    name = \"burrow\",\n    version = \"0.0.0\",\n)\n\n# Documentation toolchain pins match Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388.\nbazel_dep(name = \"aspect_rules_js\", version = \"3.2.2\")\nbazel_dep(name = \"rules_nodejs\", version = \"6.7.5\")\nbazel_dep(name = \"rules_python\", version = \"2.2.0\")\n\npython = use_extension(\"@rules_python//python/extensions:python.bzl\", \"python\")\npython.toolchain(python_version = \"3.12\")\n\nnode = use_extension(\"@rules_nodejs//nodejs:extensions.bzl\", \"node\")\nnode.toolchain(node_version_from_nvmrc = \"//docs/site:.nvmrc\")\nuse_repo(node, \"nodejs_toolchains\")\n\npnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"pnpm\")\npnpm.pnpm(pnpm_version_from = \"//docs/site:package.json\")\nuse_repo(pnpm, \"pnpm\")\n\nnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"npm\")\nnpm.npm_translate_lock(\n    name = \"npm\",\n    npmrc = \"//docs/site:.npmrc\",\n    pnpm_lock = \"//docs/site:pnpm-lock.yaml\",\n    run_lifecycle_hooks = False,\n)\nuse_repo(npm, \"npm\")\n\n# Pinned runtime v0.4.2 (c461ba282a8a); GitHub asset digest.\n# SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.\nhttp_file = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_file\")\n\n# pipx 1.17.6 (MIT), upstream standalone zipapp and GitHub asset SHA256.\n# Test tool only; Burrow's wheel has no Python runtime dependencies.\nhttp_file(\n    name = \"pipx\",\n    urls = [\"https://github.com/pypa/pipx/releases/download/1.17.6/pipx.pyz\"],\n    sha256 = \"63b10dd9a15a57ec4066e29388d1e83565be4b127bd1cf6e3f150fcc39ded8b2\",\n    downloaded_file_path = \"pipx.pyz\",\n)\n\nhttp_file(\n    name = \"hovel_linux_wheel\",\n    downloaded_file_path = \"hovel.whl\",\n    sha256 = \"7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933\",\n    urls = [\"https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl\"],\n)\n\n# Real full-screen SSH acceptance only: Alpine 3.24 x86_64 Vim executable.\n# Alpine aports b7c31805c49a6e75b725aee8601e2e99e1d693e9; Vim license.\n# The lab uses -u NONE -i NONE --noplugin, without runtime scripts or xxd.\nhttp_file(\n    name = \"shell_lab_vim\",\n    downloaded_file_path = \"vim.apk\",\n    sha256 = \"6677af51cdce462afaf06af353acfe059b4a3c68c4257a539121c3ce46d25c68\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/vim-9.2.1091-r0.apk\"],\n)\n\n# Dropbear interoperability fixture only, Alpine 3.24 x86_64 (MIT).\n# aports e56a1d711fb2dd69206223dcdfd609d91d40ad02; shared libraries ISC.\n# Executed inside the digest-pinned OpenSSH lab image, never installed on hosts.\nhttp_file(\n    name = \"chain_lab_dropbear\",\n    downloaded_file_path = \"dropbear.apk\",\n    sha256 = \"cba11fe37aa85d7259ae44d494544e869bb58879e35124d0ba33b32c3b1201d7\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/dropbear-2026.91-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_utmps\",\n    downloaded_file_path = \"utmps.apk\",\n    sha256 = \"497f0f1cb51f0e6c1acc338fded0dc7722b1d43ea17bdb749f0d556794f8b2d8\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/utmps-libs-0.1.3.3-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_skalibs\",\n    downloaded_file_path = \"skalibs.apk\",\n    sha256 = \"3301f6ccbeaea49cdd966c7e636898a8612fb8fe964a15f24f6d204b3944c3f3\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/skalibs-libs-2.15.0.0-r0.apk\"],\n)\n\n# Disposable external SDK proof, pinned to the research baseline.\nbazel_dep(name = \"rules_go\", version = \"0.61.1\")\nbazel_dep(name = \"gazelle\", version = \"0.51.3\")\nbazel_dep(name = \"rules_pkg\", version = \"1.2.0\")\n\ngo_sdk = use_extension(\"@rules_go//go:extensions.bzl\", \"go_sdk\")\ngo_sdk.download(name = \"burrow_go_sdk\", version = \"1.26.5\")\nuse_repo(go_sdk, \"burrow_go_sdk\")\n\ngo_deps = use_extension(\"@gazelle//:extensions.bzl\", \"go_deps\")\ngo_deps.from_file(go_mod = \"//core/prototype_sdk:go.mod\")\nuse_repo(go_deps, \"com_github_charmbracelet_colorprofile\", \"com_github_charmbracelet_x_ansi\", \"com_github_charmbracelet_x_term\", \"com_github_charmbracelet_x_vt\", \"com_github_pkg_sftp\", \"land_charm_bubbles_v2\", \"land_charm_bubbletea_v2\", \"land_charm_lipgloss_v2\", \"org_golang_x_crypto\", \"org_golang_x_sys\")\nuse_repo(go_deps, \"com_github_charmbracelet_ultraviolet\", \"land_charm_huh_v2\", \"land_charm_glamour_v2\")\n\nhttp_archive = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_archive\")\n\n# Ruff 0.16.3 (MIT), matching Hovel 541e78ada0af's sdk/python/uv.lock.\n# Linux amd64 release asset; SHA256 from Astral's GitHub release metadata.\nhttp_archive(\n    name = \"ruff\",\n    urls = [\"https://github.com/astral-sh/ruff/releases/download/0.16.3/ruff-x86_64-unknown-linux-gnu.tar.gz\"],\n    sha256 = \"7ab3b978d2c0b1c96b2323d4e5c4f35284ae1cdf35d2f7399595c74c805f5fa3\",\n    strip_prefix = \"ruff-x86_64-unknown-linux-gnu\",\n    build_file_content = \"exports_files([\\\"ruff\\\"])\",\n)\n\n# Workflow syntax/expression checks: rhysd/actionlint v1.7.12, MIT;\n# SHA256 from the upstream GitHub release asset (Linux amd64 operator baseline).\nhttp_archive(\n    name = \"actionlint\",\n    urls = [\"https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz\"],\n    sha256 = \"8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8\",\n    build_file_content = \"exports_files([\\\"actionlint\\\"])\",\n)\n\nhttp_archive(\n    name = \"hovel_sdk\",\n    build_file = \"//core/prototype_sdk:hovel.BUILD.bazel\",\n    patch_cmds = [\"rm sdk/go/hovel/BUILD.bazel\"],\n    sha256 = \"9080e5060787f4ba5ee6715611e10112af2af316318369b748c9f566c1f3b6e9\",\n    strip_prefix = \"hovel-a4cbfdf7769a9551695088c11061e3cabc368e07\",\n    type = \"tar.gz\",\n    urls = [\"https://codeload.github.com/vibepwners/hovel/tar.gz/a4cbfdf7769a9551695088c11061e3cabc368e07\"],\n)\n",
+        "sha256": "c3787a81a2536ef633c4da0cfe94f1cb34e1537f5c962173d894c3f89ec0b6b3"
+      },
+      "core/connection/lab-image.txt": {
+        "content": "linuxserver/openssh-server@sha256:47f82202bcbffe214cea77dc7f5ed24b875e81ce6ebf0e0368e2954727bf5116\n",
+        "sha256": "37ddf54b54253c8ed34b1b5a558352a365d857477af7bf9b8653a2394022a288"
+      },
+      "docs/site/.nvmrc": {
+        "content": "22.20.0\n",
+        "sha256": "a0e27aeeac42d6102f4ff2bce40d8fb011c07e5cb28eff3c9d77e68df29e5dd6"
+      },
+      "docs/site/package.json": {
+        "content": "{\n  \"name\": \"@burrow/docs-site\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"packageManager\": \"pnpm@10.20.0\",\n  \"engines\": {\n    \"node\": \"22.20.0\"\n  },\n  \"pnpm\": {\n    \"onlyBuiltDependencies\": []\n  },\n  \"devDependencies\": {\n    \"astro\": \"7.0.7\"\n  }\n}\n",
+        "sha256": "30da9cf880c71790efb95d13f96637783887d945f5f39817bf59d5c2202fe2c9"
+      }
+    },
+    "treeSHA256": "f1bd5953dde8605cb164bc8eac48b9e4935005f4cd0e88543185dbbffa4819c1"
+  },
+  "started": "2026-09-27T00:01:48.234887+00:00",
+  "status": "PASSED",
+  "suite": "all",
+  "targets": [
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/aa5ea0626e52bc8dcb5f-test.log.txt",
+              "sha256": "c1b8a87c535f04bfc00ca3cc0530c80cf4ff5b34a1b4c27f459a3d98b7ce1476"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/aa5ea0626e52bc8dcb5f-test.xml.txt",
+              "sha256": "3e35ef1feb077f16508d7daec8c3445cefe381a8724fd1d2142a0cb7e27b57c9"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:go_format_behavior_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:go_format_behavior_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/13eb1c2594ee3a76279e-test.log.txt",
+              "sha256": "a4ff482ac9bbdff22e97a00d52136e09db4d440b060868a4a22aeafef028528f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/13eb1c2594ee3a76279e-test.xml.txt",
+              "sha256": "ae6c7c1ed9ef535c58307fe3f603cc03fe23bb8057d4dc8f57cbe137fa9982d2"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:go_format_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:go_format_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/89e671e8f030bae2d54e-test.log.txt",
+              "sha256": "f53be8d3180df35d1da1930819a88676142e9fa25bf6adce435366304e6fbf62"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/89e671e8f030bae2d54e-test.xml.txt",
+              "sha256": "859c7b02496c60c2f280ad0aeab9baa356d48629401537517650c04b45454315"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:python_format_behavior_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:python_format_behavior_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/43749d551484368cad8c-test.log.txt",
+              "sha256": "95553754a9c9fe8a42ff5851c87e3dc3e47427cb4b368d4986cb02797ab2830b"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/43749d551484368cad8c-test.xml.txt",
+              "sha256": "5ae42738f04bf8f04bbef79d6e53f7bd9933c2632154762ad2aeeab0f8ac3c60"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:python_format_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:python_format_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/eb2f56f9122bb213ce5d-test.log.txt",
+              "sha256": "9ca0bf442b70d075c7af843b071028b7c53738329f6f17c18d24936372c81a04"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/eb2f56f9122bb213ce5d-test.xml.txt",
+              "sha256": "3c01b7ab16349b69d5db1c6249341c01e1165874de509e19932f98bc03446848"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:workflow_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:workflow_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/8ea2c59061771baf07fd-test.log.txt",
+              "sha256": "b22637d062fa576b477380e65c91b60896d4ce40bd6d0edadda03d48501c85be"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/8ea2c59061771baf07fd-test.xml.txt",
+              "sha256": "fcc6a767fe9889ca6e1ec88028c63cefcf0b71c0283869fed2b8af66c302965c"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:activity_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:activity_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/d174b2bdf685b055b600-test.log.txt",
+              "sha256": "f42179106e08fa97a6303ee38beaa91de91495513dfd824e85892e7dc6fe60ba"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/d174b2bdf685b055b600-test.xml.txt",
+              "sha256": "d1cd7c1e4fcd744c5628136c0f3505f391cdd9a22e22d3d2d32fa2302d058daf"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:agent_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:agent_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/ca3e06043c79666135ad-test.log.txt",
+              "sha256": "89f6ee03f997279238796d9e98f70caa9e2030a2c64a7ff51707a7c99a171c90"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/ca3e06043c79666135ad-test.xml.txt",
+              "sha256": "263a1055b4141f8d27353b9a8795299b3caff243a997f600942506502efd8620"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:capabilities_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:capabilities_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/cd470f6a08f3ec2be37b-test.log.txt",
+              "sha256": "e5ac1e8f5caa03403b4d6a82fbf5edf8eb0843a0780c9002fe9084e72ce87ea2"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/cd470f6a08f3ec2be37b-test.xml.txt",
+              "sha256": "b74dba3796b8b699991b8402320fa58f9df45e567ce7e4e910d0515da47db3d1"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:connection_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:connection_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/e78fbede0838c99027c0-test.log.txt",
+              "sha256": "362eeba22db9cc1f2a3a7078a2fa038bf941b2c3e11f3c864a9fba9b4da60bdc"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/e78fbede0838c99027c0-test.xml.txt",
+              "sha256": "ecbe2aa3edf550ba6df5eec2c1fc2886b1cf153027bdd4bb5e48b4cce5329f3d"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:files_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:files_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/f5f91c10c343a2fbcdcd-test.log.txt",
+              "sha256": "27ead30fdc836aefacbb4f266b916efb1284141011e0c744f0415bd74a4d0788"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/f5f91c10c343a2fbcdcd-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:interaction_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:interaction_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/c9fd02af6e3df823f377-test.log.txt",
+              "sha256": "fdf8038cc2d127079e8d35583fd8cbb2fa2fdfad32583aaaeca14e35d750ef89"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/c9fd02af6e3df823f377-test.xml.txt",
+              "sha256": "b30cde776d01b8606b950a9117f845abeb4a1e59a42bf8d21b289c5ce04fd4a0"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:manager_compatibility_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:manager_compatibility_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/384bb2041c23deb31456-test.log.txt",
+              "sha256": "76dce3f274825dcb32f4acb0c406437d269359b261e4bee592361d82248db442"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/384bb2041c23deb31456-test.xml.txt",
+              "sha256": "291d1e17ca55a69cbb26cacb528cb00c4cb353a02778522e687cb8ad266b2955"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:profile_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:profile_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/ac65b97817e156290209-test.log.txt",
+              "sha256": "85bc782e71a857ccd3a6770dc2bf7eb156208b4941b347ac39e53d157a74d93f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/ac65b97817e156290209-test.xml.txt",
+              "sha256": "b64946ece555fd1534e63f544a3a5c770f3fd0cff4d7a631972b51d0b369c9be"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:setup_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        },
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/a8c164b10dfc5f35c5db-test.log.txt",
+              "sha256": "85bc782e71a857ccd3a6770dc2bf7eb156208b4941b347ac39e53d157a74d93f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/a8c164b10dfc5f35c5db-test.xml.txt",
+              "sha256": "b64946ece555fd1534e63f544a3a5c770f3fd0cff4d7a631972b51d0b369c9be"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:setup_test",
+            "run": 2,
+            "shard": 1
+          },
+          "status": "PASSED"
+        },
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/7733a6f0872f6a9fdc88-test.log.txt",
+              "sha256": "85bc782e71a857ccd3a6770dc2bf7eb156208b4941b347ac39e53d157a74d93f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/7733a6f0872f6a9fdc88-test.xml.txt",
+              "sha256": "b64946ece555fd1534e63f544a3a5c770f3fd0cff4d7a631972b51d0b369c9be"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:setup_test",
+            "run": 3,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 3,
+      "label": "//core/cmd/burrow:setup_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/a1e7eaf9f0f448bde48b-test.log.txt",
+              "sha256": "8f4d3da67ea7efb4084ae7a6755593b97a7ab4705ce380e3abd40d85fd7889a5"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/a1e7eaf9f0f448bde48b-test.xml.txt",
+              "sha256": "f8d6473c37537192e93c9367aef624883335c6a9b438d80140ed971c34d426e3"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_automation_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_automation_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-automation",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/f4d04e44615bc0f349ee-test.log.txt",
+              "sha256": "f304b17543b1beb2eaa9cbdc0a9c147207381007a1a2c6b90c747e1a05a833d0"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/f4d04e44615bc0f349ee-test.xml.txt",
+              "sha256": "8a5e6de5853af137dd7bca6187f2d2f3e0a56ba172948b870a6417dfbd43297b"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_chains_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_chains_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-chains",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/c0d5ce90063deead2d21-test.log.txt",
+              "sha256": "16f37060e1d792ef4be0c0d08dac0f07be8d5e53bb59c21cbe7a6f1b6b4d4198"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/c0d5ce90063deead2d21-test.xml.txt",
+              "sha256": "872b6804a7abd4f0f30016f430b1830c2c847527b970145c869ba44609bce1f5"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_files_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_files_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-files",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/bbe518cb11a6f87241b7-test.log.txt",
+              "sha256": "7d61dcf593170477b205472a4b7f4c3a6aab52bfef51741aecfe926d662ef1ae"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/bbe518cb11a6f87241b7-test.xml.txt",
+              "sha256": "225bbe9f0ee8d745069b4daa980abecfe176220f8dbef14ebef79cff28687007"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_follow_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_follow_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-follow",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/3cf02fdabe57cd7f8095-test.log.txt",
+              "sha256": "9793d963fd2216901d4320fd5be5407981d2ddb67162c05ce5facdd83c815d09"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/3cf02fdabe57cd7f8095-test.xml.txt",
+              "sha256": "e1b711310657dfdf3d7449174dc9c46977ad9a6c184cbc4d7c6f57811b003e4b"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_lifecycle_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_lifecycle_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-lifecycle",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/b1ca32b1caafbf0b6388-test.log.txt",
+              "sha256": "b4c7f8538d67e7ed2d263ea9a21c23c0569f1d6aca2a02ba6afa04724f405aec"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/b1ca32b1caafbf0b6388-test.xml.txt",
+              "sha256": "ecbbb8491c4466b5f9b41c1a330e64b0a3ce60840cda6513201361f46368aac3"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_reports_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_reports_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-reports",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/5ad624598fcb51be781e-test.log.txt",
+              "sha256": "70aed7e76816c89fc5495c5385adfba63d1bbdd43bcba26c31efe59a3d945c9d"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/5ad624598fcb51be781e-test.xml.txt",
+              "sha256": "49efcda9b75ec69d27efb56106e9cd245a1394e9515b287e0269bdcffd0622e2"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_reverse_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_reverse_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-reverse",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/21f12934741f7ed3f78a-test.log.txt",
+              "sha256": "6f3ee4a004b532e6cddca238635df3a80c9eb74522b9d01ef94b125e2d869cdc"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/21f12934741f7ed3f78a-test.xml.txt",
+              "sha256": "1d214ca70e16a0f76ff825273ad62e977c8ff0fb68f327905fe9b6d5718be965"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_runs_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_runs_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-runs",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/b6f963afe6535cd5b77e-test.log.txt",
+              "sha256": "fffd84cffb77f8bc5886754012ad0f27cc3c995f5fbf3d72f6c51ea5c99292ef"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/b6f963afe6535cd5b77e-test.xml.txt",
+              "sha256": "2b8e47851c309cce8dd05c8e2162d3f123ddde27d8e7b6f0a3398ba841a7928a"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_shell_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_shell_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-shell",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/8cbc46328100d4553e8d-test.log.txt",
+              "sha256": "9596e3df27cdc3374e4138e6a2c25b50af3448f4eb2dfce0d25b8f4d1fc304ba"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/8cbc46328100d4553e8d-test.xml.txt",
+              "sha256": "48bf24a421a574d2a789203aa1c2b9eb8e3539f6df6d022212087dce46b1c873"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:terminal_test",
+            "run": 3,
+            "shard": 1
+          },
+          "status": "PASSED"
+        },
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/d34f372403967972d779-test.log.txt",
+              "sha256": "9596e3df27cdc3374e4138e6a2c25b50af3448f4eb2dfce0d25b8f4d1fc304ba"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/d34f372403967972d779-test.xml.txt",
+              "sha256": "48bf24a421a574d2a789203aa1c2b9eb8e3539f6df6d022212087dce46b1c873"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:terminal_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        },
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/57d7c011cd6e466cad14-test.log.txt",
+              "sha256": "9596e3df27cdc3374e4138e6a2c25b50af3448f4eb2dfce0d25b8f4d1fc304ba"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/57d7c011cd6e466cad14-test.xml.txt",
+              "sha256": "f7840c91c5b531bea45437008d6bfbc61799f15248acfc3813d72901d058a65a"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:terminal_test",
+            "run": 2,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 3,
+      "label": "//core/cmd/burrow:terminal_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/cf199c1f1d5a95c472aa-test.log.txt",
+              "sha256": "1f8177c0a47918d714e3fda58171de44bd115d18a276c46eae2bece977c0ef5e"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/cf199c1f1d5a95c472aa-test.xml.txt",
+              "sha256": "d4d1d73715baa9bb03544fef0e23d36fd1d616c0112db965dd66205e09121d34"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:workspace_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:workspace_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/8d795dc698170fd1616e-test.log.txt",
+              "sha256": "da5fb6f44c55f46b4b41b4e337313d25a4d5cc1e59b915c357e16ecaedc1a111"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/8d795dc698170fd1616e-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/connection:forward_control_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/connection:forward_control_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/39a849f8c577c417af21-test.log.txt",
+              "sha256": "f9c6b833fa0d4174033422b7bf38d766542b834e36840a190ae5d1b0c0dbb08a"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/39a849f8c577c417af21-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/launch:audit_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/launch:audit_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/75240795c35a23999186-test.log.txt",
+              "sha256": "4e85eed790f75fc55b4de1c42eeb8fe7d1fea1534b74b44dcd8be9a219321ea2"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/75240795c35a23999186-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/launch:digest_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/launch:digest_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/c84ec8167f84849d84fc-test.log.txt",
+              "sha256": "d4acdcfcabb76fc8547d4ec6a00b4e636c0a05f72b051e426718529f424c8c44"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/c84ec8167f84849d84fc-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/launch:online_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/launch:online_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/1635b3f130dc70489d73-test.log.txt",
+              "sha256": "85f76a062829b1cb49ef1e1d3aaf79a4f988637614d18ec00c1ac2e973b6ea70"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/1635b3f130dc70489d73-test.xml.txt",
+              "sha256": "4a778e12483f9cec3900edea209e474a8e080fe770c21d107faefcb0a4e73400"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_agent:check",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_agent:check",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/364649604663f2ac0328-test.log.txt",
+              "sha256": "3acf38d5a7516e78d19437f9e5ea9f882b2388903f21d52491574ceb58288d02"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/364649604663f2ac0328-test.xml.txt",
+              "sha256": "796e2512e3deade9f3b319becddf4e25c4683889c9f6d2ec9b561aa60a62a6b0"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_sdk:protocol_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_sdk:protocol_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/8b61568bc4a2b8f263f5-test.log.txt",
+              "sha256": "9fdb7ecebd39ce2db7fec70b0827972855f8f3cb9f119a334c18c6f9961d1d4f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/8b61568bc4a2b8f263f5-test.xml.txt",
+              "sha256": "da6760f689efb7103b283bc0dd1f65ebbaabd2189cfcd64add2a5395d3a607a9"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_sdk:reuse_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_sdk:reuse_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/ad4f773417e5b2412eba-test.log.txt",
+              "sha256": "de4324dfd9df9bcda481743ef4c3513f747ea433e46daf5f355e29f13d87a479"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/ad4f773417e5b2412eba-test.xml.txt",
+              "sha256": "5f7fc62e26016f70f7d68bcd221553b39cd1717890ce6d7796e21666bea86615"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_sessions:check",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_sessions:check",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-shell",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/b169b9e50a52fe257328-test.log.txt",
+              "sha256": "68da5bda639c72d211c83477b1cc0455d6e227f3cacab3c186cc212de7fc78b1"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/b169b9e50a52fe257328-test.xml.txt",
+              "sha256": "6c3379c821181b97cb97f46853d4a1c9ffe2d7540d483d4c71fc845b5933e410"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:check",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:check",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/333fa33a42bbc576dcc9-test.log.txt",
+              "sha256": "c1fbdd20139ffec3e865a1071a720f3e79af2eacd61136f199f2dfec7580efcb"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/333fa33a42bbc576dcc9-test.xml.txt",
+              "sha256": "c525bf3d65f3ac96ae5870a95dba92fee8c9f5b72df1be207928c87758917b9d"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:cli_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:cli_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/44c2960c49f6ee0fff6f-test.log.txt",
+              "sha256": "4bc7060eef06b57c667851e756576032791ae4ff95e46951b428310f25e373ac"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/44c2960c49f6ee0fff6f-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:terminal_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:terminal_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/e00d784cd8ee9f57b5c5-test.log.txt",
+              "sha256": "2bf9f89e5410a5bbdfee69e15884b688f29f23b1e2bc521cfd95d3b062050146"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/e00d784cd8ee9f57b5c5-test.xml.txt",
+              "sha256": "c82d91cc4d8ea9c9ebabb3b682ae85878755b3129f8c967c0a5cb4c7c2e0cc3d"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:vt_cli_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:vt_cli_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/4a08f11d8da98074903e-test.log.txt",
+              "sha256": "d29ff5c1a43d6c60c25308096cbbc208ada5151b9bf7c673ef1d38e5db593701"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/4a08f11d8da98074903e-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:vt_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:vt_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/000f657d9ab86984a63f-test.log.txt",
+              "sha256": "e4489e25e0442b49edac9d1d5e27471a0d50f4d36235d1512203793509c86cbf"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/000f657d9ab86984a63f-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_transport:direct_script_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_transport:direct_script_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/212154eac4925a52222f-test.log.txt",
+              "sha256": "441cb242a325ac341998b342ece88d2ab27f022d863f3aead500569d4f5be8b4"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/212154eac4925a52222f-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/terminal:host_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/terminal:host_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/f0da5633d9242adf421e-test.log.txt",
+              "sha256": "5d30abbb08edcd19a661dcd1abade332f700c698c00953e941a3accad910d003"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/f0da5633d9242adf421e-test.xml.txt",
+              "sha256": "9414e33b5136395fc757bc983d1a866c2f8d5fe0ec6c8472b9abb43e8f45e577"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/tools/release:release_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/tools/release:release_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/f904d7ac540006951791-test.log.txt",
+              "sha256": "f0dfbbe8332dc1ffa8ddbce0ba6200c349498d193791def9567b2f8e9edd8b7e"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/f904d7ac540006951791-test.xml.txt",
+              "sha256": "0d623d92e36e0f125b9a1ff0f447ea3a617b6a83cad3000c828943c43f2eb271"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/tools/release:wheel_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/tools/release:wheel_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/7f86b580738afbb06b41-test.log.txt",
+              "sha256": "8031859a485e36d2335cfb1e150186949ae6c5fad6527fb8b2e1bc0ddee61597"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/7f86b580738afbb06b41-test.xml.txt",
+              "sha256": "fcd5d300b7160d646c2c6323e9bd5f0ee87a0d203b1d08a7715c3e0a33877b1a"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//docs/tools/docs:report_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//docs/tools/docs:report_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/c4932910328943e554a2-test.log.txt",
+              "sha256": "eacfd15fb786619d36bd0831199b40514d7377833c06909603908083b423399a"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/c4932910328943e554a2-test.xml.txt",
+              "sha256": "d953c541d6c0d4eb2b73bdb8f3609628285f71ba62c61bac3f7c3d5e05910d3f"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//docs/tools/docs:site_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//docs/tools/docs:site_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/d4a1c0fe7bf575d08ef5-test.log.txt",
+              "sha256": "c5269def5472ae4ce43e0c02a2da3b8653b29d8dab57fd7bea61e09d492ec04d"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/d4a1c0fe7bf575d08ef5-test.xml.txt",
+              "sha256": "7b80fea7b4ea201d0504ce34ff605fb83f197b00596991ca2f6a7af6d380807b"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//docs/tools/docs:stage_site_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//docs/tools/docs:stage_site_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    }
+  ]
+}

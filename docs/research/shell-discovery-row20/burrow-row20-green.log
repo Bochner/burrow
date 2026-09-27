@@ -1,0 +1,51 @@
+→ 🎬 Running burrow task
+→ 🎬 Running run task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Building //core/cmd/burrow:connection_lab
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: target //core/cmd/burrow:connection_lab (0 packages loaded, 0 targets configured)
+Analyzing: target //core/cmd/burrow:connection_lab (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //core/cmd/burrow:connection_lab (0 packages loaded, 0 targets configured).
+[3 / 6] [Prepa] GoCompilePkg core/cmd/burrow/burrow.a
+[5 / 6] [Prepa] runfiles for //core/cmd/burrow:connection_lab
+INFO: Found 1 target...
+INFO: Elapsed time: 2.483s, Critical Path: 2.15s
+INFO: 6 processes: 2 internal, 4 linux-sandbox.
+INFO: Build completed successfully, 6 total actions
+INFO: 
+INFO: Build Event Protocol files produced successfully.
+
+→ 🚀 Run · Running //core/cmd/burrow:connection_lab
+TIMING fixture and workspace setup: 1.7s (total 1.7s)
+TIMING connect unknown submission-to-CLI-return: 0.439s
+TIMING connect gateway submission-to-CLI-return: 0.271s
+SHELL_DISCOVERY {"action": "observe", "counts": {"rpc:GetDaemonInfo": 5, "rpc:ListSessions": 1, "rpc:RunSessionCommand": 1, "command:observe": 1}}
+SHELL_DISCOVERY {"action": "snapshot", "counts": {"rpc:GetDaemonInfo": 5, "rpc:ListSessions": 1, "rpc:RunSessionCommand": 1, "command:snapshot": 1}}
+PASS independent CLI readers, concurrent takeover, stale authority and release
+PASS explicit current-screen recovery after byte-history truncation
+PASS initial/live geometry, private validation, Ctrl+C, slow reader, backpressure and close/input race
+TIMING connect shell-peer submission-to-CLI-return: 0.284s
+TIMING connect native-close submission-to-CLI-return: 0.291s
+TIMING connect audit-close submission-to-CLI-return: 0.310s
+TIMING connect target submission-to-CLI-return: 0.446s
+TIMING connect target submission-to-CLI-return: 0.439s
+TIMING connect target submission-to-CLI-return: 0.437s
+TIMING connect target submission-to-CLI-return: 0.447s
+TIMING connect target submission-to-CLI-return: 0.451s
+PASS retained remote PIDs, launcher exit, selected/connection/manager close, stale/wrong-owner refusal, bounded flood and loss
+TIMING acceptance before cleanup: 31.7s (total 33.4s)
+TIMING fixture cleanup: 1.2s (total 34.6s)
+
+→ ✅ Passed run task in 37.4s · Ran //core/cmd/burrow:connection_lab
+    🔧 Setup    0ms  Prepare the task environment
+    🔨 Build   2.5s  Build run target
+    🚀 Run    34.9s  Run target
+
+→ ✅ Passed burrow task in 37.6s

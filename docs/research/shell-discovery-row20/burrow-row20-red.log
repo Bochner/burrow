@@ -1,0 +1,52 @@
+→ 🎬 Running burrow task
+→ 🎬 Running run task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Building //core/cmd/burrow:connection_lab
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: target //core/cmd/burrow:connection_lab (0 packages loaded, 0 targets configured)
+Analyzing: target //core/cmd/burrow:connection_lab (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //core/cmd/burrow:connection_lab (0 packages loaded, 2929 targets configured, 1 aspect application).
+INFO: Found 1 target...
+INFO: Elapsed time: 0.542s, Critical Path: 0.03s
+INFO: 2 processes: 143 action cache hit, 2 internal.
+INFO: Build completed successfully, 2 total actions
+INFO: 
+INFO: Build Event Protocol files produced successfully.
+
+→ 🚀 Run · Running //core/cmd/burrow:connection_lab
+TIMING fixture and workspace setup: 2.0s (total 2.0s)
+TIMING connect unknown submission-to-CLI-return: 0.432s
+TIMING connect gateway submission-to-CLI-return: 0.266s
+SHELL_DISCOVERY {"action": "observe", "counts": {"rpc:GetDaemonInfo": 7, "rpc:ListSessions": 1, "rpc:RunSessionCommand": 2, "command:inspect": 1, "command:observe": 1}}
+TIMING acceptance before cleanup: 2.8s (total 4.8s)
+TIMING fixture cleanup: 0.7s (total 5.5s)
+Traceback (most recent call last):
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/connection_lab.runfiles/_main/core/cmd/burrow/_connection_lab_stage2_bootstrap.py", line 588, in <module>
+    main()
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/connection_lab.runfiles/_main/core/cmd/burrow/_connection_lab_stage2_bootstrap.py", line 582, in main
+    _run_py_path(main_filename, args=sys.argv[1:])
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/connection_lab.runfiles/_main/core/cmd/burrow/_connection_lab_stage2_bootstrap.py", line 339, in _run_py_path
+    runpy.run_path(main_filename, run_name="__main__")
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/connection_lab.runfiles/_main/core/cmd/burrow/connection_lab.py", line 454, in <module>
+    session_checks(burrow, w, first, command, container, wait, options, root, daemons, binary, env)
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/connection_lab.runfiles/_main/core/cmd/burrow/sessions_lab.py", line 119, in session_checks
+    assert counts["rpc:ListSessions"] == counts["rpc:RunSessionCommand"] == 1, counts
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Counter({'rpc:GetDaemonInfo': 7, 'rpc:RunSessionCommand': 2, 'rpc:ListSessions': 1, 'command:inspect': 1, 'command:observe': 1})
+
+→ ❌ Failed run task (exit code 1) in 6.5s · //core/cmd/burrow:connection_lab exited with code 1
+    🔧 Setup    0ms  Prepare the task environment
+    🔨 Build  794ms  Build run target
+    🚀 Run     5.7s  Run target (failed)
+
+→ ❌ Failed burrow task (exit code 1) in 6.7s

@@ -136,12 +136,9 @@ func SessionCommand(ctx context.Context, w string, args []string, input io.Reade
 }
 
 func observeShell(ctx context.Context, w string, args []string) (ShellOutput, error) {
-	s, err := inspectShell(ctx, w, args[2], args[3])
+	ref, err := findShell(ctx, w, args[2], args[3])
 	if err != nil {
 		return ShellOutput{}, err
-	}
-	if s.State == "unavailable" {
-		return ShellOutput{Shell: s, Lost: true, Synchronization: "out-of-sync"}, nil
 	}
 	after := "0"
 	if len(args) == 5 {
@@ -151,12 +148,20 @@ func observeShell(ctx context.Context, w string, args []string) (ShellOutput, er
 	if args[1] == "snapshot" && len(args) == 4 {
 		arguments = nil
 	}
-	result, err := ownerCommand(ctx, w, s.ID, args[1], arguments)
+	// Both observations contain the shell state under the owner's lock. Validate
+	// that state directly instead of requesting a separate, older inspection.
+	result, err := ownerCommand(ctx, w, ref.ID, args[1], arguments)
 	if err != nil {
+		// Distinguish owner loss from an invalid cursor or a failed snapshot.
+		// Never retry the observation or present a recovered inspect as a screen.
+		s, inspectionErr := shellState(ctx, w, ref)
+		if inspectionErr == nil && s.State == "unavailable" {
+			return ShellOutput{Shell: s, Lost: true, Synchronization: "out-of-sync"}, nil
+		}
 		return ShellOutput{}, err
 	}
 	var output ShellOutput
-	if json.Unmarshal([]byte(result.Stdout), &output) != nil || output.Shell.ID != s.ID {
+	if json.Unmarshal([]byte(result.Stdout), &output) != nil || output.Shell.ID != ref.ID || output.Shell.Connection.Name != ref.Name || output.Shell.Workspace != w {
 		return ShellOutput{}, fmt.Errorf("invalid shell observation")
 	}
 	return output, nil

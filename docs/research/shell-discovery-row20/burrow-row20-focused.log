@@ -1,0 +1,35 @@
+→ 🎬 Running test task
+
+→ 🔧 Setup · Running setup
+
+→ 🧪 Test · Spawning bazel test
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 3 targets (0 packages loaded, 0 targets configured)
+Analyzing: 3 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 3 targets (3 packages loaded, 34 targets configured).
+[30 / 35] 1 / 3 tests; Testing //core/terminal:host_test; 0s linux-sandbox ... (2 actions, 1 running)
+[35 / 36] 2 / 3 tests; Testing //core/cmd/burrow:interaction_test; 1s linux-sandbox
+[35 / 36] 2 / 3 tests; Testing //core/cmd/burrow:interaction_test; 10s linux-sandbox
+[35 / 36] 2 / 3 tests; Testing //core/cmd/burrow:interaction_test; 40s linux-sandbox
+[35 / 36] 3 / 3 tests; Testing //core/cmd/burrow:interaction_test; 53s linux-sandbox
+INFO: Found 3 test targets...
+INFO: Elapsed time: 55.773s, Critical Path: 55.47s
+INFO: 15 processes: 21 action cache hit, 4 internal, 12 linux-sandbox.
+INFO: Build completed successfully, 15 total actions
+INFO: 
+//:python_format_test                                                    PASSED in 0.2s
+//core/cmd/burrow:interaction_test                                       PASSED in 53.9s
+//core/terminal:host_test                                                PASSED in 0.5s
+
+Executed 3 out of 3 tests: 3 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+INFO: Build Event Protocol files produced successfully.
+
+→ ✅ Passed test task in 55.8s · Tests passed
+    🔧 Setup    0ms  Prepare the task environment
+    🧪 Test   55.8s  Run bazel tests

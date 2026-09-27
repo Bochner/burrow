@@ -181,7 +181,6 @@ def measure_attachments(binary, root, env, workspace, burrow, options, wait, dec
                                 "rpc:GetDaemonInfo",
                                 "rpc:ListSessions",
                                 "rpc:RunSessionCommand",
-                                "command:inspect",
                                 "command:snapshot",
                             } <= item["operations"].keys(), item["operations"]
                         report["samples"].append(item)

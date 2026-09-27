@@ -1,6 +1,7 @@
 """Retained SSH shells through the production CLI and declared SSH fixture."""
 
 import base64
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import http.client
 import json
@@ -98,6 +99,30 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
     assert burrow(w, "session", "list", "gateway") == []
     one, remote_one = create(w, "gateway", "--review", review["digest"])
     two, remote_two = create()
+
+    # Observation already carries the owner state: discovery plus observation
+    # must not issue a redundant inspect. Trace only this real CLI process.
+    for action in ("observe", "snapshot"):
+        trace = root / (action + "-discovery.jsonl")
+        p = subprocess.run(
+            [binary, "--workspace", str(w), "session", action, "gateway", one["id"]],
+            capture_output=True,
+            text=True,
+            env={**env, "BURROW_ATTACHMENT_TRACE": str(trace)},
+            timeout=15,
+        )
+        assert p.returncode == 0, (p.stdout, p.stderr)
+        observed = json.loads(p.stdout)["shell"]
+        assert observed["id"] == one["id"] and observed["connection"] == one["connection"]
+        counts = Counter(json.loads(line)["operation"] for line in trace.read_text().splitlines())
+        print("SHELL_DISCOVERY " + json.dumps({"action": action, "counts": counts}), flush=True)
+        assert counts["rpc:ListSessions"] == counts["rpc:RunSessionCommand"] == 1, counts
+        assert counts["command:" + action] == 1 and counts["command:inspect"] == 0, counts
+        for name, session in (("other", one["id"]), ("gateway", first["session"]), ("gateway", "missing")):
+            burrow(w, "session", action, name, session, ok=False)
+
+    # Invalid observation arguments remain errors, not invented owner loss.
+    burrow(w, "session", "observe", "gateway", one["id"], str(2**64 - 1), ok=False)
 
     def private(action, request, shell=one, ok=True):
         p = subprocess.run(
@@ -380,6 +405,9 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
     burrow(w, "session", "close", "gateway", one["id"], "--yes")
     assert not Path(f"/proc/{one['pid']}").exists()
     wait(lambda: not remote_live(remote_one))
+    for action in ("observe", "snapshot"):
+        burrow(w, "session", action, "gateway", one["id"], ok=False)
+        assert burrow(w, "session", action, "gateway", two["id"])["shell"]["id"] == two["id"]
     assert burrow(w, "session", "inspect", "gateway", two["id"])["state"] == "running"
     assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
     with socket.create_connection(("127.0.0.1", port), timeout=3) as forwarded:
@@ -522,11 +550,15 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
             os.kill(pid, signal.SIGKILL)
             if loss == "daemon":
                 burrow(workspace, "session", "inspect", "target", shell["id"], ok=False)
+                for action in ("observe", "snapshot"):
+                    burrow(workspace, "session", action, "target", shell["id"], ok=False)
                 burrow(workspace, "status", ok=False)  # Stale receipts require manual recovery.
                 workspace = root / "session-fresh-daemon"
                 relaunched = burrow(workspace, "status")
                 daemons.append(relaunched["pid"])
                 assert burrow(workspace, "session", "list", "target") == []
+                for action in ("observe", "snapshot"):
+                    burrow(workspace, "session", action, "target", shell["id"], ok=False)
             else:
                 seen = wait(
                     lambda: (
@@ -537,8 +569,9 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
                     )
                 )
                 assert "uncertain" in seen["detail"], seen
-                observation = burrow(workspace, "session", "observe", "target", shell["id"])
-                assert observation["lost"] and observation["shell"]["state"] in ("lost", "unavailable"), observation
+                for action in ("observe", "snapshot"):
+                    observation = burrow(workspace, "session", action, "target", shell["id"])
+                    assert observation["lost"] and observation["shell"]["state"] in ("lost", "unavailable"), observation
                 if loss == "module":
                     burrow(workspace, "close", "target", "--yes", ok=False)
                     assert Path(state["socket"]).exists(), "uncertain cleanup removed owner"
