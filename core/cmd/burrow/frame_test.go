@@ -3,6 +3,7 @@ package main
 import (
 	tea "charm.land/bubbletea/v2"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"github.com/Bochner/burrow/core/connection"
 	"github.com/Bochner/burrow/core/launch"
@@ -18,6 +19,140 @@ import (
 	"testing"
 	"time"
 )
+
+func TestFileTabsShareWorkspaceObservation(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/inventory-one"}, true, launch.Options{})
+	t.Cleanup(m.terminals.close)
+	one := m.current()
+	other := "/tmp/inventory-two"
+	m.paths = append(m.paths, other)
+	m.workspaces[other] = &workspaceView{management: newUI(launch.Info{Workspace: other}, true)}
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	observe := func(path string, msg tea.Msg) {
+		frameEvent(m, m.dispatch(path, func() tea.Msg { return msg })())
+	}
+	states := []connection.State{
+		{Name: "same", State: "connected", Creation: "one", Generation: "first"},
+		{Name: "second", State: "connected", Creation: "two", Generation: "first"},
+	}
+	observe(m.active, connectionList{states: states})
+	for _, s := range states {
+		m.openFileTab(s.Name)
+		u := one.file
+		t.Cleanup(u.files.cancel)
+		u.input.SetValue("cd " + s.Name)
+	}
+	m.selectWorkspace(1)
+	observe(other, connectionList{states: []connection.State{{Name: "same", State: "lost"}}})
+	m.openFileTab("same")
+	if m.current().file != nil {
+		t.Fatal("another workspace borrowed a live connection")
+	}
+	// Daemon observations bypass updateManagement; every tab must still see them.
+	observe(m.paths[0], daemonObservation{info: launch.Info{Workspace: m.paths[0], PID: 321}, at: time.Now()})
+	observe(m.paths[0], tunnelList{tunnels: []connection.Tunnel{{ID: "one-tunnel"}}})
+	for _, u := range one.fileViews {
+		if u.info.PID != 321 || u.info.Workspace != m.paths[0] || len(u.tunnels) != 1 || u.fileState() != "connected" || u.input.Value() != "cd "+u.files.state.Name {
+			t.Fatal("observation freshness or per-tab draft was lost")
+		}
+	}
+	observe(m.paths[0], connectionList{err: fmt.Errorf("owner unavailable")})
+	if one.fileViews[0].fileState() != "unverified" || one.fileViews[1].fileState() != "unverified" {
+		t.Fatal("file tabs hid failed observation")
+	}
+	replacement := append([]connection.State(nil), states...)
+	for i := range replacement {
+		replacement[i].State = "connected"
+	}
+	replacement[0].Generation = "replacement"
+	observe(m.paths[0], connectionList{states: replacement})
+	if one.fileViews[0].fileState() != "unavailable" || one.fileViews[1].fileState() != "connected" || m.current().management.connections[0].State != "lost" {
+		t.Fatal("replacement or workspace identity crossed tab boundaries")
+	}
+	first := one.fileViews[0]
+	observe(other, fileResult{mode: first.files, sequence: first.files.sequence, value: connection.FileListing{Path: "/wrong-workspace"}})
+	observe(m.paths[0], fileResult{mode: first.files, sequence: first.files.sequence + 1, value: connection.FileListing{Path: "/stale"}})
+	if first.files.remote != "~" || m.active != other {
+		t.Fatal("unmatched file result changed a tab or selection")
+	}
+}
+
+func TestFollowViewRetainsOnlyItsOwnReadingContext(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/follow-one"}, true, launch.Options{})
+	t.Cleanup(m.terminals.close)
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.openFollow([]string{"run", "follow", "same"})
+	w, v := m.current(), m.current().follow
+	deliver := func(path string, generation uint64, stream int, offset int64, data string) {
+		msg := followRead{view: v, generation: generation, stream: stream, offset: offset,
+			chunk: connection.RunOutput{Data: base64.StdEncoding.EncodeToString([]byte(data)), NextOffset: offset + int64(len(data)), State: "running", Budget: 4096, Stored: offset + int64(len(data))}}
+		frameEvent(m, m.dispatch(path, func() tea.Msg { return msg })())
+	}
+	deliver(m.active, v.generation, 0, 0, "first\n")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyHome})
+	deliver(m.active, v.generation, 0, 6, "second\n")
+	if v.previews[0].next != 6 || string(v.previews[0].raw) != "first\n" {
+		t.Fatal("in-flight read changed paused preview or cursor")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	deliver(m.active, v.generation, 1, 0, "error\n")
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+	deliver(m.active, v.generation, 0, 6, "second\n")
+	if v.previews[0].next != 13 || v.previews[1].next != 6 {
+		t.Fatal("resume or independent stream positions changed")
+	}
+	frameEvent(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyF1})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+	if !v.help || v.helpOffset == 0 || w.management.help || w.management.helpOffset != 0 {
+		t.Fatal("follow help state leaked to management")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	bounds := m.selectionBounds()
+	frameEvent(m, tea.MouseClickMsg{X: bounds.Min.X, Y: bounds.Min.Y, Button: tea.MouseLeft})
+	frameEvent(m, tea.MouseMotionMsg{X: bounds.Min.X + 10, Y: bounds.Min.Y, Button: tea.MouseLeft})
+	frameEvent(m, tea.MouseReleaseMsg{X: bounds.Min.X + 10, Y: bounds.Min.Y, Button: tea.MouseLeft})
+	if !m.hasSelection() || !strings.Contains(m.selection.text(), "LIVE OUTPUT") {
+		t.Fatal("follow text selection unavailable")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	m.openLogs()
+	w.restoreLogs(w.shell)
+	if w.tab != "follow" || w.follow != v || v.previews[0].next != 13 {
+		t.Fatal("log viewer did not return to the same follow context")
+	}
+	other := "/tmp/follow-two"
+	m.paths = append(m.paths, other)
+	m.workspaces[other] = &workspaceView{management: newUI(launch.Info{Workspace: other}, true)}
+	m.selectWorkspace(1)
+	m.openFollow([]string{"run", "follow", "same"})
+	second := m.current().follow
+	deliver(other, v.generation, 0, 13, "wrong\n")
+	deliver(m.paths[0], v.generation, 0, 13, "background\n")
+	if second.previews[0].next != 0 || v.previews[0].next != 24 || m.readFollow(m.paths[0], v) != nil || m.current().follow != second {
+		t.Fatal("background result crossed workspace or scheduling boundary")
+	}
+	m.selectWorkspace(0)
+	m.selectFollow(v)
+	generation := v.generation
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	m.openFollow([]string{"run", "follow", "same"})
+	if w.follow != v || v.previews[0].next != 24 || v.previews[1].next != 6 {
+		t.Fatal("reopening lost stream positions")
+	}
+	deliver(m.active, generation, 0, 24, "stale\n")
+	if v.previews[0].next != 24 {
+		t.Fatal("closed generation changed reopened view")
+	}
+	generation = v.generation
+	m.openFollow([]string{"run", "follow", "same", "stdout", "2"})
+	deliver(m.active, generation, 0, 24, "stale\n")
+	if v.previews[0].next != 2 || len(v.previews[0].raw) != 0 || v.previews[1].next != 6 {
+		t.Fatal("explicit reset accepted stale read or reset sibling stream")
+	}
+}
 
 func TestWorkspaceFrame(t *testing.T) {
 	m := newFrame(launch.Info{Workspace: "/tmp/one"}, true, launch.Options{Offline: true})

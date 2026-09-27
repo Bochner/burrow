@@ -46,6 +46,7 @@ type runPreview struct {
 }
 
 type runView struct {
+	helpState
 	id              string
 	stream          int
 	previews        [2]runPreview
@@ -81,22 +82,19 @@ func (m *frame) openFollow(args []string) tea.Cmd {
 		return nil
 	}
 	if w.followSaved == nil {
-		w.followSaved = make(map[string]*ui)
+		w.followSaved = make(map[string]*runView)
 	}
-	u := w.followSaved[args[2]]
-	if u == nil {
-		model := newUI(w.management.info, m.noColor)
-		u = &model
-		u.follow = &runView{id: args[2]}
-		for i := range u.follow.previews {
-			p := &u.follow.previews[i]
+	v := w.followSaved[args[2]]
+	if v == nil {
+		v = &runView{id: args[2]}
+		for i := range v.previews {
+			p := &v.previews[i]
 			p.viewport = viewport.New()
 			p.viewport.SoftWrap = true
 			p.tail = true
 		}
-		w.followSaved[args[2]] = u
+		w.followSaved[args[2]] = v
 	}
-	v := u.follow
 	v.stream = slices.Index([]string{"stdout", "stderr"}, stream)
 	if len(args) == 5 {
 		m.stopFollow(v)
@@ -104,18 +102,17 @@ func (m *frame) openFollow(args []string) tea.Cmd {
 		p.next, p.raw, p.tail, p.final = offset, nil, true, false
 		p.viewport.SetContent("")
 	}
-	if !slices.Contains(w.followViews, u) {
-		w.followViews = append(w.followViews, u)
+	if !slices.Contains(w.followViews, v) {
+		w.followViews = append(w.followViews, v)
 	}
-	u.width, u.height, u.noColor = w.management.width, w.management.height, m.noColor
-	u.sizeFollow()
+	w.followUI(v).sizeFollow()
 	w.management.input.Reset()
-	m.selectFollow(u)
-	return m.readFollow(m.active, u)
+	m.selectFollow(v)
+	return m.readFollow(m.active, v)
 }
 
-func (m *frame) selectFollow(u *ui) {
-	m.current().follow, m.current().tab, m.current().focus = u, "follow", "prompt"
+func (m *frame) selectFollow(v *runView) {
+	m.current().follow, m.current().tab, m.current().focus = v, "follow", "prompt"
 	m.selection = nil
 }
 
@@ -129,24 +126,21 @@ func (m *frame) stopFollow(v *runView) {
 
 func (m *frame) closeFollow() {
 	w := m.current()
-	u := w.follow
-	m.stopFollow(u.follow)
-	w.followViews = slices.DeleteFunc(w.followViews, func(candidate *ui) bool { return candidate == u })
+	v := w.follow
+	m.stopFollow(v)
+	w.followViews = slices.DeleteFunc(w.followViews, func(candidate *runView) bool { return candidate == v })
 	w.follow, w.tab, w.focus = nil, "", "prompt"
 }
 
-func (w *workspaceView) followUI(v *runView) *ui {
-	for _, u := range w.followViews {
-		if u.follow == v {
-			return u
-		}
-	}
-	return nil
+// Reuse the existing renderer without retaining a management model per run.
+// This projection is transient; only run and help state belong to the viewer.
+func (w *workspaceView) followUI(v *runView) ui {
+	return ui{follow: v, helpState: v.helpState, workspaceInventory: w.management.workspaceInventory,
+		width: w.management.width, height: w.management.height, noColor: w.management.noColor}
 }
 
-func (m *frame) readFollow(path string, u *ui) tea.Cmd {
-	v := u.follow
-	if v.reading || v.queued || path != m.active || m.current().activeUI() != u {
+func (m *frame) readFollow(path string, v *runView) tea.Cmd {
+	if v.reading || v.queued || path != m.active || m.current().tab != "follow" || m.current().follow != v {
 		return nil
 	}
 	v.reading = true
@@ -163,11 +157,10 @@ func (m *frame) readFollow(path string, u *ui) tea.Cmd {
 
 func (m *frame) acceptFollow(path string, result followRead) tea.Cmd {
 	w := m.workspaces[path]
-	u := w.followUI(result.view)
-	if u == nil || result.generation != result.view.generation {
+	v := result.view
+	if !slices.Contains(w.followViews, v) || result.generation != v.generation {
 		return nil
 	}
-	v := u.follow
 	v.reading = false
 	v.cancel = nil
 	if result.err != nil {
@@ -210,8 +203,8 @@ func (m *frame) acceptFollow(path string, result followRead) tea.Cmd {
 			}
 		}
 	}
-	u.sizeFollow()
-	if path != m.active || w.activeUI() != u {
+	w.followUI(v).sizeFollow()
+	if path != m.active || w.tab != "follow" || w.follow != v {
 		return nil
 	}
 	delay := 250 * time.Millisecond
@@ -253,7 +246,7 @@ func safeRunOutput(data []byte, final bool) string {
 	return b.String()
 }
 
-func (m *ui) sizeFollow() {
+func (m ui) sizeFollow() {
 	if m.follow == nil {
 		return
 	}
@@ -341,8 +334,7 @@ func (m ui) followContent() string {
 }
 
 func (m *frame) followKey(v tea.KeyPressMsg) tea.Cmd {
-	u := m.current().follow
-	f := u.follow
+	f := m.current().follow
 	p := &f.previews[f.stream]
 	switch {
 	case key.Matches(v, escape, quit):
@@ -361,6 +353,6 @@ func (m *frame) followKey(v tea.KeyPressMsg) tea.Cmd {
 			p.viewport, _ = p.viewport.Update(v)
 		}
 	}
-	u.sizeFollow()
-	return m.readFollow(m.active, u)
+	m.current().followUI(f).sizeFollow()
+	return m.readFollow(m.active, f)
 }

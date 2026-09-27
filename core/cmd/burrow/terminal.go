@@ -529,7 +529,7 @@ func (m *frame) terminalBounds() image.Rectangle {
 }
 func (m *frame) terminalFocused() bool {
 	w := m.current()
-	return m.modal == "" && !w.activeUI().help && !w.activeUI().quitting && (w.tab == "hovel" || w.tab == "shell") && w.focus == "terminal"
+	return m.modal == "" && !w.activeHelp().help && !w.activeUI().quitting && (w.tab == "hovel" || w.tab == "shell") && w.focus == "terminal"
 }
 func (m *frame) openCLI() tea.Cmd {
 	w := m.current()

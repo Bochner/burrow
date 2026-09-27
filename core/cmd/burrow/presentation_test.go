@@ -367,7 +367,7 @@ func TestLiveOutputNavigation(t *testing.T) {
 		}
 		// Presentation fixture only; follow_lab exercises these observations
 		// through real SSH, capture failures and independent terminal processes.
-		view := m.current().follow.follow
+		view := m.current().follow
 		exit := 0
 		chunk := connection.RunOutput{Data: base64.StdEncoding.EncodeToString([]byte("partial")), NextOffset: 7,
 			State: "exited", RemoteExit: &exit, Budget: 7, Stored: 7, Received: 14,

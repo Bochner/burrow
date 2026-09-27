@@ -30,9 +30,9 @@ var openNavigation = key.NewBinding(key.WithKeys("alt+w"))
 const freshFor = 8 * time.Second
 
 type workspaceView struct {
-	followViews           []*ui
-	followSaved           map[string]*ui
-	follow                *ui
+	followViews           []*runView
+	followSaved           map[string]*runView
+	follow                *runView
 	downloadTimer         timer.Model
 	fileViews             []*ui
 	file                  *ui
@@ -194,8 +194,7 @@ func (m *frame) resize() {
 			u.input.SetWidth(max(1, u.width-4))
 		}
 		for _, u := range w.followSaved {
-			u.width, u.height = w.management.width, w.management.height
-			u.sizeFollow()
+			w.followUI(u).sizeFollow()
 		}
 		for _, tab := range w.terminals() {
 			if tab != nil && tab.host != nil {
@@ -297,7 +296,7 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 		u = w.activeUI()
 		if key.Matches(v, enter) && !u.busy {
 			args, err := connection.Split(u.input.Value())
-			if err == nil && u.files == nil && u.follow == nil && len(args) > 1 && args[0] == "run" && args[1] == "follow" {
+			if err == nil && u.files == nil && len(args) > 1 && args[0] == "run" && args[1] == "follow" {
 				return m.openFollow(args)
 			}
 			if err == nil && len(args) > 0 && (args[0] == "reports" || args[0] == "report") {
@@ -358,7 +357,7 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 	}
 	model, cmd := u.Update(msg)
 	*u = model.(ui)
-	if u != &w.management && u.files == nil && u.follow == nil {
+	if u != &w.management && u.files == nil {
 		w.fileViews = slices.DeleteFunc(w.fileViews, func(v *ui) bool { return v == u })
 		if w.file == u {
 			w.file, w.tab, w.focus = nil, "", "prompt"
@@ -378,21 +377,34 @@ func (m *frame) updateManagement(path string, msg tea.Msg) tea.Cmd {
 		v := u.helpViewport(m.width, m.height)
 		u.helpOffset = v.YOffset()
 	}
-	for _, files := range w.fileViews {
-		files.connections, files.tunnels = w.management.connections, w.management.tunnels
-		files.connectionError, files.info = w.management.connectionError, w.management.info
-	}
 	return m.dispatch(path, cmd)
 }
 
 func (w *workspaceView) activeUI() *ui {
-	if w.tab == "follow" && w.follow != nil {
-		return w.follow
-	}
 	if w.tab == "files" && w.file != nil {
 		return w.file
 	}
 	return &w.management
+}
+
+func (w *workspaceView) displayUI() ui {
+	if w.tab == "follow" && w.follow != nil {
+		return w.followUI(w.follow)
+	}
+	return *w.activeUI()
+}
+
+func (w *workspaceView) activeHelp() *helpState {
+	if w.tab == "follow" && w.follow != nil {
+		return &w.follow.helpState
+	}
+	return &w.activeUI().helpState
+}
+
+func (m *frame) updateHelp(k tea.KeyPressMsg) {
+	u := m.current().displayUI()
+	u.updateHelp(k, m.width, m.height)
+	*m.current().activeHelp() = u.helpState
 }
 
 func (w *workspaceView) fileUI(mode *fileMode) *ui {
@@ -425,7 +437,7 @@ func (m *frame) openFileTab(name string) tea.Cmd {
 		}
 	}
 	u := newUI(w.management.info, m.noColor)
-	u.connections, u.tunnels, u.connectionError = w.management.connections, w.management.tunnels, w.management.connectionError
+	u.workspaceInventory = w.management.workspaceInventory
 	u.width, u.height = w.management.width, w.management.height
 	u.input.SetWidth(max(1, u.width-4))
 	cmd := u.openFiles(name)
@@ -520,9 +532,9 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case followRead:
 			return m, m.acceptFollow(path, result)
 		case followTick:
-			if u := m.workspaces[path].followUI(result.view); u != nil && result.generation == result.view.generation {
+			if slices.Contains(m.workspaces[path].followViews, result.view) && result.generation == result.view.generation {
 				result.view.queued = false
-				return m, m.readFollow(path, u)
+				return m, m.readFollow(path, result.view)
 			}
 			return m, nil
 		case downloadReviewReady:
@@ -754,8 +766,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.noColor = m.current().management.noColor
 		for _, w := range m.workspaces {
 			for _, u := range w.followSaved {
-				u.noColor = m.noColor
-				u.sizeFollow()
+				w.followUI(u).sizeFollow()
 			}
 		}
 		return m, m.resizeReports()
@@ -775,11 +786,11 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.dismissForm()
 				return m, nil
 			}
-			if click.Button == tea.MouseRight && m.modal == "" && !m.current().activeUI().help {
+			if click.Button == tea.MouseRight && m.modal == "" && !m.current().activeHelp().help {
 				return m, m.openResourceMenu(hit.ID(), image.Pt(click.X, click.Y))
 			}
 		}
-		if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft && m.modal == "" && !m.current().activeUI().help {
+		if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft && m.modal == "" && !m.current().activeHelp().help {
 			copying := m.hasSelection() && image.Pt(mouse.X, mouse.Y).In(m.copyBounds())
 			if !copying && hit.ID() != "saved" && !strings.HasPrefix(hit.ID(), "profile:") && !strings.HasPrefix(hit.ID(), "resource:") {
 				m.clearRows()
@@ -788,7 +799,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.selectionMouse(v, hit.ID()); handled {
 			return m, cmd
 		}
-		if hit.ID() == "terminal" && m.modal == "" && !m.current().activeUI().help {
+		if hit.ID() == "terminal" && m.modal == "" && !m.current().activeHelp().help {
 			if click, ok := v.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
 				m.current().focus = "terminal"
 			}
@@ -817,11 +828,11 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollDownloads(delta)
 				return m, nil
 			}
-			if m.current().activeUI().help {
-				u := m.current().activeUI()
-				u.helpOffset = max(0, u.helpOffset+delta)
-				v := u.helpViewport(m.width, m.height)
-				u.helpOffset = v.YOffset()
+			if m.current().activeHelp().help {
+				h := m.current().activeHelp()
+				h.helpOffset = max(0, h.helpOffset+delta)
+				v := m.current().displayUI().helpViewport(m.width, m.height)
+				h.helpOffset = v.YOffset()
 				return m, nil
 			}
 			if m.modal == "menu" || m.modal == "context" {
@@ -852,15 +863,15 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				u.connectionOffset = max(0, min(max(0, len(u.connections)-u.connectionRows()), u.connectionOffset+delta))
 			}
 			if hit.ID() == "center" {
-				if u := m.current().activeUI(); u.follow != nil {
-					p := &u.follow.previews[u.follow.stream]
+				if w := m.current(); w.tab == "follow" && w.follow != nil {
+					p := &w.follow.previews[w.follow.stream]
 					p.tail = false
 					if delta < 0 {
 						p.viewport.ScrollUp(3)
 					} else {
 						p.viewport.ScrollDown(3)
 					}
-					u.sizeFollow()
+					w.followUI(w.follow).sizeFollow()
 					return m, nil
 				}
 				m.current().activeUI().outputOffset = max(0, m.current().activeUI().outputOffset+delta)
@@ -870,10 +881,10 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if click, ok := msg.(tea.MouseClickMsg); !ok || click.Button != tea.MouseLeft {
 			return m, nil
 		}
-		if m.current().activeUI().help {
+		if m.current().activeHelp().help {
 			switch hit.ID() {
 			case "dismiss":
-				m.current().activeUI().help = false
+				m.current().activeHelp().help = false
 			}
 			return m, nil
 		}
@@ -885,7 +896,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.PasteMsg:
 		m.selection = nil
-		if m.tooSmall() || m.current().activeUI().help {
+		if m.tooSmall() || m.current().activeHelp().help {
 			return m, nil
 		}
 		if m.terminalFocused() {
@@ -931,8 +942,8 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.current().activeUI().help {
-			m.current().activeUI().updateHelp(v, m.width, m.height)
+		if m.current().activeHelp().help {
+			m.updateHelp(v)
 			return m, nil
 		}
 		if m.modal != "" {
@@ -997,7 +1008,7 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(v, focusNext):
 			names := []string{"prompt", "workspaces", "new", "menu", "shells", "tabs", "resources", "saved"}
-			if m.current().activeUI().files != nil || m.current().activeUI().follow != nil {
+			if m.current().tab == "files" || m.current().tab == "follow" {
 				names = names[:6]
 			}
 			for i, name := range names {
@@ -1011,7 +1022,13 @@ func (m *frame) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case key.Matches(v, quit, help):
+		case key.Matches(v, help):
+			if m.current().tab == "follow" {
+				*m.current().activeHelp() = helpState{help: true}
+				return m, nil
+			}
+			return m, m.updateManagement(m.active, msg)
+		case key.Matches(v, quit):
 			return m, m.updateManagement(m.active, msg)
 		}
 		w := m.current()
@@ -1305,8 +1322,8 @@ func (m *frame) menuAction(i int) tea.Cmd {
 	case 2:
 		return m.openNew()
 	case 3:
-		m.current().activeUI().help = true
-		m.current().activeUI().helpOffset = 0
+		m.current().activeHelp().help = true
+		m.current().activeHelp().helpOffset = 0
 	case 4:
 		return m.openQuit()
 	case 5:
@@ -1666,7 +1683,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			} else {
 				j := i - len(current.shells) - len(current.fileViews)
 				u := current.followViews[j]
-				id, text, active = fmt.Sprintf("follow-tab:%d", j), "Run "+safe(u.follow.id), current.tab == "follow" && current.follow == u
+				id, text, active = fmt.Sprintf("follow-tab:%d", j), "Run "+safe(u.id), current.tab == "follow" && current.follow == u
 			}
 			style, marker := secondary, "  "
 			if active {
@@ -1675,7 +1692,7 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			add(id, current.management.paint(style, ansi.Truncate(marker+text, min(tabWidth, available), "…")), x+(i-start)*tabWidth, 1, min(tabWidth, available), 1, 2)
 		}
 	}
-	management := *current.activeUI()
+	management := current.displayUI()
 	management.help = false
 	management.quitting = false
 	center := management.View().Content
@@ -1966,8 +1983,8 @@ func (m *frame) compositor() *lipgloss.Compositor {
 			control("dismiss", hint, y+ph-3)
 		}
 	}
-	if current.activeUI().help {
-		return current.activeUI().overlay(lipgloss.NewCompositor(layers...).Render(), w, h)
+	if current.activeHelp().help {
+		return current.displayUI().overlay(lipgloss.NewCompositor(layers...).Render(), w, h)
 	}
 	return lipgloss.NewCompositor(layers...)
 }
@@ -2039,7 +2056,7 @@ func (m *frame) View() tea.View {
 	if m.terminalFocused() && m.current().activeTerminal() != nil && m.current().activeTerminal().screen.MouseMotion && !m.mouseDisabled {
 		v.MouseMode = tea.MouseModeAllMotion
 	}
-	if !m.current().activeUI().help && !m.hasSelection() {
+	if !m.current().activeHelp().help && !m.hasSelection() {
 		x, y := 0, 0
 		switch m.modal {
 
@@ -2066,7 +2083,7 @@ func (m *frame) View() tea.View {
 			}
 		}
 	}
-	if m.noColor && m.form != nil && !m.current().activeUI().help {
+	if m.noColor && m.form != nil && !m.current().activeHelp().help {
 		// Huh exposes its caret as a reverse-video cell, not a public Cursor().
 		// Recover that exact cell before NO_COLOR stripping; reuse the compositor's
 		// native cell parser rather than duplicating textinput's editing offsets.
