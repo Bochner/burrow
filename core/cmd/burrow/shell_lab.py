@@ -272,12 +272,14 @@ def shell_checks(
         send(b"\x1b[<0;5;4M\x1b[<0;5;4m")  # Workspace selection retains control.
         wait("ACTIVE SSH CONNECTIONS")
         hidden_snapshots = snapshots_for_interval()
-        assert visible_snapshots >= 5 and hidden_snapshots < visible_snapshots / 3, (
-            "hidden attachment kept polling at foreground rate",
+        assert 1 <= visible_snapshots <= 3 and 1 <= hidden_snapshots <= 3, (
+            "idle screen waiting or hidden observation exceeded its bounded cadence",
             visible_snapshots,
             hidden_snapshots,
         )
-        print(f"PASS hidden polling: {visible_snapshots} visible / {hidden_snapshots} hidden snapshots", flush=True)
+        print(
+            f"PASS idle screen waiting: {visible_snapshots} visible / {hidden_snapshots} hidden snapshots", flush=True
+        )
         send(b"\x1b1")
         wait("SSH: gateway #1 · CONTROL · snapshot-current")
         command("printf 'INITIAL='; stty size", "INITIAL=35 98")

@@ -11,6 +11,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Bochner/burrow/core/launch"
@@ -378,6 +379,7 @@ func (s *owner) readFiles(ctx context.Context, client *sftp.Client, dir string, 
 	if err != nil {
 		return out, fmt.Errorf("remote directory cannot be read: %w", err)
 	}
+	var links []int
 	for _, info := range infos {
 		name := info.Name()
 		if name == "." || name == ".." || name == "" || strings.ContainsAny(name, "/\x00") {
@@ -389,18 +391,38 @@ func (s *owner) readFiles(ctx context.Context, client *sftp.Client, dir string, 
 		}
 		entry := FileEntry{Name: name, Path: path.Join(dir, name), Permissions: filePermissions(info.Mode()), UID: attrs.UID, GID: attrs.GID, Owner: strconv.FormatUint(uint64(attrs.UID), 10), Group: strconv.FormatUint(uint64(attrs.GID), 10), Size: info.Size(), Modified: info.ModTime(), Directory: info.IsDir()}
 		if info.Mode()&os.ModeSymlink != 0 {
-			link := launch.Phase("files-link")
-			entry.Link, err = client.ReadLink(entry.Path)
-			if err != nil {
-				entry.Error = "link target unavailable"
-			} else if target, e := client.Stat(entry.Path); e != nil {
-				entry.Error = "broken or inaccessible link"
-			} else {
-				entry.Directory = target.IsDir()
-			}
-			link()
+			links = append(links, len(out.Entries))
 		}
 		out.Entries = append(out.Entries, entry)
+	}
+	// The existing request owns this client; cancellation closes its SSH pipes.
+	// Each worker writes only its entry, and sorting/enrichment waits for all four.
+	var workers sync.WaitGroup
+	for worker := range min(4, len(links)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for i := worker; i < len(links) && ctx.Err() == nil; i += 4 {
+				entry := &out.Entries[links[i]]
+				link := launch.Phase("files-link")
+				var err error
+				entry.Link, err = client.ReadLink(entry.Path)
+				if err != nil {
+					entry.Error = "link target unavailable"
+				} else if ctx.Err() == nil {
+					if target, err := client.Stat(entry.Path); err != nil {
+						entry.Error = "broken or inaccessible link"
+					} else {
+						entry.Directory = target.IsDir()
+					}
+				}
+				link()
+			}
+		}()
+	}
+	workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return out, err
 	}
 	if enrich {
 		s.resolveAccounts(ctx, state, out.Entries)

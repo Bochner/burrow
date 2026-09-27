@@ -100,6 +100,9 @@ type retainedShell struct {
 	screen        *vt.Emulator
 	cursorVisible bool
 	inputModes    map[ansi.Mode]bool
+	revision      uint64
+	changed       chan struct{}
+	waiters       int
 }
 
 func sessionArgs(w string, args []string) (bool, string, error) {
@@ -497,7 +500,11 @@ func (s *owner) closeShells() error {
 	return failures
 }
 
-func (s *retainedShell) Open() error { s.closed = make(chan struct{}); return nil }
+func (s *retainedShell) Open() error {
+	s.closed = make(chan struct{})
+	s.screenChanged()
+	return nil
+}
 
 // Keep terminal outcomes inspectable until explicit close, like retained runs.
 func (s *retainedShell) Closed() bool {
@@ -515,7 +522,7 @@ func (s *retainedShell) ListPayloadCommands(hovel.PayloadCommandListRequest) ([]
 	return []hovel.PayloadCommand{
 		{Name: "inspect", ReadOnly: true},
 		{Name: "observe", ReadOnly: true, Usage: "args: [decimal byte position]", Summary: "Independent bounded bytes, explicit gap/loss; not a current screen"},
-		{Name: "snapshot", ReadOnly: true, Summary: "Bounded current display and byte position; no input or resize"},
+		{Name: "snapshot", ReadOnly: true, Usage: "args: [history offset, optional screen revision]; current revision waits at most 1s", Summary: "Bounded current display and byte position; no input or resize"},
 		{Name: "claim", Summary: "Claim if unowned; private JSON inputData, inputEncoding=utf-8"},
 		{Name: "takeover", Summary: "Explicit generation-checked takeover; private JSON inputData"},
 		{Name: "input", Summary: "Private token and base64 data; accepted bytes are not a command result"},
@@ -532,6 +539,11 @@ func (s *retainedShell) RunPayloadCommand(req hovel.PayloadCommandRequest) (hove
 	if privateShellCommand(req.Command) || req.Command == "observe" || req.Command == "snapshot" {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if req.Command == "snapshot" && len(req.Args) == 2 && req.InputData == "" && req.InputEncoding == "" {
+			if err := s.waitScreen(req.Args); err != nil {
+				return hovel.PayloadCommandResult{}, err
+			}
+		}
 		command := s.sharedCommand
 		if privateShellCommand(req.Command) {
 			command = s.controlCommand
@@ -562,6 +574,7 @@ func (s *retainedShell) RunPayloadCommand(req hovel.PayloadCommandRequest) (hove
 	switch {
 	case req.Command == "inspect" && len(req.Args) == 0:
 	case req.Command == "start" && len(req.Args) == 2:
+		defer s.screenChanged()
 		b, _ := json.Marshal(shellLaunchRequest{Connection: s.record.Connection, Columns: s.record.Columns, Rows: s.record.Rows})
 		if req.Args[0] != digest(string(b)) || req.Args[1] == "" || s.record.State != "prepared" {
 			return hovel.PayloadCommandResult{}, fmt.Errorf("shell launch request changed or already submitted")
@@ -658,12 +671,14 @@ func (s *retainedShell) start(runID string) error {
 		}
 		snapshot := s.record
 		s.mu.Unlock()
-		if err := s.audit.Record(snapshot.State, snapshot); err != nil {
-			s.mu.Lock()
-			s.record.AuditError = err.Error()
-			s.mu.Unlock()
+		auditErr := s.audit.Record(snapshot.State, snapshot)
+		s.mu.Lock()
+		if auditErr != nil {
+			s.record.AuditError = auditErr.Error()
 		}
 		close(s.done)
+		s.screenChanged()
+		s.mu.Unlock()
 	}()
 	if err := <-started; err != nil {
 		s.record.State = "failed"
@@ -705,6 +720,7 @@ func (s *retainedShell) drain(pty *os.File) {
 			s.data = append(s.data, buf[:n]...)
 			s.record.Buffered = len(s.data)
 			s.record.Dropped = s.record.Received - uint64(len(s.data))
+			s.screenChanged()
 			s.mu.Unlock()
 			drained()
 		}
@@ -726,10 +742,12 @@ func (s *retainedShell) Close(string) error {
 		s.record.State = "closed"
 		s.record.Detail, s.record.Cleanup = "closed before launch", "no SSH client launched"
 		close(s.closed)
+		s.screenChanged()
 		s.mu.Unlock()
 		return nil
 	}
 	s.record.State = "closing"
+	s.screenChanged()
 	err := s.cmd.Process.Kill()
 	if err != nil && !errors.Is(err, os.ErrProcessDone) {
 		s.mu.Unlock()
@@ -748,6 +766,7 @@ func (s *retainedShell) Close(string) error {
 	s.record.Detail = "SSH client reaped; shell explicitly closed"
 	s.record.Cleanup = "owned SSH client reaped; channel teardown requested; remote-command outcomes and escaped descendants unconfirmed"
 	defer s.mu.Unlock()
+	defer s.screenChanged()
 	close(s.closed)
 	if err := s.audit.Record("closed", s.record); err != nil {
 		s.record.AuditError = err.Error()

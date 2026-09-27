@@ -1,0 +1,3985 @@
+{
+  "provenance": {
+    "machine": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "cpu_count": 32,
+    "load_start": [
+      14.7607421875,
+      14.19482421875,
+      14.08984375
+    ],
+    "binary_sha256": "656aaa5103fdb22f8269ac609945ae90f3a1e55886557d67f8058bc43c7af92c",
+    "wheel_sha256": "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933",
+    "image": "linuxserver/openssh-server@sha256:47f82202bcbffe214cea77dc7f5ed24b875e81ce6ebf0e0368e2954727bf5116",
+    "build": "Aspect fastbuild",
+    "phases": true,
+    "process_trace": false,
+    "growing_tabs": false,
+    "windows_path_entries": 0,
+    "workload": "local disposable SSH; key authentication; one approved master; sequential CLI shells closed after each; TUI first shell retained as background observer; later shells closed after each unless growing_tabs=true",
+    "geometry": "CLI 80x24; TUI outer 160x40, shell 98x35",
+    "human_wait": "CLI review-to-submission includes synthetic 200ms; TUI shell command has no review dialog",
+    "observation": "CLOCK_MONOTONIC ns; CLI snapshot prompt is not paint; TUI decoded VT prompt cells include up to 50ms read/drain polling and decoder overhead",
+    "p95": "nearest rank, sorted[ceil(0.95*n)-1]; n=1 is descriptive only",
+    "timeouts": "CLI 60s; connection transition 20s; TUI prompt 15s; whole lab 1800s",
+    "source_revision": "f714ea5990a19c2f4d7627893776330b22349cc8",
+    "tracked_diff_sha256": "ac497a86d22cc5d3819c4f1ead1a1ff63275ee7f03022a14db3db94718dc0ad4",
+    "pins": {
+      "MODULE.bazel": "module(\n    name = \"burrow\",\n    version = \"0.0.0\",\n)\n\n# Documentation toolchain pins match Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388.\nbazel_dep(name = \"aspect_rules_js\", version = \"3.2.2\")\nbazel_dep(name = \"rules_nodejs\", version = \"6.7.5\")\nbazel_dep(name = \"rules_python\", version = \"2.2.0\")\n\npython = use_extension(\"@rules_python//python/extensions:python.bzl\", \"python\")\npython.toolchain(python_version = \"3.12\")\n\nnode = use_extension(\"@rules_nodejs//nodejs:extensions.bzl\", \"node\")\nnode.toolchain(node_version_from_nvmrc = \"//docs/site:.nvmrc\")\nuse_repo(node, \"nodejs_toolchains\")\n\npnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"pnpm\")\npnpm.pnpm(pnpm_version_from = \"//docs/site:package.json\")\nuse_repo(pnpm, \"pnpm\")\n\nnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"npm\")\nnpm.npm_translate_lock(\n    name = \"npm\",\n    npmrc = \"//docs/site:.npmrc\",\n    pnpm_lock = \"//docs/site:pnpm-lock.yaml\",\n    run_lifecycle_hooks = False,\n)\nuse_repo(npm, \"npm\")\n\n# Pinned runtime v0.4.2 (c461ba282a8a); GitHub asset digest.\n# SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.\nhttp_file = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_file\")\n\n# pipx 1.17.6 (MIT), upstream standalone zipapp and GitHub asset SHA256.\n# Test tool only; Burrow's wheel has no Python runtime dependencies.\nhttp_file(\n    name = \"pipx\",\n    urls = [\"https://github.com/pypa/pipx/releases/download/1.17.6/pipx.pyz\"],\n    sha256 = \"63b10dd9a15a57ec4066e29388d1e83565be4b127bd1cf6e3f150fcc39ded8b2\",\n    downloaded_file_path = \"pipx.pyz\",\n)\n\nhttp_file(\n    name = \"hovel_linux_wheel\",\n    downloaded_file_path = \"hovel.whl\",\n    sha256 = \"7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933\",\n    urls = [\"https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl\"],\n)\n\n# Real full-screen SSH acceptance only: Alpine 3.24 x86_64 Vim executable.\n# Alpine aports b7c31805c49a6e75b725aee8601e2e99e1d693e9; Vim license.\n# The lab uses -u NONE -i NONE --noplugin, without runtime scripts or xxd.\nhttp_file(\n    name = \"shell_lab_vim\",\n    downloaded_file_path = \"vim.apk\",\n    sha256 = \"6677af51cdce462afaf06af353acfe059b4a3c68c4257a539121c3ce46d25c68\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/vim-9.2.1091-r0.apk\"],\n)\n\n# Dropbear interoperability fixture only, Alpine 3.24 x86_64 (MIT).\n# aports e56a1d711fb2dd69206223dcdfd609d91d40ad02; shared libraries ISC.\n# Executed inside the digest-pinned OpenSSH lab image, never installed on hosts.\nhttp_file(\n    name = \"chain_lab_dropbear\",\n    downloaded_file_path = \"dropbear.apk\",\n    sha256 = \"cba11fe37aa85d7259ae44d494544e869bb58879e35124d0ba33b32c3b1201d7\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/dropbear-2026.91-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_utmps\",\n    downloaded_file_path = \"utmps.apk\",\n    sha256 = \"497f0f1cb51f0e6c1acc338fded0dc7722b1d43ea17bdb749f0d556794f8b2d8\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/utmps-libs-0.1.3.3-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_skalibs\",\n    downloaded_file_path = \"skalibs.apk\",\n    sha256 = \"3301f6ccbeaea49cdd966c7e636898a8612fb8fe964a15f24f6d204b3944c3f3\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/skalibs-libs-2.15.0.0-r0.apk\"],\n)\n\n# Disposable external SDK proof, pinned to the research baseline.\nbazel_dep(name = \"rules_go\", version = \"0.61.1\")\nbazel_dep(name = \"gazelle\", version = \"0.51.3\")\nbazel_dep(name = \"rules_pkg\", version = \"1.2.0\")\n\ngo_sdk = use_extension(\"@rules_go//go:extensions.bzl\", \"go_sdk\")\ngo_sdk.download(name = \"burrow_go_sdk\", version = \"1.26.5\")\ngo_sdk.nogo(\n    nogo = \"//:go_analysis\",\n    includes = [\"//core/%s:__pkg__\" % area for area in [\n        \"agent\", \"cmd/burrow\", \"connection\", \"launch\", \"reports\", \"terminal\",\n    ]],\n)\nuse_repo(go_sdk, \"burrow_go_sdk\")\n\ngo_deps = use_extension(\"@gazelle//:extensions.bzl\", \"go_deps\")\ngo_deps.from_file(go_mod = \"//core/prototype_sdk:go.mod\")\nuse_repo(go_deps, \"com_github_charmbracelet_colorprofile\", \"com_github_charmbracelet_x_ansi\", \"com_github_charmbracelet_x_term\", \"com_github_charmbracelet_x_vt\", \"com_github_pkg_sftp\", \"land_charm_bubbles_v2\", \"land_charm_bubbletea_v2\", \"land_charm_lipgloss_v2\", \"org_golang_x_crypto\", \"org_golang_x_sys\")\nuse_repo(go_deps, \"com_github_charmbracelet_ultraviolet\", \"land_charm_huh_v2\", \"land_charm_glamour_v2\")\n\nhttp_archive = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_archive\")\n\n# Ruff 0.16.3 (MIT), matching Hovel 541e78ada0af's sdk/python/uv.lock.\n# Linux amd64 release asset; SHA256 from Astral's GitHub release metadata.\nhttp_archive(\n    name = \"ruff\",\n    urls = [\"https://github.com/astral-sh/ruff/releases/download/0.16.3/ruff-x86_64-unknown-linux-gnu.tar.gz\"],\n    sha256 = \"7ab3b978d2c0b1c96b2323d4e5c4f35284ae1cdf35d2f7399595c74c805f5fa3\",\n    strip_prefix = \"ruff-x86_64-unknown-linux-gnu\",\n    build_file_content = \"exports_files([\\\"ruff\\\"])\",\n)\n\n# Workflow syntax/expression checks: rhysd/actionlint v1.7.12, MIT;\n# SHA256 from the upstream GitHub release asset (Linux amd64 operator baseline).\nhttp_archive(\n    name = \"actionlint\",\n    urls = [\"https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz\"],\n    sha256 = \"8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8\",\n    build_file_content = \"exports_files([\\\"actionlint\\\"])\",\n)\n\nhttp_archive(\n    name = \"hovel_sdk\",\n    build_file = \"//core/prototype_sdk:hovel.BUILD.bazel\",\n    patch_cmds = [\"rm sdk/go/hovel/BUILD.bazel\"],\n    sha256 = \"9080e5060787f4ba5ee6715611e10112af2af316318369b748c9f566c1f3b6e9\",\n    strip_prefix = \"hovel-a4cbfdf7769a9551695088c11061e3cabc368e07\",\n    type = \"tar.gz\",\n    urls = [\"https://codeload.github.com/vibepwners/hovel/tar.gz/a4cbfdf7769a9551695088c11061e3cabc368e07\"],\n)\n",
+      ".bazelversion": "9.1.1\n",
+      ".aspect/version.axl": "version(\"2026.33.3\")\n",
+      ".bazelrc": "common --announce_rc\ntest --test_output=errors\n\ntry-import %workspace%/.bazelrc.user\n"
+    },
+    "cpu_model": "AMD Ryzen 9 9950X3D 16-Core Processor",
+    "memory": [
+      "MemTotal:       32630472 kB",
+      "MemFree:         5331012 kB",
+      "MemAvailable:   19419892 kB"
+    ],
+    "directory_shape": "fresh disposable workspace; zero retained shell records before CLI; CLI closed records kept by Hovel; TUI previous shells retained"
+  },
+  "connections": [
+    {
+      "case": "cold-manager",
+      "review_begin": 706308967855640,
+      "review_ready": 706309029827171,
+      "begin": 706309229981484,
+      "dispatch_return": 706309668685734,
+      "connected": 706309763698080,
+      "connected_observed": 706309898916144,
+      "phases": [
+        {
+          "pid": 2590954,
+          "phase": "call:CreateOperation",
+          "begin": 706309299167072,
+          "ns": 1494179
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:CreateChain",
+          "begin": 706309300666891,
+          "ns": 1375162
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:AddModule",
+          "begin": 706309302047943,
+          "ns": 1440073
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:AddTarget",
+          "begin": 706309303493657,
+          "ns": 1344240
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309304845727,
+          "ns": 1335216
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309306187293,
+          "ns": 1410043
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309307603446,
+          "ns": 1295050
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309308904116,
+          "ns": 1276703
+        },
+        {
+          "pid": 2590954,
+          "phase": "dispatch-lock",
+          "begin": 706309310206080,
+          "ns": 2190
+        },
+        {
+          "pid": 2590986,
+          "phase": "module-ready",
+          "begin": 706309361111340,
+          "ns": 1281
+        },
+        {
+          "pid": 2591002,
+          "phase": "module-ready",
+          "begin": 706309392975739,
+          "ns": 1230
+        },
+        {
+          "pid": 2591016,
+          "phase": "module-ready",
+          "begin": 706309429530903,
+          "ns": 910
+        },
+        {
+          "pid": 2591016,
+          "phase": "module:activate",
+          "begin": 706309430394156,
+          "ns": 33729542
+        },
+        {
+          "pid": 2590954,
+          "phase": "hovel-process:throw",
+          "begin": 706309310709829,
+          "ns": 160678863
+        },
+        {
+          "pid": 2590954,
+          "phase": "hovel-cli:throw",
+          "begin": 706309310212200,
+          "ns": 161891636
+        },
+        {
+          "pid": 2590954,
+          "phase": "manager-throw:activate",
+          "begin": 706309288660952,
+          "ns": 183507026
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:CreateOperation",
+          "begin": 706309472238670,
+          "ns": 1739586
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:CreateChain",
+          "begin": 706309473984437,
+          "ns": 1448803
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:AddModule",
+          "begin": 706309475439800,
+          "ns": 1487819
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:AddTarget",
+          "begin": 706309476932799,
+          "ns": 1377192
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309478321281,
+          "ns": 1512805
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309479841227,
+          "ns": 2217744
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309482069191,
+          "ns": 1605193
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309483680504,
+          "ns": 1449799
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309485137453,
+          "ns": 1436863
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309486580226,
+          "ns": 1494815
+        },
+        {
+          "pid": 2590954,
+          "phase": "call:SetChainConfig",
+          "begin": 706309488081171,
+          "ns": 1388032
+        },
+        {
+          "pid": 2590954,
+          "phase": "dispatch-lock",
+          "begin": 706309489494884,
+          "ns": 2030
+        },
+        {
+          "pid": 2591047,
+          "phase": "module-ready",
+          "begin": 706309540881711,
+          "ns": 1020
+        },
+        {
+          "pid": 2591063,
+          "phase": "module-ready",
+          "begin": 706309575648042,
+          "ns": 1030
+        },
+        {
+          "pid": 2591077,
+          "phase": "module-ready",
+          "begin": 706309613352348,
+          "ns": 960
+        },
+        {
+          "pid": 2591077,
+          "phase": "module:connect",
+          "begin": 706309614137818,
+          "ns": 42990155
+        },
+        {
+          "pid": 2590954,
+          "phase": "hovel-process:throw",
+          "begin": 706309489990422,
+          "ns": 175412650
+        },
+        {
+          "pid": 2590954,
+          "phase": "hovel-cli:throw",
+          "begin": 706309489500844,
+          "ns": 176586927
+        },
+        {
+          "pid": 2590954,
+          "phase": "manager-throw:connect",
+          "begin": 706309472223700,
+          "ns": 193955934
+        }
+      ],
+      "caller_rpc_totals": {
+        "call:ListSessions": {
+          "count": 1,
+          "ns": 1538571
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 3233765
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 2823965
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 2927892
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 2721432
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 16422263
+        }
+      },
+      "phase_totals": {
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 3233765
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 2823965
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 2927892
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 2721432
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 16422263
+        },
+        "dispatch-lock": {
+          "count": 2,
+          "ns": 4220
+        },
+        "module-ready": {
+          "count": 6,
+          "ns": 6431
+        },
+        "module:activate": {
+          "count": 1,
+          "ns": 33729542
+        },
+        "hovel-process:throw": {
+          "count": 2,
+          "ns": 336091513
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 338478563
+        },
+        "manager-throw:activate": {
+          "count": 1,
+          "ns": 183507026
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 42990155
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 193955934
+        }
+      }
+    },
+    {
+      "case": "warm-manager",
+      "review_begin": 706309992165162,
+      "review_ready": 706310053066593,
+      "begin": 706310253154282,
+      "dispatch_return": 706310524290661,
+      "connected": 706310617925684,
+      "connected_observed": 706310754193406,
+      "phases": [
+        {
+          "pid": 2591167,
+          "phase": "call:CreateOperation",
+          "begin": 706310327006402,
+          "ns": 1828479
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:CreateChain",
+          "begin": 706310328840451,
+          "ns": 1623059
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:AddModule",
+          "begin": 706310330469080,
+          "ns": 1516150
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:AddTarget",
+          "begin": 706310331990360,
+          "ns": 1608492
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:SetChainConfig",
+          "begin": 706310333605732,
+          "ns": 1629359
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:SetChainConfig",
+          "begin": 706310335242041,
+          "ns": 1616589
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:SetChainConfig",
+          "begin": 706310336865760,
+          "ns": 1619373
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:SetChainConfig",
+          "begin": 706310338491283,
+          "ns": 1555832
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:SetChainConfig",
+          "begin": 706310340056836,
+          "ns": 1639827
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:SetChainConfig",
+          "begin": 706310341702433,
+          "ns": 1514491
+        },
+        {
+          "pid": 2591167,
+          "phase": "call:SetChainConfig",
+          "begin": 706310343222694,
+          "ns": 1645414
+        },
+        {
+          "pid": 2591167,
+          "phase": "dispatch-lock",
+          "begin": 706310344897358,
+          "ns": 2330
+        },
+        {
+          "pid": 2591202,
+          "phase": "module-ready",
+          "begin": 706310397688224,
+          "ns": 940
+        },
+        {
+          "pid": 2591218,
+          "phase": "module-ready",
+          "begin": 706310430085281,
+          "ns": 930
+        },
+        {
+          "pid": 2591232,
+          "phase": "module-ready",
+          "begin": 706310469784559,
+          "ns": 11170
+        },
+        {
+          "pid": 2591232,
+          "phase": "module:connect",
+          "begin": 706310471233926,
+          "ns": 40807182
+        },
+        {
+          "pid": 2591167,
+          "phase": "hovel-process:throw",
+          "begin": 706310345445703,
+          "ns": 174993765
+        },
+        {
+          "pid": 2591167,
+          "phase": "hovel-cli:throw",
+          "begin": 706310344904079,
+          "ns": 176164945
+        },
+        {
+          "pid": 2591167,
+          "phase": "manager-throw:connect",
+          "begin": 706310315921127,
+          "ns": 205299941
+        }
+      ],
+      "caller_rpc_totals": {
+        "call:ListSessions": {
+          "count": 1,
+          "ns": 1375928
+        },
+        "call:RunSessionCommand": {
+          "count": 1,
+          "ns": 2344716
+        },
+        "call:CreateOperation": {
+          "count": 1,
+          "ns": 1828479
+        },
+        "call:CreateChain": {
+          "count": 1,
+          "ns": 1623059
+        },
+        "call:AddModule": {
+          "count": 1,
+          "ns": 1516150
+        },
+        "call:AddTarget": {
+          "count": 1,
+          "ns": 1608492
+        },
+        "call:SetChainConfig": {
+          "count": 7,
+          "ns": 11220885
+        }
+      },
+      "phase_totals": {
+        "call:CreateOperation": {
+          "count": 1,
+          "ns": 1828479
+        },
+        "call:CreateChain": {
+          "count": 1,
+          "ns": 1623059
+        },
+        "call:AddModule": {
+          "count": 1,
+          "ns": 1516150
+        },
+        "call:AddTarget": {
+          "count": 1,
+          "ns": 1608492
+        },
+        "call:SetChainConfig": {
+          "count": 7,
+          "ns": 11220885
+        },
+        "dispatch-lock": {
+          "count": 1,
+          "ns": 2330
+        },
+        "module-ready": {
+          "count": 3,
+          "ns": 13040
+        },
+        "module:connect": {
+          "count": 1,
+          "ns": 40807182
+        },
+        "hovel-process:throw": {
+          "count": 1,
+          "ns": 174993765
+        },
+        "hovel-cli:throw": {
+          "count": 1,
+          "ns": 176164945
+        },
+        "manager-throw:connect": {
+          "count": 1,
+          "ns": 205299941
+        }
+      }
+    }
+  ],
+  "samples": [
+    {
+      "case": "cli",
+      "review_begin": 706310821475063,
+      "review_ready": 706310894282266,
+      "begin": 706311094383760,
+      "dispatch_return": 706311613578987,
+      "owner_pid": 2591381,
+      "shell_pid": 2591465,
+      "prompt_observed": 706311674310618,
+      "phases": [
+        {
+          "pid": 2591317,
+          "phase": "call:CreateOperation",
+          "begin": 706311177854606,
+          "ns": 1640027
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:CreateChain",
+          "begin": 706311179501084,
+          "ns": 1684327
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:AddModule",
+          "begin": 706311181193131,
+          "ns": 1788267
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:AddTarget",
+          "begin": 706311182988719,
+          "ns": 1636528
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311184631897,
+          "ns": 1721090
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311186359747,
+          "ns": 1597407
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311187979445,
+          "ns": 1676679
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311189664034,
+          "ns": 2760795
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311192433379,
+          "ns": 1782753
+        },
+        {
+          "pid": 2591317,
+          "phase": "dispatch-lock",
+          "begin": 706311194241022,
+          "ns": 2160
+        },
+        {
+          "pid": 2591349,
+          "phase": "module-ready",
+          "begin": 706311252790257,
+          "ns": 1110
+        },
+        {
+          "pid": 2591366,
+          "phase": "module-ready",
+          "begin": 706311289243108,
+          "ns": 1550
+        },
+        {
+          "pid": 2591381,
+          "phase": "module-ready",
+          "begin": 706311330636729,
+          "ns": 1210
+        },
+        {
+          "pid": 2591381,
+          "phase": "shell-sdk-allocation",
+          "begin": 706311366739794,
+          "ns": 68952
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-register",
+          "begin": 706311369172706,
+          "ns": 5053048
+        },
+        {
+          "pid": 2591381,
+          "phase": "module:shell-prepare",
+          "begin": 706311331521493,
+          "ns": 43573335
+        },
+        {
+          "pid": 2591317,
+          "phase": "hovel-process:throw",
+          "begin": 706311194819242,
+          "ns": 186876871
+        },
+        {
+          "pid": 2591317,
+          "phase": "hovel-cli:throw",
+          "begin": 706311194247272,
+          "ns": 188143700
+        },
+        {
+          "pid": 2591317,
+          "phase": "manager-throw:shell-prepare",
+          "begin": 706311166922995,
+          "ns": 215573669
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:CreateOperation",
+          "begin": 706311382525815,
+          "ns": 3167260
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:CreateChain",
+          "begin": 706311385701996,
+          "ns": 1947975
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:AddModule",
+          "begin": 706311387656171,
+          "ns": 2628750
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:AddTarget",
+          "begin": 706311390291421,
+          "ns": 1675031
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311391986683,
+          "ns": 1929399
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311393923963,
+          "ns": 1737867
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311395668540,
+          "ns": 1654504
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311397330234,
+          "ns": 1734977
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311399071001,
+          "ns": 1779857
+        },
+        {
+          "pid": 2591317,
+          "phase": "call:SetChainConfig",
+          "begin": 706311400856558,
+          "ns": 1700945
+        },
+        {
+          "pid": 2591317,
+          "phase": "dispatch-lock",
+          "begin": 706311402584984,
+          "ns": 2170
+        },
+        {
+          "pid": 2591413,
+          "phase": "module-ready",
+          "begin": 706311462230532,
+          "ns": 1250
+        },
+        {
+          "pid": 2591430,
+          "phase": "module-ready",
+          "begin": 706311497947253,
+          "ns": 1460
+        },
+        {
+          "pid": 2591446,
+          "phase": "module-ready",
+          "begin": 706311542830119,
+          "ns": 1280
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-adoption-observation",
+          "begin": 706311589482861,
+          "ns": 3498684
+        },
+        {
+          "pid": 2591381,
+          "phase": "shell-ssh-start",
+          "begin": 706311599157263,
+          "ns": 198046
+        },
+        {
+          "pid": 2591381,
+          "phase": "shell-pty-start",
+          "begin": 706311594359182,
+          "ns": 6261520
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-start",
+          "begin": 706311582645729,
+          "ns": 18301457
+        },
+        {
+          "pid": 2591446,
+          "phase": "module:shell-start",
+          "begin": 706311543939183,
+          "ns": 57398655
+        },
+        {
+          "pid": 2591381,
+          "phase": "shell-first-output",
+          "begin": 706311600047207,
+          "ns": 4902871
+        },
+        {
+          "pid": 2591381,
+          "phase": "shell-output-drain",
+          "begin": 706311604947788,
+          "ns": 19570
+        },
+        {
+          "pid": 2591381,
+          "phase": "shell-output-drain",
+          "begin": 706311607504071,
+          "ns": 12920
+        },
+        {
+          "pid": 2591317,
+          "phase": "hovel-process:throw",
+          "begin": 706311403242997,
+          "ns": 206926235
+        },
+        {
+          "pid": 2591317,
+          "phase": "hovel-cli:throw",
+          "begin": 706311402602634,
+          "ns": 208203925
+        },
+        {
+          "pid": 2591317,
+          "phase": "manager-throw:shell-start",
+          "begin": 706311382505555,
+          "ns": 228368325
+        },
+        {
+          "pid": 2591317,
+          "phase": "shell-lifecycle:create",
+          "begin": 706311148176772,
+          "ns": 462704599
+        },
+        {
+          "pid": 2591381,
+          "phase": "shell-snapshot",
+          "begin": 706311672585004,
+          "ns": 141334
+        }
+      ],
+      "caller_rpc_totals": {
+        "call:ListSessions": {
+          "count": 3,
+          "ns": 4295859
+        },
+        "call:RunSessionCommand": {
+          "count": 3,
+          "ns": 14149307
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 4807287
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 3632302
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 4417017
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 3311559
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 20076273
+        }
+      },
+      "phase_totals": {
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 4807287
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 3632302
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 4417017
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 3311559
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 20076273
+        },
+        "dispatch-lock": {
+          "count": 2,
+          "ns": 4330
+        },
+        "module-ready": {
+          "count": 6,
+          "ns": 7860
+        },
+        "shell-sdk-allocation": {
+          "count": 1,
+          "ns": 68952
+        },
+        "shell-owner:shell-register": {
+          "count": 1,
+          "ns": 5053048
+        },
+        "module:shell-prepare": {
+          "count": 1,
+          "ns": 43573335
+        },
+        "hovel-process:throw": {
+          "count": 2,
+          "ns": 393803106
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 396347625
+        },
+        "manager-throw:shell-prepare": {
+          "count": 1,
+          "ns": 215573669
+        },
+        "shell-adoption-observation": {
+          "count": 1,
+          "ns": 3498684
+        },
+        "shell-ssh-start": {
+          "count": 1,
+          "ns": 198046
+        },
+        "shell-pty-start": {
+          "count": 1,
+          "ns": 6261520
+        },
+        "shell-owner:shell-start": {
+          "count": 1,
+          "ns": 18301457
+        },
+        "module:shell-start": {
+          "count": 1,
+          "ns": 57398655
+        },
+        "shell-first-output": {
+          "count": 1,
+          "ns": 4902871
+        },
+        "shell-output-drain": {
+          "count": 2,
+          "ns": 32490
+        },
+        "manager-throw:shell-start": {
+          "count": 1,
+          "ns": 228368325
+        },
+        "shell-lifecycle:create": {
+          "count": 1,
+          "ns": 462704599
+        },
+        "shell-snapshot": {
+          "count": 1,
+          "ns": 141334
+        }
+      }
+    },
+    {
+      "case": "cli",
+      "review_begin": 706311837390132,
+      "review_ready": 706311910811281,
+      "begin": 706312110892614,
+      "dispatch_return": 706312595674371,
+      "owner_pid": 2591591,
+      "shell_pid": 2591671,
+      "prompt_observed": 706312655628842,
+      "phases": [
+        {
+          "pid": 2591531,
+          "phase": "call:CreateOperation",
+          "begin": 706312192127601,
+          "ns": 1880066
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:CreateChain",
+          "begin": 706312194013937,
+          "ns": 1646118
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:AddModule",
+          "begin": 706312195666545,
+          "ns": 1670870
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:AddTarget",
+          "begin": 706312197342925,
+          "ns": 1866614
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312199217459,
+          "ns": 1675065
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312200898274,
+          "ns": 1648429
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312202552993,
+          "ns": 2154188
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312204714771,
+          "ns": 1714126
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312206436727,
+          "ns": 1660445
+        },
+        {
+          "pid": 2591531,
+          "phase": "dispatch-lock",
+          "begin": 706312208132313,
+          "ns": 2860
+        },
+        {
+          "pid": 2591562,
+          "phase": "module-ready",
+          "begin": 706312261428776,
+          "ns": 1380
+        },
+        {
+          "pid": 2591578,
+          "phase": "module-ready",
+          "begin": 706312294185048,
+          "ns": 1240
+        },
+        {
+          "pid": 2591591,
+          "phase": "module-ready",
+          "begin": 706312333430333,
+          "ns": 1200
+        },
+        {
+          "pid": 2591591,
+          "phase": "shell-sdk-allocation",
+          "begin": 706312368092581,
+          "ns": 47681
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-register",
+          "begin": 706312370355566,
+          "ns": 4535086
+        },
+        {
+          "pid": 2591591,
+          "phase": "module:shell-prepare",
+          "begin": 706312335151675,
+          "ns": 40876782
+        },
+        {
+          "pid": 2591531,
+          "phase": "hovel-process:throw",
+          "begin": 706312208755688,
+          "ns": 173327725
+        },
+        {
+          "pid": 2591531,
+          "phase": "hovel-cli:throw",
+          "begin": 706312208169864,
+          "ns": 174669900
+        },
+        {
+          "pid": 2591531,
+          "phase": "manager-throw:shell-prepare",
+          "begin": 706312181083732,
+          "ns": 201850115
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:CreateOperation",
+          "begin": 706312382960967,
+          "ns": 1990752
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:CreateChain",
+          "begin": 706312384957370,
+          "ns": 1661344
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:AddModule",
+          "begin": 706312386624394,
+          "ns": 1783798
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:AddTarget",
+          "begin": 706312388414823,
+          "ns": 1712435
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312390139138,
+          "ns": 1734406
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312391879754,
+          "ns": 1737667
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312393624561,
+          "ns": 1839263
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312395470454,
+          "ns": 2841576
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312398319300,
+          "ns": 1862366
+        },
+        {
+          "pid": 2591531,
+          "phase": "call:SetChainConfig",
+          "begin": 706312400187806,
+          "ns": 1661914
+        },
+        {
+          "pid": 2591531,
+          "phase": "dispatch-lock",
+          "begin": 706312401874271,
+          "ns": 1870
+        },
+        {
+          "pid": 2591621,
+          "phase": "module-ready",
+          "begin": 706312452867523,
+          "ns": 1240
+        },
+        {
+          "pid": 2591638,
+          "phase": "module-ready",
+          "begin": 706312484878701,
+          "ns": 1040
+        },
+        {
+          "pid": 2591653,
+          "phase": "module-ready",
+          "begin": 706312527498929,
+          "ns": 1250
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-adoption-observation",
+          "begin": 706312570699690,
+          "ns": 3316913
+        },
+        {
+          "pid": 2591591,
+          "phase": "shell-ssh-start",
+          "begin": 706312579571692,
+          "ns": 181474
+        },
+        {
+          "pid": 2591591,
+          "phase": "shell-pty-start",
+          "begin": 706312575298712,
+          "ns": 7147616
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-start",
+          "begin": 706312563854447,
+          "ns": 18885879
+        },
+        {
+          "pid": 2591653,
+          "phase": "module:shell-start",
+          "begin": 706312529206505,
+          "ns": 53872000
+        },
+        {
+          "pid": 2591591,
+          "phase": "shell-first-output",
+          "begin": 706312582374187,
+          "ns": 2284131
+        },
+        {
+          "pid": 2591591,
+          "phase": "shell-output-drain",
+          "begin": 706312584656588,
+          "ns": 28691
+        },
+        {
+          "pid": 2591591,
+          "phase": "shell-output-drain",
+          "begin": 706312586504427,
+          "ns": 14601
+        },
+        {
+          "pid": 2591531,
+          "phase": "hovel-process:throw",
+          "begin": 706312402504877,
+          "ns": 188820498
+        },
+        {
+          "pid": 2591531,
+          "phase": "hovel-cli:throw",
+          "begin": 706312401897962,
+          "ns": 191001525
+        },
+        {
+          "pid": 2591531,
+          "phase": "manager-throw:shell-start",
+          "begin": 706312382943407,
+          "ns": 210001721
+        },
+        {
+          "pid": 2591531,
+          "phase": "shell-lifecycle:create",
+          "begin": 706312163628218,
+          "ns": 429320510
+        },
+        {
+          "pid": 2591591,
+          "phase": "shell-snapshot",
+          "begin": 706312652263667,
+          "ns": 242977
+        }
+      ],
+      "caller_rpc_totals": {
+        "call:ListSessions": {
+          "count": 3,
+          "ns": 4269798
+        },
+        "call:RunSessionCommand": {
+          "count": 3,
+          "ns": 12564913
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 3870818
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 3307462
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 3454668
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 3579049
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 20529445
+        }
+      },
+      "phase_totals": {
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 3870818
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 3307462
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 3454668
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 3579049
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 20529445
+        },
+        "dispatch-lock": {
+          "count": 2,
+          "ns": 4730
+        },
+        "module-ready": {
+          "count": 6,
+          "ns": 7350
+        },
+        "shell-sdk-allocation": {
+          "count": 1,
+          "ns": 47681
+        },
+        "shell-owner:shell-register": {
+          "count": 1,
+          "ns": 4535086
+        },
+        "module:shell-prepare": {
+          "count": 1,
+          "ns": 40876782
+        },
+        "hovel-process:throw": {
+          "count": 2,
+          "ns": 362148223
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 365671425
+        },
+        "manager-throw:shell-prepare": {
+          "count": 1,
+          "ns": 201850115
+        },
+        "shell-adoption-observation": {
+          "count": 1,
+          "ns": 3316913
+        },
+        "shell-ssh-start": {
+          "count": 1,
+          "ns": 181474
+        },
+        "shell-pty-start": {
+          "count": 1,
+          "ns": 7147616
+        },
+        "shell-owner:shell-start": {
+          "count": 1,
+          "ns": 18885879
+        },
+        "module:shell-start": {
+          "count": 1,
+          "ns": 53872000
+        },
+        "shell-first-output": {
+          "count": 1,
+          "ns": 2284131
+        },
+        "shell-output-drain": {
+          "count": 2,
+          "ns": 43292
+        },
+        "manager-throw:shell-start": {
+          "count": 1,
+          "ns": 210001721
+        },
+        "shell-lifecycle:create": {
+          "count": 1,
+          "ns": 429320510
+        },
+        "shell-snapshot": {
+          "count": 1,
+          "ns": 242977
+        }
+      }
+    },
+    {
+      "case": "cli",
+      "review_begin": 706312821504404,
+      "review_ready": 706312895517884,
+      "begin": 706313095604632,
+      "dispatch_return": 706313588067503,
+      "owner_pid": 2591804,
+      "shell_pid": 2591880,
+      "prompt_observed": 706313647400833,
+      "phases": [
+        {
+          "pid": 2591741,
+          "phase": "call:CreateOperation",
+          "begin": 706313176454533,
+          "ns": 1995624
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:CreateChain",
+          "begin": 706313178456227,
+          "ns": 1847569
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:AddModule",
+          "begin": 706313180310277,
+          "ns": 1685123
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:AddTarget",
+          "begin": 706313182000850,
+          "ns": 1747557
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313183755748,
+          "ns": 2846736
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313186610755,
+          "ns": 1965746
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313188584081,
+          "ns": 1771042
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313190361494,
+          "ns": 2380803
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313192751577,
+          "ns": 1931452
+        },
+        {
+          "pid": 2591741,
+          "phase": "dispatch-lock",
+          "begin": 706313194711530,
+          "ns": 2170
+        },
+        {
+          "pid": 2591774,
+          "phase": "module-ready",
+          "begin": 706313247031108,
+          "ns": 1010
+        },
+        {
+          "pid": 2591790,
+          "phase": "module-ready",
+          "begin": 706313280324470,
+          "ns": 1060
+        },
+        {
+          "pid": 2591804,
+          "phase": "module-ready",
+          "begin": 706313322976236,
+          "ns": 980
+        },
+        {
+          "pid": 2591804,
+          "phase": "shell-sdk-allocation",
+          "begin": 706313356543703,
+          "ns": 47731
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-register",
+          "begin": 706313358854665,
+          "ns": 4828723
+        },
+        {
+          "pid": 2591804,
+          "phase": "module:shell-prepare",
+          "begin": 706313324559531,
+          "ns": 40087773
+        },
+        {
+          "pid": 2591741,
+          "phase": "hovel-process:throw",
+          "begin": 706313195265239,
+          "ns": 176602358
+        },
+        {
+          "pid": 2591741,
+          "phase": "hovel-cli:throw",
+          "begin": 706313194718520,
+          "ns": 177842605
+        },
+        {
+          "pid": 2591741,
+          "phase": "manager-throw:shell-prepare",
+          "begin": 706313165943743,
+          "ns": 206774996
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:CreateOperation",
+          "begin": 706313372755660,
+          "ns": 2086466
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:CreateChain",
+          "begin": 706313374848156,
+          "ns": 1838499
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:AddModule",
+          "begin": 706313376692405,
+          "ns": 2391158
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:AddTarget",
+          "begin": 706313379089233,
+          "ns": 1773573
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313380869146,
+          "ns": 1740617
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313382616463,
+          "ns": 1899390
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313384522794,
+          "ns": 1833008
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313386362923,
+          "ns": 1881730
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313388263743,
+          "ns": 1886540
+        },
+        {
+          "pid": 2591741,
+          "phase": "call:SetChainConfig",
+          "begin": 706313390156564,
+          "ns": 1777411
+        },
+        {
+          "pid": 2591741,
+          "phase": "dispatch-lock",
+          "begin": 706313391958766,
+          "ns": 2200
+        },
+        {
+          "pid": 2591834,
+          "phase": "module-ready",
+          "begin": 706313444676495,
+          "ns": 1050
+        },
+        {
+          "pid": 2591849,
+          "phase": "module-ready",
+          "begin": 706313479130737,
+          "ns": 1200
+        },
+        {
+          "pid": 2591864,
+          "phase": "module-ready",
+          "begin": 706313519942974,
+          "ns": 1210
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-adoption-observation",
+          "begin": 706313561714750,
+          "ns": 4464730
+        },
+        {
+          "pid": 2591804,
+          "phase": "shell-ssh-start",
+          "begin": 706313572154138,
+          "ns": 194441
+        },
+        {
+          "pid": 2591804,
+          "phase": "shell-pty-start",
+          "begin": 706313567566477,
+          "ns": 6520763
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-start",
+          "begin": 706313555988727,
+          "ns": 18446747
+        },
+        {
+          "pid": 2591864,
+          "phase": "module:shell-start",
+          "begin": 706313520815471,
+          "ns": 53945442
+        },
+        {
+          "pid": 2591804,
+          "phase": "shell-first-output",
+          "begin": 706313573577557,
+          "ns": 3594551
+        },
+        {
+          "pid": 2591804,
+          "phase": "shell-output-drain",
+          "begin": 706313577170428,
+          "ns": 18370
+        },
+        {
+          "pid": 2591804,
+          "phase": "shell-output-drain",
+          "begin": 706313579401281,
+          "ns": 23051
+        },
+        {
+          "pid": 2591741,
+          "phase": "hovel-process:throw",
+          "begin": 706313392505635,
+          "ns": 191982603
+        },
+        {
+          "pid": 2591741,
+          "phase": "hovel-cli:throw",
+          "begin": 706313391964896,
+          "ns": 193157803
+        },
+        {
+          "pid": 2591741,
+          "phase": "manager-throw:shell-start",
+          "begin": 706313372732219,
+          "ns": 212434621
+        },
+        {
+          "pid": 2591741,
+          "phase": "shell-lifecycle:create",
+          "begin": 706313149038044,
+          "ns": 436133196
+        },
+        {
+          "pid": 2591804,
+          "phase": "shell-snapshot",
+          "begin": 706313644549267,
+          "ns": 139744
+        }
+      ],
+      "caller_rpc_totals": {
+        "call:ListSessions": {
+          "count": 3,
+          "ns": 3979246
+        },
+        "call:RunSessionCommand": {
+          "count": 3,
+          "ns": 12652566
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 4082090
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 3686068
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 4076281
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 3521130
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 21914475
+        }
+      },
+      "phase_totals": {
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 4082090
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 3686068
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 4076281
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 3521130
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 21914475
+        },
+        "dispatch-lock": {
+          "count": 2,
+          "ns": 4370
+        },
+        "module-ready": {
+          "count": 6,
+          "ns": 6510
+        },
+        "shell-sdk-allocation": {
+          "count": 1,
+          "ns": 47731
+        },
+        "shell-owner:shell-register": {
+          "count": 1,
+          "ns": 4828723
+        },
+        "module:shell-prepare": {
+          "count": 1,
+          "ns": 40087773
+        },
+        "hovel-process:throw": {
+          "count": 2,
+          "ns": 368584961
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 371000408
+        },
+        "manager-throw:shell-prepare": {
+          "count": 1,
+          "ns": 206774996
+        },
+        "shell-adoption-observation": {
+          "count": 1,
+          "ns": 4464730
+        },
+        "shell-ssh-start": {
+          "count": 1,
+          "ns": 194441
+        },
+        "shell-pty-start": {
+          "count": 1,
+          "ns": 6520763
+        },
+        "shell-owner:shell-start": {
+          "count": 1,
+          "ns": 18446747
+        },
+        "module:shell-start": {
+          "count": 1,
+          "ns": 53945442
+        },
+        "shell-first-output": {
+          "count": 1,
+          "ns": 3594551
+        },
+        "shell-output-drain": {
+          "count": 2,
+          "ns": 41421
+        },
+        "manager-throw:shell-start": {
+          "count": 1,
+          "ns": 212434621
+        },
+        "shell-lifecycle:create": {
+          "count": 1,
+          "ns": 436133196
+        },
+        "shell-snapshot": {
+          "count": 1,
+          "ns": 139744
+        }
+      }
+    },
+    {
+      "case": "tui-first",
+      "begin": 706313808784198,
+      "frontend_pid": 2591931,
+      "attachments": 1,
+      "background_observers": 0,
+      "visible": 706314333076663,
+      "control_visible": 706314364793168,
+      "owner_pid": 2592014,
+      "shell_pid": 2592092,
+      "phases": [
+        {
+          "pid": 2591931,
+          "phase": "call:CreateOperation",
+          "begin": 706313900808298,
+          "ns": 2032161
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:CreateChain",
+          "begin": 706313902857849,
+          "ns": 2401719
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddModule",
+          "begin": 706313905265658,
+          "ns": 2098070
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddTarget",
+          "begin": 706313907377848,
+          "ns": 2288167
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706313909674006,
+          "ns": 2202368
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706313911886264,
+          "ns": 1845280
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706313913738214,
+          "ns": 3150558
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706313916899443,
+          "ns": 1959727
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706313918866001,
+          "ns": 1948612
+        },
+        {
+          "pid": 2591931,
+          "phase": "dispatch-lock",
+          "begin": 706313920884285,
+          "ns": 2690
+        },
+        {
+          "pid": 2591985,
+          "phase": "module-ready",
+          "begin": 706313976817444,
+          "ns": 940
+        },
+        {
+          "pid": 2592001,
+          "phase": "module-ready",
+          "begin": 706314008561949,
+          "ns": 910
+        },
+        {
+          "pid": 2592014,
+          "phase": "module-ready",
+          "begin": 706314051924507,
+          "ns": 970
+        },
+        {
+          "pid": 2592014,
+          "phase": "shell-sdk-allocation",
+          "begin": 706314085540603,
+          "ns": 46361
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-register",
+          "begin": 706314087858530,
+          "ns": 4747747
+        },
+        {
+          "pid": 2592014,
+          "phase": "module:shell-prepare",
+          "begin": 706314052707224,
+          "ns": 40786266
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-process:throw",
+          "begin": 706313921927787,
+          "ns": 179434292
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-cli:throw",
+          "begin": 706313920893715,
+          "ns": 181182464
+        },
+        {
+          "pid": 2591931,
+          "phase": "manager-throw:shell-prepare",
+          "begin": 706313886638297,
+          "ns": 215520455
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:CreateOperation",
+          "begin": 706314102184502,
+          "ns": 2408153
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:CreateChain",
+          "begin": 706314104599616,
+          "ns": 1953943
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddModule",
+          "begin": 706314106560239,
+          "ns": 1984077
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddTarget",
+          "begin": 706314108550946,
+          "ns": 1729631
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314110288237,
+          "ns": 1810599
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314112106046,
+          "ns": 1824489
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314113937525,
+          "ns": 2721762
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314116666347,
+          "ns": 1880195
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314118554512,
+          "ns": 2008028
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314120573171,
+          "ns": 1818513
+        },
+        {
+          "pid": 2591931,
+          "phase": "dispatch-lock",
+          "begin": 706314122416565,
+          "ns": 2250
+        },
+        {
+          "pid": 2592045,
+          "phase": "module-ready",
+          "begin": 706314177873951,
+          "ns": 1060
+        },
+        {
+          "pid": 2592059,
+          "phase": "module-ready",
+          "begin": 706314210123260,
+          "ns": 990
+        },
+        {
+          "pid": 2592074,
+          "phase": "module-ready",
+          "begin": 706314252400661,
+          "ns": 1150
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-adoption-observation",
+          "begin": 706314294709057,
+          "ns": 3820436
+        },
+        {
+          "pid": 2592014,
+          "phase": "shell-ssh-start",
+          "begin": 706314304112818,
+          "ns": 192829
+        },
+        {
+          "pid": 2592014,
+          "phase": "shell-pty-start",
+          "begin": 706314299781603,
+          "ns": 6623136
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-start",
+          "begin": 706314288446070,
+          "ns": 18247495
+        },
+        {
+          "pid": 2592074,
+          "phase": "module:shell-start",
+          "begin": 706314253907041,
+          "ns": 53134773
+        },
+        {
+          "pid": 2592014,
+          "phase": "shell-first-output",
+          "begin": 706314305969782,
+          "ns": 3456366
+        },
+        {
+          "pid": 2592014,
+          "phase": "shell-output-drain",
+          "begin": 706314309424228,
+          "ns": 18750
+        },
+        {
+          "pid": 2592014,
+          "phase": "shell-output-drain",
+          "begin": 706314311995616,
+          "ns": 50642
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-process:throw",
+          "begin": 706314122938964,
+          "ns": 193825140
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-cli:throw",
+          "begin": 706314122423005,
+          "ns": 194967776
+        },
+        {
+          "pid": 2591931,
+          "phase": "manager-throw:shell-start",
+          "begin": 706314102166202,
+          "ns": 215286791
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-lifecycle:create",
+          "begin": 706313866172326,
+          "ns": 451289767
+        },
+        {
+          "pid": 2592014,
+          "phase": "shell-snapshot",
+          "begin": 706314321228024,
+          "ns": 148754
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706314318404079,
+          "ns": 3395340
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-attachment",
+          "begin": 706314318389728,
+          "ns": 3426161
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706314321829270,
+          "ns": 1200
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-input-queue",
+          "begin": 706314321833560,
+          "ns": 41561
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706314322065606,
+          "ns": 2250
+        },
+        {
+          "pid": 2592014,
+          "phase": "shell-snapshot",
+          "begin": 706314324496280,
+          "ns": 145384
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706314321891171,
+          "ns": 3188205
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-accept",
+          "begin": 706314328649581,
+          "ns": 1410
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706314328802076,
+          "ns": 2610
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-private:takeover",
+          "begin": 706314325135327,
+          "ns": 5397215
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706314330535132,
+          "ns": 3921994
+        }
+      ],
+      "caller_rpc_totals": {
+        "call:ListSessions": {
+          "count": 15,
+          "ns": 27014319
+        },
+        "call:RunSessionCommand": {
+          "count": 16,
+          "ns": 67516040
+        },
+        "call:ActiveLogs": {
+          "count": 2,
+          "ns": 3854448
+        },
+        "call:Snapshot": {
+          "count": 1,
+          "ns": 4380237
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 4440314
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 4355662
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 4082147
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 4017798
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 23170131
+        }
+      },
+      "phase_totals": {
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 4440314
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 4355662
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 4082147
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 4017798
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 23170131
+        },
+        "dispatch-lock": {
+          "count": 2,
+          "ns": 4940
+        },
+        "module-ready": {
+          "count": 6,
+          "ns": 6020
+        },
+        "shell-sdk-allocation": {
+          "count": 1,
+          "ns": 46361
+        },
+        "shell-owner:shell-register": {
+          "count": 1,
+          "ns": 4747747
+        },
+        "module:shell-prepare": {
+          "count": 1,
+          "ns": 40786266
+        },
+        "hovel-process:throw": {
+          "count": 2,
+          "ns": 373259432
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 376150240
+        },
+        "manager-throw:shell-prepare": {
+          "count": 1,
+          "ns": 215520455
+        },
+        "shell-adoption-observation": {
+          "count": 1,
+          "ns": 3820436
+        },
+        "shell-ssh-start": {
+          "count": 1,
+          "ns": 192829
+        },
+        "shell-pty-start": {
+          "count": 1,
+          "ns": 6623136
+        },
+        "shell-owner:shell-start": {
+          "count": 1,
+          "ns": 18247495
+        },
+        "module:shell-start": {
+          "count": 1,
+          "ns": 53134773
+        },
+        "shell-first-output": {
+          "count": 1,
+          "ns": 3456366
+        },
+        "shell-output-drain": {
+          "count": 2,
+          "ns": 69392
+        },
+        "manager-throw:shell-start": {
+          "count": 1,
+          "ns": 215286791
+        },
+        "shell-lifecycle:create": {
+          "count": 1,
+          "ns": 451289767
+        },
+        "shell-snapshot": {
+          "count": 2,
+          "ns": 294138
+        },
+        "shell-refresh": {
+          "count": 3,
+          "ns": 10505539
+        },
+        "shell-attachment": {
+          "count": 1,
+          "ns": 3426161
+        },
+        "shell-frontend-sample": {
+          "count": 3,
+          "ns": 6060
+        },
+        "shell-input-queue": {
+          "count": 1,
+          "ns": 41561
+        },
+        "shell-frontend-accept": {
+          "count": 1,
+          "ns": 1410
+        },
+        "shell-private:takeover": {
+          "count": 1,
+          "ns": 5397215
+        }
+      }
+    },
+    {
+      "case": "tui-additional",
+      "begin": 706314616158751,
+      "frontend_pid": 2591931,
+      "attachments": 2,
+      "background_observers": 1,
+      "visible": 706315166563181,
+      "control_visible": 706315181707703,
+      "owner_pid": 2592177,
+      "shell_pid": 2592255,
+      "phases": [
+        {
+          "pid": 2591931,
+          "phase": "call:CreateOperation",
+          "begin": 706314711027091,
+          "ns": 1858860
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:CreateChain",
+          "begin": 706314712892521,
+          "ns": 2950478
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddModule",
+          "begin": 706314715850200,
+          "ns": 2222079
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddTarget",
+          "begin": 706314718078229,
+          "ns": 2473566
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314720568145,
+          "ns": 2105471
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314722680016,
+          "ns": 2028675
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314724716141,
+          "ns": 1935807
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314726657868,
+          "ns": 2855930
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314729521818,
+          "ns": 1978529
+        },
+        {
+          "pid": 2591931,
+          "phase": "dispatch-lock",
+          "begin": 706314731527797,
+          "ns": 1950
+        },
+        {
+          "pid": 2592146,
+          "phase": "module-ready",
+          "begin": 706314785183541,
+          "ns": 1330
+        },
+        {
+          "pid": 2592161,
+          "phase": "module-ready",
+          "begin": 706314816279079,
+          "ns": 1320
+        },
+        {
+          "pid": 2592177,
+          "phase": "module-ready",
+          "begin": 706314861561584,
+          "ns": 1040
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-sdk-allocation",
+          "begin": 706314894452775,
+          "ns": 50971
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-register",
+          "begin": 706314896733590,
+          "ns": 6706724
+        },
+        {
+          "pid": 2592177,
+          "phase": "module:shell-prepare",
+          "begin": 706314862450588,
+          "ns": 42134596
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-process:throw",
+          "begin": 706314732182434,
+          "ns": 180333172
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-cli:throw",
+          "begin": 706314731553468,
+          "ns": 181560824
+        },
+        {
+          "pid": 2591931,
+          "phase": "manager-throw:shell-prepare",
+          "begin": 706314711003130,
+          "ns": 202151743
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:CreateOperation",
+          "begin": 706314913181224,
+          "ns": 3427082
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:CreateChain",
+          "begin": 706314916614626,
+          "ns": 2072180
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddModule",
+          "begin": 706314918693176,
+          "ns": 1966538
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddTarget",
+          "begin": 706314920667084,
+          "ns": 2228699
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314922902813,
+          "ns": 2093637
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314925002880,
+          "ns": 1952891
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314926963231,
+          "ns": 2778325
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314929748836,
+          "ns": 2091430
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314931855066,
+          "ns": 1926167
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706314933787813,
+          "ns": 1950653
+        },
+        {
+          "pid": 2591931,
+          "phase": "dispatch-lock",
+          "begin": 706314935763836,
+          "ns": 1950
+        },
+        {
+          "pid": 2592208,
+          "phase": "module-ready",
+          "begin": 706314994905060,
+          "ns": 1110
+        },
+        {
+          "pid": 2592224,
+          "phase": "module-ready",
+          "begin": 706315029187302,
+          "ns": 1010
+        },
+        {
+          "pid": 2592238,
+          "phase": "module-ready",
+          "begin": 706315074037287,
+          "ns": 950
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-adoption-observation",
+          "begin": 706315115126456,
+          "ns": 3615196
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-ssh-start",
+          "begin": 706315124438599,
+          "ns": 219446
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-pty-start",
+          "begin": 706315120069737,
+          "ns": 6620937
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-start",
+          "begin": 706315109180663,
+          "ns": 17820684
+        },
+        {
+          "pid": 2592238,
+          "phase": "module:shell-start",
+          "begin": 706315074907290,
+          "ns": 52438261
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-first-output",
+          "begin": 706315126138383,
+          "ns": 3727140
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-output-drain",
+          "begin": 706315129863813,
+          "ns": 20860
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-output-drain",
+          "begin": 706315132259717,
+          "ns": 15520
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-process:throw",
+          "begin": 706314936308240,
+          "ns": 201325321
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-cli:throw",
+          "begin": 706314935769826,
+          "ns": 202528657
+        },
+        {
+          "pid": 2591931,
+          "phase": "manager-throw:shell-start",
+          "begin": 706314913162613,
+          "ns": 225192361
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-lifecycle:create",
+          "begin": 706314692497768,
+          "ns": 445861646
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-snapshot",
+          "begin": 706315141254596,
+          "ns": 199676
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706315138514248,
+          "ns": 3358595
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-attachment",
+          "begin": 706315138508528,
+          "ns": 3392445
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706315141925714,
+          "ns": 1870
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-input-queue",
+          "begin": 706315141934694,
+          "ns": 7661
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706315142341960,
+          "ns": 9170
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-snapshot",
+          "begin": 706315145470923,
+          "ns": 122134
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706315141959726,
+          "ns": 4025375
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-accept",
+          "begin": 706315149703422,
+          "ns": 2490
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706315149836665,
+          "ns": 2150
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-private:takeover",
+          "begin": 706315146038402,
+          "ns": 5356485
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-snapshot",
+          "begin": 706315153901518,
+          "ns": 195835
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706315151397267,
+          "ns": 3775589
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-accept",
+          "begin": 706315156098751,
+          "ns": 1690
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706315156323397,
+          "ns": 1430
+        },
+        {
+          "pid": 2592177,
+          "phase": "shell-snapshot",
+          "begin": 706315157774431,
+          "ns": 98422
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706315155182647,
+          "ns": 3073442
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-accept",
+          "begin": 706315162689747,
+          "ns": 1320
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706315162835176,
+          "ns": 1930
+        }
+      ],
+      "caller_rpc_totals": {
+        "call:ListSessions": {
+          "count": 8,
+          "ns": 11556994
+        },
+        "call:RunSessionCommand": {
+          "count": 9,
+          "ns": 25272042
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 5285942
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 5022658
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 4188617
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 4702265
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 23697515
+        }
+      },
+      "phase_totals": {
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 5285942
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 5022658
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 4188617
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 4702265
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 23697515
+        },
+        "dispatch-lock": {
+          "count": 2,
+          "ns": 3900
+        },
+        "module-ready": {
+          "count": 6,
+          "ns": 6760
+        },
+        "shell-sdk-allocation": {
+          "count": 1,
+          "ns": 50971
+        },
+        "shell-owner:shell-register": {
+          "count": 1,
+          "ns": 6706724
+        },
+        "module:shell-prepare": {
+          "count": 1,
+          "ns": 42134596
+        },
+        "hovel-process:throw": {
+          "count": 2,
+          "ns": 381658493
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 384089481
+        },
+        "manager-throw:shell-prepare": {
+          "count": 1,
+          "ns": 202151743
+        },
+        "shell-adoption-observation": {
+          "count": 1,
+          "ns": 3615196
+        },
+        "shell-ssh-start": {
+          "count": 1,
+          "ns": 219446
+        },
+        "shell-pty-start": {
+          "count": 1,
+          "ns": 6620937
+        },
+        "shell-owner:shell-start": {
+          "count": 1,
+          "ns": 17820684
+        },
+        "module:shell-start": {
+          "count": 1,
+          "ns": 52438261
+        },
+        "shell-first-output": {
+          "count": 1,
+          "ns": 3727140
+        },
+        "shell-output-drain": {
+          "count": 2,
+          "ns": 36380
+        },
+        "manager-throw:shell-start": {
+          "count": 1,
+          "ns": 225192361
+        },
+        "shell-lifecycle:create": {
+          "count": 1,
+          "ns": 445861646
+        },
+        "shell-snapshot": {
+          "count": 4,
+          "ns": 616067
+        },
+        "shell-refresh": {
+          "count": 4,
+          "ns": 14233001
+        },
+        "shell-attachment": {
+          "count": 1,
+          "ns": 3392445
+        },
+        "shell-frontend-sample": {
+          "count": 5,
+          "ns": 16550
+        },
+        "shell-input-queue": {
+          "count": 1,
+          "ns": 7661
+        },
+        "shell-frontend-accept": {
+          "count": 3,
+          "ns": 5500
+        },
+        "shell-private:takeover": {
+          "count": 1,
+          "ns": 5356485
+        }
+      }
+    },
+    {
+      "case": "tui-additional",
+      "begin": 706315565067234,
+      "frontend_pid": 2591931,
+      "attachments": 2,
+      "background_observers": 1,
+      "visible": 706316116189465,
+      "control_visible": 706316131875592,
+      "owner_pid": 2592344,
+      "shell_pid": 2592426,
+      "phases": [
+        {
+          "pid": 2591931,
+          "phase": "call:CreateOperation",
+          "begin": 706315661516104,
+          "ns": 2252084
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:CreateChain",
+          "begin": 706315663773688,
+          "ns": 2526087
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddModule",
+          "begin": 706315666305745,
+          "ns": 2618089
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddTarget",
+          "begin": 706315668929554,
+          "ns": 2083807
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315671020942,
+          "ns": 1953601
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315672981723,
+          "ns": 2021844
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315675010487,
+          "ns": 2019224
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315677037971,
+          "ns": 2848386
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315679894377,
+          "ns": 2148277
+        },
+        {
+          "pid": 2591931,
+          "phase": "dispatch-lock",
+          "begin": 706315682076235,
+          "ns": 2400
+        },
+        {
+          "pid": 2592313,
+          "phase": "module-ready",
+          "begin": 706315737856095,
+          "ns": 1220
+        },
+        {
+          "pid": 2592328,
+          "phase": "module-ready",
+          "begin": 706315769685653,
+          "ns": 1120
+        },
+        {
+          "pid": 2592344,
+          "phase": "module-ready",
+          "begin": 706315815122423,
+          "ns": 930
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-sdk-allocation",
+          "begin": 706315848708187,
+          "ns": 51741
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-register",
+          "begin": 706315850947340,
+          "ns": 5954980
+        },
+        {
+          "pid": 2592344,
+          "phase": "module:shell-prepare",
+          "begin": 706315816149635,
+          "ns": 42339057
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-process:throw",
+          "begin": 706315682748723,
+          "ns": 185629061
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-cli:throw",
+          "begin": 706315682105726,
+          "ns": 186872260
+        },
+        {
+          "pid": 2591931,
+          "phase": "manager-throw:shell-prepare",
+          "begin": 706315661494823,
+          "ns": 207526504
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:CreateOperation",
+          "begin": 706315869047208,
+          "ns": 2505837
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:CreateChain",
+          "begin": 706315871559615,
+          "ns": 1978558
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddModule",
+          "begin": 706315873543663,
+          "ns": 2933603
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:AddTarget",
+          "begin": 706315876482906,
+          "ns": 2089101
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315878580458,
+          "ns": 2198667
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315880786726,
+          "ns": 2248248
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315883043405,
+          "ns": 2203160
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315885254556,
+          "ns": 2852055
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315888114821,
+          "ns": 2093346
+        },
+        {
+          "pid": 2591931,
+          "phase": "call:SetChainConfig",
+          "begin": 706315890215607,
+          "ns": 2054999
+        },
+        {
+          "pid": 2591931,
+          "phase": "dispatch-lock",
+          "begin": 706315892308237,
+          "ns": 2420
+        },
+        {
+          "pid": 2592376,
+          "phase": "module-ready",
+          "begin": 706315948154430,
+          "ns": 1350
+        },
+        {
+          "pid": 2592394,
+          "phase": "module-ready",
+          "begin": 706315984919063,
+          "ns": 1160
+        },
+        {
+          "pid": 2592410,
+          "phase": "module-ready",
+          "begin": 706316027790179,
+          "ns": 960
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-adoption-observation",
+          "begin": 706316069344196,
+          "ns": 3825122
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-ssh-start",
+          "begin": 706316079007413,
+          "ns": 186560
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-pty-start",
+          "begin": 706316074496753,
+          "ns": 5847981
+        },
+        {
+          "pid": 2591016,
+          "phase": "shell-owner:shell-start",
+          "begin": 706316062863998,
+          "ns": 17823005
+        },
+        {
+          "pid": 2592410,
+          "phase": "module:shell-start",
+          "begin": 706316028717395,
+          "ns": 52300312
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-first-output",
+          "begin": 706316080250527,
+          "ns": 3767846
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-output-drain",
+          "begin": 706316083999832,
+          "ns": 36301
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-output-drain",
+          "begin": 706316085741283,
+          "ns": 15631
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-process:throw",
+          "begin": 706315892922934,
+          "ns": 198614309
+        },
+        {
+          "pid": 2591931,
+          "phase": "hovel-cli:throw",
+          "begin": 706315892334808,
+          "ns": 199843986
+        },
+        {
+          "pid": 2591931,
+          "phase": "manager-throw:shell-start",
+          "begin": 706315869029708,
+          "ns": 223211858
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-lifecycle:create",
+          "begin": 706315642062405,
+          "ns": 450188271
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-snapshot",
+          "begin": 706316095269816,
+          "ns": 177735
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706316092431751,
+          "ns": 3408246
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-attachment",
+          "begin": 706316092425751,
+          "ns": 3436967
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706316095881418,
+          "ns": 1860
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-input-queue",
+          "begin": 706316095886988,
+          "ns": 10676
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706316096621418,
+          "ns": 4460
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-snapshot",
+          "begin": 706316099531941,
+          "ns": 114433
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706316095915934,
+          "ns": 4190827
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-accept",
+          "begin": 706316104538525,
+          "ns": 1410
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706316104665196,
+          "ns": 2300
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-private:takeover",
+          "begin": 706316100205263,
+          "ns": 5396598
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-snapshot",
+          "begin": 706316109402604,
+          "ns": 96003
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706316105604501,
+          "ns": 4312967
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-accept",
+          "begin": 706316111334810,
+          "ns": 1600
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-frontend-sample",
+          "begin": 706316111449108,
+          "ns": 2350
+        },
+        {
+          "pid": 2592344,
+          "phase": "shell-snapshot",
+          "begin": 706316112708502,
+          "ns": 95422
+        },
+        {
+          "pid": 2591931,
+          "phase": "shell-refresh",
+          "begin": 706316109921388,
+          "ns": 3267957
+        }
+      ],
+      "caller_rpc_totals": {
+        "call:ListSessions": {
+          "count": 12,
+          "ns": 20683509
+        },
+        "call:RunSessionCommand": {
+          "count": 13,
+          "ns": 52050030
+        },
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 4757921
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 4504645
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 5551692
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 4172908
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 24641807
+        },
+        "call:Snapshot": {
+          "count": 1,
+          "ns": 4196822
+        },
+        "call:ActiveLogs": {
+          "count": 1,
+          "ns": 1390567
+        }
+      },
+      "phase_totals": {
+        "call:CreateOperation": {
+          "count": 2,
+          "ns": 4757921
+        },
+        "call:CreateChain": {
+          "count": 2,
+          "ns": 4504645
+        },
+        "call:AddModule": {
+          "count": 2,
+          "ns": 5551692
+        },
+        "call:AddTarget": {
+          "count": 2,
+          "ns": 4172908
+        },
+        "call:SetChainConfig": {
+          "count": 11,
+          "ns": 24641807
+        },
+        "dispatch-lock": {
+          "count": 2,
+          "ns": 4820
+        },
+        "module-ready": {
+          "count": 6,
+          "ns": 6740
+        },
+        "shell-sdk-allocation": {
+          "count": 1,
+          "ns": 51741
+        },
+        "shell-owner:shell-register": {
+          "count": 1,
+          "ns": 5954980
+        },
+        "module:shell-prepare": {
+          "count": 1,
+          "ns": 42339057
+        },
+        "hovel-process:throw": {
+          "count": 2,
+          "ns": 384243370
+        },
+        "hovel-cli:throw": {
+          "count": 2,
+          "ns": 386716246
+        },
+        "manager-throw:shell-prepare": {
+          "count": 1,
+          "ns": 207526504
+        },
+        "shell-adoption-observation": {
+          "count": 1,
+          "ns": 3825122
+        },
+        "shell-ssh-start": {
+          "count": 1,
+          "ns": 186560
+        },
+        "shell-pty-start": {
+          "count": 1,
+          "ns": 5847981
+        },
+        "shell-owner:shell-start": {
+          "count": 1,
+          "ns": 17823005
+        },
+        "module:shell-start": {
+          "count": 1,
+          "ns": 52300312
+        },
+        "shell-first-output": {
+          "count": 1,
+          "ns": 3767846
+        },
+        "shell-output-drain": {
+          "count": 2,
+          "ns": 51932
+        },
+        "manager-throw:shell-start": {
+          "count": 1,
+          "ns": 223211858
+        },
+        "shell-lifecycle:create": {
+          "count": 1,
+          "ns": 450188271
+        },
+        "shell-snapshot": {
+          "count": 4,
+          "ns": 483593
+        },
+        "shell-refresh": {
+          "count": 4,
+          "ns": 15179997
+        },
+        "shell-attachment": {
+          "count": 1,
+          "ns": 3436967
+        },
+        "shell-frontend-sample": {
+          "count": 4,
+          "ns": 10970
+        },
+        "shell-input-queue": {
+          "count": 1,
+          "ns": 10676
+        },
+        "shell-frontend-accept": {
+          "count": 2,
+          "ns": 3010
+        },
+        "shell-private:takeover": {
+          "count": 1,
+          "ns": 5396598
+        }
+      }
+    }
+  ],
+  "failures": [],
+  "timeouts": 0,
+  "phase_trace_sha256": "0317e3b387f3317611cfba08ead49101bf8eb785e99260ced4e81bed1efecf33",
+  "cleanup": "shell clients reaped; master unchanged during samples; all connections explicitly closed",
+  "load_end": [
+    15.05078125,
+    14.27197265625,
+    14.1162109375
+  ],
+  "summary_ms": {
+    "cold-manager:review_ready-review_begin": {
+      "n": 1,
+      "median": 61.971531,
+      "p95": 61.971531
+    },
+    "cold-manager:begin-review_ready": {
+      "n": 1,
+      "median": 200.154313,
+      "p95": 200.154313
+    },
+    "cold-manager:dispatch_return-begin": {
+      "n": 1,
+      "median": 438.70425,
+      "p95": 438.70425
+    },
+    "cold-manager:connected-begin": {
+      "n": 1,
+      "median": 533.716596,
+      "p95": 533.716596
+    },
+    "cold-manager:phase-total:call:CreateOperation": {
+      "n": 1,
+      "median": 3.233765,
+      "p95": 3.233765
+    },
+    "cold-manager:phase-total:call:CreateChain": {
+      "n": 1,
+      "median": 2.823965,
+      "p95": 2.823965
+    },
+    "cold-manager:phase-total:call:AddModule": {
+      "n": 1,
+      "median": 2.927892,
+      "p95": 2.927892
+    },
+    "cold-manager:phase-total:call:AddTarget": {
+      "n": 1,
+      "median": 2.721432,
+      "p95": 2.721432
+    },
+    "cold-manager:phase-total:call:SetChainConfig": {
+      "n": 1,
+      "median": 16.422263,
+      "p95": 16.422263
+    },
+    "cold-manager:phase-total:dispatch-lock": {
+      "n": 1,
+      "median": 0.00422,
+      "p95": 0.00422
+    },
+    "cold-manager:phase-total:module-ready": {
+      "n": 1,
+      "median": 0.006431,
+      "p95": 0.006431
+    },
+    "cold-manager:phase-total:module:activate": {
+      "n": 1,
+      "median": 33.729542,
+      "p95": 33.729542
+    },
+    "cold-manager:phase-total:hovel-process:throw": {
+      "n": 1,
+      "median": 336.091513,
+      "p95": 336.091513
+    },
+    "cold-manager:phase-total:hovel-cli:throw": {
+      "n": 1,
+      "median": 338.478563,
+      "p95": 338.478563
+    },
+    "cold-manager:phase-total:manager-throw:activate": {
+      "n": 1,
+      "median": 183.507026,
+      "p95": 183.507026
+    },
+    "cold-manager:phase-total:module:connect": {
+      "n": 1,
+      "median": 42.990155,
+      "p95": 42.990155
+    },
+    "cold-manager:phase-total:manager-throw:connect": {
+      "n": 1,
+      "median": 193.955934,
+      "p95": 193.955934
+    },
+    "warm-manager:review_ready-review_begin": {
+      "n": 1,
+      "median": 60.901431,
+      "p95": 60.901431
+    },
+    "warm-manager:begin-review_ready": {
+      "n": 1,
+      "median": 200.087689,
+      "p95": 200.087689
+    },
+    "warm-manager:dispatch_return-begin": {
+      "n": 1,
+      "median": 271.136379,
+      "p95": 271.136379
+    },
+    "warm-manager:connected-begin": {
+      "n": 1,
+      "median": 364.771402,
+      "p95": 364.771402
+    },
+    "warm-manager:phase-total:call:CreateOperation": {
+      "n": 1,
+      "median": 1.828479,
+      "p95": 1.828479
+    },
+    "warm-manager:phase-total:call:CreateChain": {
+      "n": 1,
+      "median": 1.623059,
+      "p95": 1.623059
+    },
+    "warm-manager:phase-total:call:AddModule": {
+      "n": 1,
+      "median": 1.51615,
+      "p95": 1.51615
+    },
+    "warm-manager:phase-total:call:AddTarget": {
+      "n": 1,
+      "median": 1.608492,
+      "p95": 1.608492
+    },
+    "warm-manager:phase-total:call:SetChainConfig": {
+      "n": 1,
+      "median": 11.220885,
+      "p95": 11.220885
+    },
+    "warm-manager:phase-total:dispatch-lock": {
+      "n": 1,
+      "median": 0.00233,
+      "p95": 0.00233
+    },
+    "warm-manager:phase-total:module-ready": {
+      "n": 1,
+      "median": 0.01304,
+      "p95": 0.01304
+    },
+    "warm-manager:phase-total:module:connect": {
+      "n": 1,
+      "median": 40.807182,
+      "p95": 40.807182
+    },
+    "warm-manager:phase-total:hovel-process:throw": {
+      "n": 1,
+      "median": 174.993765,
+      "p95": 174.993765
+    },
+    "warm-manager:phase-total:hovel-cli:throw": {
+      "n": 1,
+      "median": 176.164945,
+      "p95": 176.164945
+    },
+    "warm-manager:phase-total:manager-throw:connect": {
+      "n": 1,
+      "median": 205.299941,
+      "p95": 205.299941
+    },
+    "cli:review_ready-review_begin": {
+      "n": 3,
+      "median": 73.421149,
+      "p95": 74.01348
+    },
+    "cli:begin-review_ready": {
+      "n": 3,
+      "median": 200.086748,
+      "p95": 200.101494
+    },
+    "cli:dispatch_return-begin": {
+      "n": 3,
+      "median": 492.462871,
+      "p95": 519.195227
+    },
+    "cli:prompt_observed-begin": {
+      "n": 3,
+      "median": 551.796201,
+      "p95": 579.926858
+    },
+    "cli:phase-total:call:CreateOperation": {
+      "n": 3,
+      "median": 4.08209,
+      "p95": 4.807287
+    },
+    "cli:phase-total:call:CreateChain": {
+      "n": 3,
+      "median": 3.632302,
+      "p95": 3.686068
+    },
+    "cli:phase-total:call:AddModule": {
+      "n": 3,
+      "median": 4.076281,
+      "p95": 4.417017
+    },
+    "cli:phase-total:call:AddTarget": {
+      "n": 3,
+      "median": 3.52113,
+      "p95": 3.579049
+    },
+    "cli:phase-total:call:SetChainConfig": {
+      "n": 3,
+      "median": 20.529445,
+      "p95": 21.914475
+    },
+    "cli:phase-total:dispatch-lock": {
+      "n": 3,
+      "median": 0.00437,
+      "p95": 0.00473
+    },
+    "cli:phase-total:module-ready": {
+      "n": 3,
+      "median": 0.00735,
+      "p95": 0.00786
+    },
+    "cli:phase-total:shell-sdk-allocation": {
+      "n": 3,
+      "median": 0.047731,
+      "p95": 0.068952
+    },
+    "cli:phase-total:shell-owner:shell-register": {
+      "n": 3,
+      "median": 4.828723,
+      "p95": 5.053048
+    },
+    "cli:phase-total:module:shell-prepare": {
+      "n": 3,
+      "median": 40.876782,
+      "p95": 43.573335
+    },
+    "cli:phase-total:hovel-process:throw": {
+      "n": 3,
+      "median": 368.584961,
+      "p95": 393.803106
+    },
+    "cli:phase-total:hovel-cli:throw": {
+      "n": 3,
+      "median": 371.000408,
+      "p95": 396.347625
+    },
+    "cli:phase-total:manager-throw:shell-prepare": {
+      "n": 3,
+      "median": 206.774996,
+      "p95": 215.573669
+    },
+    "cli:phase-total:shell-adoption-observation": {
+      "n": 3,
+      "median": 3.498684,
+      "p95": 4.46473
+    },
+    "cli:phase-total:shell-ssh-start": {
+      "n": 3,
+      "median": 0.194441,
+      "p95": 0.198046
+    },
+    "cli:phase-total:shell-pty-start": {
+      "n": 3,
+      "median": 6.520763,
+      "p95": 7.147616
+    },
+    "cli:phase-total:shell-owner:shell-start": {
+      "n": 3,
+      "median": 18.446747,
+      "p95": 18.885879
+    },
+    "cli:phase-total:module:shell-start": {
+      "n": 3,
+      "median": 53.945442,
+      "p95": 57.398655
+    },
+    "cli:phase-total:shell-first-output": {
+      "n": 3,
+      "median": 3.594551,
+      "p95": 4.902871
+    },
+    "cli:phase-total:shell-output-drain": {
+      "n": 3,
+      "median": 0.041421,
+      "p95": 0.043292
+    },
+    "cli:phase-total:manager-throw:shell-start": {
+      "n": 3,
+      "median": 212.434621,
+      "p95": 228.368325
+    },
+    "cli:phase-total:shell-lifecycle:create": {
+      "n": 3,
+      "median": 436.133196,
+      "p95": 462.704599
+    },
+    "cli:phase-total:shell-snapshot": {
+      "n": 3,
+      "median": 0.141334,
+      "p95": 0.242977
+    },
+    "tui-first:visible-begin": {
+      "n": 1,
+      "median": 524.292465,
+      "p95": 524.292465
+    },
+    "tui-first:phase-total:call:CreateOperation": {
+      "n": 1,
+      "median": 4.440314,
+      "p95": 4.440314
+    },
+    "tui-first:phase-total:call:CreateChain": {
+      "n": 1,
+      "median": 4.355662,
+      "p95": 4.355662
+    },
+    "tui-first:phase-total:call:AddModule": {
+      "n": 1,
+      "median": 4.082147,
+      "p95": 4.082147
+    },
+    "tui-first:phase-total:call:AddTarget": {
+      "n": 1,
+      "median": 4.017798,
+      "p95": 4.017798
+    },
+    "tui-first:phase-total:call:SetChainConfig": {
+      "n": 1,
+      "median": 23.170131,
+      "p95": 23.170131
+    },
+    "tui-first:phase-total:dispatch-lock": {
+      "n": 1,
+      "median": 0.00494,
+      "p95": 0.00494
+    },
+    "tui-first:phase-total:module-ready": {
+      "n": 1,
+      "median": 0.00602,
+      "p95": 0.00602
+    },
+    "tui-first:phase-total:shell-sdk-allocation": {
+      "n": 1,
+      "median": 0.046361,
+      "p95": 0.046361
+    },
+    "tui-first:phase-total:shell-owner:shell-register": {
+      "n": 1,
+      "median": 4.747747,
+      "p95": 4.747747
+    },
+    "tui-first:phase-total:module:shell-prepare": {
+      "n": 1,
+      "median": 40.786266,
+      "p95": 40.786266
+    },
+    "tui-first:phase-total:hovel-process:throw": {
+      "n": 1,
+      "median": 373.259432,
+      "p95": 373.259432
+    },
+    "tui-first:phase-total:hovel-cli:throw": {
+      "n": 1,
+      "median": 376.15024,
+      "p95": 376.15024
+    },
+    "tui-first:phase-total:manager-throw:shell-prepare": {
+      "n": 1,
+      "median": 215.520455,
+      "p95": 215.520455
+    },
+    "tui-first:phase-total:shell-adoption-observation": {
+      "n": 1,
+      "median": 3.820436,
+      "p95": 3.820436
+    },
+    "tui-first:phase-total:shell-ssh-start": {
+      "n": 1,
+      "median": 0.192829,
+      "p95": 0.192829
+    },
+    "tui-first:phase-total:shell-pty-start": {
+      "n": 1,
+      "median": 6.623136,
+      "p95": 6.623136
+    },
+    "tui-first:phase-total:shell-owner:shell-start": {
+      "n": 1,
+      "median": 18.247495,
+      "p95": 18.247495
+    },
+    "tui-first:phase-total:module:shell-start": {
+      "n": 1,
+      "median": 53.134773,
+      "p95": 53.134773
+    },
+    "tui-first:phase-total:shell-first-output": {
+      "n": 1,
+      "median": 3.456366,
+      "p95": 3.456366
+    },
+    "tui-first:phase-total:shell-output-drain": {
+      "n": 1,
+      "median": 0.069392,
+      "p95": 0.069392
+    },
+    "tui-first:phase-total:manager-throw:shell-start": {
+      "n": 1,
+      "median": 215.286791,
+      "p95": 215.286791
+    },
+    "tui-first:phase-total:shell-lifecycle:create": {
+      "n": 1,
+      "median": 451.289767,
+      "p95": 451.289767
+    },
+    "tui-first:phase-total:shell-snapshot": {
+      "n": 1,
+      "median": 0.294138,
+      "p95": 0.294138
+    },
+    "tui-first:phase-total:shell-refresh": {
+      "n": 1,
+      "median": 10.505539,
+      "p95": 10.505539
+    },
+    "tui-first:phase-total:shell-attachment": {
+      "n": 1,
+      "median": 3.426161,
+      "p95": 3.426161
+    },
+    "tui-first:phase-total:shell-frontend-sample": {
+      "n": 1,
+      "median": 0.00606,
+      "p95": 0.00606
+    },
+    "tui-first:phase-total:shell-input-queue": {
+      "n": 1,
+      "median": 0.041561,
+      "p95": 0.041561
+    },
+    "tui-first:phase-total:shell-frontend-accept": {
+      "n": 1,
+      "median": 0.00141,
+      "p95": 0.00141
+    },
+    "tui-first:phase-total:shell-private:takeover": {
+      "n": 1,
+      "median": 5.397215,
+      "p95": 5.397215
+    },
+    "tui-additional:visible-begin": {
+      "n": 2,
+      "median": 550.7633305,
+      "p95": 551.122231
+    },
+    "tui-additional:phase-total:call:CreateOperation": {
+      "n": 2,
+      "median": 5.0219315,
+      "p95": 5.285942
+    },
+    "tui-additional:phase-total:call:CreateChain": {
+      "n": 2,
+      "median": 4.7636515,
+      "p95": 5.022658
+    },
+    "tui-additional:phase-total:call:AddModule": {
+      "n": 2,
+      "median": 4.8701545,
+      "p95": 5.551692
+    },
+    "tui-additional:phase-total:call:AddTarget": {
+      "n": 2,
+      "median": 4.4375865,
+      "p95": 4.702265
+    },
+    "tui-additional:phase-total:call:SetChainConfig": {
+      "n": 2,
+      "median": 24.169660999999998,
+      "p95": 24.641807
+    },
+    "tui-additional:phase-total:dispatch-lock": {
+      "n": 2,
+      "median": 0.004359999999999999,
+      "p95": 0.00482
+    },
+    "tui-additional:phase-total:module-ready": {
+      "n": 2,
+      "median": 0.006750000000000001,
+      "p95": 0.00676
+    },
+    "tui-additional:phase-total:shell-sdk-allocation": {
+      "n": 2,
+      "median": 0.051356,
+      "p95": 0.051741
+    },
+    "tui-additional:phase-total:shell-owner:shell-register": {
+      "n": 2,
+      "median": 6.330852,
+      "p95": 6.706724
+    },
+    "tui-additional:phase-total:module:shell-prepare": {
+      "n": 2,
+      "median": 42.2368265,
+      "p95": 42.339057
+    },
+    "tui-additional:phase-total:hovel-process:throw": {
+      "n": 2,
+      "median": 382.9509315,
+      "p95": 384.24337
+    },
+    "tui-additional:phase-total:hovel-cli:throw": {
+      "n": 2,
+      "median": 385.40286349999997,
+      "p95": 386.716246
+    },
+    "tui-additional:phase-total:manager-throw:shell-prepare": {
+      "n": 2,
+      "median": 204.8391235,
+      "p95": 207.526504
+    },
+    "tui-additional:phase-total:shell-adoption-observation": {
+      "n": 2,
+      "median": 3.7201589999999998,
+      "p95": 3.825122
+    },
+    "tui-additional:phase-total:shell-ssh-start": {
+      "n": 2,
+      "median": 0.203003,
+      "p95": 0.219446
+    },
+    "tui-additional:phase-total:shell-pty-start": {
+      "n": 2,
+      "median": 6.234458999999999,
+      "p95": 6.620937
+    },
+    "tui-additional:phase-total:shell-owner:shell-start": {
+      "n": 2,
+      "median": 17.821844499999997,
+      "p95": 17.823005
+    },
+    "tui-additional:phase-total:module:shell-start": {
+      "n": 2,
+      "median": 52.3692865,
+      "p95": 52.438261
+    },
+    "tui-additional:phase-total:shell-first-output": {
+      "n": 2,
+      "median": 3.747493,
+      "p95": 3.767846
+    },
+    "tui-additional:phase-total:shell-output-drain": {
+      "n": 2,
+      "median": 0.044156,
+      "p95": 0.051932
+    },
+    "tui-additional:phase-total:manager-throw:shell-start": {
+      "n": 2,
+      "median": 224.2021095,
+      "p95": 225.192361
+    },
+    "tui-additional:phase-total:shell-lifecycle:create": {
+      "n": 2,
+      "median": 448.0249585,
+      "p95": 450.188271
+    },
+    "tui-additional:phase-total:shell-snapshot": {
+      "n": 2,
+      "median": 0.54983,
+      "p95": 0.616067
+    },
+    "tui-additional:phase-total:shell-refresh": {
+      "n": 2,
+      "median": 14.706499,
+      "p95": 15.179997
+    },
+    "tui-additional:phase-total:shell-attachment": {
+      "n": 2,
+      "median": 3.414706,
+      "p95": 3.436967
+    },
+    "tui-additional:phase-total:shell-frontend-sample": {
+      "n": 2,
+      "median": 0.01376,
+      "p95": 0.01655
+    },
+    "tui-additional:phase-total:shell-input-queue": {
+      "n": 2,
+      "median": 0.0091685,
+      "p95": 0.010676
+    },
+    "tui-additional:phase-total:shell-frontend-accept": {
+      "n": 2,
+      "median": 0.004255,
+      "p95": 0.0055
+    },
+    "tui-additional:phase-total:shell-private:takeover": {
+      "n": 2,
+      "median": 5.3765415,
+      "p95": 5.396598
+    }
+  }
+}

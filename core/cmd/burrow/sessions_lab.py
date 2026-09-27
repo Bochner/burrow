@@ -156,6 +156,35 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
         base64.b64decode(observed["data"])
     )
 
+    # Bounded snapshot waits use an independent revision, including control and
+    # geometry changes without output. They must release the owner lock.
+    def snapshot_wait(revision, shell=one):
+        status, raw = control("snapshot", ["0", str(revision)], shell["id"])
+        assert status == 200, raw
+        return json.loads(json.loads(raw)["stdout"])
+
+    current = burrow(w, "session", "snapshot", "gateway", one["id"])
+    revision = current["revision"]
+    assert revision > 0
+    begin = time.monotonic()
+    unchanged = snapshot_wait(revision)
+    assert 0.8 <= time.monotonic() - begin < 3
+    assert unchanged["revision"] == revision and unchanged["screen"] == current["screen"]
+    for arguments in (("0", "-1"), ("0", str(2**64)), ("1001", str(revision)), ("0", str(2**64 - 1))):
+        assert control("snapshot", list(arguments), one["id"])[0] != 200
+    with ThreadPoolExecutor(2) as readers:
+        pending = [readers.submit(snapshot_wait, revision) for _ in range(2)]
+        time.sleep(0.15)
+        assert all(not result.done() for result in pending)
+        private("input", {"token": controller["token"], "data": base64.b64encode(b"printf 'WAKE-%s\\n' OK\n").decode()})
+        screens = [result.result(timeout=2) for result in pending]
+    assert all(result["revision"] > revision for result in screens)
+    assert all(result["shell"]["controlGeneration"] == controller["generation"] for result in screens)
+    begin = time.monotonic()
+    assert snapshot_wait(revision)["revision"] > revision
+    assert time.monotonic() - begin < 0.8  # Output before registration cannot be missed.
+    wait(lambda: "WAKE-OK" in burrow(w, "session", "snapshot", "gateway", one["id"])["screen"]["text"])
+
     # Separate no-TTY processes race for the same observed generation.
     def takeover(label):
         p = subprocess.run(
@@ -168,10 +197,20 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
         )
         return p.returncode, json.loads(p.stdout or p.stderr)
 
-    with ThreadPoolExecutor(2) as clients:
+    revision = burrow(w, "session", "snapshot", "gateway", one["id"])["revision"]
+    with ThreadPoolExecutor(3) as clients:
+        watching = clients.submit(snapshot_wait, revision)
+        time.sleep(0.15)
+        assert not watching.done()
         competing = list(clients.map(takeover, ("agent-two", "agent-three")))
+        changed = watching.result(timeout=2)
     assert sorted(code for code, _ in competing) == [0, 1], competing
     winner = next(result for code, result in competing if code == 0)
+    assert changed["revision"] > revision and changed["shell"]["controlGeneration"] == winner["generation"]
+    assert (changed["shell"]["columns"], changed["shell"]["rows"]) == (101, 31)
+    print(
+        "PASS bounded screen timeout, broadcast output wakeup, stale revision and control/geometry wakeup", flush=True
+    )
     for action, extra in (("input", {"data": "YQ=="}), ("resize", {"columns": 1, "rows": 1}), ("release", {})):
         private(action, {"token": controller["token"], **extra}, ok=False)
     private("input", {"token": winner["token"], "data": base64.b64encode(b"stty size\n").decode()})
@@ -330,7 +369,11 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
             break
     else:
         raise AssertionError("blocked remote reader did not apply bounded backpressure")
-    with ThreadPoolExecutor(2) as clients:
+    revision = burrow(w, "session", "snapshot", "gateway", blocked["id"])["revision"]
+    with ThreadPoolExecutor(3) as clients:
+        watching = clients.submit(snapshot_wait, revision, blocked)
+        time.sleep(0.15)
+        assert not watching.done()
         sending = clients.submit(private, "input", {"token": blocked_control["token"], "data": "YQ=="}, blocked, None)
         closing = clients.submit(burrow, w, "session", "close", "gateway", blocked["id"], "--yes")
         status, outcome = sending.result()
@@ -341,6 +384,8 @@ def session_checks(burrow, w, first, command, container, wait, options, root, da
             assert outcome["error"]["operation"] == "session.input"
         closed = closing.result()
         assert closed["state"] == "closed" and "unconfirmed" in closed["cleanup"]
+        ending = watching.result(timeout=2)
+        assert ending["revision"] > revision and ending["shell"]["state"] in ("closing", "closed", "exited")
     assert time.monotonic() - started < 15, "backpressure stalled control/close"
     private("input", {"token": blocked_control["token"], "data": "YQ=="}, shell=blocked, ok=False)
     assert not Path(f"/proc/{blocked['pid']}").exists()

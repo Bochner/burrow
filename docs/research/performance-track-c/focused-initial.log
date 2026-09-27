@@ -1,0 +1,91 @@
+→ 🎬 Running test task
+
+→ 🔧 Setup · Running setup
+
+→ 🧪 Test · Spawning bazel test
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: 6 targets (0 packages loaded, 0 targets configured)
+Analyzing: 6 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 6 targets (161 packages loaded, 11698 targets configured).
+[352 / 364] Testing //:python_format_test; 1s linux-sandbox ... (6 actions, 4 running)
+[362 / 365] 3 / 6 tests; Testing //core/cmd/burrow:ssh_shell_test; 1s local ... (3 actions, 2 running)
+[362 / 365] 3 / 6 tests; Testing //core/cmd/burrow:ssh_shell_test; 12s local ... (3 actions, 2 running)
+[362 / 365] 3 / 6 tests; Testing //core/cmd/burrow:ssh_shell_test; 42s local ... (3 actions, 2 running)
+[362 / 365] 3 / 6 tests; Testing //core/cmd/burrow:ssh_shell_test; 63s local ... (3 actions running)
+FAIL: //core/cmd/burrow:ssh_shell_test (Exit 1) (see /home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/testlogs/core/cmd/burrow/ssh_shell_test/test.log)
+INFO: From Testing //core/cmd/burrow:ssh_shell_test:
+==================== Test output for //core/cmd/burrow:ssh_shell_test:
+TIMING fixture and workspace setup: 2.0s (total 2.0s)
+TIMING connect unknown submission-to-CLI-return: 0.483s
+TIMING connect gateway submission-to-CLI-return: 0.292s
+SHELL_DISCOVERY {"action": "observe", "counts": {"rpc:GetDaemonInfo": 5, "rpc:ListSessions": 1, "rpc:RunSessionCommand": 1, "command:observe": 1}}
+SHELL_DISCOVERY {"action": "snapshot", "counts": {"rpc:GetDaemonInfo": 5, "rpc:ListSessions": 1, "rpc:RunSessionCommand": 1, "command:snapshot": 1}}
+PASS bounded screen timeout, broadcast output wakeup, stale revision and control/geometry wakeup
+PASS independent CLI readers, concurrent takeover, stale authority and release
+PASS explicit current-screen recovery after byte-history truncation
+PASS initial/live geometry, private validation, Ctrl+C, slow reader, backpressure and close/input race
+TIMING connect shell-peer submission-to-CLI-return: 0.308s
+TIMING connect native-close submission-to-CLI-return: 0.336s
+TIMING connect audit-close submission-to-CLI-return: 0.333s
+TIMING connect target submission-to-CLI-return: 0.491s
+TIMING connect target submission-to-CLI-return: 0.470s
+TIMING connect target submission-to-CLI-return: 0.492s
+TIMING connect target submission-to-CLI-return: 0.519s
+TIMING connect target submission-to-CLI-return: 0.475s
+PASS retained remote PIDs, launcher exit, selected/connection/manager close, stale/wrong-owner refusal, bounded flood and loss
+TIMING connect restricted submission-to-CLI-return: 0.363s
+TIMING connect forward-owner submission-to-CLI-return: 0.368s
+TIMING reconnect forward-owner submission-to-CLI-return: 0.382s
+PASS reviewed local forward, real traffic, retained inventory and selected removal
+TIMING acceptance before cleanup: 59.5s (total 61.5s)
+PASS post-shutdown database integrity and confirmed Hovel forwarding evidence
+TIMING fixture cleanup: 1.2s (total 62.7s)
+Traceback (most recent call last):
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/ssh_shell_test.runfiles/_main/core/cmd/burrow/_ssh_shell_test_stage2_bootstrap.py", line 588, in <module>
+    main()
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/ssh_shell_test.runfiles/_main/core/cmd/burrow/_ssh_shell_test_stage2_bootstrap.py", line 582, in main
+    _run_py_path(main_filename, args=sys.argv[1:])
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/ssh_shell_test.runfiles/_main/core/cmd/burrow/_ssh_shell_test_stage2_bootstrap.py", line 339, in _run_py_path
+    runpy.run_path(main_filename, run_name="__main__")
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/ssh_shell_test.runfiles/_main/core/cmd/burrow/connection_lab.py", line 585, in <module>
+    first = shell_checks(binary, w, env, screen_check, burrow, first, options)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/bin/core/cmd/burrow/ssh_shell_test.runfiles/_main/core/cmd/burrow/shell_lab.py", line 275, in shell_checks
+    assert visible_snapshots >= 5 and hidden_snapshots < visible_snapshots / 3, (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('hidden attachment kept polling at foreground rate', 1, 1)
+================================================================================
+[363 / 365] 4 / 6 tests, 1 failed; Testing //core/cmd/burrow:ssh_files_test; 64s local ... (2 actions running)
+[363 / 365] 4 / 6 tests, 1 failed; Testing //core/cmd/burrow:ssh_files_test; 73s local ... (2 actions running)
+[364 / 365] 5 / 6 tests, 1 failed; Testing //core/cmd/burrow:interaction_test; 11s linux-sandbox
+[364 / 365] 5 / 6 tests, 1 failed; Testing //core/cmd/burrow:interaction_test; 21s linux-sandbox
+[364 / 365] 5 / 6 tests, 1 failed; Testing //core/cmd/burrow:interaction_test; 51s linux-sandbox
+[364 / 365] 6 / 6 tests, 1 failed; Testing //core/cmd/burrow:interaction_test; 55s linux-sandbox
+INFO: Found 6 test targets...
+INFO: Elapsed time: 120.534s, Critical Path: 119.99s
+INFO: 19 processes: 346 action cache hit, 7 internal, 13 linux-sandbox, 4 local.
+INFO: Build completed, 1 test FAILED, 19 total actions
+INFO:
+//:go_format_test                                                        PASSED in 0.2s
+//:python_format_test                                                    PASSED in 0.2s
+//:python_lint_test                                                      PASSED in 0.2s
+//core/cmd/burrow:interaction_test                                       PASSED in 55.8s
+//core/cmd/burrow:ssh_files_test                                         PASSED in 73.1s
+//core/cmd/burrow:ssh_shell_test                                         FAILED in 63.2s
+  /home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/testlogs/core/cmd/burrow/ssh_shell_test/test.log
+
+Executed 6 out of 6 tests: 5 tests pass and 1 fails locally.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+INFO: Build Event Protocol files produced successfully.
+
+→ ❌ Failed test task (exit code 3) in 2m 0s · Tests failed
+    🔧 Setup    0ms  Prepare the task environment
+    🧪 Test   2m 0s  Run bazel tests (failed)

@@ -377,7 +377,7 @@ case "$SSH_ORIGINAL_COMMAND" in
         grep -q '^0+0 records in' "$stats" && break
         sleep 0.02
       done; rm "$stats") |
-      /usr/lib/ssh/sftp-server |
+      /usr/lib/ssh/sftp-server -e -l DEBUG3 2>> /tmp/burrow-file-requests |
         (stats=$(mktemp); while :; do
           dd bs=32768 count=1 2>"$stats" || break
           grep -q '^0+0 records in' "$stats" && break
@@ -443,7 +443,55 @@ esac
             command("docker", "exec", container, "touch", "/tmp/burrow-file-throttle")
             file_ui(binary, env, decoder, workspace, "file-observer", transfers=True)
             download_failures(burrow, workspace, container, command, options)
+            # Cancel during link metadata, after the handshake and directory
+            # read, so all in-flight workers must leave the request-owned client.
+            command(
+                "docker",
+                "exec",
+                container,
+                "sh",
+                "-c",
+                "mkdir /tmp/burrow-cancel-links; i=0; while [ $i -lt 128 ]; do "
+                "ln -s /tmp /tmp/burrow-cancel-links/link-$i; i=$((i+1)); done",
+            )
+
+            def link_reads():
+                return command("docker", "exec", container, "cat", "/tmp/burrow-file-requests").count("readlink ")
+
+            before_links = link_reads()
+            pending = subprocess.Popen(
+                [
+                    binary,
+                    "--workspace",
+                    str(workspace),
+                    "scp",
+                    "file-observer",
+                    "ls",
+                    "/tmp/burrow-cancel-links",
+                    "--request",
+                    "link-metadata",
+                ],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 15
+                while link_reads() == before_links:
+                    assert pending.poll() is None and time.monotonic() < deadline
+                    time.sleep(0.02)
+                burrow(workspace, "scp", "file-observer", "cancel", "link-metadata")
+                stdout, stderr = pending.communicate(timeout=3)
+                assert pending.returncode != 0 and "canceled" in stderr, (stdout, stderr)
+            finally:
+                if pending.poll() is None:
+                    pending.kill()
+                    pending.wait()
             command("docker", "exec", container, "rm", "/tmp/burrow-file-throttle")
+            assert browse("ls", base)["entries"], "link cancellation poisoned subsequent browsing"
+            assert not any("/tmp/burrow-cancel-links" in line for line in burrow(workspace, "files-history"))
+            print("PASS cancellation during parallel link metadata and subsequent request recovery", flush=True)
             command("docker", "exec", container, "touch", "/tmp/burrow-file-noexec")
             command("docker", "exec", container, "chown", "12345:23456", base + "/old.txt")
             reduced = browse("ls", base)
@@ -532,6 +580,14 @@ def file_checks(burrow, workspace, state, container, command, options):
     command("docker", "exec", container, "touch", "-t", "200001010000", base + "/old.txt")
     command("docker", "exec", container, "ln", "-s", "sub dir", base + "/dir-link")
     command("docker", "exec", container, "ln", "-s", "absent", base + "/broken")
+    command(
+        "docker",
+        "exec",
+        container,
+        "sh",
+        "-c",
+        "i=0; while [ $i -lt 32 ]; do ln -s 'sub dir' " + base + "/parallel-$i; i=$((i+1)); done",
+    )
     command("docker", "exec", container, "chown", "-R", "tester", base)
     command("docker", "exec", container, "chmod", "000", base + "/denied")
     command("docker", "exec", container, "touch", base + "/hostile\x1b]52;c;payload\a")
@@ -559,6 +615,11 @@ def file_checks(burrow, workspace, state, container, command, options):
     assert "." not in names and ".." not in names
     link = next(entry for entry in listing["entries"] if entry["name"] == "dir-link")
     assert link["link"] == "sub dir" and link["directory"], link
+    parallel = [entry for entry in listing["entries"] if entry["name"].startswith("parallel-")]
+    assert len(parallel) == 32 and len(set(names)) == len(names)
+    assert all(entry["link"] == "sub dir" and entry["directory"] and not entry.get("error") for entry in parallel)
+    assert next(entry for entry in listing["entries"] if entry["name"] == "broken")["error"]
+    assert [entry["name"] for entry in burrow(workspace, "scp", "gateway", "ls", base)["entries"]] == names
     assert all(entry["permissions"] and entry["owner"] and entry["group"] for entry in listing["entries"])
     assert burrow(workspace, "scp", "gateway", "cd", base + "/dir-link")["path"] == base + "/sub dir"
     failure = burrow(workspace, "scp", "gateway", "ls", base + "/denied", ok=False)
@@ -567,6 +628,10 @@ def file_checks(burrow, workspace, state, container, command, options):
     assert tree["incomplete"] and tree["errors"], tree
     assert any(entry["name"] == "dir-link" for entry in tree["entries"])
     assert not any(entry["path"].startswith(base + "/dir-link/") for entry in tree["entries"])
+    assert not any(
+        entry["path"].startswith(base + "/parallel-") and "/" in entry["path"].removeprefix(base + "/parallel-")
+        for entry in tree["entries"]
+    )
     command(
         "docker",
         "exec",

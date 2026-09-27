@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"slices"
-	"strconv"
 	"sync"
 	"time"
 
@@ -39,6 +38,7 @@ type Shared struct {
 	generation          uint64
 	modes               []int
 	position            uint64
+	revision            uint64
 	controlPending      bool
 	releasing           bool
 	inputError          error
@@ -49,6 +49,7 @@ type Shared struct {
 	input               chan sharedEvent
 	done                chan struct{}
 	visible             bool
+	visibilityRevision  uint64
 	refreshPending      bool
 	visibility          chan struct{}
 	updates             chan struct{}
@@ -71,7 +72,7 @@ func Attach(ctx context.Context, workspace, name, id string) (*Shared, error) {
 	s := &Shared{workspace: workspace, name: name, id: id, input: make(chan sharedEvent, 128), done: make(chan struct{}), visibility: make(chan struct{}, 1), updates: make(chan struct{}, 1)}
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.state.Shared = &SharedState{Shell: connection.Shell{ID: id, Workspace: workspace, Connection: connection.State{Name: name}}, Synchronization: "out-of-sync"}
-	if err := s.refresh(); err != nil {
+	if err := s.refresh(s.ctx, false); err != nil {
 		s.cancel()
 		return nil, err
 	}
@@ -88,6 +89,7 @@ func (s *Shared) SetVisible(visible bool) {
 		return
 	}
 	s.visible = visible
+	s.visibilityRevision++
 	s.refreshPending = s.refreshPending || visible
 	select {
 	case s.visibility <- struct{}{}:
@@ -202,22 +204,34 @@ func (s *Shared) private(ctx context.Context, action string, request any) (conne
 	return value.(connection.ShellControl), nil
 }
 
-func (s *Shared) refresh() error {
+func (s *Shared) refresh(parent context.Context, background bool) error {
 	defer launch.Phase("shell-refresh")()
-	ctx, cancel := context.WithTimeout(s.ctx, 3*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
 	defer cancel()
 	s.mu.Lock()
 	offset := s.offset
+	visibility := s.visibilityRevision
+	revision := uint64(0)
+	if background && s.visible {
+		revision = s.revision
+	}
 	s.mu.Unlock()
-	value, err := connection.Execute(ctx, s.workspace, []string{"session", "snapshot", s.name, s.id, strconv.Itoa(offset)})
-	if err == nil && value.(connection.ShellOutput).Shell.State == "unavailable" {
+	out, err := connection.WaitShellSnapshot(ctx, s.workspace, s.name, s.id, offset, revision)
+	// Focus/input/detach interrupted this read. It must not publish an error or
+	// change authority; the serialized caller will obtain a fresh observation.
+	if parent.Err() != nil {
+		return parent.Err()
+	}
+	if err == nil && out.Shell.State == "unavailable" {
 		// An owner RPC failure is not proof that our claim was revoked.
 		err = fmt.Errorf("shell owner unavailable; control and cleanup unverified")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer s.notify()
-	s.refreshPending = false
+	if !background && visibility == s.visibilityRevision {
+		s.refreshPending = false
+	}
 	if err != nil {
 		s.state.Shared.Shell.State = "unverified"
 		if errors.Is(err, connection.ErrShellUnavailable) {
@@ -230,7 +244,7 @@ func (s *Shared) refresh() error {
 		s.state.Err = fmt.Errorf("shell observation UNVERIFIED; last view retained: %w", err)
 		return err
 	}
-	out := value.(connection.ShellOutput)
+	s.revision = out.Revision
 	shared := s.state.Shared
 	shared.Shell, shared.Synchronization = out.Shell, out.Synchronization
 	if s.token != "" && (s.generation != out.Shell.ControlGeneration || out.Shell.State != "running") {
@@ -272,23 +286,38 @@ func (s *Shared) refresh() error {
 
 func (s *Shared) run() {
 	defer close(s.done)
-	// ponytail: hidden observations lag by up to one second plus RPC time;
-	// owner notifications can replace polling if the remaining cost warrants it.
+	// Hidden views retain their one-second cadence. Visible views wait for owner
+	// changes between samples; input/focus/detach cancel and join the read first.
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	var observed chan struct{}
+	var cancel context.CancelFunc
+	stopRead := func() {
+		if observed != nil {
+			cancel()
+			<-observed
+			observed = nil
+		}
+	}
+	defer stopRead()
 	for {
 		select {
+		case <-observed:
+			cancel()
+			observed = nil
 		case <-s.visibility:
+			stopRead()
 			s.mu.Lock()
 			visible := s.visible
 			s.mu.Unlock()
 			interval := time.Second
 			if visible {
 				interval = 50 * time.Millisecond
-				_ = s.refresh()
+				_ = s.refresh(s.ctx, false)
 			}
 			ticker.Reset(interval)
 		case <-s.ctx.Done():
+			stopRead()
 			s.mu.Lock()
 			token := s.token
 			s.mu.Unlock()
@@ -299,6 +328,7 @@ func (s *Shared) run() {
 			}
 			return
 		case event := <-s.input:
+			stopRead()
 			event.queued()
 			err := s.handle(event)
 			s.mu.Lock()
@@ -317,7 +347,15 @@ func (s *Shared) run() {
 				event.reply <- err
 			}
 		case <-ticker.C:
-			_ = s.refresh()
+			if observed == nil {
+				var ctx context.Context
+				ctx, cancel = context.WithCancel(s.ctx)
+				observed = make(chan struct{})
+				go func(done chan struct{}) {
+					_ = s.refresh(ctx, true)
+					close(done)
+				}(observed)
+			}
 		}
 	}
 }
@@ -329,7 +367,7 @@ func (s *Shared) handle(event sharedEvent) error {
 	refresh := s.refreshPending
 	s.mu.Unlock()
 	if refresh {
-		if err := s.refresh(); err != nil {
+		if err := s.refresh(s.ctx, false); err != nil {
 			return err
 		}
 	}
@@ -378,7 +416,7 @@ func (s *Shared) handle(event sharedEvent) error {
 		}
 		// Reconcile a concurrent takeover: releasing our obsolete claim is done.
 		if err != nil {
-			_ = s.refresh()
+			_ = s.refresh(s.ctx, false)
 			s.mu.Lock()
 			replaced := s.token == ""
 			s.mu.Unlock()
@@ -419,7 +457,7 @@ func (s *Shared) handle(event sharedEvent) error {
 		}
 	}
 	if err == nil {
-		_ = s.refresh()
+		_ = s.refresh(s.ctx, false)
 	}
 	return err
 }
