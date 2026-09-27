@@ -1,5 +1,6 @@
 """Workspace activity through the real follower and pinned Hovel daemon."""
 
+import ctypes
 import json
 import fcntl
 import http.client
@@ -17,6 +18,9 @@ import pty
 import termios
 
 binary, wheel, decoder = [str(Path(p).resolve()) for p in sys.argv[1:]]
+
+# Own the orphaned fixture daemon so exit checks do not depend on host PID 1.
+assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
 
 
 def assert_role(rows, value, color):
@@ -41,6 +45,13 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
     workspace = root / "w"
     viewers = []
     daemon = None
+
+    def stop_daemon(pid):
+        os.kill(pid, signal.SIGTERM)
+        deadline = time.monotonic() + 10
+        while not os.waitpid(pid, os.WNOHANG)[0]:
+            assert time.monotonic() < deadline, "daemon did not exit after SIGTERM"
+            time.sleep(0.05)
 
     def rpc(method, value):
         client = http.client.HTTPConnection("localhost", timeout=10)
@@ -215,17 +226,10 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
             os.kill(daemon, signal.SIGCONT)
         wait(b, lambda e: e["kind"] == "resumed" and e["source"] == "hovel")
         # A new daemon incarnation resets only observer cursors.
-        os.kill(daemon, signal.SIGTERM)
-        deadline = time.monotonic() + 10
-        while (workspace / "hoveld.sock").exists() and time.monotonic() < deadline:
-            time.sleep(0.1)
+        stop_daemon(daemon)
+        daemon = None
         # Recovery is an explicit operator action in this disposable workspace;
         # the follower must never remove a stale ownership receipt itself.
-        try:
-            os.kill(daemon, 0)
-            raise AssertionError("old daemon still exists")
-        except ProcessLookupError:
-            pass
         (workspace / "burrow-launch.json").unlink()
         (workspace / "burrow").rmdir()  # Must be empty: no retained resources here.
         (workspace / "burrow-launch.log").rename(workspace / "previous-launch.log")
@@ -353,6 +357,6 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                 p.wait(timeout=10)
         if daemon:
             try:
-                os.kill(daemon, signal.SIGTERM)
+                stop_daemon(daemon)
             except ProcessLookupError:
                 pass

@@ -6,13 +6,16 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 tool = str(Path(sys.argv[1]).resolve())
 
 
 def run(*args, ok=True):
+    started = time.monotonic()
     result = subprocess.run([tool, *map(str, args)], capture_output=True, text=True, timeout=20)
     assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
+    print(f"Checked report {args[0]} in {time.monotonic() - started:.2f}s", flush=True)
     return result
 
 

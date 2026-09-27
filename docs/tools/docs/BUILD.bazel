@@ -17,7 +17,8 @@ py_binary(
 
 py_test(
     name = "report_test",
-    size = "small",
+    # Multi-process CLI matrix; each call retains its own 20-second bound.
+    size = "medium",
     srcs = ["report_test.py"],
     args = ["$(rootpath :report)"],
     data = [":report"],
