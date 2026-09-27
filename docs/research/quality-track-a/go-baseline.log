@@ -1,0 +1,38 @@
+→ 🎬 Running build task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Spawning bazel build
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: target //core/cmd/burrow:burrow (3 packages loaded, 2 targets configured)
+Analyzing: target //core/cmd/burrow:burrow (3 packages loaded, 2 targets configured)
+
+Analyzing: target //core/cmd/burrow:burrow (188 packages loaded, 15363 targets configured)
+
+INFO: Analyzed target //core/cmd/burrow:burrow (209 packages loaded, 15574 targets configured).
+[141 / 282] GoStdlib external/rules_go+/stdlib_/pkg [for tool]; 0s linux-sandbox
+[142 / 282] [Prepa] GoCompilePkg external/gazelle++go_deps+org_golang_x_tools/internal/pkgbits/pkgbits.a [for tool]
+[165 / 282] GoLink go_analysis_actual_/go_analysis_actual [for tool]; 0s linux-sandbox
+[228 / 282] Running nogo on @org_golang_x_sys//unix:unix; 0s linux-sandbox ... (8 actions, 7 running)
+ERROR: /home/bochner/dev/burrow/core/cmd/burrow/BUILD.bazel:130:11: Validating nogo output for //core/cmd/burrow:burrow_lib failed: (Exit 1): builder failed: error executing ValidateNogo command (from go_library rule target //core/cmd/burrow:burrow_lib) bazel-out/k8-opt-exec/bin/external/rules_go++go_sdk+burrow_go_sdk/builder_reset/builder nogovalidation bazel-out/k8-fastbuild/bin/core/cmd/burrow/burrow_lib.nogo ... (remaining 1 argument skipped)
+
+Use --sandbox_debug to see verbose messages from the sandbox and retain the sandbox build root for debugging
+
+nogo: errors found by nogo during build-time code analysis:
+core/cmd/burrow/collected_notes.go:151:3: fmt.Fprintln arg list ends with redundant newline (printf)
+
+Target //core/cmd/burrow:burrow failed to build
+Use --verbose_failures to see the command lines of failed build steps.
+INFO: Elapsed time: 15.164s, Critical Path: 12.58s
+INFO: 152 processes: 130 action cache hit, 13 internal, 139 linux-sandbox.
+ERROR: Build did NOT complete successfully
+FAILED:
+INFO: Build Event Protocol files produced successfully.
+
+→ ❌ Failed build task (exit code 1) in 15.3s · Failed to build
+    🔧 Setup    0ms  Prepare the task environment
+    🔨 Build  15.3s  Build bazel targets (failed)

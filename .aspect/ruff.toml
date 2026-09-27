@@ -4,3 +4,11 @@ line-length = 120
 
 [format]
 docstring-code-format = false
+
+[lint]
+# Undefined names, broken literal/assert conditions, discarded expressions, and
+# finally blocks that swallow failures. Keep lab asserts and embedded fixtures.
+select = ["F601", "F602", "F631", "F632", "F634", "F821", "F822", "F823", "B012", "B018"]
+# No S101 (asserts are acceptance checks), EXE (preserve existing shebangs), or
+# PLW1510: drivers inspect return codes and deliberately run failing/cleanup
+# subprocesses; forcing check=True would hide their contextual diagnostics.

@@ -15,6 +15,17 @@ go_test(
     embed = [":connection"],
 )
 
+# Instrument the embedded production parser, not just the fuzz callback.
+go_test(
+    name = "command_fuzz_test",
+    size = "small",
+    srcs = ["commands_fuzz_test.go"],
+    embed = [":connection"],
+    gc_goopts = ["-d=libfuzzer"],
+    args = ["-test.fuzz=FuzzCommandLine", "-test.fuzztime=10s", "-test.fuzzminimizetime=1s", "-test.parallel=1", "-test.timeout=30s"],
+    data = glob(["testdata/fuzz/FuzzCommandLine/*"], allow_empty = True),
+)
+
 filegroup(
     name = "format_sources",
     srcs = glob(["*.go"]),

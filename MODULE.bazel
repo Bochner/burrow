@@ -87,6 +87,12 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(name = "burrow_go_sdk", version = "1.26.5")
+go_sdk.nogo(
+    nogo = "//:go_analysis",
+    includes = ["//core/%s:__pkg__" % area for area in [
+        "agent", "cmd/burrow", "connection", "launch", "reports", "terminal",
+    ]],
+)
 use_repo(go_sdk, "burrow_go_sdk")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")

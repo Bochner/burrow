@@ -1,0 +1,252 @@
+→ 🎬 Running burrow-check task
+→ 🎬 Running run task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Building //docs/tools/docs:report
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: target //docs/tools/docs:report (0 packages loaded, 0 targets configured)
+Analyzing: target //docs/tools/docs:report (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //docs/tools/docs:report (0 packages loaded, 1 target configured, 1 aspect application).
+INFO: Found 1 target...
+INFO: Elapsed time: 0.336s, Critical Path: 0.00s
+INFO: 1 process: 12 action cache hit, 1 internal.
+INFO: Build completed successfully, 1 total action
+INFO:
+INFO: Build Event Protocol files produced successfully.
+
+→ 🚀 Run · Running //docs/tools/docs:report
+
+→ ✅ Passed run task in 738ms · Ran //docs/tools/docs:report
+    🔧 Setup    0ms  Prepare the task environment
+    🔨 Build  541ms  Build run target
+    🚀 Run    195ms  Run target
+→ 🎬 Running build task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Spawning bazel build
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: 9 targets (6 packages loaded, 0 targets configured)
+Analyzing: 9 targets (6 packages loaded, 1 target configured)
+
+DEBUG: /home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/external/rules_python+/python/private/py_executable.bzl:1498:14:
+======================================================================
+WARNING: Target @@rules_pkg+//pkg/private/tar:build_tar is using implicit __init__.py creation.
+  This diabolic behavior is deprecated and will be disabled by default in a
+  future release.
+  See https://github.com/bazel-contrib/rules_python/issues/2945
+
+  Ensure all __init__.py files are explicitly created and
+  added to the srcs or deps of your targets.
+
+  Disable implicit creation by setting:
+    legacy_create_init = 0
+  on the target, or globally by setting:
+    --incompatible_default_to_explicit_init_py
+======================================================================
+INFO: Analyzed 9 targets (9 packages loaded, 281 targets configured).
+INFO: Found 9 targets...
+INFO: Elapsed time: 1.200s, Critical Path: 0.80s
+INFO: 5 processes: 322 action cache hit, 4 internal, 1 linux-sandbox.
+INFO: Build completed successfully, 5 total actions
+INFO:
+INFO: Build Event Protocol files produced successfully.
+
+→ ✅ Passed build task in 1.2s · Successful build
+    🔧 Setup   0ms  Prepare the task environment
+    🔨 Build  1.2s  Build bazel targets
+→ 🎬 Running test task
+
+→ 🔧 Setup · Running setup
+
+→ 🧪 Test · Spawning bazel test
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: 48 targets (1 packages loaded, 0 targets configured)
+Analyzing: 48 targets (1 packages loaded, 2 targets configured)
+
+INFO: Analyzed 48 targets (9 packages loaded, 4507 targets configured).
+[2,182 / 2,270] Testing //docs/tools/docs:stage_site_test; 0s linux-sandbox ... (32 actions, 3 running)
+[2,193 / 2,275] 3 / 48 tests; Testing //docs/tools/docs:report_test; 0s linux-sandbox ... (32 actions, 4 running)
+[2,225 / 2,314] 5 / 48 tests; Testing //docs/tools/docs:report_test; 1s linux-sandbox ... (32 actions, 4 running)
+[2,275 / 2,344] 6 / 48 tests; Testing //docs/tools/docs:report_test; 2s linux-sandbox ... (32 actions, 5 running)
+[2,301 / 2,346] 7 / 48 tests; Testing //docs/tools/docs:report_test; 3s linux-sandbox ... (32 actions, 3 running)
+[2,304 / 2,346] 10 / 48 tests; Testing //docs/tools/docs:report_test; 4s linux-sandbox ... (32 actions, 3 running)
+[2,305 / 2,346] 11 / 48 tests; Testing //docs/tools/docs:report_test; 6s linux-sandbox ... (32 actions, 2 running)
+[2,305 / 2,346] 11 / 48 tests; Testing //docs/tools/docs:report_test; 9s linux-sandbox ... (32 actions, 3 running)
+[2,310 / 2,346] 16 / 48 tests; Testing //core/cmd/burrow:connection_test; 0s linux-sandbox ... (32 actions, 3 running)
+[2,311 / 2,346] 17 / 48 tests; Testing //core/cmd/burrow:connection_test; 1s linux-sandbox ... (32 actions, 2 running)
+[2,311 / 2,346] 17 / 48 tests; Testing //core/cmd/burrow:connection_test; 4s linux-sandbox ... (32 actions, 3 running)
+[2,312 / 2,346] 18 / 48 tests; Testing //core/connection:command_fuzz_test; 5s linux-sandbox ... (32 actions, 3 running)
+[2,313 / 2,346] 19 / 48 tests; Testing //core/connection:command_fuzz_test; 6s linux-sandbox ... (32 actions, 2 running)
+[2,315 / 2,347] 20 / 48 tests; Testing //core/connection:command_fuzz_test; 7s linux-sandbox ... (32 actions, 3 running)
+[2,317 / 2,347] 22 / 48 tests; Testing //core/connection:command_fuzz_test; 9s linux-sandbox ... (30 actions, 2 running)
+[2,318 / 2,347] 23 / 48 tests; Testing //core/cmd/burrow:files_test; 3s local ... (29 actions, 2 running)
+[2,318 / 2,347] 23 / 48 tests; Testing //core/cmd/burrow:files_test; 4s local ... (29 actions, 3 running)
+[2,319 / 2,347] 25 / 48 tests; Testing //core/cmd/burrow:capabilities_test; 3s linux-sandbox ... (28 actions, 3 running)
+[2,320 / 2,347] 25 / 48 tests; Testing //core/cmd/burrow:profile_test; 2s local ... (27 actions, 2 running)
+[2,320 / 2,347] 25 / 48 tests; Testing //core/cmd/burrow:profile_test; 8s local ... (27 actions, 3 running)
+[2,321 / 2,347] 26 / 48 tests; Testing //core/cmd/burrow:interaction_test; 9s linux-sandbox ... (26 actions, 2 running)
+[2,321 / 2,347] 26 / 48 tests; Testing //core/cmd/burrow:interaction_test; 17s linux-sandbox ... (26 actions, 3 running)
+[2,323 / 2,347] 28 / 48 tests; Testing //core/cmd/burrow:interaction_test; 19s linux-sandbox ... (24 actions, 3 running)
+[2,324 / 2,347] 29 / 48 tests; Testing //core/cmd/burrow:interaction_test; 20s linux-sandbox ... (23 actions, 2 running)
+[2,324 / 2,347] 29 / 48 tests; Testing //core/cmd/burrow:interaction_test; 29s linux-sandbox ... (23 actions, 2 running)
+[2,324 / 2,347] 29 / 48 tests; Testing //core/cmd/burrow:interaction_test; 58s linux-sandbox ... (23 actions, 3 running)
+[2,325 / 2,347] 30 / 48 tests; Testing //core/cmd/burrow:setup_test (run 1 of 3); 40s local ... (22 actions, 2 running)
+[2,326 / 2,347] 30 / 48 tests; Testing //core/cmd/burrow:setup_test (run 2 of 3); 3s local ... (21 actions, 2 running)
+[2,326 / 2,347] 30 / 48 tests; Testing //core/cmd/burrow:setup_test (run 2 of 3); 13s local ... (21 actions, 2 running)
+[2,326 / 2,347] 30 / 48 tests; Testing //core/cmd/burrow:setup_test (run 2 of 3); 40s local ... (21 actions, 3 running)
+[2,327 / 2,347] 30 / 48 tests; Testing //core/cmd/burrow:setup_test (run 3 of 3); 39s local ... (20 actions, 2 running)
+[2,327 / 2,347] 30 / 48 tests; Testing //core/cmd/burrow:setup_test (run 3 of 3); 40s local ... (20 actions, 3 running)
+[2,328 / 2,347] 31 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 1 of 3); 4s local ... (19 actions, 2 running)
+[2,328 / 2,347] 31 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 1 of 3); 14s local ... (19 actions, 2 running)
+[2,328 / 2,347] 31 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 1 of 3); 37s local ... (19 actions, 3 running)
+[2,329 / 2,347] 31 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 2 of 3); 36s local ... (18 actions, 2 running)
+[2,329 / 2,347] 31 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 2 of 3); 38s local ... (18 actions, 3 running)
+[2,330 / 2,347] 31 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 3 of 3); 4s local ... (17 actions, 2 running)
+[2,330 / 2,347] 31 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 3 of 3); 14s local ... (17 actions, 2 running)
+[2,330 / 2,347] 31 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 3 of 3); 25s local ... (17 actions, 3 running)
+[2,331 / 2,347] 32 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 3 of 3); 26s local ... (16 actions, 2 running)
+[2,331 / 2,347] 32 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 3 of 3); 36s local ... (16 actions, 2 running)
+[2,331 / 2,347] 32 / 48 tests; Testing //core/cmd/burrow:terminal_test (run 3 of 3); 38s local ... (16 actions, 3 running)
+[2,332 / 2,347] 33 / 48 tests; Testing //core/cmd/burrow:activity_test; 14s local ... (15 actions, 2 running)
+[2,332 / 2,347] 33 / 48 tests; Testing //core/cmd/burrow:activity_test; 18s local ... (15 actions, 3 running)
+[2,334 / 2,347] 35 / 48 tests; Testing //core/cmd/burrow:activity_test; 20s local ... (13 actions, 2 running)
+[2,334 / 2,347] 35 / 48 tests; Testing //core/cmd/burrow:activity_test; 24s local ... (13 actions, 3 running)
+[2,335 / 2,347] 36 / 48 tests; Testing //core/cmd/burrow:ssh_automation_test; 6s local ... (12 actions, 2 running)
+[2,335 / 2,347] 36 / 48 tests; Testing //core/cmd/burrow:ssh_automation_test; 16s local ... (12 actions, 2 running)
+[2,335 / 2,347] 36 / 48 tests; Testing //core/cmd/burrow:ssh_automation_test; 39s local ... (12 actions, 3 running)
+[2,336 / 2,347] 37 / 48 tests; Testing //core/cmd/burrow:ssh_automation_test; 40s local ... (11 actions, 2 running)
+[2,336 / 2,347] 37 / 48 tests; Testing //core/cmd/burrow:ssh_automation_test; 46s local ... (11 actions, 3 running)
+[2,338 / 2,347] 39 / 48 tests; Testing //core/cmd/burrow:ssh_chains_test; 9s local ... (9 actions, 2 running)
+[2,338 / 2,347] 39 / 48 tests; Testing //core/cmd/burrow:ssh_chains_test; 19s local ... (9 actions, 2 running)
+[2,338 / 2,347] 39 / 48 tests; Testing //core/cmd/burrow:ssh_chains_test; 28s local ... (9 actions, 3 running)
+[2,339 / 2,347] 40 / 48 tests; Testing //core/cmd/burrow:ssh_chains_test; 29s local ... (8 actions, 2 running)
+[2,339 / 2,347] 40 / 48 tests; Testing //core/cmd/burrow:ssh_chains_test; 39s local ... (8 actions, 2 running)
+[2,339 / 2,347] 40 / 48 tests; Testing //core/cmd/burrow:ssh_chains_test; 56s local ... (8 actions, 3 running)
+[2,340 / 2,347] 41 / 48 tests; Testing //core/cmd/burrow:ssh_runs_test; 29s local ... (7 actions, 2 running)
+[2,340 / 2,347] 41 / 48 tests; Testing //core/cmd/burrow:ssh_runs_test; 39s local ... (7 actions, 2 running)
+[2,340 / 2,347] 41 / 48 tests; Testing //core/cmd/burrow:ssh_runs_test; 69s local ... (7 actions, 2 running)
+[2,340 / 2,347] 41 / 48 tests; Testing //core/cmd/burrow:ssh_runs_test; 129s local ... (7 actions, 2 running)
+[2,340 / 2,347] 41 / 48 tests; Testing //core/cmd/burrow:ssh_runs_test; 143s local ... (7 actions, 3 running)
+[2,341 / 2,347] 42 / 48 tests; Testing //core/cmd/burrow:ssh_runs_test; 145s local ... (6 actions, 2 running)
+[2,341 / 2,347] 42 / 48 tests; Testing //core/cmd/burrow:ssh_runs_test; 154s local ... (6 actions, 2 running)
+[2,341 / 2,347] 42 / 48 tests; Testing //core/cmd/burrow:ssh_runs_test; 158s local ... (6 actions, 3 running)
+[2,342 / 2,347] 43 / 48 tests; Testing //core/cmd/burrow:ssh_files_test; 16s local ... (5 actions, 2 running)
+[2,342 / 2,347] 43 / 48 tests; Testing //core/cmd/burrow:ssh_files_test; 27s local ... (5 actions, 2 running)
+[2,342 / 2,347] 43 / 48 tests; Testing //core/cmd/burrow:ssh_files_test; 57s local ... (5 actions, 2 running)
+[2,342 / 2,347] 43 / 48 tests; Testing //core/cmd/burrow:ssh_files_test; 68s local ... (5 actions, 3 running)
+[2,344 / 2,347] 45 / 48 tests; Testing //core/cmd/burrow:ssh_shell_test; 1s local ... (3 actions, 2 running)
+[2,345 / 2,347] 46 / 48 tests; Testing //core/cmd/burrow:ssh_shell_test; 3s local ... (2 actions running)
+[2,345 / 2,347] 46 / 48 tests; Testing //core/cmd/burrow:ssh_shell_test; 13s local ... (2 actions running)
+[2,345 / 2,347] 46 / 48 tests; Testing //core/cmd/burrow:ssh_shell_test; 15s local ... (2 actions running)
+[2,346 / 2,347] 47 / 48 tests; Testing //core/cmd/burrow:ssh_shell_test; 16s local
+[2,346 / 2,347] 47 / 48 tests; Testing //core/cmd/burrow:ssh_shell_test; 26s local
+[2,346 / 2,347] 47 / 48 tests; Testing //core/cmd/burrow:ssh_shell_test; 56s local
+[2,346 / 2,347] 47 / 48 tests; Testing //core/cmd/burrow:ssh_shell_test; 116s local
+[2,346 / 2,347] 47 / 48 tests; Testing //core/cmd/burrow:ssh_shell_test; 120s local
+INFO: Found 48 test targets...
+INFO: Elapsed time: 606.302s, Critical Path: 589.45s
+INFO: 249 processes: 820 action cache hit, 55 internal, 179 linux-sandbox, 56 local.
+INFO: Build completed successfully, 249 total actions
+INFO:
+//:go_format_behavior_test                                               PASSED in 0.7s
+//:go_format_test                                                        PASSED in 0.2s
+//:python_format_behavior_test                                           PASSED in 1.1s
+//:python_format_test                                                    PASSED in 0.2s
+//:python_lint_test                                                      PASSED in 0.2s
+//:workflow_test                                                         PASSED in 0.1s
+//core/cmd/burrow:activity_test                                          PASSED in 24.5s
+//core/cmd/burrow:agent_test                                             PASSED in 10.1s
+//core/cmd/burrow:capabilities_test                                      PASSED in 2.6s
+//core/cmd/burrow:connection_test                                        PASSED in 3.7s
+//core/cmd/burrow:files_test                                             PASSED in 4.9s
+//core/cmd/burrow:interaction_test                                       PASSED in 58.1s
+//core/cmd/burrow:manager_compatibility_test                             PASSED in 1.6s
+//core/cmd/burrow:profile_test                                           PASSED in 8.7s
+//core/cmd/burrow:ssh_automation_test                                    PASSED in 46.9s
+//core/cmd/burrow:ssh_chains_test                                        PASSED in 56.3s
+//core/cmd/burrow:ssh_files_test                                         PASSED in 69.1s
+//core/cmd/burrow:ssh_follow_test                                        PASSED in 53.8s
+//core/cmd/burrow:ssh_lifecycle_test                                     PASSED in 115.2s
+//core/cmd/burrow:ssh_reports_test                                       PASSED in 19.9s
+//core/cmd/burrow:ssh_reverse_test                                       PASSED in 33.7s
+//core/cmd/burrow:ssh_runs_test                                          PASSED in 158.2s
+//core/cmd/burrow:ssh_shell_test                                         PASSED in 120.1s
+//core/cmd/burrow:workspace_test                                         PASSED in 2.2s
+//core/connection:command_fuzz_test                                      PASSED in 10.5s
+//core/connection:forward_control_test                                   PASSED in 0.2s
+//core/launch:audit_test                                                 PASSED in 0.2s
+//core/launch:digest_test                                                PASSED in 0.2s
+//core/launch:online_test                                                PASSED in 0.4s
+//core/prototype_agent:check                                             PASSED in 0.5s
+//core/prototype_sdk:protocol_test                                       PASSED in 0.3s
+//core/prototype_sdk:reuse_test                                          PASSED in 4.9s
+//core/prototype_sessions:check                                          PASSED in 22.0s
+//core/prototype_terminal:check                                          PASSED in 0.1s
+//core/prototype_terminal:cli_test                                       PASSED in 0.2s
+//core/prototype_terminal:terminal_test                                  PASSED in 0.4s
+//core/prototype_terminal:vt_cli_test                                    PASSED in 1.1s
+//core/prototype_terminal:vt_test                                        PASSED in 0.1s
+//core/prototype_transport:direct_script_test                            PASSED in 0.1s
+//core/terminal:host_race_test                                           PASSED in 5.5s
+//core/terminal:host_test                                                PASSED in 0.5s
+//core/tools/release:release_test                                        PASSED in 1.6s
+//core/tools/release:wheel_test                                          PASSED in 13.3s
+//docs/tools/docs:report_test                                            PASSED in 10.3s
+//docs/tools/docs:site_test                                              PASSED in 0.4s
+//docs/tools/docs:stage_site_test                                        PASSED in 0.7s
+//core/cmd/burrow:setup_test                                             PASSED in 41.1s
+  Stats over 3 runs: max = 41.1s, min = 40.3s, avg = 40.6s, dev = 0.4s
+//core/cmd/burrow:terminal_test                                          PASSED in 38.6s
+  Stats over 3 runs: max = 38.6s, min = 37.5s, avg = 38.1s, dev = 0.4s
+
+Executed 48 out of 48 tests: 48 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+INFO: Build Event Protocol files produced successfully.
+
+→ ✅ Passed test task in 10m 6s · Tests passed
+    🔧 Setup     0ms  Prepare the task environment
+    🧪 Test   10m 6s  Run bazel tests
+→ 🎬 Running run task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Building //docs/tools/docs:report
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: target //docs/tools/docs:report (0 packages loaded, 0 targets configured)
+Analyzing: target //docs/tools/docs:report (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //docs/tools/docs:report (0 packages loaded, 0 targets configured, 1 aspect application).
+INFO: Found 1 target...
+INFO: Elapsed time: 0.403s, Critical Path: 0.00s
+INFO: 1 process: 5 action cache hit, 1 internal.
+INFO: Build completed successfully, 1 total action
+INFO:
+INFO: Build Event Protocol files produced successfully.
+
+→ 🚀 Run · Running //docs/tools/docs:report
+
+→ ✅ Passed run task in 766ms · Ran //docs/tools/docs:report
+    🔧 Setup    0ms  Prepare the task environment
+    🔨 Build  541ms  Build run target
+    🚀 Run    224ms  Run target
+
+→ ✅ Passed burrow-check task in 10m 9s

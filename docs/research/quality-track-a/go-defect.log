@@ -1,0 +1,35 @@
+→ 🎬 Running burrow task
+→ 🎬 Running build task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Spawning bazel build
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: target //core/cmd/burrow:burrow (0 packages loaded, 0 targets configured)
+Analyzing: target //core/cmd/burrow:burrow (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //core/cmd/burrow:burrow (1 packages loaded, 7 targets configured).
+ERROR: /home/bochner/dev/burrow/core/cmd/burrow/BUILD.bazel:145:10: Validating nogo output for //core/cmd/burrow:burrow failed: (Exit 1): builder failed: error executing ValidateNogo command (from go_binary rule target //core/cmd/burrow:burrow) bazel-out/k8-opt-exec/bin/external/rules_go++go_sdk+burrow_go_sdk/builder_reset/builder nogovalidation bazel-out/k8-fastbuild/bin/core/cmd/burrow/burrow.nogo ... (remaining 1 argument skipped)
+
+Use --sandbox_debug to see verbose messages from the sandbox and retain the sandbox build root for debugging
+
+nogo: errors found by nogo during build-time code analysis:
+core/cmd/burrow/collected_notes.go:151:21: fmt.Fprintf format %d has arg "track-a-format-probe" of wrong type string (printf)
+
+Target //core/cmd/burrow:burrow failed to build
+Use --verbose_failures to see the command lines of failed build steps.
+INFO: Elapsed time: 0.553s, Critical Path: 0.17s
+INFO: 5 processes: 3 action cache hit, 4 internal, 1 linux-sandbox.
+ERROR: Build did NOT complete successfully
+FAILED:
+INFO: Build Event Protocol files produced successfully.
+
+→ ❌ Failed build task (exit code 1) in 789ms · Failed to build
+    🔧 Setup    0ms  Prepare the task environment
+    🔨 Build  789ms  Build bazel targets (failed)
+
+→ ❌ Failed burrow task (exit code 1) in 942ms

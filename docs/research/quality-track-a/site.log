@@ -1,0 +1,35 @@
+→ 🎬 Running burrow-site task
+→ 🎬 Running test task
+
+→ 🔧 Setup · Running setup
+
+→ 🧪 Test · Spawning bazel test
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: 2 targets (0 packages loaded, 0 targets configured)
+Analyzing: 2 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 2 targets (201 packages loaded, 7763 targets configured).
+[1,291 / 1,299] 1 / 2 tests; GoCompilePkg core/cmd/burrow/burrow.a [for tool]; 0s linux-sandbox ... (2 actions, 1 running)
+[1,296 / 1,299] 1 / 2 tests; Executing genrule //docs/site:report_default; 0s linux-sandbox
+[1,297 / 1,299] 1 / 2 tests; JsRunBinary docs/site/dist; 0s linux-sandbox
+[1,299 / 1,300] 1 / 2 tests; Testing //docs/tools/docs:site_test; 1s linux-sandbox
+INFO: Found 2 test targets...
+INFO: Elapsed time: 6.147s, Critical Path: 5.49s
+INFO: 18 processes: 1282 action cache hit, 5 internal, 14 linux-sandbox.
+INFO: Build completed successfully, 18 total actions
+INFO:
+//docs/tools/docs:stage_site_test                               (cached) PASSED in 0.7s
+//docs/tools/docs:site_test                                              PASSED in 0.3s
+
+Executed 1 out of 2 tests: 2 tests pass.
+INFO: Build Event Protocol files produced successfully.
+
+→ ✅ Passed test task in 6.3s · Tests passed
+    🔧 Setup   0ms  Prepare the task environment
+    🧪 Test   6.3s  Run bazel tests
+
+→ ✅ Passed burrow-site task in 6.5s

@@ -36,3 +36,15 @@ with tempfile.TemporaryDirectory() as directory:
     subprocess.run(command, cwd=workspace, check=True)
     checkout.write_text("def broken(\n")
     assert subprocess.run(command, cwd=workspace, capture_output=True).returncode != 0
+
+    # The lint policy keeps executable fixtures, asserts, and deliberately failed
+    # subprocesses, while rejecting defects that can silently weaken a check.
+    fixture = '#!/usr/bin/env python3\nimport subprocess\nfixture = "missing_name()"\nassert fixture\nsubprocess.run(["false"])\n'
+    checkout.write_text(fixture)
+    subprocess.run(command + ["--lint"], cwd=workspace, check=True)
+    for defect, rule in [("missing_name()\n", "F821"), ("assert (False, 'failure')\n", "F631"), ("42\n", "B018")]:
+        original = fixture + defect
+        checkout.write_text(original)
+        linted = subprocess.run(command + ["--lint"], cwd=workspace, capture_output=True, text=True)
+        assert linted.returncode == 1 and rule in linted.stdout, linted
+        assert checkout.read_text() == original and checkout.stat().st_mode & 0o777 == 0o755

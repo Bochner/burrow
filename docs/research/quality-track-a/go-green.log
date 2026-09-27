@@ -1,0 +1,29 @@
+→ 🎬 Running burrow task
+→ 🎬 Running build task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Spawning bazel build
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: target //core/cmd/burrow:burrow (0 packages loaded, 0 targets configured)
+Analyzing: target //core/cmd/burrow:burrow (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //core/cmd/burrow:burrow (1 packages loaded, 138 targets configured).
+INFO: Found 1 target...
+Target //core/cmd/burrow:burrow up-to-date:
+  bazel-bin/core/cmd/burrow/burrow_/burrow
+INFO: Elapsed time: 0.445s, Critical Path: 0.00s
+INFO: 2 processes: 255 action cache hit, 2 internal.
+INFO: Build completed successfully, 2 total actions
+INFO:
+INFO: Build Event Protocol files produced successfully.
+
+→ ✅ Passed build task in 538ms · Successful build
+    🔧 Setup    0ms  Prepare the task environment
+    🔨 Build  537ms  Build bazel targets
+
+→ ✅ Passed burrow task in 702ms

@@ -1,4 +1,13 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("@rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
+
+# Reuse rules_go 0.61.1's pinned x/tools printf analyzer (v0.34.0).
+# Diagnostic formatting matters for audit/errors; no upstream-wide lint policy.
+nogo(
+    name = "go_analysis",
+    deps = [analyzer for analyzer in TOOLS_NOGO if "/printf:" in analyzer],
+    visibility = ["//visibility:public"],
+)
 
 _WORKFLOWS = glob([".github/workflows/*.yml", ".github/workflows/*.yaml"], allow_empty = True)
 
@@ -66,6 +75,16 @@ py_test(
     srcs = [".aspect/python_format_test.py", ".aspect/python_format.py"],
     args = ["$(location %s)" % path for path in [_RUFF, _PYTHON_CONFIG]],
     data = [_RUFF, _PYTHON_CONFIG],
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "python_lint_test",
+    size = "small",
+    main = ".aspect/python_format.py",
+    srcs = [".aspect/python_format.py"],
+    args = _PYTHON_ARGS + ["--lint"],
+    data = [_RUFF, _PYTHON_CONFIG] + _PYTHON_SOURCES,
     legacy_create_init = 0,
 )
 

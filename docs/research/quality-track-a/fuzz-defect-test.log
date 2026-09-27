@@ -1,0 +1,15 @@
+exec ${PAGER:-/usr/bin/less} "$0" || exit 1
+Executing tests from //core/connection:command_fuzz_test
+-----------------------------------------------------------------------------
+fuzz: elapsed: 0s, gathering baseline coverage: 0/10 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 10/10 completed, now fuzzing with 1 workers
+fuzz: minimizing 31-byte failing input file
+fuzz: elapsed: 0s, minimizing
+--- FAIL: FuzzCommandLine (0.03s)
+    --- FAIL: FuzzCommandLine (0.00s)
+        commands_fuzz_test.go:42: intentional retention probe: "0"
+
+    Failing input written to testdata/fuzz/FuzzCommandLine/771e938e4458e983
+    To re-run:
+    go test -run=FuzzCommandLine/771e938e4458e983
+FAIL

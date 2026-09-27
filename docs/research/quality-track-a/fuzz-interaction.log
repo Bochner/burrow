@@ -1,0 +1,35 @@
+→ 🎬 Running test task
+
+→ 🔧 Setup · Running setup
+
+→ 🧪 Test · Spawning bazel test
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: 2 targets (1 packages loaded, 0 targets configured)
+Analyzing: 2 targets (1 packages loaded, 0 targets configured)
+
+INFO: Analyzed 2 targets (75 packages loaded, 2321 targets configured).
+[252 / 265] GoCompilePkg core/connection/command_fuzz_test.internal.a; 1s linux-sandbox ... (2 actions, 1 running)
+[263 / 266] Testing //core/cmd/burrow:interaction_test; 0s linux-sandbox ... (2 actions, 1 running)
+[265 / 267] Testing //core/cmd/burrow:interaction_test; 1s linux-sandbox ... (2 actions running)
+[265 / 267] 1 / 2 tests; Testing //core/cmd/burrow:interaction_test; 10s linux-sandbox ... (2 actions running)
+[266 / 267] 1 / 2 tests; Testing //core/cmd/burrow:interaction_test; 11s linux-sandbox
+[266 / 267] 1 / 2 tests; Testing //core/cmd/burrow:interaction_test; 21s linux-sandbox
+[266 / 267] 1 / 2 tests; Testing //core/cmd/burrow:interaction_test; 51s linux-sandbox
+INFO: Found 2 test targets...
+INFO: Elapsed time: 55.150s, Critical Path: 54.74s
+INFO: 26 processes: 241 action cache hit, 7 internal, 19 linux-sandbox.
+INFO: Build completed successfully, 26 total actions
+INFO:
+//core/cmd/burrow:interaction_test                                       PASSED in 52.6s
+//core/connection:command_fuzz_test                                      PASSED in 10.4s
+
+Executed 2 out of 2 tests: 2 tests pass.
+INFO: Build Event Protocol files produced successfully.
+
+→ ✅ Passed test task in 55.3s · Tests passed
+    🔧 Setup    0ms  Prepare the task environment
+    🧪 Test   55.3s  Run bazel tests
