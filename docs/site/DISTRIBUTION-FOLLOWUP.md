@@ -2,7 +2,8 @@
 
 Identified by #92 on 2026-09-23. The owner authorized merge, Pages and a new
 tagged development release on 2026-09-25. v0.2.0 uses the existing package target;
-repository visibility stays unchanged and #65's owner walkthrough is deferred.
+repository visibility stays unchanged. The owner waived the manual walkthrough
+and closed #65 on 2026-09-26 using the verified release evidence.
 
 The v0.1.0 GitHub release targets
 `0515137b76b86e54bdccd40eada479bca5243eeb` and its `assets` list is empty.
@@ -13,7 +14,7 @@ Deliver one Linux amd64 archive from an owner-selected release commit:
 
 - Build the existing `//core/cmd/burrow:package` target through Aspect and pass
   the required release gates for that exact commit, retaining the #86 exception
-  explicitly and the separate #65 owner acceptance requirement.
+  explicitly. #65 records the owner's acceptance of v0.2.0 and walkthrough waiver.
 - Give the archive a versioned name; provide SHA256, source commit, platform,
   bundled contents and pinned Hovel provenance with the release.
 - Verify extraction into a fresh operator-owned directory, packaged `--help`,

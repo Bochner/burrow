@@ -5,9 +5,9 @@ and authorized penetration-testing engagements. It fits Hovel's extension and
 development conventions as Hovel evolves. MVP 1 (setup, profiles and
 connections), MVP 2 (shells and forwarding), and MVP 3 (file workflows)
 are merged. MVP 4 (scripts, reports and chains) and MVP 5 (shared sessions,
-headless workflows and verification reports) are implemented. On 2026-09-25,
-the owner authorized the MVP 5 merge, Pages and tagged development release
-after required CI passes, while deferring #65's shared-workspace walkthrough.
+headless workflows and verification reports) shipped in v0.2.0. On 2026-09-26,
+the owner waived #65's manual shared-workspace walkthrough and accepted the
+delivered MVP using its verified release evidence; #65 is closed.
 The owner approved releasing MVP 4 with Hovel compatibility
 issue [#86](https://github.com/Bochner/burrow/issues/86) as a known limitation:
 three upstream diagnostics are advisory, while all production acceptance,

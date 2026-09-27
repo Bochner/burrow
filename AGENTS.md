@@ -64,7 +64,7 @@ When editing the Pages book, components, assets, or deployment workflow, read
 - `aspect help`: discover the checked-in workflows.
 - `aspect burrow-check`: metadata, documentation, SDK, daemon reuse and production SSH gate; requires Docker and OpenSSH client tools.
 - `aspect burrow-check ci`: builds production packages and proofs and runs portable checks without Docker.
-- `aspect burrow-check preflight`: the required GitHub release gate; runs routine tests uncached, including nine SSH partitions, and repeats the setup/terminal race checks three times without failed-test retries. The three `hovel-followup` targets are a scoped #86 release exception, run visibly in a separate advisory workflow.
+- `aspect burrow-check preflight`: the required GitHub release gate; runs routine tests uncached, including nine SSH partitions, and repeats the setup/terminal race checks three times without failed-test retries. The three `hovel-followup` targets are a scoped #86 release exception, available through the manually dispatched Hovel compatibility workflow.
 - `aspect burrow ssh-check`: production connection acceptance against a declared, digest-pinned disposable OpenSSH Docker server.
 - `aspect burrow-check preflight hovel`: run the three advisory #86 diagnostics. The default full gate still includes them; restore them to the required gate after an official runtime fix is pinned and verified.
 - `aspect burrow-site check`: generated book, links/assets, and search checks.
@@ -77,9 +77,10 @@ pinned toolchains; use Python for nontrivial repository tooling as Hovel does.
 Work in the user's current checkout. When creating a branch, switch that
 checkout to it and stay on it until the owner explicitly requests a PR and merge.
 Keep each MVP's work and commits local on its shared milestone branch until
-the entire milestone is done. MVP 1–5 implementation is present; #65's owner
-walkthrough remains deferred. The owner authorized the MVP 5 merge, Pages and
-tagged development release on 2026-09-25 after required CI passes. PR
+the entire milestone is done. MVP 1–5 shipped in v0.2.0; the owner waived the
+manual walkthrough and closed #65 on 2026-09-26 using the verified release
+evidence. The earlier merge, Pages and tagged release were authorized on
+2026-09-25 after required CI passes. PR
 authorization alone does not authorize merging.
 Do not push, create a PR, or merge until the owner explicitly requests it;
 completion of a ticket or milestone does not authorize any of these actions.

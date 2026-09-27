@@ -1,9 +1,7 @@
 name: Hovel compatibility
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # #86: opt-in diagnostics until an official fixed runtime is verified.
   workflow_dispatch:
 
 permissions:
@@ -11,7 +9,7 @@ permissions:
 
 concurrency:
   group: hovel-compatibility-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   hovel:

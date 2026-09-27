@@ -148,8 +148,10 @@ preflight gates allow at most two local test processes; preflight repeats
 setup and terminal checks three times, while the SIGTERM regression already
 exercises 40 cycles inside its unit check. Guided field transitions repeat three
 times inside lifecycle acceptance; each SSH partition runs once.
-A separate **Hovel compatibility** workflow runs the three `hovel-followup`
+A manually dispatched **Hovel compatibility** workflow runs the three `hovel-followup`
 targets and reports real failures without blocking the required release gate.
+Use Actions → Hovel compatibility → Run workflow for these opt-in diagnostics;
+pushes and PRs run the required gate, and unrun diagnostics show as missing in Reports.
 This is a scoped exception for [#86](https://github.com/Bochner/burrow/issues/86);
 restore those checks to the required gate after an official Hovel fix is pinned
 and verified. `aspect burrow-check` remains the strict full gate, including
