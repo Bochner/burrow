@@ -10,7 +10,8 @@ manifest remain embedded in the existing Go executable.
 
 The release workflow retains Hovel's pinned PyPA action, `pypi` environment
 and job-local OIDC permission. Burrow's owner-approved promotion path builds and
-smoke-tests archive/wheel files on verified main CI, then manual Release reuses
-that exact bundle. GitHub publication is independent of optional PyPI; rehearsal
-is the default. Tag/VERSION/main checks, successful source-run verification and
+smoke-tests archive/wheel files on verified main CI, then Release reuses that exact bundle. A version increase on main automatically
+creates the matching tag and GitHub release after CI succeeds; root CHANGELOG.md
+supplies notes. GitHub publication is independent of optional manual PyPI publishing; manual
+dispatch defaults to rehearsal. Tag/VERSION/main checks, successful source-run verification and
 artifact checksums guard publication. No legacy LazySSH API token is copied.

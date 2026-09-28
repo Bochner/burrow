@@ -4,12 +4,12 @@
 <p>Burrow supports Linux amd64. It installs a verified Hovel runtime on first workspace launch and manages that local daemon. You do not need to install Hovel separately or run it on the SSH target.</p>
 <nav aria-label="On this page"><p><strong>On this page:</strong> <a href="#distribution">Available distribution</a> · <a href="#requirements">Requirements</a> · <a href="#build">Build and install</a> · <a href="#first-launch">Open your first workspace</a> · <a href="#offline">Offline and managed Hovel setup</a> · <a href="#upgrade">Upgrade deliberately</a></p></nav>
 <h2 id="distribution">Available distribution</h2>
-<p>The <a href="https://github.com/Bochner/burrow/releases/tag/v0.2.1">v0.2.1 release</a> provides <a href="https://github.com/Bochner/burrow/releases/download/v0.2.1/burrow-v0.2.1-linux-amd64.tar.gz">burrow-v0.2.1-linux-amd64.tar.gz</a>, a <a href="https://github.com/Bochner/burrow/releases/download/v0.2.1/burrow_ssh-0.2.1-py3-none-manylinux_2_28_x86_64.whl">pipx wheel</a> and <a href="https://github.com/Bochner/burrow/releases/download/v0.2.1/SHA256SUMS">SHA256SUMS</a>. Download the public archive and checksums, then verify before extracting:</p>
+<p>The <a href="https://github.com/Bochner/burrow/releases/tag/v0.2.2">v0.2.2 release</a> provides <a href="https://github.com/Bochner/burrow/releases/download/v0.2.2/burrow-v0.2.2-linux-amd64.tar.gz">burrow-v0.2.2-linux-amd64.tar.gz</a>, a <a href="https://github.com/Bochner/burrow/releases/download/v0.2.2/burrow_ssh-0.2.2-py3-none-manylinux_2_28_x86_64.whl">pipx wheel</a> and <a href="https://github.com/Bochner/burrow/releases/download/v0.2.2/SHA256SUMS">SHA256SUMS</a>. Download the public archive and checksums, then verify before extracting:</p>
 <pre data-lang="Local shell"><code>sha256sum --check --ignore-missing SHA256SUMS
-mkdir -m 700 "$HOME/burrow-v0.2.1"
-tar -xzf burrow-v0.2.1-linux-amd64.tar.gz -C "$HOME/burrow-v0.2.1"
-"$HOME/burrow-v0.2.1/burrow" --help
-export PATH="$HOME/burrow-v0.2.1:$PATH"</code></pre>
+mkdir -m 700 "$HOME/burrow-v0.2.2"
+tar -xzf burrow-v0.2.2-linux-amd64.tar.gz -C "$HOME/burrow-v0.2.2"
+"$HOME/burrow-v0.2.2/burrow" --help
+export PATH="$HOME/burrow-v0.2.2:$PATH"</code></pre>
 <p>Use a fresh operator-owned directory. Release notes identify the exact source commit and archive digest. The archive contains <code>burrow</code>, <code>hovel-module.yaml</code>, <code>burrow-agent.zip</code> and Hovel's license; it downloads the separately pinned Hovel runtime on first launch. There is no automatic updater.</p>
 <p>The older v0.1.0 release has source only and lacks <code>capabilities</code>, <code>workspace</code> subcommands, <code>follow</code> and <code>agent install</code>. The public module identity <code>burrow@0.1.0</code> is not a feature-version check. See <a href="user-guide.html#versions">release scope and acceptance status</a>.</p>
 <h2 id="requirements">Requirements</h2>
@@ -23,7 +23,7 @@ export PATH="$HOME/burrow-v0.2.1:$PATH"</code></pre>
 <p>The checkout pins Aspect <code>2026.33.3</code> in <code>.aspect/version.axl</code> and Bazel <code>9.1.1</code> in <code>.bazelversion</code>. Run all build and check commands through Aspect; Go, Python, Node and site dependencies come from the declared toolchains.</p>
 <h2 id="build">Build and install</h2>
 <p>For the released baseline, clone the public release tag:</p>
-<pre data-lang="Local shell"><code>git clone --branch v0.2.1 https://github.com/Bochner/burrow.git
+<pre data-lang="Local shell"><code>git clone --branch v0.2.2 https://github.com/Bochner/burrow.git
 cd burrow
 aspect burrow package</code></pre>
 <p>For a current-source build, run <code>aspect burrow package</code> in that checkout instead. Record <code>git rev-parse HEAD</code> and any local changes with your build. The declared output is <code>bazel-bin/core/cmd/burrow/package.tgz</code>. Extract it into a new operator-owned directory:</p>
@@ -35,7 +35,7 @@ export PATH="$HOME/burrow-install:$PATH"</code></pre>
 <h2 id="first-launch">Open your first workspace</h2>
 <details><summary>Install the release wheel with pipx</summary>
 <p>Download the wheel and <code>SHA256SUMS</code> from the GitHub release, verify them as above, then install the local file. The wheel has not been published to PyPI. You can also build it from the release checkout with <code>aspect burrow-release build</code>; that output lands under <code>dist/</code>.</p>
-<pre data-lang="Local shell"><code>pipx install ./burrow_ssh-0.2.1-py3-none-manylinux_2_28_x86_64.whl
+<pre data-lang="Local shell"><code>pipx install ./burrow_ssh-0.2.2-py3-none-manylinux_2_28_x86_64.whl
 burrow --help</code></pre>
 <p>This requires pipx and Python 3.10 or later, plus the Linux/OpenSSH requirements above. The package contains the Go application; Python only launches it. Burrow still installs and verifies its own pinned Hovel. The distribution is <code>burrow-ssh</code>; <code>pipx install burrow</code> refers to an unrelated project. For a newer local wheel use <code>pipx install --force /absolute/new-wheel.whl</code>. Once public releases exist, use <code>pipx upgrade burrow-ssh</code>. Uninstall with <code>pipx uninstall burrow-ssh</code>; workspace state, installed agent skills, retained processes and the Hovel cache remain. Review and close live resources deliberately before removing the frontend. See <a href="releasing.html">release preparation</a>.</p>
 </details>

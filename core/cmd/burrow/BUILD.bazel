@@ -185,6 +185,7 @@ py_test(
 
 go_test(
     name = "interaction_test",
+    tags = ["production-coverage"],
     srcs = ["agent.go", "activity.go", "capabilities.go", "workspace.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "shared_shells.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go", "frame_test.go", "presentation_test.go", "auth_signal_test.go", "reports_test.go"],
     deps = ["@com_github_charmbracelet_x_vt//:vt",
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",

@@ -19,7 +19,7 @@ Implementation stays local on the current branch until the owner requests the
 PR. No repository visibility, protection, publishing environment or release is
 changed. The owner confirmed Burrow is public; current documentation is corrected.
 
-## Owner direction and final implementation
+## Initial owner direction and implementation
 
 The follow-up instruction “we should copy hovel on both accounts” supersedes the
 initial proposal below to extend Burrow's strict report provenance contract.
@@ -64,6 +64,50 @@ coverage has not been demonstrated equivalent.
 
 The remaining acceptance is the owner-requested PR/merge and hosted rehearsal.
 Compare its runner time with the baseline; no new hosted saving is claimed yet.
+
+## Follow-up: automatic releases and test execution (2026-09-28)
+
+After merging PR #114, the owner requested automatic release tags and removal
+of avoidable test repetition on `ci/automatic-releases-and-test-efficiency`.
+They selected releases when `VERSION` changes, with required version increments
+and matching changelog entries recorded in `AGENTS.md`. This supersedes the
+initial recommendation above to retain three setup/terminal repetitions and
+separate normal executions of the coverage targets.
+
+Successful main Repository CI now triggers Release. A version increase creates
+`vVERSION` at the tested commit and publishes that run's exact bundle with its
+`CHANGELOG.md` notes. An unchanged version skips; downgrades, missing notes,
+conflicting tags, failed CI and wrong source identity fail. Reruns preserve
+existing tags/assets. PyPI remains a manual choice. Version 0.2.2 is prepared
+locally; this branch has not been pushed or published.
+
+The six `production-coverage` targets execute only under coverage in a full
+gate; the report uses their passing assertions for behavior/parity too. Setup
+and terminal suites execute once. Focused race checks, internal regression
+loops and every SSH/Hovel partition remain. Explicit diagnostic repetition is
+still available. Prototype binaries build when selected tests depend on them;
+the extra blanket prototype packaging pass is removed.
+
+The full uncached local preflight passed in 9m 25s: 47 ordinary targets followed
+by six instrumented targets. The prior local gate recorded 57 ordinary test
+executions plus six coverage executions for the same 53 distinct targets.
+The new gate therefore removes ten duplicate executions without removing a
+target. Comparing the old and new label sets found no missing or added targets
+and no duplicate labels. Site checks and the assembled release report also
+passed with all 53 results and measured coverage. This local elapsed time is
+not a hosted-runner performance comparison.
+
+The report behavior test keeps its cases and one external CLI smoke check,
+calling the real CLI entry point in-process for subsequent cases. On the same
+local machine, its uncached execution fell from 14.3s to 0.8s. New checks cover
+single-run evidence, coverage supplying parity, and duplicate-target refusal.
+Release tests also exercise version/changelog/tag guards and the triggering
+CI run's identity. CI syntax is checked by the existing pinned actionlint gate.
+
+Each PR's required version bump selects full application validation; deterministic
+caching still applies. Main can reuse the identical passing PR tree, and release
+promotion does not rerun the application gate. Hosted PR, merge and automatic
+publication still need the next owner-authorized end-to-end run.
 
 ## Burrow: measured current state
 

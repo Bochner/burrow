@@ -8,6 +8,7 @@ go_library(
 )
 go_test(
     name = "host_test",
+    tags = ["production-coverage"],
     srcs = ["drain_test.go", "host_test.go", "shared_test.go"],
     embed = [":terminal"],
     deps = ["@com_github_charmbracelet_ultraviolet//:ultraviolet", "@org_golang_x_sys//unix"],

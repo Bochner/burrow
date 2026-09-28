@@ -1,6 +1,10 @@
 name: Release
 
 on:
+  workflow_run:
+    workflows: ["Repository"]
+    branches: [main]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -21,12 +25,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ inputs.tag || github.sha }}
+  group: release-${{ github.event.workflow_run.head_sha || inputs.tag || github.sha }}
   cancel-in-progress: false
 
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -34,10 +43,13 @@ jobs:
       actions: read
     outputs:
       commit: ${{ steps.source.outputs.commit }}
+      tag: ${{ steps.source.outputs.tag }}
+      ready: ${{ steps.source.outputs.ready }}
+      prerelease: ${{ steps.source.outputs.prerelease }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ inputs.tag || github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha || inputs.tag || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9
@@ -49,13 +61,23 @@ jobs:
         id: source
         env:
           RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_PUBLISH: ${{ inputs.destination != 'rehearsal' }}
-        run: aspect burrow-release validate -- --tag "$RELEASE_TAG" --publish "$RELEASE_PUBLISH"
+          RELEASE_PUBLISH: ${{ github.event_name == 'workflow_run' || inputs.destination != 'rehearsal' }}
+          AUTOMATIC: ${{ github.event_name == 'workflow_run' }}
+        run: |
+          options=()
+          if [ "$AUTOMATIC" = true ]; then options+=(--automatic); fi
+          aspect burrow-release validate -- --tag "$RELEASE_TAG" --publish "$RELEASE_PUBLISH" "${options[@]}"
       - name: Fetch the exact tested main bundle
+        if: steps.source.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: aspect burrow-release fetch
+          SOURCE_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          options=()
+          if [ -n "$SOURCE_RUN" ]; then options+=(--run-id "$SOURCE_RUN"); fi
+          aspect burrow-release fetch -- "${options[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.source.outputs.ready == 'true'
         with:
           name: release-bundle
           path: dist/
@@ -63,7 +85,7 @@ jobs:
           retention-days: 30
 
   github-release:
-    if: inputs.destination != 'rehearsal'
+    if: needs.prepare.outputs.ready == 'true' && (github.event_name == 'workflow_run' || inputs.destination != 'rehearsal')
     needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -73,6 +95,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.prepare.outputs.commit }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9
         with:
@@ -82,11 +105,23 @@ jobs:
           name: release-bundle
           path: dist
       - run: aspect burrow-release verify-bundle
+      - name: Recheck the tag and prepare changelog notes
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          AUTOMATIC: ${{ github.event_name == 'workflow_run' }}
+        run: |
+          options=()
+          if [ "$AUTOMATIC" = true ]; then options+=(--automatic); fi
+          aspect burrow-release validate -- --tag "$RELEASE_TAG" --publish true "${options[@]}"
+          aspect burrow-release notes -- --output "$RUNNER_TEMP/burrow-release-notes.md"
       - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
-          tag_name: ${{ inputs.tag }}
-          prerelease: ${{ inputs.prerelease }}
-          generate_release_notes: true
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.commit }}
+          prerelease: ${{ inputs.prerelease == true || needs.prepare.outputs.prerelease == 'true' }}
+          body_path: ${{ runner.temp }}/burrow-release-notes.md
+          overwrite_files: false
+          make_latest: legacy
           fail_on_unmatched_files: true
           files: |
             dist/*.tar.gz
@@ -95,7 +130,7 @@ jobs:
             dist/bundle.json
 
   pypi:
-    if: inputs.destination == 'github-and-pypi'
+    if: needs.prepare.outputs.ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.destination == 'github-and-pypi'
     needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 15

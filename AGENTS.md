@@ -59,14 +59,26 @@ research in `docs/research/`. Create module/SDK areas only for real capabilities
 When editing the Pages book, components, assets, or deployment workflow, read
 `docs/agents/docs.md`. Preserve upstream attribution in `docs/site/UPSTREAM.md`.
 
+## Versioning and release notes
+
+Before handing off each PR, increment root `VERSION` above `main` and add a
+matching entry in root `CHANGELOG.md`. Bump once per PR, then keep that entry
+current as the scope changes. Use patch for fixes/tooling, minor for compatible
+features, and major for breaking changes. Recheck the version after updating
+from main. Describe user-visible changes and verification; preserve older entries.
+Successful main CI automatically creates `vVERSION` and publishes its tested
+GitHub bundle using that changelog entry. Existing tags are never moved. PyPI
+publication remains an explicit manual workflow choice. Follow the release
+procedure in `docs/site/src/content/spec/releasing.html`.
+
 ## Common tasks and completion
 
 - `aspect help`: discover the checked-in workflows.
 - `aspect burrow-check`: metadata, documentation, SDK, daemon reuse and production SSH gate; requires Docker and OpenSSH client tools.
-- `aspect burrow-check ci`: builds production packages and proofs and runs portable checks without Docker.
-- `aspect burrow-check verify [suite]`: routine full validation with native deterministic test caching; external/process/race checks remain fresh and setup/terminal checks repeat three times.
+- `aspect burrow-check ci`: builds the production package and runs portable checks without Docker.
+- `aspect burrow-check verify [suite]`: routine full validation with native deterministic test caching; external/process/race checks remain fresh; each target executes once and the six coverage targets supply their behavior results.
 - `aspect burrow-release bundle`: build and smoke-test the exact archive and wheel, then record checksums for CI promotion.
-- `aspect burrow-check preflight`: local rehearsal of the GitHub release gate; runs all tests uncached, including nine SSH partitions and the three Hovel compatibility checks, and repeats setup/terminal checks three times without failed-test retries.
+- `aspect burrow-check preflight`: local rehearsal of the GitHub release gate; runs all tests uncached, including nine SSH partitions, the three Hovel compatibility checks and measured coverage, with each target run once and no failed-test retries.
 - `aspect burrow ssh-check`: production connection acceptance against a declared, digest-pinned disposable OpenSSH Docker server.
 - `aspect burrow-check preflight hovel`: run the required WAL-lock regression and two retained-manager compatibility proofs. Hovel v0.4.4 replaces the temporary #86 exception.
 - `aspect burrow-site check`: generated book, links/assets, and search checks.

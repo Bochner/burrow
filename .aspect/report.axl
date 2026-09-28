@@ -5,7 +5,7 @@ def _impl(ctx: TaskContext) -> int:
     if mode == "coverage":
         commands = [
             runner + ["begin", "--suite", "coverage"],
-            ["test", "--coverage", "--coverage-report=" + root + "/.report-input/coverage/coverage.lcov", "--bazel-flag=--build_event_json_file=" + root + "/.report-input/coverage/bep.json", "--bazel-flag=--instrumentation_filter=^//core/(cmd/burrow|connection|launch|reports|agent|terminal)(:|/)", "--bazel-flag=--instrument_test_targets", "--bazel-flag=--nocache_test_results", "--bazel-flag=--flaky_test_attempts=1", "--bazel-flag=--local_test_jobs=2", "//core/cmd/burrow:interaction_test", "//core/connection:forward_control_test", "//core/launch:digest_test", "//core/launch:online_test", "//core/launch:audit_test", "//core/terminal:host_test"],
+            ["test", "--coverage", "--bazel-flag=--build_tests_only", "--bazel-flag=--runs_per_test=1", "--coverage-report=" + root + "/.report-input/coverage/coverage.lcov", "--bazel-flag=--build_event_json_file=" + root + "/.report-input/coverage/bep.json", "--bazel-flag=--instrumentation_filter=^//core/(cmd/burrow|connection|launch|reports|agent|terminal)(:|/)", "--bazel-flag=--instrument_test_targets", "--bazel-flag=--nocache_test_results", "--bazel-flag=--flaky_test_attempts=1", "--bazel-flag=--local_test_jobs=2", "--bazel-flag=--test_tag_filters=production-coverage", "//..."],
         ]
         for command in commands:
             status = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait().code or 0
