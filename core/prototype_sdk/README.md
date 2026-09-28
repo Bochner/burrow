@@ -1,5 +1,9 @@
 # Disposable terminal placement proof
 
+Current checks use the Hovel pin in `MODULE.bazel`. With v0.4.4 they require
+terminal presentation restoration and retained control after log history fills.
+The original observations below record the earlier runtime.
+
 This branch also contains the [setup and attachment proof](SETUP.md), which
 reuses this fixture against the verified published Hovel binary.
 

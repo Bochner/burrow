@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         return info
 
     def cli(workspace, *args):
-        executable = root / "cache/burrow/hovel/0.4.2/hovel"
+        executable = root / "cache/burrow/hovel/0.4.4/hovel"
         result = subprocess.run(
             [
                 str(executable),
@@ -139,7 +139,7 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
     try:
         a, b = root / "a", root / "b"
         info_a, info_b = status(a), status(b)
-        executable = root / "cache/burrow/hovel/0.4.2/hovel"
+        executable = root / "cache/burrow/hovel/0.4.4/hovel"
         absent = root / "no-start"
         refused = subprocess.run(
             [str(executable), "shell", "--workspace", str(absent)],

@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory(prefix="b87-") as scratch:
                "--key", key, "--ssh-config", config, "--yes")
         first = wait(lambda: (s if (s := burrow("inspect", "shared"))["state"] == "connected" else None))
         command(proof, "install", workspace, env=env)
-        hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+        hovel = root / "cache/burrow/hovel/0.4.4/hovel"
 
         def hv(*args):
             return json.loads(command(hovel, "run", "--workspace", workspace, "--daemon-endpoint", workspace / "hoveld.sock",

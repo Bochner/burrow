@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory(prefix="burrow-wheel-") as temporary:
         run(*pipx_command, "uninstall", "burrow-ssh")
         assert not command.exists()
         assert evidence.read_text() == "preserve workspace across pipx upgrade and uninstall"
-        assert (root / "cache/burrow/hovel/0.4.2/hovel").exists()
+        assert (root / "cache/burrow/hovel/0.4.4/hovel").exists()
         print("PASS deterministic wheel, offline pipx install/upgrade/uninstall, CLI, embedded skills and pinned Hovel")
     finally:
         if daemon:

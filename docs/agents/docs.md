@@ -22,24 +22,16 @@ Run `aspect burrow-site check` after changes, and `aspect burrow-site stage` to
 materialize the artifact. All tools are declared Bazel inputs; update JS locks
 through the Bazel-managed pnpm target via Aspect. No CDN/runtime network assets.
 
-CI runs ten `aspect burrow-check preflight SUITE` jobs: portable, lifecycle,
-files, reverse, shell, chains, reports, automation, follow and runs. Each has a
-15-minute cap. Under the owner-approved #86 exception, follow failures produce
-a warning but do not fail its hosted job or the `repository` aggregate. The
-other nine suites, coverage and report assembly remain required. Follow results
-and logs retain their actual failed/missing status; they earn no passing
-behavior credit. Local preflight and the default full gate still return failures. The manually dispatched Hovel compatibility workflow runs the three #86
-`hovel-followup` targets as advisory diagnostics; failures remain visible but
-do not block Repository or Pages. It does not run automatically on pushes or
-pull requests; unrun advisory checks remain missing in Reports. Restore follow and the three diagnostics to
-the required gate after an official fixed runtime is pinned and verified. The strict default full gate
-still includes them. Each preflight records commit-bound BEP results under
-`.report-input/`; the portable job stages `docs-base`. A required coverage job
-measures production Go lines. The report job combines all ten partitions and
-coverage from the same source/run, attaches available same-commit advisory
-evidence, and uploads `docs-site` only after `aspect burrow-report release` passes.
-Unavailable advisory results remain explicitly missing. Repository requires
-checks, coverage and report assembly to succeed.
+CI runs eleven required `aspect burrow-check preflight SUITE` jobs: portable,
+lifecycle, files, reverse, shell, chains, reports, automation, follow, runs and
+hovel. Each has a 15-minute cap. The Hovel partition runs the WAL-lock regression
+and two retained-manager proofs; v0.4.4 retires the temporary #86 exception.
+Each preflight records commit-bound BEP results under `.report-input/`; the
+portable job stages `docs-base`. A required coverage job measures production Go
+lines. The report job combines all eleven partitions and coverage from the same
+source/run, then uploads `docs-site` only after `aspect burrow-report release`
+passes. Failed or missing checks block publication and earn no behavior credit.
+Repository requires checks, coverage and report assembly to succeed.
 Pages verifies the report commit and the complete site artifact's hashes through
 `aspect burrow-report verify SHA`, then promotes that artifact from successful main CI. Manual dispatch
 finds a successful Repository run for its exact main commit and promotes the
@@ -59,9 +51,8 @@ metrics. Prototype tests never contribute production coverage. For a local
 report, run preflight, coverage, site staging, then `aspect burrow-report render`
 without editing source between steps. Dirty local evidence is inspectable but
 cannot pass publication. `aspect burrow-report release` additionally requires
-usable agent routes and passing required behavior evidence for every inventory capability;
-only the exact SSH follow target has advisory behavior bindings under #86.
-Its failed/missing checks stay visible and never count toward demonstrated parity;
+usable agent routes and passing behavior evidence for every inventory capability;
+failed/missing checks stay visible and never count toward demonstrated parity;
 it requires usable direct routes or explicit supported equivalents for all
 operational capabilities. Presentation-only entries stay visible with their
 own behavior checks. Schema documentation and owner acceptance remain separate.

@@ -28,8 +28,8 @@ npm.npm_translate_lock(
 )
 use_repo(npm, "npm")
 
-# Pinned runtime v0.4.2 (c461ba282a8a); GitHub asset digest.
-# SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.
+# Pinned runtime v0.4.4 (1789ce47554a); GitHub asset digest.
+# SDK source is pinned to the v0.4.4 release commit below.
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 # pipx 1.17.6 (MIT), upstream standalone zipapp and GitHub asset SHA256.
@@ -44,8 +44,8 @@ http_file(
 http_file(
     name = "hovel_linux_wheel",
     downloaded_file_path = "hovel.whl",
-    sha256 = "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933",
-    urls = ["https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl"],
+    sha256 = "87205142bb21af86e68819372467b814949d9f5f86b321003e8aa2c721fb503a",
+    urls = ["https://github.com/vibepwners/hovel/releases/download/v0.4.4/hovel-0.4.4-py3-none-manylinux_2_28_x86_64.whl"],
 )
 
 # Real full-screen SSH acceptance only: Alpine 3.24 x86_64 Vim executable.
@@ -125,8 +125,8 @@ http_archive(
     name = "hovel_sdk",
     build_file = "//core/prototype_sdk:hovel.BUILD.bazel",
     patch_cmds = ["rm sdk/go/hovel/BUILD.bazel"],
-    sha256 = "9080e5060787f4ba5ee6715611e10112af2af316318369b748c9f566c1f3b6e9",
-    strip_prefix = "hovel-a4cbfdf7769a9551695088c11061e3cabc368e07",
+    sha256 = "12fcff5ffc2458a83aadab12f7a69396758f0efb078e25f0cb28d9edeb609b6a",
+    strip_prefix = "hovel-1789ce47554a2ee17c7bd46d391b63946af60d0a",
     type = "tar.gz",
-    urls = ["https://codeload.github.com/vibepwners/hovel/tar.gz/a4cbfdf7769a9551695088c11061e3cabc368e07"],
+    urls = ["https://codeload.github.com/vibepwners/hovel/tar.gz/1789ce47554a2ee17c7bd46d391b63946af60d0a"],
 )

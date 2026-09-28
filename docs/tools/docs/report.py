@@ -14,9 +14,24 @@ import subprocess
 import unicodedata
 from urllib.parse import unquote, urlsplit
 
-SUITES = ("portable", "lifecycle", "files", "reverse", "shell", "chains", "reports", "automation", "follow", "runs")
-# Owner-approved #86 exception; restore after a fixed official runtime is verified.
-ADVISORY_SUITES = ("follow", "hovel")
+SUITES = (
+    "portable",
+    "lifecycle",
+    "files",
+    "reverse",
+    "shell",
+    "chains",
+    "reports",
+    "automation",
+    "follow",
+    "runs",
+    "hovel",
+)
+HOVEL_TARGETS = {
+    "//core/launch:hovel_wal_test",
+    "//core/prototype_manager:check",
+    "//core/prototype_manager:consumer_check",
+}
 PRODUCTION = re.compile(r"^core/(cmd/burrow|connection|launch|reports|agent|terminal)/[^/]+\.go$")
 START, END = "<!-- burrow-report:start -->", "<!-- burrow-report:end -->"
 
@@ -294,38 +309,41 @@ def target_suite(target):
     tags = target.get("tags")
     if not isinstance(tags, list):
         raise ValueError("missing target tags: " + target["label"])
+    if "hovel-followup" in tags:
+        return "hovel"
     matches = [
-        name for name in SUITES if ("acceptance-" + name in tags if name != "portable" else "acceptance" not in tags)
+        name
+        for name in SUITES
+        if name != "hovel" and ("acceptance-" + name in tags if name != "portable" else "acceptance" not in tags)
     ]
     if len(matches) != 1:
         raise ValueError("ambiguous or unclassified target: " + target["label"])
     return matches[0]
 
 
+def required_targets(suite):
+    if suite == "hovel":
+        return HOVEL_TARGETS
+    return {"//core/cmd/burrow:ssh_" + suite + "_test"} if suite != "portable" else set()
+
+
 def report_model(inventory, parity, root=None):
     checks = validate_parity(inventory, parity)
     source = snapshot(root) if root else None
-    suites = {
-        name: {"status": "MISSING", "advisory": name in ADVISORY_SUITES, "targets": []}
-        for name in (*SUITES, "coverage", "hovel")
-    }
+    suites = {name: {"status": "MISSING", "advisory": False, "targets": []} for name in (*SUITES, "coverage")}
     evidence = {}
     target_results = {}
     coverage = {"status": "MISSING", "files": [], "covered": 0, "total": 0}
     if root:
-        for name in (*SUITES, "all", "coverage", "hovel"):
+        for name in (*SUITES, "all", "coverage"):
             directory = suite_directory(root, name)
             path = directory / "suite.json"
             if not path.exists():
                 continue
             data = json.loads(path.read_text())
-            if name == "hovel" and data.get("source") != source:
-                # Optional runs can share a PR head but test another merge tree.
-                # They remain missing, never evidence for this candidate.
-                continue
             if data["schemaVersion"] != 1 or data["suite"] != name or data["source"] != source:
                 raise ValueError("stale or inconsistent suite evidence: " + name)
-            if name != "hovel" and data["environment"]["runID"] != os.environ.get("GITHUB_RUN_ID", ""):
+            if data["environment"]["runID"] != os.environ.get("GITHUB_RUN_ID", ""):
                 raise ValueError("evidence from another CI run: " + name)
             if len({target["label"] for target in data["targets"]}) != len(data["targets"]):
                 raise ValueError("duplicate target in suite: " + name)
@@ -342,8 +360,9 @@ def report_model(inventory, parity, root=None):
             if name in SUITES:
                 # The graph can select additional checks in a partition;
                 # they never replace its mandatory production acceptance target.
-                if any(target_suite(target) != name for target in data["targets"]) or (
-                    name != "portable" and "//core/cmd/burrow:ssh_" + name + "_test" not in data["selectedTargets"]
+                required = required_targets(name)
+                if any(target_suite(target) != name for target in data["targets"]) or not required.issubset(
+                    data["selectedTargets"]
                 ):
                     raise ValueError("wrong targets for partition: " + name)
             for target in data["targets"]:
@@ -361,18 +380,17 @@ def report_model(inventory, parity, root=None):
                         raise ValueError("duplicate target evidence: " + target["label"])
                     target_results[target["label"]] = target
             evidence[name + "/suite.json"] = path.read_bytes()
-            data["advisory"] = name in ADVISORY_SUITES
+            data["advisory"] = False
             if name == "all":
                 # A local full preflight uses exactly the same required target set.
                 for suite in SUITES:
                     selected = [target for target in data["targets"] if target_suite(target) == suite]
-                    if suite != "portable" and "//core/cmd/burrow:ssh_" + suite + "_test" not in {
-                        target["label"] for target in selected
-                    }:
+                    required = required_targets(suite)
+                    if not required.issubset(target["label"] for target in selected):
                         raise ValueError("wrong targets for partition: " + suite)
                     suites[suite] = data | {
                         "targets": selected,
-                        "advisory": suite in ADVISORY_SUITES,
+                        "advisory": False,
                         "status": data["status"] if selected else "MISSING",
                         "evidence": "all/suite.json",
                     }
@@ -413,7 +431,7 @@ def report_model(inventory, parity, root=None):
                         "target": label,
                         "scope": group["scope"],
                         "status": target.get("status", "MISSING"),
-                        "advisory": label == "//core/cmd/burrow:ssh_follow_test",
+                        "advisory": False,
                         "sha256": source["files"].get(group["source"]) if source else None,
                     }
                 )
@@ -432,8 +450,7 @@ def report_model(inventory, parity, root=None):
             | {
                 "checks": bindings,
                 "semanticStatus": status,
-                "requiredChecksPassed": bool(bindings)
-                and all(item["status"] == "PASSED" or item["advisory"] for item in bindings),
+                "requiredChecksPassed": bool(bindings) and all(item["status"] == "PASSED" for item in bindings),
                 "schemaDocumented": schema,
             }
         )
@@ -465,7 +482,7 @@ def report_model(inventory, parity, root=None):
         source
         and not source["dirty"]
         and coverage["status"] == "MEASURED"
-        and all(suite["status"] == "PASSED" for suite in suites.values() if not suite["advisory"])
+        and all(suite["status"] == "PASSED" for suite in suites.values())
     )
     return {
         "schemaVersion": 1,
@@ -535,7 +552,7 @@ def render_html(report, evidence):
         + "</p>",
         "<p>Final agent parity: "
         + (
-            "usable routes and required behavior evidence passed under the #86 exception; advisory outcomes and owner acceptance remain separate."
+            "usable routes and required behavior evidence passed; owner acceptance remains separate."
             if report["releaseReady"]
             else "incomplete. This report does not claim milestone completion."
         )
@@ -637,7 +654,6 @@ def render_html(report, evidence):
                         + safe_text(item["scope"])
                         + "<br>"
                         + safe_text(item["status"])
-                        + (" (advisory #86)" if item["advisory"] else "")
                         + "</p>"
                         for item in op["checks"]
                     ),
@@ -645,15 +661,13 @@ def render_html(report, evidence):
                 for op in parity["capabilities"]
             ],
         ),
-        '</section><section id="suites"><h2>Required and advisory suites</h2><p>The SSH follow suite and three Hovel #86 diagnostics are advisory until an official fixed runtime is pinned and verified. Failed or missing advisory evidence stays visible and earns no passing behavior credit; it never substitutes for a required check.</p>',
+        '</section><section id="suites"><h2>Required suites</h2><p>Every suite is required, including SSH follow and the three Hovel compatibility checks restored with the v0.4.4 runtime. Failed or missing evidence blocks publication and earns no passing behavior credit.</p>',
         table(
             ["Suite", "Requirement", "Status", "Targets / metadata"],
             [
                 [
                     safe_text(name),
-                    "Advisory: " + link("https://github.com/Bochner/burrow/issues/86", "#86")
-                    if suite["advisory"]
-                    else "Required",
+                    "Required",
                     safe_text(suite["status"]),
                     str(len(suite["targets"]))
                     + (" · " + link(suite["evidence"], "Evidence") if "evidence" in suite else ""),
@@ -787,7 +801,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("begin", "collect", "default", "render", "verify"))
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")))
-    parser.add_argument("--suite", choices=(*SUITES, "all", "hovel", "coverage"))
+    parser.add_argument("--suite", choices=(*SUITES, "all", "coverage"))
     parser.add_argument("--exit-code", type=int, default=0)
     parser.add_argument("--inventory", type=Path)
     parser.add_argument("--parity", type=Path)

@@ -141,7 +141,7 @@ with tempfile.TemporaryDirectory(prefix="bp-") as scratch:
         assert run("profiles")["path"] == str(backup)
         assert run("history") == history
         # Registered public SDK module reaches the same command/file, with no SSH.
-        hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+        hovel = root / "cache/burrow/hovel/0.4.4/hovel"
 
         def hv(*args):
             p = subprocess.run(

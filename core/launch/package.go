@@ -13,11 +13,11 @@ import (
 	"time"
 )
 
-// Hovel v0.4.2, source c461ba282a8aecc7aa3a079a4613bf5e2640c388.
+// Hovel v0.4.4, source 1789ce47554a2ee17c7bd46d391b63946af60d0a.
 // Wheel pin matches MODULE.bazel; executable digest is from its exact member.
-const WheelSHA = "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933"
-const ExecutableSHA = "a7bcd5f2fa885244d160b722a6ffbd28f3bbae9777b9d510119a203d08788cc1"
-const PackageURL = "https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl"
+const WheelSHA = "87205142bb21af86e68819372467b814949d9f5f86b321003e8aa2c721fb503a"
+const ExecutableSHA = "0df24452dd7dcd0ea13dd1f3a52547ecce26f51e3f1df89e1df4b3abc4b6dcf8"
+const PackageURL = "https://github.com/vibepwners/hovel/releases/download/v0.4.4/hovel-0.4.4-py3-none-manylinux_2_28_x86_64.whl"
 const packageLimit = 128 << 20
 
 type Options struct {
@@ -35,7 +35,7 @@ func install(ctx context.Context, o Options) (string, error) {
 	if e != nil {
 		return "", e
 	}
-	path := filepath.Join(cache, "burrow", "hovel", "0.4.2")
+	path := filepath.Join(cache, "burrow", "hovel", "0.4.4")
 	dir, e := directory(path, true, true)
 	if e != nil {
 		return "", e
@@ -93,7 +93,7 @@ func install(ctx context.Context, o Options) (string, error) {
 			return "", e
 		}
 		if len(data) > packageLimit || sum(data) != WheelSHA {
-			return "", fmt.Errorf("Hovel package verification failed; obtain the pinned v0.4.2 Linux amd64 wheel; nothing installed")
+			return "", fmt.Errorf("Hovel package verification failed; obtain the pinned v0.4.4 Linux amd64 wheel; nothing installed")
 		}
 		if e = publish(dir, "hovel.whl", data, 0600); e != nil {
 			return "", e

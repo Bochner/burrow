@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [portable, lifecycle, files, reverse, shell, chains, reports, automation, follow, runs]
+        suite: [portable, lifecycle, files, reverse, shell, chains, reports, automation, follow, runs, hovel]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -38,12 +38,6 @@ jobs:
           repository-cache: ${{ matrix.suite == 'portable' && 'burrow-portable' || 'burrow-ssh' }}
       # Each declared acceptance partition runs once; known UI races repeat.
       - run: aspect burrow-check preflight "${{ matrix.suite }}"
-        id: preflight
-        # Owner-approved #86 exception until a fixed official Hovel runtime is verified.
-        continue-on-error: ${{ matrix.suite == 'follow' }}
-      - name: Report advisory follow failure
-        if: matrix.suite == 'follow' && steps.preflight.outcome == 'failure'
-        run: echo '::warning::SSH follow failed (advisory under issue #86); see test-results-follow and the test report.'
       - run: aspect burrow-site stage
         if: matrix.suite == 'portable'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1; matches Hovel
@@ -129,16 +123,6 @@ jobs:
           pattern: evidence-*
           path: .report-input
           merge-multiple: true
-      - name: Attach available advisory diagnostics for this commit
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          run_id="$(gh run list --workflow hovel-compatibility.yml --commit "$HEAD_SHA" --status completed --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
-          if [ -n "$run_id" ]; then
-            gh run download "$run_id" --name evidence-hovel --dir .report-input || echo 'Advisory evidence unavailable; report will show missing.'
-          fi
       - run: aspect burrow-report release
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

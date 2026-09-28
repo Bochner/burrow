@@ -19,7 +19,7 @@ def input_path(value):
 
 
 wheel, archive, frontend, integration = map(input_path, sys.argv[1:])
-DIGEST = "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933"
+DIGEST = "87205142bb21af86e68819372467b814949d9f5f86b321003e8aa2c721fb503a"
 
 
 def verify(data):
@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory(prefix="burrow-setup-proof-") as scratch:
     else:
         raise AssertionError("corrupt package accepted")
     # Fixed member extraction avoids arbitrary archive paths; no pip/runtime bootstrap needed.
-    hovel = root / "data" / "burrow" / "hovel" / "0.4.2" / "hovel"
+    hovel = root / "data" / "burrow" / "hovel" / "0.4.4" / "hovel"
     hovel.parent.mkdir(parents=True)
     with zipfile.ZipFile(wheel) as package:
         hovel.write_bytes(package.read("hovel/bin/hovel"))

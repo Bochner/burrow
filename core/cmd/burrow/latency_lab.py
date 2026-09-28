@@ -75,7 +75,7 @@ def measure_shells(
             report["initialization"] = []
             for executable, arguments in (
                 (binary, ["--help"]),
-                (str(root / "cache/burrow/hovel/0.4.2/hovel"), ["version"]),
+                (str(root / "cache/burrow/hovel/0.4.4/hovel"), ["version"]),
             ):
                 for path_mode in ("inherited", "linux-only"):
                     diagnostic_env = dict(env, GODEBUG="inittrace=1")

@@ -31,7 +31,7 @@ const (
 
 var accent = lipgloss.NewStyle().Foreground(lipgloss.Color(lavenderColor)).Bold(true)
 
-// Solid blocks and stippled shadow match pinned Hovel v0.4.2's wide CLI
+// Solid blocks and stippled shadow follow Hovel v0.4.2's wide CLI
 // wordmark technique, redrawn for Burrow's 28-cell sidebar.
 const burrowWordmark = `██  █ █ ██  ██  ███ █   █
 █░█ █░█░█░█ █░█ █░█░█░  █░

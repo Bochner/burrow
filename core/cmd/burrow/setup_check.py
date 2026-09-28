@@ -191,7 +191,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         long = root / ("x" * 100)
         assert "shorter workspace" in run(long, "--offline", ok=False)
         assert not long.exists()
-        cache = root / "cache/burrow/hovel/0.4.2"
+        cache = root / "cache/burrow/hovel/0.4.4"
         executable = cache / "hovel"
         backup = cache / "original"
         executable.rename(backup)

@@ -115,7 +115,7 @@ for linked in (True, False):
                     assert termios.tcgetattr(slave) == original
                     assert b"byte=1d" not in output
                     if attempt == 0:
-                        assert b"\x1b[?1049l" not in output and b"\x1b[?25h" not in output
+                        assert b"\x1b[?1049l\x1b[?25h\x1b[0m" in output
                     assert Path(f"/proc/{pid}").exists()
                     print(f"REAL PTY attempt={attempt + 1}: {bytes(output)!r}", flush=True)
                 finally:
@@ -173,7 +173,7 @@ for linked in (True, False):
             assert daemon.wait(timeout=10) == 0
             wait_for(lambda: not Path(f"/proc/{pid}").exists())
             pids.remove(pid)
-            print(f"PASS {'linked' if linked else 'archive'}: discovery/schema, confirmed execution, real raw input/Ctrl-C/Ctrl-] detach/reattach, termios restoration, close/shutdown cleanup; OBSERVED GAPS: geometry stays 0x0; detach emits no screen/cursor reset", flush=True)
+            print(f"PASS {'linked' if linked else 'archive'}: discovery/schema, confirmed execution, real raw input/Ctrl-C/Ctrl-] detach/reattach, termios restoration, close/shutdown cleanup; screen/cursor reset restored; remaining geometry gap: size stays 0x0", flush=True)
         finally:
             if daemon and daemon.poll() is None:
                 daemon.terminate()

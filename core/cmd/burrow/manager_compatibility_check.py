@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
         )
 
     info = json.loads(run("--hovel-package", wheel, "status").stdout)
-    hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+    hovel = root / "cache/burrow/hovel/0.4.4/hovel"
 
     def hv(*args):
         p = subprocess.run(

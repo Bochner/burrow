@@ -295,7 +295,7 @@ with tempfile.TemporaryDirectory(prefix="bs-") as scratch:
         w = root / "w"
         info = burrow(w, "--hovel-package", wheel, "status")
         daemons.append(info["pid"])
-        hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+        hovel = root / "cache/burrow/hovel/0.4.4/hovel"
 
         def hv(*args, chain="consolidation"):
             return command(
@@ -1239,7 +1239,7 @@ launch:
         assert not Path(first["socket"]).parent.exists()
         assert evidence.read_text() == "retain evidence" and trust_file.read_bytes() == trusted
         # Hovel's dangerous-operation allowance is required before module launch.
-        hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+        hovel = root / "cache/burrow/hovel/0.4.4/hovel"
         prefix = [
             hovel,
             "run",

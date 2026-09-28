@@ -92,7 +92,7 @@ def workspace_checks(binary, env, decoder, root, sibling_workspace, burrow, wait
         retained = burrow(w, "run", "inspect", evidence["id"])
 
         def artifacts():
-            hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+            hovel = root / "cache/burrow/hovel/0.4.4/hovel"
             p = subprocess.run(
                 [
                     str(hovel),

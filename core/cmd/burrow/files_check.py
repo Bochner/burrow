@@ -116,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix="bf-") as scratch:
             assert not any("sub dir" in line for line in run("files-history", w=other))
         finally:
             os.kill(other_info["pid"], signal.SIGTERM)
-        hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+        hovel = root / "cache/burrow/hovel/0.4.4/hovel"
 
         def hv(*args):
             p = subprocess.run(

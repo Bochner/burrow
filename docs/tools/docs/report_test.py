@@ -123,7 +123,7 @@ with tempfile.TemporaryDirectory() as scratch:
     assert not report["publishable"] and not report["releaseReady"]
     assert report["suites"]["portable"]["status"] == "FAILED"
     assert report["suites"]["files"]["status"] == "MISSING"
-    assert report["suites"]["hovel"]["advisory"] is True
+    assert report["suites"]["hovel"]["advisory"] is False
     assert report["coverage"]["status"] == "MISSING"
     assert report["parity"]["total"] == 2 and report["parity"]["presentationOnly"] == 1
     assert report["parity"]["reachable"] == 2 and report["parity"]["demonstrated"] == 0
@@ -168,6 +168,7 @@ with tempfile.TemporaryDirectory() as scratch:
         "automation",
         "follow",
         "runs",
+        "hovel",
         "coverage",
     ):
         run("begin", "--root", root, "--suite", suite)
@@ -191,6 +192,11 @@ with tempfile.TemporaryDirectory() as scratch:
         events[0]["configured"]["tag"] = (
             [] if suite in ("portable", "coverage") else ["acceptance", "acceptance-" + suite]
         )
+        if suite == "hovel":
+            for event, key in zip(events, ("targetConfigured", "testResult", "testSummary")):
+                event["id"][key]["label"] = "//core/launch:hovel_wal_test"
+            events[4]["children"][0]["targetConfigured"]["label"] = "//core/launch:hovel_wal_test"
+            events[0]["configured"]["tag"] = ["hovel-followup"]
         partition_events = json.loads(json.dumps(events))
         if suite == "shell":
             # The real shell partition also selects its retained-session proof.
@@ -199,6 +205,13 @@ with tempfile.TemporaryDirectory() as scratch:
                 event["id"][key]["label"] = "//core/prototype_sessions:check"
             partition_events += extra
             partition_events[4]["children"].append({"targetConfigured": {"label": "//core/prototype_sessions:check"}})
+        if suite == "hovel":
+            for label in ("//core/prototype_manager:check", "//core/prototype_manager:consumer_check"):
+                extra = json.loads(json.dumps(events[:3]))
+                for event, key in zip(extra, ("targetConfigured", "testResult", "testSummary")):
+                    event["id"][key]["label"] = label
+                partition_events += extra
+                partition_events[4]["children"].append({"targetConfigured": {"label": label}})
         (destination / "bep.json").write_text("".join(json.dumps(event) + "\n" for event in partition_events))
         if suite == "coverage":
             (destination / "coverage.lcov").write_text(
@@ -223,78 +236,65 @@ with tempfile.TemporaryDirectory() as scratch:
     assert report["coverage"]["covered"] == 1 and report["coverage"]["total"] == 2
     assert report["parity"]["demonstrated"] == 2
     assert report["parity"]["schemas"] == 2
-    # #86: failed follow evidence stays failed, but does not block publication.
-    follow = root / ".report-input/follow"
-    follow_events = [json.loads(line) for line in (follow / "bep.json").read_text().splitlines()]
-    follow.rename(root / ".report-input/saved-follow")
-    run("begin", "--root", root, "--suite", "follow")
-    (follow / "raw.log").write_text("FAIL upstream Hovel SQLite crash\n")
-    follow_events[1]["testResult"]["status"] = "FAILED"
-    follow_events[2]["testSummary"]["overallStatus"] = "FAILED"
-    follow_events[3]["finished"]["exitCode"] = {"code": 3}
-    (follow / "bep.json").write_text("".join(json.dumps(event) + "\n" for event in follow_events))
-    run("collect", "--root", root, "--suite", "follow", "--exit-code", 3)
-    follow_parity = root / ".report-input/follow-parity.json"
-    bound = json.loads(json.dumps(parity))
-    bound["groups"][0]["targets"].append("//core/cmd/burrow:ssh_follow_test")
-    follow_parity.write_text(json.dumps(bound))
-    run(
-        "render", "--root", root, "--site", site, "--parity", follow_parity, "--require-publishable", "--require-parity"
-    )
-    advisory_report = json.loads((site / "reports/report.json").read_text())
-    assert advisory_report["releaseReady"] and advisory_report["suites"]["follow"]["advisory"]
-    assert advisory_report["suites"]["follow"]["status"] == "FAILED"
-    assert advisory_report["parity"]["demonstrated"] == 0
-    assert all(op["semanticStatus"] == "INCOMPLETE" for op in advisory_report["parity"]["capabilities"])
-    assert "FAIL upstream Hovel SQLite crash" in (site / "reports/index.html").read_text()
-    # The exception cannot excuse missing required behavior on the same capability.
-    bound["groups"][0]["targets"].append("//core/example:missing")
-    follow_parity.write_text(json.dumps(bound))
-    run(
-        "render",
-        "--root",
-        root,
-        "--site",
-        site,
-        "--parity",
-        follow_parity,
-        "--require-publishable",
-        "--require-parity",
-        ok=False,
-    )
-    # Required suite failures still prevent publication.
-    portable_path = directory / "suite.json"
-    portable_original = portable_path.read_text()
-    failed_portable = json.loads(portable_original)
-    failed_portable.update(status="FAILED", exitCode=3, finished=False)
-    portable_path.write_text(json.dumps(failed_portable))
-    run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable", ok=False)
-    portable_path.write_text(portable_original)
-    follow.rename(root / ".report-input/archive/failed-follow")
-    (root / ".report-input/saved-follow").rename(follow)
-    follow_parity.unlink()
-    # An optional run for another merge tree cannot block or certify this one.
-    advisory = root / ".report-input/hovel/suite.json"
-    advisory.parent.mkdir()
-    stale = json.loads((directory / "suite.json").read_text())
-    stale["suite"] = "hovel"
-    stale["source"]["commit"] = "0" * 40
-    advisory.write_text(json.dumps(stale))
-    run(
-        "render",
-        "--root",
-        root,
-        "--site",
-        site,
-        "--parity",
-        root / "parity.json",
-        "--require-publishable",
-        "--require-parity",
-    )
-    with_stale = json.loads((site / "reports/report.json").read_text())
-    assert with_stale["releaseReady"] and with_stale["suites"]["hovel"]["status"] == "MISSING"
-    advisory.unlink()
-    advisory.parent.rmdir()
+    # Former #86 exceptions now block publication on missing, failed or stale evidence.
+    for suite in ("follow", "hovel"):
+        partition = root / ".report-input" / suite
+        partition.rename(root / ".report-input/saved-partition")
+        run(
+            "render",
+            "--root",
+            root,
+            "--site",
+            site,
+            "--parity",
+            root / "parity.json",
+            "--require-publishable",
+            ok=False,
+        )
+        (root / ".report-input/saved-partition").rename(partition)
+        original = (partition / "suite.json").read_text()
+        failed = json.loads(original)
+        failed.update(status="FAILED", exitCode=3, finished=False)
+        failed["targets"][0]["status"] = "FAILED"
+        failed["targets"][0]["attempts"][0]["status"] = "FAILED"
+        (partition / "suite.json").write_text(json.dumps(failed))
+        run("render", "--root", root, "--site", site, "--parity", root / "parity.json")
+        failed_report = json.loads((site / "reports/report.json").read_text())
+        assert not failed_report["publishable"] and not failed_report["releaseReady"]
+        assert failed_report["suites"][suite]["status"] == "FAILED"
+        assert failed_report["suites"][suite]["advisory"] is False
+        run(
+            "render",
+            "--root",
+            root,
+            "--site",
+            site,
+            "--parity",
+            root / "parity.json",
+            "--require-publishable",
+            ok=False,
+        )
+        stale = json.loads(original)
+        stale["source"]["commit"] = "0" * 40
+        (partition / "suite.json").write_text(json.dumps(stale))
+        result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
+        assert "stale or inconsistent suite evidence" in result.stderr
+        stale = json.loads(original)
+        stale["environment"]["runID"] = "another-run"
+        (partition / "suite.json").write_text(json.dumps(stale))
+        result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
+        assert "evidence from another CI run" in result.stderr
+        (partition / "suite.json").write_text(original)
+    # One passing compatibility target cannot replace the complete Hovel partition.
+    hovel = root / ".report-input/hovel/suite.json"
+    original_hovel = hovel.read_text()
+    incomplete = json.loads(original_hovel)
+    incomplete["targets"] = incomplete["targets"][:1]
+    incomplete["selectedTargets"] = [incomplete["targets"][0]["label"]]
+    hovel.write_text(json.dumps(incomplete))
+    result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
+    assert "wrong targets for partition: hovel" in result.stderr
+    hovel.write_text(original_hovel)
     # A proof alone cannot substitute for its partition's production target.
     shell_evidence = root / ".report-input/shell/suite.json"
     original_shell = shell_evidence.read_text()
@@ -378,7 +378,7 @@ with tempfile.TemporaryDirectory() as scratch:
     tab = next(op for op in partial["parity"]["capabilities"] if op["id"] == "example.tab")
     assert tab["semanticStatus"] == "INCOMPLETE" and not partial["releaseReady"]
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity")
-    assert (site / "reports/index.html").read_text().count('<details id="target-') == 12, (
+    assert (site / "reports/index.html").read_text().count('<details id="target-') == 15, (
         "coverage repetitions lost their individual evidence"
     )
     commit = git("rev-parse", "HEAD").decode().strip()

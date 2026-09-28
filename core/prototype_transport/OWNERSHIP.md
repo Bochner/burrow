@@ -1,5 +1,9 @@
 # Disposable connection ownership proof
 
+Current checks use the Hovel pin in `MODULE.bazel`. With v0.4.4 they require
+terminal presentation restoration and retained control after log history fills.
+The original observations below record the earlier runtime.
+
 For [Can connection ownership and complete teardown be proven through Hovel?](https://github.com/Bochner/burrow/issues/25).
 Run `aspect burrow-prototype transport` or `aspect burrow-check`.
 Pins and host requirements are inherited from [the transport proof](README.md).

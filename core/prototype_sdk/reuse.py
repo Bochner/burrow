@@ -17,7 +17,7 @@ import tempfile
 import time
 import zipfile
 
-WHEEL_SHA = "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933"
+WHEEL_SHA = "87205142bb21af86e68819372467b814949d9f5f86b321003e8aa2c721fb503a"
 
 # The pinned standalone Python omits os.pidfd_open. Use Linux/glibc directly.
 LIBC = ctypes.CDLL(None, use_errno=True)

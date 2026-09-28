@@ -335,7 +335,7 @@ LogLevel VERBOSE
 
         # Actual published Hovel daemon and packaged public SDK adapter.
         hovel = root / "hovel"
-        assert hashlib.sha256(Path(wheel).read_bytes()).hexdigest() == "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933"
+        assert hashlib.sha256(Path(wheel).read_bytes()).hexdigest() == "87205142bb21af86e68819372467b814949d9f5f86b321003e8aa2c721fb503a"
         with zipfile.ZipFile(wheel) as package:
             hovel.write_bytes(package.read("hovel/bin/hovel"))
         hovel.chmod(0o700)
@@ -802,23 +802,24 @@ LogLevel VERBOSE
                         with socket.socket() as sock: assert sock.connect_ex(("127.0.0.1", local)) != 0
                     print("PASS daemon SIGKILL: SDK stream EOF wrapper closes owned master and listeners", flush=True)
                 else:
-                    try:
-                        rpc("WriteSession", {"SessionID": session, "Data": base64.b64encode(b"log-ceiling\n").decode()})
-                    except (TimeoutError, OSError):
-                        pass
-                    def closed_by_protocol():
-                        status, body = rpc("ReadSession", {"SessionID": session, "TimeoutMs": 50})
-                        return status == 200 and body.get("Closed")
-                    wait_for(closed_by_protocol)
-                    assert run(owned + ["target", "printf protocol-orphan"]).stdout == "protocol-orphan"
+                    status, body = rpc("WriteSession", {"SessionID": session, "Data": base64.b64encode(b"log-ceiling\n").decode()})
+                    assert status == 200, body
+                    status, body = rpc("ReadSession", {"SessionID": session, "TimeoutMs": 50})
+                    assert status == 200 and not body.get("Closed"), body
+                    assert run(owned + ["target", "printf control-retained"]).stdout == "control-retained"
                     for local in forwards:
                         with socket.create_connection(("127.0.0.1", local), timeout=1): pass
-                    status, failure = rpc("CloseSession", {"SessionID": session})
-                    assert status != 200 and "notification count exceeds maximum 256" in str(failure), (status, failure)
+                    status, body = rpc("CloseSession", {"SessionID": session})
+                    assert status == 200, body
+                    wait_for(lambda: not alive(master_pid))
+                    for client in clients: client.wait(timeout=5)
+                    for local in forwards:
+                        with socket.socket() as sock: assert sock.connect_ex(("127.0.0.1", local)) != 0
+                    assert not owned_socket.exists()
                     with sqlite3.connect(workspace / "workspace.db") as db:
                         count = db.execute("select count(*) from events where run_id = ? and type = 'hovel.module.log'", (run_id,)).fetchone()[0]
-                    assert count == 256, count
-                    print("OBSERVED GAP: exactly 256 stored module logs; next notification marks session closed with live master/listeners; explicit CloseSession returns error (cleanup may still execute)", flush=True)
+                    assert count > 256, count
+                    print("PASS logs beyond the 256-entry diagnostic buffer persist while session control and explicit cleanup remain available", flush=True)
                 for path, data, digest in artifact_bytes:
                     assert path.read_bytes() == data
                 print("PASS Hovel-recorded confirmation and artifact hashes/paths; evidence survives resource close/loss", flush=True)
