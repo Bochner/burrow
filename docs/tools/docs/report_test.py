@@ -1,6 +1,10 @@
 """Exercise the evidence CLI, including failures and Hovel-style publication requirements."""
 
+from contextlib import redirect_stdout, redirect_stderr
+import io
 import json
+
+from report import cli
 import os
 from pathlib import Path
 import subprocess
@@ -11,9 +15,15 @@ import time
 tool = str(Path(sys.argv[1]).resolve())
 
 
-def run(*args, ok=True):
+def run(*args, ok=True, external=False):
     started = time.monotonic()
-    result = subprocess.run([tool, *map(str, args)], capture_output=True, text=True, timeout=20)
+    if external:
+        result = subprocess.run([tool, *map(str, args)], capture_output=True, text=True, timeout=20)
+    else:
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            status = cli(list(map(str, args)))
+        result = subprocess.CompletedProcess(args, status, stdout.getvalue(), stderr.getvalue())
     assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
     print(f"Checked report {args[0]} in {time.monotonic() - started:.2f}s", flush=True)
     return result
@@ -67,7 +77,7 @@ with tempfile.TemporaryDirectory() as scratch:
         "groups": [
             {
                 "source": "core/launch/example.go",
-                "targets": ["//core/example:check"],
+                "targets": ["//core/example:check", "//core/example:coverage_check"],
                 "scope": "Selected inspection outcome",
                 "capabilities": ["example.inspect", "example.tab", "example.focus"],
             }
@@ -76,7 +86,7 @@ with tempfile.TemporaryDirectory() as scratch:
     (root / "parity.json").write_text(json.dumps(parity))
     git("add", ".")
     git("-c", "user.name=Report fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
-    run("begin", "--root", root, "--suite", "portable")
+    run("begin", "--root", root, "--suite", "portable", external=True)
     directory = root / ".report-input/portable"
     log = directory / "raw.log"
     log.write_text('<script>alert("remote")</script>\x1b[31mFAIL\n')
@@ -194,8 +204,10 @@ with tempfile.TemporaryDirectory() as scratch:
         events[1]["testResult"]["testActionOutput"][0]["uri"] = log.as_uri()
         for event, key in zip(events, ("targetConfigured", "testResult", "testSummary")):
             event["id"][key]["label"] = (
-                "//core/example:check"
-                if suite in ("portable", "coverage")
+                "//core/example:coverage_check"
+                if suite == "coverage"
+                else "//core/example:check"
+                if suite == "portable"
                 else "//core/cmd/burrow:ssh_" + suite + "_test"
             )
         events[4]["children"][0]["targetConfigured"]["label"] = events[0]["id"]["targetConfigured"]["label"]
@@ -245,6 +257,15 @@ with tempfile.TemporaryDirectory() as scratch:
     assert report["coverage"]["covered"] == 1 and report["coverage"]["total"] == 2
     assert report["parity"]["demonstrated"] == 2
     assert report["parity"]["schemas"] == 2
+    coverage_input = root / ".report-input/coverage/suite.json"
+    original_coverage = coverage_input.read_text()
+    duplicate = json.loads(original_coverage)
+    duplicate["targets"][0]["label"] = "//core/example:check"
+    duplicate["selectedTargets"] = ["//core/example:check"]
+    coverage_input.write_text(json.dumps(duplicate))
+    refused = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
+    assert "duplicate target evidence" in refused.stderr
+    coverage_input.write_text(original_coverage)
     # Required partitions block publication on missing or failed evidence.
     for suite in ("follow", "hovel"):
         partition = root / ".report-input" / suite
@@ -386,7 +407,7 @@ with tempfile.TemporaryDirectory() as scratch:
     assert tab["semanticStatus"] == "INCOMPLETE" and not partial["releaseReady"]
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity")
     ui = json.loads((site / "reports/report.json").read_text())
-    assert len(ui["targets"]) == 15, "coverage repetitions lost their evidence"
+    assert len(ui["targets"]) == 15, "coverage results lost their evidence"
     assert ui["coverage"][0]["percentage"] == 50
     assert not (site / ".publication.json").exists()
     # Required CI success never manufactures agent parity for missing routes.
@@ -409,17 +430,19 @@ with tempfile.TemporaryDirectory() as scratch:
     for event, key in zip(events, ("targetConfigured", "testResult", "testSummary")):
         event["id"][key]["label"] = "//core/cmd/burrow:setup_test"
     events[4]["children"][0]["targetConfigured"]["label"] = "//core/cmd/burrow:setup_test"
-    # One passing run, or three retries of it, cannot satisfy three repetitions.
-    for attempts in ([dict(events[1])], [json.loads(json.dumps(events[1])) for _ in range(3)]):
+    # A single run satisfies routine verification; missing declared runs do not.
+    for expected, passed in ((1, True), (3, False)):
+        attempts = [json.loads(json.dumps(events[1]))]
         for index, attempt in enumerate(attempts, 1):
             attempt["id"]["testResult"]["attempt"] = index
-        events[2]["testSummary"]["totalRunCount"] = len(attempts)
+        events[2]["testSummary"]["totalRunCount"] = expected
         (directory / "bep.json").write_text(
             "".join(json.dumps(event) + "\n" for event in [events[0], *attempts, *events[2:]])
         )
         run("collect", "--root", root, "--suite", "portable", "--exit-code", 0)
         incomplete = json.loads((directory / "suite.json").read_text())
-        assert incomplete["status"] == "FAILED" and incomplete["targets"][0]["status"] == "MISSING"
+        assert incomplete["status"] == ("PASSED" if passed else "FAILED")
+        assert incomplete["targets"][0]["status"] == ("PASSED" if passed else "MISSING")
     (directory / "suite.json").write_text(original)
     evidence = json.loads((directory / "suite.json").read_text())["targets"][0]["attempts"][0]["files"][0]
     # Removing the hash contract must preserve output path safety.

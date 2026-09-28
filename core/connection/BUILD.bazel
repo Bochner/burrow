@@ -11,6 +11,7 @@ go_library(
 
 go_test(
     name = "forward_control_test",
+    tags = ["production-coverage"],
     srcs = ["forward_control_test.go"],
     embed = [":connection"],
 )

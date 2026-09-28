@@ -9,6 +9,7 @@ go_library(
 
 go_test(
     name = "digest_test",
+    tags = ["production-coverage"],
     srcs = ["digest_test.go", "rpc_test.go"],
     embed = [":launch"],
 )
@@ -19,7 +20,7 @@ go_test(
     deps = [":launch"],
     args = ["-wheel", "$(location @hovel_linux_wheel//file)"],
     data = ["@hovel_linux_wheel//file"],
-    tags = ["external", "no-sandbox"],
+    tags = ["production-coverage", "external", "no-sandbox"],
 )
 
 go_test(
@@ -34,7 +35,7 @@ go_test(
 go_test(
  name = "audit_test",
  srcs = ["audit_test.go"],
- tags = ["external", "no-sandbox"],
+ tags = ["production-coverage", "external", "no-sandbox"],
  deps = [":launch"],
 )
 

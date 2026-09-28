@@ -39,6 +39,8 @@ filegroup(
 py_test(
     name = "release_test",
     srcs = ["release_test.py", "release.py"],
+    args = ["$(rootpath //:VERSION)", "$(rootpath //:CHANGELOG.md)"],
+    data = ["//:VERSION", "//:CHANGELOG.md"],
     deps = ["//:ci_lib"],
     imports = ["."],
     size = "small",

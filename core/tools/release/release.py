@@ -1,4 +1,4 @@
-"""Prepare, verify and retrieve the exact tested distribution for an explicit release."""
+"""Prepare, verify and retrieve the exact tested distribution for automatic or manual release."""
 
 import argparse
 import hashlib
@@ -73,44 +73,109 @@ def verify_bundle(directory, version, source, run=None):
         raise ValueError("release bundle belongs to another CI run")
 
 
-def fetch_bundle(root, version):
-    from ci import successful_runs, verify_run, download
+def fetch_bundle(root, version, run_id=None):
+    from ci import api, successful_runs, verify_run, download
     from report import snapshot
 
     source = snapshot(root)
-    for event in ("push", "workflow_dispatch"):
-        for run in successful_runs(source["commit"], event):
-            try:
-                verify_run(run, source["commit"], event)
-                with tempfile.TemporaryDirectory() as temporary:
-                    directory = Path(temporary)
-                    download(run, "release-bundle", directory)
-                    verify_bundle(directory, version, source, run)
-                    destination = root / "dist"
-                    if destination.exists() and any(destination.iterdir()):
-                        raise ValueError("dist must be empty before fetching a release bundle")
-                    shutil.copytree(directory, destination, dirs_exist_ok=True)
-                print("Using tested release bundle from " + run["html_url"])
-                return
-            except (ValueError, KeyError, OSError) as error:
-                print(f"Cannot use run {run['id']}: {error}")
+    runs = (
+        [api("actions/runs/" + run_id)]
+        if run_id
+        else (run for event in ("push", "workflow_dispatch") for run in successful_runs(source["commit"], event))
+    )
+    for run in runs:
+        event = run["event"]
+        if event not in ("push", "workflow_dispatch"):
+            raise ValueError("release bundle must come from main validation")
+        try:
+            verify_run(run, source["commit"], event)
+            with tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                download(run, "release-bundle", directory)
+                verify_bundle(directory, version, source, run)
+                destination = root / "dist"
+                if destination.exists() and any(destination.iterdir()):
+                    raise ValueError("dist must be empty before fetching a release bundle")
+                shutil.copytree(directory, destination, dirs_exist_ok=True)
+            print("Using tested release bundle from " + run["html_url"])
+            return
+        except (ValueError, KeyError, OSError) as error:
+            print(f"Cannot use run {run['id']}: {error}")
     raise ValueError(
         "No verified bundle for this commit. If it is still main HEAD, rerun Repository with force_full; otherwise prepare a new release revision on main."
     )
 
 
+def version_key(version):
+    match = re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.dev(0|[1-9]\d*))?", version)
+    if not match:
+        raise ValueError("VERSION must be X.Y.Z or X.Y.Z.devN")
+    major, minor, patch, development = match.groups()
+    return (int(major), int(minor), int(patch), development is None, int(development or 0))
+
+
+def release_notes(root, version):
+    entries = re.findall(
+        r"^## \[" + re.escape(version) + r"\](?: - \d{4}-\d{2}-\d{2})?\n(.*?)(?=^## |\Z)",
+        (root / "CHANGELOG.md").read_text(),
+        re.MULTILINE | re.DOTALL,
+    )
+    if len(entries) != 1 or not entries[0].strip():
+        raise ValueError("CHANGELOG.md needs one nonempty entry for " + version)
+    return entries[0].strip() + "\n"
+
+
+def validate(root, version, tag="", publish=False, automatic=False):
+    def git(*arguments):
+        return subprocess.check_output(["git", "-C", str(root), *arguments], text=True).strip()
+
+    commit = git("rev-parse", "HEAD")
+    if publish or automatic:
+        if git("status", "--porcelain"):
+            raise ValueError("publishing requires a clean checkout")
+        subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, "origin/main"], check=True)
+    if tag and tag != "v" + version:
+        raise ValueError("release tag must match VERSION exactly")
+    if automatic:
+        previous = git("show", "HEAD^1:VERSION")
+        if previous == version:
+            return {"commit": commit, "tag": "", "ready": "false", "prerelease": "false"}
+        if version_key(version) <= version_key(previous):
+            raise ValueError("VERSION must increase from the previous main revision")
+        tag = "v" + version
+    if publish and not tag:
+        raise ValueError("publishing requires an existing v-prefixed tag or automatic version release")
+    if tag:
+        existing = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}"],
+            capture_output=True,
+            text=True,
+        )
+        if existing.returncode == 0:
+            if existing.stdout.strip() != commit:
+                raise ValueError("tag does not identify this checkout; existing tags are never moved")
+        elif not automatic:
+            raise ValueError("publishing requires an existing v-prefixed tag")
+    if publish or automatic:
+        release_notes(root, version)
+    return {"commit": commit, "tag": tag, "ready": "true", "prerelease": str(".dev" in version).lower()}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "mode", choices=["validate", "stage", "manifest", "fetch", "verify-bundle", "prepare-pypi", "verify-pypi"]
+        "mode",
+        choices=["validate", "stage", "manifest", "fetch", "verify-bundle", "prepare-pypi", "verify-pypi", "notes"],
     )
     parser.add_argument("--tag", default="")
     parser.add_argument("--publish", choices=["true", "false"], default="false")
+    parser.add_argument("--automatic", action="store_true")
+    parser.add_argument("--run-id")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     root = Path(os.environ["BUILD_WORKSPACE_DIRECTORY"])
     version = (root / "VERSION").read_text().strip()
-    if not re.fullmatch(r"\d+\.\d+\.\d+(?:\.dev\d+)?", version):
-        parser.error("VERSION must be X.Y.Z or X.Y.Z.devN")
+    version_key(version)
 
     if args.mode == "stage":
         directory = root / "dist"
@@ -125,7 +190,7 @@ def main():
         manifest(root, version)
         return
     if args.mode == "fetch":
-        fetch_bundle(root, version)
+        fetch_bundle(root, version, args.run_id)
         return
     if args.mode in ("verify-bundle", "prepare-pypi"):
         from report import snapshot
@@ -138,26 +203,17 @@ def main():
             shutil.copyfile(wheel, destination / wheel.name)
         return
 
-    def git(*arguments):
-        return subprocess.check_output(["git", "-C", str(root), *arguments], text=True).strip()
-
+    if args.mode == "notes":
+        if not args.output:
+            parser.error("notes requires --output")
+        args.output.write_text(release_notes(root, version))
+        return
     if args.mode == "validate":
-        commit = git("rev-parse", "HEAD")
-        if args.publish == "true" and not args.tag:
-            parser.error("publishing requires an existing v-prefixed tag")
-        if args.tag:
-            if args.tag != "v" + version:
-                parser.error("release tag must match VERSION exactly")
-            if git("rev-parse", f"refs/tags/{args.tag}^{{commit}}") != commit:
-                parser.error("tag does not identify this checkout")
-        if args.publish == "true":
-            if git("status", "--porcelain"):
-                parser.error("publishing requires a clean checkout")
-            subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, "origin/main"], check=True)
+        metadata = validate(root, version, args.tag, args.publish == "true", args.automatic)
         if output := os.environ.get("GITHUB_OUTPUT"):
             with open(output, "a") as stream:
-                stream.write(f"commit={commit}\n")
-        print(f"Validated {'publication' if args.publish == 'true' else 'build-only rehearsal'}: {version} at {commit}")
+                stream.writelines(f"{key}={value}\n" for key, value in metadata.items())
+        print(f"Release candidate: {version} at {metadata['commit']}; ready={metadata['ready']}")
         return
 
     wheel = root / "dist" / f"burrow_ssh-{version}-py3-none-manylinux_2_28_x86_64.whl"

@@ -25,8 +25,9 @@ through the Bazel-managed pnpm target via Aspect. No CDN/runtime network assets.
 Application PRs run eleven required `aspect burrow-check verify SUITE` jobs:
 portable, lifecycle, files, reverse, shell, chains, reports, automation, follow,
 runs and hovel. `verify` permits deterministic test caching; external/process,
-race and fuzz checks stay fresh. Setup/terminal checks repeat three times, and
-failed-test retries remain disabled. `preflight` and a forced full Repository
+race and fuzz checks stay fresh. Each target runs once; failed-test retries remain
+disabled. The six `production-coverage` targets run only in the coverage job and
+supply both their behavior results and line measurements. `preflight` and a forced full Repository
 dispatch execute everything uncached. The Hovel partition still requires its
 WAL regression and two retained-manager proofs.
 
@@ -56,7 +57,7 @@ Generate initial missing-evidence state from `burrow capabilities` and
 `docs/tools/docs/parity.json`; each inventory ID needs a behavior-check binding.
 Preserve separate reachability, JSON schema and selected-behavior measurements;
 optional MCP is not typed MCP coverage. Prototypes do not contribute production
-coverage. For a local report, run preflight, coverage, site staging and
+coverage. For a local report, run preflight (including coverage), site staging and
 `aspect burrow-report render`. Archive individual suite inputs before switching
 to an all-suite preflight to avoid overlapping evidence. Repeated local suites
 preserve their previous files in `.report-input/archive/`; diagnose failures.
@@ -66,3 +67,9 @@ and exhaustive semantic equivalence are separate.
 
 See [the upstream pin and adaptation notes](../site/UPSTREAM.md) before updating
 copied Hovel theme code or dependency versions.
+
+A new main `VERSION` triggers automatic GitHub tagging/release publication only
+after Repository CI succeeds and its exact bundle verifies. The matching
+`CHANGELOG.md` section supplies release notes. Unchanged versions skip publication;
+downgrades, missing notes and tags naming another commit fail. Manual rehearsal
+and optional PyPI publishing remain available. See root AGENTS.md for PR versioning.

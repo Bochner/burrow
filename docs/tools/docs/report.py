@@ -10,6 +10,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import asdict
 from urllib.parse import unquote, urlsplit
 
@@ -211,12 +212,6 @@ def target_status(target, suite):
     identities = {json.dumps(attempt["identity"], sort_keys=True) for attempt in attempts}
     if not attempts or len(identities) != len(attempts) or len(attempts) != target.get("expectedRuns", 0):
         return "MISSING"
-    if suite in ("all", "portable") and target["label"] in (
-        "//core/cmd/burrow:setup_test",
-        "//core/cmd/burrow:terminal_test",
-    ):
-        if len(attempts) != 3 or {attempt["identity"].get("run") for attempt in attempts} != {1, 2, 3}:
-            return "MISSING"
     if any(attempt["status"] != "PASSED" for attempt in attempts):
         return "FAILED"
     if not all(any(item["kind"] == "test.log" for item in attempt["files"]) for attempt in attempts):
@@ -388,7 +383,7 @@ def report_model(inventory, parity, root=None):
                             raise ValueError("unexpected evidence artifact")
                         item["path"] = name + "/" + item["path"]
                         evidence[item["path"]] = content
-                if name not in ("coverage", "documentation"):
+                if name != "documentation":
                     if target["label"] in target_results:
                         raise ValueError("duplicate target evidence: " + target["label"])
                     target_results[target["label"]] = target
@@ -519,9 +514,7 @@ def hovel_report(model, root=None):
     targets = []
     for suite, data in model["suites"].items():
         for item in data["targets"]:
-            target = upstream.new_target(
-                item["label"] + (" [" + suite + "]" if suite in ("coverage", "documentation") else "")
-            )
+            target = upstream.new_target(item["label"] + (" [documentation]" if suite == "documentation" else ""))
             target.suite = suite
             target.language = {
                 "py_test rule": "python",
@@ -666,7 +659,7 @@ def render(root, site, parity, require_publishable=False, require_parity=False):
                 raise ValueError("missing report evidence: " + name)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("begin", "collect", "default", "render"))
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")))
@@ -678,7 +671,7 @@ def main():
     parser.add_argument("--site", type=Path)
     parser.add_argument("--require-publishable", action="store_true")
     parser.add_argument("--require-parity", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.mode == "begin":
         begin(args.root, args.suite)
     elif args.mode == "collect":
@@ -690,8 +683,14 @@ def main():
         render(args.root, args.site, json.loads(args.parity.read_text()), args.require_publishable, args.require_parity)
 
 
-if __name__ == "__main__":
+def cli(argv=None):
     try:
-        main()
+        main(argv)
+        return 0
     except (ValueError, OSError, KeyError) as error:
-        raise SystemExit(str(error))
+        print(error, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(cli())

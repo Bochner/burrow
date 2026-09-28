@@ -20,17 +20,17 @@ def _impl(ctx: TaskContext) -> int:
         "validate": ["run", "//core/tools/release:release", "--", "validate"] + ctx.args.options,
         "verify-pypi": ["run", "//core/tools/release:release", "--", "verify-pypi"],
     }
-    for name in ["fetch", "verify-bundle", "prepare-pypi"]:
-        commands[name] = ["run", "//core/tools/release:release", "--", name]
+    for name in ["fetch", "verify-bundle", "prepare-pypi", "notes"]:
+        commands[name] = ["run", "//core/tools/release:release", "--", name] + ctx.args.options
     if mode not in commands:
-        print("expected build, check, bundle, validate, fetch, verify-bundle or verify-pypi")
+        print("expected build, check, bundle, validate, fetch, verify-bundle, prepare-pypi, verify-pypi or notes")
         return 2
     return ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait().code or 0
 
 burrow_release = task(
     args = {
         "mode": args.positional(default = ["build"], minimum = 0, maximum = 1),
-        "options": args.trailing_var_args(description = "Validation options: --tag vVERSION --publish true|false."),
+        "options": args.trailing_var_args(description = "Mode options, such as --tag vVERSION, --automatic, --run-id ID or --output PATH."),
     },
     summary = "Build and smoke-test release artifacts, fetch a verified CI bundle, or validate publication. Never uploads.",
     implementation = _impl,

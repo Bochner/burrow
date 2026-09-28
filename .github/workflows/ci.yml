@@ -77,7 +77,7 @@ jobs:
           # partitions share their compiled application and download caches.
           disk-cache: ${{ matrix.suite == 'portable' && 'burrow-portable' || 'burrow-ssh' }}
           repository-cache: ${{ matrix.suite == 'portable' && 'burrow-portable' || 'burrow-ssh' }}
-      # Each declared acceptance partition runs once; known UI races repeat.
+      # Each selected test runs once; coverage owns its six production targets.
       - env:
           CHECK_MODE: ${{ inputs.force_full == true && 'preflight' || 'verify' }}
           CHECK_SUITE: ${{ matrix.suite }}

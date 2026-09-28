@@ -51,7 +51,7 @@ contains the Go executable; Python 3.10+, pipx, and OpenSSH client tools are
 required. Install the current release with:
 
 ```sh
-pipx install https://github.com/Bochner/burrow/releases/download/v0.2.1/burrow_ssh-0.2.1-py3-none-manylinux_2_28_x86_64.whl
+pipx install https://github.com/Bochner/burrow/releases/download/v0.2.2/burrow_ssh-0.2.2-py3-none-manylinux_2_28_x86_64.whl
 burrow --workspace "$HOME/burrow-lab"
 ```
 

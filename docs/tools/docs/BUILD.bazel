@@ -25,9 +25,10 @@ py_binary(
 
 py_test(
     name = "report_test",
-    # Multi-process CLI matrix; each call retains its own 20-second bound.
-    size = "medium",
+    # One external CLI check; the remaining evidence cases share the real entry point.
+    size = "small",
     srcs = ["report_test.py"],
+    deps = [":report_lib"],
     args = ["$(rootpath :report)"],
     data = [":report"],
     legacy_create_init = 0,

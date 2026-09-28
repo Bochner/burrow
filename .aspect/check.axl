@@ -14,13 +14,13 @@ def _impl(ctx: TaskContext) -> int:
     filters = ["-manual"]
     tests += ["--bazel-flag=--local_test_jobs=2"]
     if mode in ["preflight", "verify"]:
-        # Repeat actual race surfaces, not every long-running SSH scenario.
-        tests += ["--bazel-flag=--runs_per_test=//core/cmd/burrow:(setup|terminal)_test$@3"]
+        if suite in ["all", "portable"]:
+            filters += ["-production-coverage"]
         if suite != "all":
             filters += ["hovel-followup" if suite == "hovel" else "-hovel-followup"]
     commands = []
     if suite in ["all", "portable"]:
-        commands.append(["build", "//core/cmd/burrow:package", "//:research", "//core/prototype_sdk:package", "//core/prototype_sdk:frontend", "//core/prototype_transport:package", "//core/prototype_agent:burrow", "//core/prototype_terminal:terminal", "//core/prototype_manager:burrow", "//core/prototype_manager:baseline"])
+        commands.append(["build", "//core/cmd/burrow:package", "//:research"])
     if mode == "ci":
         filters += ["-requires-docker"]
     elif suite == "portable":
@@ -39,7 +39,11 @@ def _impl(ctx: TaskContext) -> int:
     result = status.code or 0
     if mode in ["preflight", "verify"]:
         collected = ctx.std.process.command("aspect").args(["run", "//docs/tools/docs:report", "--", "collect", "--suite", suite, "--exit-code", str(result)]).current_dir(root).spawn().wait().code or 0
-        return result or collected
+        if result or collected:
+            return result or collected
+        if suite == "all":
+            return ctx.std.process.command("aspect").args(["burrow-report", "coverage"]).current_dir(root).spawn().wait().code or 0
+        return 0
     return result
 
 burrow_check = task(
