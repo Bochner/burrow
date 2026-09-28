@@ -47,7 +47,7 @@ type Info struct {
 	Access    string `json:"access"`
 }
 
-func processIdentity(pid int) (record, error) {
+func processIdentity(pid int, executableSHA string) (record, error) {
 	defer Phase("status.identity")()
 	if pid <= 0 {
 		return record{}, fmt.Errorf("invalid PID")
@@ -72,8 +72,8 @@ func processIdentity(pid int) (record, error) {
 	if e != nil {
 		return record{}, e
 	}
-	if sha != ExecutableSHA {
-		return record{}, fmt.Errorf("process executable does not match independent pin")
+	if sha != executableSHA {
+		return record{}, fmt.Errorf("process executable does not match independent pin; if Burrow was upgraded, run restart --yes with the new build")
 	}
 	return record{PID: pid, Boot: strings.TrimSpace(string(boot)), Ticks: fields[19], SHA: sha}, nil
 }
@@ -115,7 +115,7 @@ func rpcBody(conn net.Conn, method string, bodyInput []byte, out any) error {
 	return json.Unmarshal(body, out)
 }
 
-func inspect(ctx context.Context, workspace string, pid int) (record, Info, error) {
+func inspect(ctx context.Context, workspace string, pid int, executableSHA string) (record, Info, error) {
 	var empty record
 	var info Info
 	fd, e := unix.PidfdOpen(pid, 0)
@@ -123,7 +123,7 @@ func inspect(ctx context.Context, workspace string, pid int) (record, Info, erro
 		return empty, info, e
 	}
 	defer unix.Close(fd)
-	before, e := processIdentity(pid)
+	before, e := processIdentity(pid, executableSHA)
 	if e != nil {
 		return empty, info, e
 	}
@@ -170,7 +170,7 @@ func inspect(ctx context.Context, workspace string, pid int) (record, Info, erro
 	if info.PID != pid || info.Workspace != workspace || info.Started == "" {
 		return empty, info, refuse(endpoint, "public workspace/process identity mismatch")
 	}
-	after, e := processIdentity(pid)
+	after, e := processIdentity(pid, executableSHA)
 	if e != nil {
 		return empty, info, e
 	}
@@ -239,7 +239,7 @@ func Status(ctx context.Context, workspace string) (Info, error) {
 	if expected.Workspace != workspace {
 		return info, refuse(path, "receipt cannot redirect selected workspace")
 	}
-	observed, info, e := inspect(ctx, workspace, expected.PID)
+	observed, info, e := inspect(ctx, workspace, expected.PID, ExecutableSHA)
 	if e != nil {
 		return Info{}, refuse(path, e.Error())
 	}
@@ -255,6 +255,85 @@ func Status(ctx context.Context, workspace string) (Info, error) {
 		}
 	}
 	return info, nil
+}
+
+// ReplaceOutdated stops only the daemon recorded by this workspace's launch
+// receipt. It never adopts that older executable: matching the receipt merely
+// authorizes retirement so Open can install the current independent pin.
+func ReplaceOutdated(ctx context.Context, workspace string) (bool, error) {
+	if _, e := os.Lstat(filepath.Join(workspace, "burrow-launch.json")); os.IsNotExist(e) {
+		return false, nil
+	}
+	dir, e := directory(workspace, false, false)
+	if e != nil {
+		return false, e
+	}
+	defer dir.Close()
+	if e = lock(ctx, dir); e != nil {
+		return false, e
+	}
+	path := filepath.Join(workspace, "burrow-launch.json")
+	b, e := regular(path, 0600, 8192)
+	if e != nil {
+		return false, refuse(path, e.Error())
+	}
+	var expected record
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	decoder.DisallowUnknownFields()
+	if e = decoder.Decode(&expected); e != nil || decoder.Decode(new(any)) != io.EOF {
+		return false, refuse(path, "incomplete or invalid receipt")
+	}
+	if expected.Workspace != workspace || len(expected.SHA) != 64 {
+		return false, refuse(path, "invalid recorded workspace or executable digest")
+	}
+	if expected.SHA == ExecutableSHA {
+		return false, nil
+	}
+	observed, _, e := inspect(ctx, workspace, expected.PID, expected.SHA)
+	if e != nil || observed != expected {
+		if e == nil {
+			e = fmt.Errorf("stale receipt or replaced workspace/runtime/socket")
+		}
+		return false, refuse(path, e.Error())
+	}
+	fd, e := unix.PidfdOpen(expected.PID, 0)
+	if e != nil {
+		return false, refuse(path, "cannot hold verified daemon process")
+	}
+	defer unix.Close(fd)
+	if e = unix.PidfdSendSignal(fd, syscall.SIGTERM, nil, 0); e != nil {
+		return false, refuse(path, "cannot stop verified outdated daemon")
+	}
+	for {
+		poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+		_, e = unix.Poll(poll, 50)
+		if e == unix.EINTR {
+			continue
+		}
+		if e != nil {
+			return false, e
+		}
+		if poll[0].Revents != 0 {
+			break
+		}
+		if e = ctx.Err(); e != nil {
+			return false, refuse(path, "timed out waiting for verified outdated daemon to stop")
+		}
+	}
+	recovery, e := os.MkdirTemp(workspace, ".burrow-upgrade-")
+	if e != nil {
+		return false, e
+	}
+	for _, name := range []string{"burrow-launch.json", "burrow-launch.log", "hoveld.sock", "daemon.json", "daemon.lock", "burrow"} {
+		from := filepath.Join(workspace, name)
+		if e = os.Rename(from, filepath.Join(recovery, name)); e != nil && !os.IsNotExist(e) {
+			return false, refuse(from, "could not preserve retired runtime")
+		}
+	}
+	if e = dir.Sync(); e != nil {
+		return false, e
+	}
+	return true, nil
 }
 
 // Open is the shared CLI/TUI setup command. Starting a daemon is explicit here;
@@ -349,7 +428,7 @@ func Open(ctx context.Context, o Options) (Info, error) {
 	deadline := time.Now().Add(10 * time.Second)
 	var observed record
 	for time.Now().Before(deadline) {
-		observed, info, e = inspect(ctx, o.Workspace, cmd.Process.Pid)
+		observed, info, e = inspect(ctx, o.Workspace, cmd.Process.Pid, ExecutableSHA)
 		if e == nil {
 			break
 		}

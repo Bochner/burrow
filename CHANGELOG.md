@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.3] - 2026-09-28
+
+### Fixed
+
+- Let the explicit `restart --yes` workflow securely replace a receipt-verified
+  older pinned Hovel daemon, preserving its runtime evidence and workspace data.
+  Ordinary launch remains non-destructive and points to the recovery command.
+
+### Changed
+
+- Publish the verified `burrow-ssh` wheel through PyPI Trusted Publishing when
+  the owner selects the manual `github-and-pypi` release destination.
+
+### Verification
+
+- The portable Aspect gate passed all 41 targets, including packaged setup,
+  workspace lifecycle, Hovel compatibility, formatting, race and wheel checks.
+- A focused cross-pin regression verifies refusal without approval, exact-process
+  retirement and preservation of the retired runtime files.
+
 ## [0.2.2] - 2026-09-28
 
 ### Changed

@@ -10,7 +10,7 @@ go_library(
 go_test(
     name = "digest_test",
     tags = ["production-coverage"],
-    srcs = ["digest_test.go", "rpc_test.go"],
+    srcs = ["daemon_linux_test.go", "digest_test.go", "rpc_test.go"],
     embed = [":launch"],
 )
 

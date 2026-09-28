@@ -64,10 +64,10 @@ burrow --workspace "$HOME/burrow-lab" --offline --hovel-package /absolute/hovel-
 <h2 id="upgrade">Upgrade deliberately</h2>
 <ol>
 <li>Build the intended source revision and extract into a fresh directory. Keep the old executable while its retained resources still need it.</li>
-<li>Before a Hovel runtime upgrade, use the old Burrow executable to inspect and close active connections and retained work. Then gracefully stop that workspace’s old Hovel daemon and wait for it to exit. The new executable refuses a running daemon whose executable differs from its pin; it never replaces it automatically.</li>
-<li>Open the same workspace with the new executable to start the pinned runtime and register the base module. Preserve the workspace directory, saved settings and collected evidence; stale receipts require the documented manual recovery.</li>
+<li>Before a Hovel runtime upgrade, inspect active connections and retained work. Then run <code>burrow --workspace PATH restart --yes</code> with the new build. This explicit restart verifies the old daemon against its launch receipt, ends its live sessions, preserves its runtime files under <code>.burrow-upgrade-*</code>, starts the new pin and opens the TUI. Ordinary launch never replaces a mismatched daemon automatically.</li>
+<li>Reconnect explicitly with saved settings. The workspace directory, saved settings and collected evidence remain; stale or replaced process evidence is still refused for manual recovery.</li>
 <li>If a retained owner lacks a required capability, inspect its connections and review <a href="workspace-navigation.html#manager">manager retirement</a>. The release-compatible <code>burrow --workspace PATH restart</code> asks before ending that manager and opening the TUI; v0.2.0 also provides the headless workflow.</li>
-<li>Reconnect explicitly with saved settings. Re-export chains whose build or resource bindings have changed.</li>
+<li>Re-export chains whose build or resource bindings have changed.</li>
 </ol>
 <p>There is no automatic Burrow updater. A stale receipt, unknown socket or incomplete cache publication requires investigation; see <a href="troubleshooting.html">troubleshooting</a>. Quit reviews whether to keep or close connections, and retains the Hovel daemon in either case.</p>
 </article>
