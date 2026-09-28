@@ -62,6 +62,7 @@ It requires an existing daemon. Ctrl+C ends only the viewer; no approvals or SSH
 restart [--yes] retires the workspace's Burrow manager, then opens the current TUI.
 --yes skips restart confirmation and ends the workspace's connections and shells.
 It ends that manager's connections and shells; saved settings, evidence and Hovel remain.
+After a pinned Hovel upgrade, --yes also replaces the receipt-verified old daemon and ends its live sessions.
 Inside the interface: status, connections, connect, chain connect, inspect, shell, reconnect, close, help, quit.
 Type chain then F1 for SSH chain examples and options; Alt+B selects Burrow management.
 Linux amd64 only. Cache: $XDG_CACHE_HOME/burrow/hovel/0.4.4 (or ~/.cache).
@@ -319,6 +320,11 @@ func run(args []string) (failure error) {
 	defer cancel()
 	if command == "tui" {
 		fmt.Fprintln(os.Stderr, "Verifying Hovel package and workspace…")
+	}
+	if restartApproved {
+		if _, e := launch.ReplaceOutdated(ctx, o.Workspace); e != nil {
+			return e
+		}
 	}
 	info, e := openWorkspace(ctx, o)
 	if e != nil {

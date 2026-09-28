@@ -6,7 +6,7 @@ export BURROW_MAKE_WORKSPACE := $(WORKSPACE)
 .PHONY: help run restart clean check
 help:
 	@echo 'make run      Build and open Burrow (default workspace: ~/burrow-test)'
-	@echo 'make restart  Close connections and shells, then reopen without prompting'
+	@echo 'make restart  Close live workspace resources, upgrade Hovel if needed, then reopen'
 	@echo 'make clean    Clear build outputs only; preserves workspaces and runtime'
 	@echo 'make check    Run the portable gate'
 	@echo 'Override workspace: make run WORKSPACE=/absolute/path'
