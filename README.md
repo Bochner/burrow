@@ -15,9 +15,10 @@ implemented: verified workspace setup, saved connections, retained SSH,
 independent shells, forwarding, file transfers, commands and scripts, live
 output, local automation, Ubuntu Markdown reports, and Hovel chains. MVP 5 adds
 shared shell control, independent observation, six agent workflows and interface
-reports; final daily-use acceptance remains pending.** See the
+reports. The owner accepted MVP 1–5 and waived the manual walkthrough in
+[#65](https://github.com/Bochner/burrow/issues/65).** See the
 [candidate verification record](docs/site/MVP-ACCEPTANCE.md). The owner deferred
-the shared-workspace walkthrough; full daily-use acceptance is not yet claimed.
+the shared-workspace walkthrough; no manual walkthrough result is claimed.
 
 > **Authorized red-team emulation only.** Use Burrow only in environments you own
 > or are explicitly authorized to assess, with written scope and approvals. See
@@ -62,10 +63,10 @@ the `burrow` executable and the public-SDK module manifest. Follow the
 [launch guide](docs/site/src/content/spec/launch.html), then the
 [named connection](docs/site/src/content/spec/connections.html) and
 [saved collection](docs/site/src/content/spec/profiles.html) guides. The
-[v0.2.0 development release](https://github.com/Bochner/burrow/releases/tag/v0.2.0)
-includes a Linux amd64 archive and SHA256 checksums. It adds CLI discovery,
-headless workspace and shared-shell lifecycle, activity following and six agent
-workflow skills to the source-only v0.1.0 baseline. Repository access is required
+[v0.2.1 release](https://github.com/Bochner/burrow/releases/tag/v0.2.1)
+includes a Linux amd64 archive, pipx wheel and SHA256 checksums. It adds the
+general-use audit improvements, Hovel v0.4.4 upstream fixes and terminal output
+drain fixes to v0.2.0. Repository access is required
 to download the release. See the book’s
 [version table](docs/site/src/content/spec/user-guide.html#versions). See the
 [proposed Hovel compatibility convention](docs/research/hovel-daemon-compatibility-handoff.md)
