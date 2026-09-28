@@ -286,8 +286,9 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                     deadline = time.monotonic() + 10
                     while time.monotonic() < deadline:
                         if select.select([outer], [], [], 0.1)[0]:
-                            output.extend(os.read(outer, 65536))
-                        if needle in output:
+                            # Exercise records split across PTY reads on every run.
+                            output.extend(os.read(outer, 1))
+                        if needle in output and b"\n" in output[output.index(needle) + len(needle) :]:
                             return
                         assert p.poll() is None, output
                     raise AssertionError(output)
@@ -317,7 +318,8 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                             ],
                         },
                     )
-                    terminal_wait(b"192.0.2.11")
+                    # Fields are sorted; wait through the final field's newline.
+                    terminal_wait(b"alice")
                     assert b"SECRET-FEED-CANARY" not in output and b"\x1b]52;c;hostile" not in output, output
                     assert b"\\u001b]52;c;hostile\\u0007" in output, output
                     assert (b"\x1b[38;2;" in output) != plain, output

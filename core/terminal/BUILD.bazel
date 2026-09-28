@@ -8,7 +8,7 @@ go_library(
 )
 go_test(
     name = "host_test",
-    srcs = ["host_test.go", "shared_test.go"],
+    srcs = ["drain_test.go", "host_test.go", "shared_test.go"],
     embed = [":terminal"],
     deps = ["@com_github_charmbracelet_ultraviolet//:ultraviolet", "@org_golang_x_sys//unix"],
 )
@@ -17,7 +17,7 @@ go_test(
 # Separate from preflight's repeated setup/terminal Python scenarios.
 go_test(
     name = "host_race_test",
-    srcs = ["host_test.go"],
+    srcs = ["drain_test.go", "host_test.go"],
     embed = [":terminal"],
     race = "on",
     deps = ["@com_github_charmbracelet_ultraviolet//:ultraviolet", "@org_golang_x_sys//unix"],
