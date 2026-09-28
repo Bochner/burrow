@@ -120,6 +120,12 @@ func StartWithScrollback(ctx context.Context, cmd *exec.Cmd, width, height, hist
 		defer close(outputDone)
 		buf := make([]byte, 4096)
 		for {
+			select {
+			case <-s.done:
+				// Bound idle reads after exit, not time spent rendering queued output.
+				master.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+			default:
+			}
 			n, err := master.Read(buf)
 			if n > 0 {
 				s.mu.Lock()
@@ -174,11 +180,12 @@ func StartWithScrollback(ctx context.Context, cmd *exec.Cmd, width, height, hist
 	go func() {
 		stop := context.AfterFunc(ctx, s.stopProcess)
 		err := cmd.Wait()
-		// Drain final output; descendants holding the slave cannot delay cleanup indefinitely.
-		select {
-		case <-outputDone:
-		case <-time.After(100 * time.Millisecond):
-		}
+		close(s.done)
+		// End owned descendants before draining, and wake a read already waiting
+		// on an inherited slave. Rendering buffered output has no wall-clock cutoff.
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		master.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		<-outputDone
 		stop()
 		s.stopProcess()
 		s.mu.Lock()
@@ -187,7 +194,6 @@ func StartWithScrollback(ctx context.Context, cmd *exec.Cmd, width, height, hist
 			s.state.Err = err
 		}
 		s.mu.Unlock()
-		close(s.done)
 		workers.Wait()
 		s.mu.Lock()
 		s.em.Close()
