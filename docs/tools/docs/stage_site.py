@@ -4,7 +4,6 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from report import snapshot, write_json
 
 
 # Copied from Hovel c461ba; Copyright 2026 William Born; Apache-2.0.
@@ -30,7 +29,6 @@ def resolve_runfile(raw: str) -> Path:
 source = resolve_runfile(sys.argv[1])
 workspace = Path(os.environ["BUILD_WORKSPACE_DIRECTORY"]).resolve()
 destination = workspace / "_site"
-source_identity = snapshot(workspace)
 if destination.is_symlink():
     raise SystemExit("Refusing to stage through a symlink at _site")
 if destination.exists():
@@ -43,7 +41,4 @@ shutil.copytree(source, destination, copy_function=shutil.copyfile, ignore=shuti
 for directory, _, _ in os.walk(destination):
     path = Path(directory)
     path.chmod(path.stat().st_mode | 0o200)
-if snapshot(workspace) != source_identity:
-    raise SystemExit("Source changed while staging the site")
-write_json(destination / ".source.json", source_identity)
 print(f"Documentation staged at {destination}")

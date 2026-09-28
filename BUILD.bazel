@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
 
 # Reuse rules_go 0.61.1's pinned x/tools printf analyzer (v0.34.0).
@@ -10,6 +10,31 @@ nogo(
 )
 
 _WORKFLOWS = glob([".github/workflows/*.yml", ".github/workflows/*.yaml"], allow_empty = True)
+
+py_library(
+    name = "ci_lib",
+    srcs = [".github/ci.py"],
+    imports = [".github"],
+    deps = ["//docs/tools/docs:report_lib"],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "ci",
+    srcs = [".github/ci.py"],
+    main = ".github/ci.py",
+    deps = [":ci_lib"],
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "ci_test",
+    srcs = [".github/ci_test.py"],
+    main = ".github/ci_test.py",
+    deps = [":ci_lib"],
+    size = "small",
+    legacy_create_init = 0,
+)
 
 py_test(
     name = "workflow_test",

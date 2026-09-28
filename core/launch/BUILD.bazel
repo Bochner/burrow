@@ -19,7 +19,7 @@ go_test(
     deps = [":launch"],
     args = ["-wheel", "$(location @hovel_linux_wheel//file)"],
     data = ["@hovel_linux_wheel//file"],
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
 )
 
 go_test(
@@ -28,13 +28,13 @@ go_test(
     deps = [":launch"],
     args = ["-wheel", "$(location @hovel_linux_wheel//file)", "-check-wal-lock"],
     data = ["@hovel_linux_wheel//file"],
-    tags = ["no-sandbox", "hovel-followup"],
+    tags = ["external", "no-sandbox", "hovel-followup"],
 )
 
 go_test(
  name = "audit_test",
  srcs = ["audit_test.go"],
- tags = ["no-sandbox"],
+ tags = ["external", "no-sandbox"],
  deps = [":launch"],
 )
 

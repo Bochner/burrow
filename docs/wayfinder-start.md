@@ -109,7 +109,7 @@ shipping the full rewrite is the subsequent implementation effort.
   [ownership decision](https://github.com/Bochner/burrow/issues/11) requires
   explicit reconnect after restart or loss; loading saved settings never connects.
 - Initial operator platform: Linux, approved on 2026-09-11.
-- Private repository under Bochner.
+- Public repository under Bochner (owner confirmed 2026-09-28).
 - Homelab management and authorized penetration-testing engagements.
 - Full useful LazySSH SSH functionality, not just a connection picker.
 - Modern terminal display, including progress indicators and useful panels.

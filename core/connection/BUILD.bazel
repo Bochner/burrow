@@ -18,6 +18,7 @@ go_test(
 # Instrument the embedded production parser, not just the fuzz callback.
 go_test(
     name = "command_fuzz_test",
+    tags = ["external"],
     size = "small",
     srcs = ["commands_fuzz_test.go"],
     embed = [":connection"],

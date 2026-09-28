@@ -1,14 +1,29 @@
 def _impl(ctx: TaskContext) -> int:
     root = ctx.std.env.aspect_root_dir()
+    mode = ctx.args.mode[0]
+    if mode == "bundle":
+        commands = [
+            ["build", "//core/cmd/burrow:package"],
+            ["run", "--run-in=./bazel-burrow", "//core/tools/release:wheel", "--", "--out-dir", root + "/dist"],
+            ["run", "//core/tools/release:release", "--", "stage"],
+            ["run", "--run-in=./bazel-burrow", "//core/tools/release:bundle_smoke", "--", root + "/dist"],
+            ["run", "//core/tools/release:release", "--", "manifest"],
+        ]
+        for command in commands:
+            result = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait().code or 0
+            if result:
+                return result
+        return 0
     commands = {
         "build": ["run", "--run-in=./bazel-burrow", "//core/tools/release:wheel", "--", "--out-dir", root + "/dist"],
         "check": ["test", "//core/tools/release:wheel_test", "//core/tools/release:release_test"],
         "validate": ["run", "//core/tools/release:release", "--", "validate"] + ctx.args.options,
         "verify-pypi": ["run", "//core/tools/release:release", "--", "verify-pypi"],
     }
-    mode = ctx.args.mode[0]
+    for name in ["fetch", "verify-bundle", "prepare-pypi"]:
+        commands[name] = ["run", "//core/tools/release:release", "--", name]
     if mode not in commands:
-        print("expected build, check, validate or verify-pypi")
+        print("expected build, check, bundle, validate, fetch, verify-bundle or verify-pypi")
         return 2
     return ctx.std.process.command("aspect").args(commands[mode]).current_dir(root).spawn().wait().code or 0
 
@@ -17,6 +32,6 @@ burrow_release = task(
         "mode": args.positional(default = ["build"], minimum = 0, maximum = 1),
         "options": args.trailing_var_args(description = "Validation options: --tag vVERSION --publish true|false."),
     },
-    summary = "Build or check the Linux pipx wheel, validate release source, or verify its published PyPI digest. Never uploads.",
+    summary = "Build and smoke-test release artifacts, fetch a verified CI bundle, or validate publication. Never uploads.",
     implementation = _impl,
 )

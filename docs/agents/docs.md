@@ -22,44 +22,47 @@ Run `aspect burrow-site check` after changes, and `aspect burrow-site stage` to
 materialize the artifact. All tools are declared Bazel inputs; update JS locks
 through the Bazel-managed pnpm target via Aspect. No CDN/runtime network assets.
 
-CI runs eleven required `aspect burrow-check preflight SUITE` jobs: portable,
-lifecycle, files, reverse, shell, chains, reports, automation, follow, runs and
-hovel. Each has a 15-minute cap. The Hovel partition runs the WAL-lock regression
-and two retained-manager proofs; v0.4.4 retires the temporary #86 exception.
-Each preflight records commit-bound BEP results under `.report-input/`; the
-portable job stages `docs-base`. A required coverage job measures production Go
-lines. The report job combines all eleven partitions and coverage from the same
-source/run, then uploads `docs-site` only after `aspect burrow-report release`
-passes. Failed or missing checks block publication and earn no behavior credit.
-Repository requires checks, coverage and report assembly to succeed.
-Pages verifies the report commit and the complete site artifact's hashes through
-`aspect burrow-report verify SHA`, then promotes that artifact from successful main CI. Manual dispatch
-finds a successful Repository run for its exact main commit and promotes the
-existing artifact; it does not rebuild or rerun checks. Both paths skip
-deployment if main has advanced. Site artifacts and each job's
-`test-results-SUITE` diagnostics are retained for 14 days. Repository
-privacy alone does not make a Pages site private: confirm intended publication
-visibility before enabling Pages. Never stage the repository or research tree
-as the public site.
+Application PRs run eleven required `aspect burrow-check verify SUITE` jobs:
+portable, lifecycle, files, reverse, shell, chains, reports, automation, follow,
+runs and hovel. `verify` permits deterministic test caching; external/process,
+race and fuzz checks stay fresh. Setup/terminal checks repeat three times, and
+failed-test retries remain disabled. `preflight` and a forced full Repository
+dispatch execute everything uncached. The Hovel partition still requires its
+WAL regression and two retained-manager proofs.
 
-The public Reports page adapts Hovel's report layout using native links, tables
-and disclosure controls. Generate its initial missing-evidence state from
-`burrow capabilities` and `docs/tools/docs/parity.json`; every inventory ID must
-have an explicit behavior-check binding. Update those bindings when adding a
-capability, and preserve separate reachability, schema and selected-semantics
-metrics. Prototype tests never contribute production coverage. For a local
-report, run preflight, coverage, site staging, then `aspect burrow-report render`
-without editing source between steps. Dirty local evidence is inspectable but
-cannot pass publication. `aspect burrow-report release` additionally requires
-usable agent routes and passing behavior evidence for every inventory capability;
-failed/missing checks stay visible and never count toward demonstrated parity;
-it requires usable direct routes or explicit supported equivalents for all
-operational capabilities. Presentation-only entries stay visible with their
-own behavior checks. Schema documentation and owner acceptance remain separate.
-Repeated local suites preserve previous evidence in `.report-input/archive/`;
-archived failures must be diagnosed and never silently replaced by a passing retry.
-The required CI report job uses `aspect burrow-report release`, enforcing these
-operational route and behavior checks before the `repository` aggregate passes.
+The CI selector may inherit evidence from successful same-repository Repository
+runs. Main requires the same tested Git tree and merge parents; narrow prose-only
+PRs require an exact successful main baseline and unchanged application inputs,
+then run current documentation checks. Missing/expired evidence, lookup errors,
+unknown paths, deletions and unsupported merges select full validation. Original
+suite commits and run IDs are retained; Jobs shows their execution identity.
+The required `repository` aggregate rejects failed, cancelled or unexpected
+skipped jobs. Main also requires the final distribution build and smoke checks.
+
+The report follows Hovel's structured data model and interactive application:
+Overview, Linters, Coverage, Suites, Jobs and Targets with logs/XML/cases. The
+owner explicitly chose Hovel's report enforcement on 2026-09-28. The former
+same-source/run/per-file-hash/site-hash publication contract is removed. Keep
+schema/target completeness, referenced-file validation and operational parity
+checks. CI eligibility and release checksums are pipeline concerns, separate
+from the report's presentation/data contract. Pages downloads the successful
+same-repository main artifact and skips deployment if main has advanced; manual
+Pages dispatch finds an exact successful main run. It does not rebuild or add a
+second report manifest gate. Evidence/site/bundle retention is 30 days; additional
+failure diagnostics are seven days. Burrow and its release downloads are public.
+Never stage the repository or research tree as the Pages site.
+
+Generate initial missing-evidence state from `burrow capabilities` and
+`docs/tools/docs/parity.json`; each inventory ID needs a behavior-check binding.
+Preserve separate reachability, JSON schema and selected-behavior measurements;
+optional MCP is not typed MCP coverage. Prototypes do not contribute production
+coverage. For a local report, run preflight, coverage, site staging and
+`aspect burrow-report render`. Archive individual suite inputs before switching
+to an all-suite preflight to avoid overlapping evidence. Repeated local suites
+preserve their previous files in `.report-input/archive/`; diagnose failures.
+`aspect burrow-report release` requires all suites, measured coverage, usable
+operational agent routes and passing selected behavior checks. Owner acceptance
+and exhaustive semantic equivalence are separate.
 
 See [the upstream pin and adaptation notes](../site/UPSTREAM.md) before updating
 copied Hovel theme code or dependency versions.

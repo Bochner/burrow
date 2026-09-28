@@ -5,7 +5,7 @@ load("@npm//docs/site:astro/package_json.bzl", astro = "bin")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([".npmrc", ".nvmrc", "package.json", "pnpm-lock.yaml"])
+exports_files(["public/assets/report.js", "public/assets/report.css", ".npmrc", ".nvmrc", "package.json", "pnpm-lock.yaml"])
 
 npm_link_all_packages()
 

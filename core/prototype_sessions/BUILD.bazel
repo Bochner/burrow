@@ -12,7 +12,7 @@ py_test(
     srcs = ["check.py"],
     args = ["$(location :burrow)", "$(location //core/cmd/burrow:burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location //core/cmd/burrow:screen_check)"],
     data = [":burrow", "//core/cmd/burrow:burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", "//core/cmd/burrow:screen_check"],
-    tags = ["local", "external", "acceptance", "acceptance-shell"],
+    tags = ["local", "external", "requires-docker", "acceptance", "acceptance-shell"],
     size = "large",
     legacy_create_init = 0,
 )

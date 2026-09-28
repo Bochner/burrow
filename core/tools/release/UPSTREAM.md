@@ -8,7 +8,9 @@ compressed deterministic output and installed-wheel verification. The pinned
 Hovel SDK license is included in the wheel. Agent skills and the module
 manifest remain embedded in the existing Go executable.
 
-The release workflow follows Hovel's separate verification/build/publish jobs,
-pinned PyPA publishing action, `pypi` environment and job-local OIDC permission.
-It requires manual dispatch and defaults to build-only while PyPI setup is
-pending. No legacy LazySSH API token is copied or required.
+The release workflow retains Hovel's pinned PyPA action, `pypi` environment
+and job-local OIDC permission. Burrow's owner-approved promotion path builds and
+smoke-tests archive/wheel files on verified main CI, then manual Release reuses
+that exact bundle. GitHub publication is independent of optional PyPI; rehearsal
+is the default. Tag/VERSION/main checks, successful source-run verification and
+artifact checksums guard publication. No legacy LazySSH API token is copied.
