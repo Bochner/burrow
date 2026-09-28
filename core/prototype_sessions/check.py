@@ -143,11 +143,8 @@ with tempfile.TemporaryDirectory(prefix="b87-") as scratch:
                                  "--", "session", "send", one, "printf 'NATIVE_%s\\n' CLI", "--json"],
                                 env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15, start_new_session=True)
         print("NATIVE CLI", native.returncode, native.stdout, native.stderr, flush=True)
-        if native.returncode == 0:
-            expect(one, b"NATIVE_CLI")
-        else:
-            assert "interactive" in native.stderr or "interactive" in native.stdout, native
-            print("GAP registered Hovel session send refuses headless run", flush=True)
+        assert native.returncode == 0, native
+        expect(one, b"NATIVE_CLI")
         assert "NATIVE_CLI" in hv("tail", one, "--bytes", "65536")["data"]
         assert hv("read", one)["sessionId"] == one
 
@@ -268,14 +265,15 @@ with tempfile.TemporaryDirectory(prefix="b87-") as scratch:
         print("PASS headless agent + separate terminal, two shells, Ctrl+C, top, termios restoration and same-PID/state detach/reattach", flush=True)
         print("GAP native connector ignores live resize; prototype resize command must be explicitly driven", flush=True)
 
-        # Reproduce full-screen presentation cleanup independently of top's modes.
+        # Require full-screen presentation cleanup independently of top's modes.
         hv("send", two, "printf '\\033[?1049h\\033[?25l\\033[2J\\033[HRESTORE_%s' PROBE")
         visible(viewer, "RESTORE_PROBE")
         detach(viewer, "alternate-screen-detach")
         raw = viewer["output"]
-        assert raw.rfind(b"\x1b[?1049h") > raw.rfind(b"\x1b[?1049l"), raw[-500:]
-        assert raw.rfind(b"\x1b[?25l") > raw.rfind(b"\x1b[?25h"), raw[-500:]
-        print("GAP native detach restores termios but leaves alternate screen and hidden cursor active", flush=True)
+        assert raw.rfind(b"\x1b[?1049l") > raw.rfind(b"\x1b[?1049h"), raw[-500:]
+        assert raw.rfind(b"\x1b[?25h") > raw.rfind(b"\x1b[?25l"), raw[-500:]
+        assert b"\x1b[?1049l\x1b[?25h\x1b[0m" in raw, raw[-500:]
+        print("PASS native detach restores termios, normal screen, visible cursor and text attributes", flush=True)
         write(two, b"printf '\\033[?1049l\\033[?25h'\n")
         # The existing embedded Hovel tab can observe the retained shell even
         # though Burrow's management inventory refuses its unfamiliar kind.

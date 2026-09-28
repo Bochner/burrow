@@ -25,6 +25,10 @@ captures: ordinary attach, alternate-screen detach and the actual Burrow observe
 Run the check again to reproduce them. Passing a GAP assertion means the
 limitation was reproduced, not that the capability passed.
 
+The current check uses the Hovel v0.4.4 pin in `MODULE.bazel` and requires clean
+native terminal restoration on detach. The recorded observations below preserve
+the original runtime's behavior.
+
 ## What is exercised
 
 The proof installs a scratch-only extension of the **same `burrow@0.1.0` module**.
