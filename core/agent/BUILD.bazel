@@ -17,3 +17,9 @@ go_library(
     visibility = ["//core/cmd/burrow:__pkg__"],
     deps = ["@org_golang_x_sys//unix"],
 )
+
+filegroup(
+    name = "format_sources",
+    srcs = glob(["*.go"]),
+    visibility = ["//:__pkg__"],
+)

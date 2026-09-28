@@ -1,0 +1,332 @@
+{
+  "provenance": {
+    "machine": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "cpu_count": 32,
+    "load_start": [
+      16.7666015625,
+      15.00732421875,
+      13.3037109375
+    ],
+    "binary_sha256": "78ed71b65eb952767918b4c08f9182ed1a98c69c67c910208d5560e61f6625d6",
+    "wheel_sha256": "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933",
+    "image": "linuxserver/openssh-server@sha256:47f82202bcbffe214cea77dc7f5ed24b875e81ce6ebf0e0368e2954727bf5116",
+    "build": "Aspect fastbuild",
+    "phases": false,
+    "process_trace": false,
+    "windows_path_entries": 33,
+    "workload": "local disposable SSH; key authentication; one approved master; sequential CLI shells closed after each; TUI shells retained with previous attachments detached",
+    "geometry": "CLI 80x24; TUI outer 160x40, shell 98x35",
+    "human_wait": "CLI review-to-submission includes synthetic 200ms; TUI shell command has no review dialog",
+    "observation": "CLOCK_MONOTONIC ns; CLI snapshot prompt is not paint; TUI decoded VT prompt cells include up to 50ms read/drain polling and decoder overhead",
+    "p95": "nearest rank, sorted[ceil(0.95*n)-1]; n=1 is descriptive only",
+    "timeouts": "CLI 60s; connection transition 20s; TUI prompt 15s; whole lab 1800s",
+    "source_revision": "1ac01c09de6aa4f9305b59da93306adf395ce533",
+    "tracked_diff_sha256": "7341e23dd96107e720a579c51fc6373a53dccd0c842da0d49013d4829c7f9a3a",
+    "pins": {
+      "MODULE.bazel": "module(\n    name = \"burrow\",\n    version = \"0.0.0\",\n)\n\n# Documentation toolchain pins match Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388.\nbazel_dep(name = \"aspect_rules_js\", version = \"3.2.2\")\nbazel_dep(name = \"rules_nodejs\", version = \"6.7.5\")\nbazel_dep(name = \"rules_python\", version = \"2.2.0\")\n\npython = use_extension(\"@rules_python//python/extensions:python.bzl\", \"python\")\npython.toolchain(python_version = \"3.12\")\n\nnode = use_extension(\"@rules_nodejs//nodejs:extensions.bzl\", \"node\")\nnode.toolchain(node_version_from_nvmrc = \"//docs/site:.nvmrc\")\nuse_repo(node, \"nodejs_toolchains\")\n\npnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"pnpm\")\npnpm.pnpm(pnpm_version_from = \"//docs/site:package.json\")\nuse_repo(pnpm, \"pnpm\")\n\nnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"npm\")\nnpm.npm_translate_lock(\n    name = \"npm\",\n    npmrc = \"//docs/site:.npmrc\",\n    pnpm_lock = \"//docs/site:pnpm-lock.yaml\",\n    run_lifecycle_hooks = False,\n)\nuse_repo(npm, \"npm\")\n\n# Pinned runtime v0.4.2 (c461ba282a8a); GitHub asset digest.\n# SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.\nhttp_file = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_file\")\n\nhttp_file(\n    name = \"hovel_linux_wheel\",\n    downloaded_file_path = \"hovel.whl\",\n    sha256 = \"7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933\",\n    urls = [\"https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl\"],\n)\n\n# Real full-screen SSH acceptance only: Alpine 3.24 x86_64 Vim executable.\n# Alpine aports b7c31805c49a6e75b725aee8601e2e99e1d693e9; Vim license.\n# The lab uses -u NONE -i NONE --noplugin, without runtime scripts or xxd.\nhttp_file(\n    name = \"shell_lab_vim\",\n    downloaded_file_path = \"vim.apk\",\n    sha256 = \"6677af51cdce462afaf06af353acfe059b4a3c68c4257a539121c3ce46d25c68\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/vim-9.2.1091-r0.apk\"],\n)\n\n# Dropbear interoperability fixture only, Alpine 3.24 x86_64 (MIT).\n# aports e56a1d711fb2dd69206223dcdfd609d91d40ad02; shared libraries ISC.\n# Executed inside the digest-pinned OpenSSH lab image, never installed on hosts.\nhttp_file(\n    name = \"chain_lab_dropbear\",\n    downloaded_file_path = \"dropbear.apk\",\n    sha256 = \"cba11fe37aa85d7259ae44d494544e869bb58879e35124d0ba33b32c3b1201d7\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/dropbear-2026.91-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_utmps\",\n    downloaded_file_path = \"utmps.apk\",\n    sha256 = \"497f0f1cb51f0e6c1acc338fded0dc7722b1d43ea17bdb749f0d556794f8b2d8\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/utmps-libs-0.1.3.3-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_skalibs\",\n    downloaded_file_path = \"skalibs.apk\",\n    sha256 = \"3301f6ccbeaea49cdd966c7e636898a8612fb8fe964a15f24f6d204b3944c3f3\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/skalibs-libs-2.15.0.0-r0.apk\"],\n)\n\n# Disposable external SDK proof, pinned to the research baseline.\nbazel_dep(name = \"rules_go\", version = \"0.61.1\")\nbazel_dep(name = \"gazelle\", version = \"0.51.3\")\nbazel_dep(name = \"rules_pkg\", version = \"1.2.0\")\n\ngo_sdk = use_extension(\"@rules_go//go:extensions.bzl\", \"go_sdk\")\ngo_sdk.download(version = \"1.26.5\")\n\ngo_deps = use_extension(\"@gazelle//:extensions.bzl\", \"go_deps\")\ngo_deps.from_file(go_mod = \"//core/prototype_sdk:go.mod\")\nuse_repo(go_deps, \"com_github_charmbracelet_colorprofile\", \"com_github_charmbracelet_x_ansi\", \"com_github_charmbracelet_x_term\", \"com_github_charmbracelet_x_vt\", \"com_github_pkg_sftp\", \"land_charm_bubbles_v2\", \"land_charm_bubbletea_v2\", \"land_charm_lipgloss_v2\", \"org_golang_x_crypto\", \"org_golang_x_sys\")\nuse_repo(go_deps, \"com_github_charmbracelet_ultraviolet\", \"land_charm_huh_v2\", \"land_charm_glamour_v2\")\n\nhttp_archive = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_archive\")\n\n# Workflow syntax/expression checks: rhysd/actionlint v1.7.12, MIT;\n# SHA256 from the upstream GitHub release asset (Linux amd64 operator baseline).\nhttp_archive(\n    name = \"actionlint\",\n    urls = [\"https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz\"],\n    sha256 = \"8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8\",\n    build_file_content = \"exports_files([\\\"actionlint\\\"])\",\n)\n\nhttp_archive(\n    name = \"hovel_sdk\",\n    build_file = \"//core/prototype_sdk:hovel.BUILD.bazel\",\n    patch_cmds = [\"rm sdk/go/hovel/BUILD.bazel\"],\n    sha256 = \"9080e5060787f4ba5ee6715611e10112af2af316318369b748c9f566c1f3b6e9\",\n    strip_prefix = \"hovel-a4cbfdf7769a9551695088c11061e3cabc368e07\",\n    type = \"tar.gz\",\n    urls = [\"https://codeload.github.com/vibepwners/hovel/tar.gz/a4cbfdf7769a9551695088c11061e3cabc368e07\"],\n)\n",
+      ".bazelversion": "9.1.1\n",
+      ".aspect/version.axl": "version(\"2026.33.3\")\n",
+      ".bazelrc": "common --announce_rc\ntest --test_output=errors\n\ntry-import %workspace%/.bazelrc.user\n"
+    },
+    "cpu_model": "AMD Ryzen 9 9950X3D 16-Core Processor",
+    "memory": [
+      "MemTotal:       32630472 kB",
+      "MemFree:         4795988 kB",
+      "MemAvailable:   21850164 kB"
+    ],
+    "directory_shape": "fresh disposable workspace; zero retained shell records before CLI; CLI closed records kept by Hovel; TUI previous shells retained"
+  },
+  "connections": [
+    {
+      "case": "cold-manager",
+      "review_begin": 627628260213820,
+      "review_ready": 627628604124079,
+      "begin": 627628804208508,
+      "dispatch_return": 627631771911271,
+      "connected": 627631863977978,
+      "connected_observed": 627632119488494
+    },
+    {
+      "case": "warm-manager",
+      "review_begin": 627632494241019,
+      "review_ready": 627632848665766,
+      "begin": 627633048794480,
+      "dispatch_return": 627634723300854,
+      "connected": 627634816217259,
+      "connected_observed": 627635072146329
+    }
+  ],
+  "samples": [
+    {
+      "case": "cli",
+      "review_begin": 627635421825892,
+      "review_ready": 627635774594161,
+      "begin": 627635974693210,
+      "dispatch_return": 627639012221386,
+      "owner_pid": 1920689,
+      "shell_pid": 1920816,
+      "prompt_observed": 627639356825629
+    },
+    {
+      "case": "cli",
+      "review_begin": 627640072697845,
+      "review_ready": 627640436274877,
+      "begin": 627640636377022,
+      "dispatch_return": 627643647568539,
+      "owner_pid": 1920994,
+      "shell_pid": 1921106,
+      "prompt_observed": 627643982697962
+    },
+    {
+      "case": "cli",
+      "review_begin": 627644740504186,
+      "review_ready": 627645090969753,
+      "begin": 627645291072382,
+      "dispatch_return": 627648328589306,
+      "owner_pid": 1921239,
+      "shell_pid": 1921320,
+      "prompt_observed": 627648678466796
+    },
+    {
+      "case": "cli",
+      "review_begin": 627649405056845,
+      "review_ready": 627649753312124,
+      "begin": 627649953400463,
+      "dispatch_return": 627652999436369,
+      "owner_pid": 1921455,
+      "shell_pid": 1921554,
+      "prompt_observed": 627653339905768
+    },
+    {
+      "case": "cli",
+      "review_begin": 627654067887565,
+      "review_ready": 627654418059085,
+      "begin": 627654618156945,
+      "dispatch_return": 627657641207903,
+      "owner_pid": 1921691,
+      "shell_pid": 1921789,
+      "prompt_observed": 627657976368460
+    },
+    {
+      "case": "cli",
+      "review_begin": 627658721227795,
+      "review_ready": 627659074258008,
+      "begin": 627659274351151,
+      "dispatch_return": 627662313235926,
+      "owner_pid": 1921921,
+      "shell_pid": 1922022,
+      "prompt_observed": 627662650236032
+    },
+    {
+      "case": "cli",
+      "review_begin": 627663377589032,
+      "review_ready": 627663731440390,
+      "begin": 627663931536613,
+      "dispatch_return": 627666956958646,
+      "owner_pid": 1922179,
+      "shell_pid": 1922262,
+      "prompt_observed": 627667294528927
+    },
+    {
+      "case": "cli",
+      "review_begin": 627668026511883,
+      "review_ready": 627668375308076,
+      "begin": 627668575353764,
+      "dispatch_return": 627671599425787,
+      "owner_pid": 1922398,
+      "shell_pid": 1922476,
+      "prompt_observed": 627671933454358
+    },
+    {
+      "case": "cli",
+      "review_begin": 627672652881512,
+      "review_ready": 627673001307769,
+      "begin": 627673201410670,
+      "dispatch_return": 627676245927472,
+      "owner_pid": 1922631,
+      "shell_pid": 1922713,
+      "prompt_observed": 627676585873936
+    },
+    {
+      "case": "cli",
+      "review_begin": 627677318663146,
+      "review_ready": 627677665121605,
+      "begin": 627677865218747,
+      "dispatch_return": 627680927417099,
+      "owner_pid": 1922849,
+      "shell_pid": 1922930,
+      "prompt_observed": 627681269691432
+    },
+    {
+      "case": "tui-first",
+      "begin": 627681997445104,
+      "frontend_pid": 1923001,
+      "visible": 627685119443852,
+      "control_visible": 627685152856228,
+      "owner_pid": 1923103,
+      "shell_pid": 1923185
+    },
+    {
+      "case": "tui-additional",
+      "begin": 627685886346956,
+      "frontend_pid": 1923001,
+      "visible": 627688769612808,
+      "control_visible": 627688803188963,
+      "owner_pid": 1923283,
+      "shell_pid": 1923421
+    },
+    {
+      "case": "tui-additional",
+      "begin": 627689586910953,
+      "frontend_pid": 1923001,
+      "visible": 627692569104219,
+      "control_visible": 627692602260462,
+      "owner_pid": 1923569,
+      "shell_pid": 1923665
+    },
+    {
+      "case": "tui-additional",
+      "begin": 627693369359730,
+      "frontend_pid": 1923001,
+      "visible": 627696387362657,
+      "control_visible": 627696419211829,
+      "owner_pid": 1923754,
+      "shell_pid": 1923834
+    },
+    {
+      "case": "tui-additional",
+      "begin": 627697185474148,
+      "frontend_pid": 1923001,
+      "visible": 627700319987690,
+      "control_visible": 627700353029515,
+      "owner_pid": 1923922,
+      "shell_pid": 1924004
+    },
+    {
+      "case": "tui-additional",
+      "begin": 627701136272963,
+      "frontend_pid": 1923001,
+      "visible": 627704353969693,
+      "control_visible": 627704403002443,
+      "owner_pid": 1924089,
+      "shell_pid": 1924173
+    },
+    {
+      "case": "tui-additional",
+      "begin": 627705202828022,
+      "frontend_pid": 1923001,
+      "visible": 627708552858350,
+      "control_visible": 627708602253076,
+      "owner_pid": 1924260,
+      "shell_pid": 1924347
+    },
+    {
+      "case": "tui-additional",
+      "begin": 627709452817849,
+      "frontend_pid": 1923001,
+      "visible": 627712936073051,
+      "control_visible": 627712986596340,
+      "owner_pid": 1924603,
+      "shell_pid": 1924703
+    },
+    {
+      "case": "tui-additional",
+      "begin": 627713736691428,
+      "frontend_pid": 1923001,
+      "visible": 627717687940875,
+      "control_visible": 627717752558406,
+      "owner_pid": 1924845,
+      "shell_pid": 1925212
+    },
+    {
+      "case": "tui-additional",
+      "begin": 627718668994324,
+      "frontend_pid": 1923001,
+      "visible": 627722685684822,
+      "control_visible": 627722753133044,
+      "owner_pid": 1926542,
+      "shell_pid": 1926625
+    }
+  ],
+  "failures": [],
+  "timeouts": 0,
+  "cleanup": "shell clients reaped; master unchanged during samples; all connections explicitly closed",
+  "load_end": [
+    17.97265625,
+    15.517578125,
+    13.6376953125
+  ],
+  "summary_ms": {
+    "cold-manager:review_ready-review_begin": {
+      "n": 1,
+      "median": 343.910259,
+      "p95": 343.910259
+    },
+    "cold-manager:begin-review_ready": {
+      "n": 1,
+      "median": 200.084429,
+      "p95": 200.084429
+    },
+    "cold-manager:dispatch_return-begin": {
+      "n": 1,
+      "median": 2967.702763,
+      "p95": 2967.702763
+    },
+    "cold-manager:connected-begin": {
+      "n": 1,
+      "median": 3059.76947,
+      "p95": 3059.76947
+    },
+    "warm-manager:review_ready-review_begin": {
+      "n": 1,
+      "median": 354.424747,
+      "p95": 354.424747
+    },
+    "warm-manager:begin-review_ready": {
+      "n": 1,
+      "median": 200.128714,
+      "p95": 200.128714
+    },
+    "warm-manager:dispatch_return-begin": {
+      "n": 1,
+      "median": 1674.506374,
+      "p95": 1674.506374
+    },
+    "warm-manager:connected-begin": {
+      "n": 1,
+      "median": 1767.422779,
+      "p95": 1767.422779
+    },
+    "cli:review_ready-review_begin": {
+      "n": 10,
+      "median": 350.31854350000003,
+      "p95": 363.577032
+    },
+    "cli:begin-review_ready": {
+      "n": 10,
+      "median": 200.097501,
+      "p95": 200.102901
+    },
+    "cli:dispatch_return-begin": {
+      "n": 10,
+      "median": 3037.5225499999997,
+      "p95": 3062.198352
+    },
+    "cli:prompt_observed-begin": {
+      "n": 10,
+      "median": 3379.0086499999998,
+      "p95": 3404.472685
+    },
+    "tui-first:visible-begin": {
+      "n": 1,
+      "median": 3121.998748,
+      "p95": 3121.998748
+    },
+    "tui-additional:visible-begin": {
+      "n": 9,
+      "median": 3217.69673,
+      "p95": 4016.690498
+    }
+  },
+  "publication": "Raw boundary/setup spans retained; other caller RPC spans aggregated. Complete private trace hash retained when available. Growing workload predates explicit --growing-tabs option."
+}

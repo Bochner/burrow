@@ -1,0 +1,30 @@
+exec ${PAGER:-/usr/bin/less} "$0" || exit 1
+Executing tests from //core/cmd/burrow:ssh_files_test
+-----------------------------------------------------------------------------
+TIMING fixture and workspace setup: 2.2s (total 2.2s)
+TIMING connect unknown submission-to-CLI-return: 0.459s
+TIMING connect gateway submission-to-CLI-return: 0.302s
+TIMING connect history-peer submission-to-CLI-return: 0.309s
+PASS real same-master SFTP metadata, navigation, denied paths and symlink tree
+PASS reviewed same-master download, exact bytes and retrievable completion
+PASS durable single/batch full outcomes after CLI detach; private log and unavailable-storage refusal
+PASS batch/empty files, no-write review, overwrite binding, containment and deduplicated totals
+PASS actual Unicode/quoted/symlink copies and changed source/discovery/root refusal
+PASS reviewed contained upload, exact remote bytes and retrievable completion
+PASS zero-byte upload, containment, overwrite/denial and download-total isolation
+PASS real CLI/TUI history read failure, retained recall and draft, refreshed recall without reopening
+PASS log Vim open/toggle/reopen/normal exit restores file draft; live log preserved
+PASS right-click active connection opens real same-master shell tab
+PASS right-click saved connection, real Vim tab, validated save and retained SSH master
+PASS concurrent CLI/TUI first history, browse preserved after uncertain persistence, no retry
+TIMING connect file-observer submission-to-CLI-return: 0.353s
+PASS real TUI upload and download continues through help/listing/shell; acknowledged cancel preserves original and labelled partial
+TIMING connect upload-close submission-to-CLI-return: 0.382s
+TIMING connect upload-loss submission-to-CLI-return: 0.381s
+PASS stalled rate/unknown ETA, upload cancel/write failure/directory swap/close/loss, concurrent single-stream batch and selected retry
+PASS headless exact-ID discovery cancellation, wrong-ID isolation, audit failure cleanup and sibling preservation
+PASS measured remote-load budget: cached completion has zero directory reads; explicit refresh reuses account names; idle stays silent
+PASS durable download outcomes/totals after retained owner loss
+TIMING acceptance before cleanup: 67.1s (total 69.4s)
+PASS post-shutdown database integrity and confirmed Hovel forwarding evidence
+TIMING fixture cleanup: 0.7s (total 70.1s)

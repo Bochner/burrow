@@ -1,0 +1,10 @@
+exec ${PAGER:-/usr/bin/less} "$0" || exit 1
+Executing tests from //core/connection:command_fuzz_test
+-----------------------------------------------------------------------------
+fuzz: elapsed: 0s, gathering baseline coverage: 0/10 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 10/10 completed, now fuzzing with 1 workers
+fuzz: elapsed: 3s, execs: 98483 (32824/sec), new interesting: 27 (total: 37)
+fuzz: elapsed: 6s, execs: 244505 (48663/sec), new interesting: 32 (total: 42)
+fuzz: elapsed: 9s, execs: 397434 (50975/sec), new interesting: 32 (total: 42)
+fuzz: elapsed: 10s, execs: 452482 (50319/sec), new interesting: 33 (total: 43)
+PASS

@@ -1,4 +1,5 @@
 """Drive the real embedded Hovel CLI; all mutations use disposable workspaces."""
+
 import base64
 import fcntl
 import json
@@ -20,7 +21,15 @@ binary, wheel, package, decoder = [str(Path(p).resolve()) for p in sys.argv[1:]]
 with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
     root = Path(scratch)
     env = {k: v for k, v in os.environ.items() if not k.startswith("HOVEL_")}
-    env.update(HOME=scratch, XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color", DISPLAY="", WAYLAND_DISPLAY="")
+    env.update(
+        HOME=scratch,
+        XDG_CACHE_HOME=str(root / "cache"),
+        XDG_CONFIG_HOME=str(root / "config"),
+        NO_COLOR="1",
+        TERM="xterm-256color",
+        DISPLAY="",
+        WAYLAND_DISPLAY="",
+    )
     daemons = []
     terminal = None
     master, slave = pty.openpty()
@@ -29,25 +38,49 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
     output = bytearray()
 
     def status(workspace):
-        result = subprocess.run([binary, "--workspace", str(workspace), "--hovel-package", wheel, "status"], env=env, capture_output=True, text=True, timeout=30, check=True)
+        result = subprocess.run(
+            [binary, "--workspace", str(workspace), "--hovel-package", wheel, "status"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
         info = json.loads(result.stdout)
         daemons.append(info["pid"])
         return info
 
     def cli(workspace, *args):
-        executable = root / "cache/burrow/hovel/0.4.2/hovel"
-        result = subprocess.run([str(executable), "run", "--workspace", str(workspace), "--daemon-endpoint", str(workspace / "hoveld.sock"), "--", *args], env=env, capture_output=True, text=True, timeout=20)
+        executable = root / "cache/burrow/hovel/0.4.4/hovel"
+        result = subprocess.run(
+            [
+                str(executable),
+                "run",
+                "--workspace",
+                str(workspace),
+                "--daemon-endpoint",
+                str(workspace / "hoveld.sock"),
+                "--",
+                *args,
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
         assert result.returncode == 0, result.stdout + result.stderr
         return result.stdout
 
     def screen():
-        return subprocess.run([decoder, *map(str, dimensions)], input=output, capture_output=True, timeout=3, check=True).stdout.decode()
+        return subprocess.run(
+            [decoder, *map(str, dimensions)], input=output, capture_output=True, timeout=3, check=True
+        ).stdout.decode()
 
     def wait(needle, prompt=False, absent=None):
         deadline = time.monotonic() + 12
         stable, since = None, time.monotonic()
         while time.monotonic() < deadline:
-            if select.select([master], [], [], .05)[0]:
+            if select.select([master], [], [], 0.05)[0]:
                 output.extend(os.read(master, 65536))
             view = screen()
             center = [line[28:126].rstrip() for line in view.splitlines()[3:38]]
@@ -55,7 +88,12 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
                 stable, since = center, time.monotonic()
             center = [line for line in center if "h0v3l" in line]
             ready = center and re.search(r"h0v3l.*>\s*$", center[-1])
-            if needle in view and (absent is None or absent not in view) and (not prompt or ready) and time.monotonic() - since > .25:
+            if (
+                needle in view
+                and (absent is None or absent not in view)
+                and (not prompt or ready)
+                and time.monotonic() - since > 0.25
+            ):
                 return view
             assert terminal.poll() is None, (terminal.returncode, view)
         Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"], "terminal-debug").write_bytes(output)
@@ -71,12 +109,12 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         if text not in ("yes", "no"):
             wait(text)
         else:
-            time.sleep(.1)
+            time.sleep(0.1)
         send(b"\r")
         return wait(needle, prompt)
 
     def click(x, y):
-        send(f"\x1b[<0;{x+1};{y+1}M\x1b[<0;{x+1};{y+1}m")
+        send(f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m")
 
     def menu(text):
         send(b"\x1d\x10")  # terminal escape, then Burrow palette
@@ -101,14 +139,26 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
     try:
         a, b = root / "a", root / "b"
         info_a, info_b = status(a), status(b)
-        executable = root / "cache/burrow/hovel/0.4.2/hovel"
+        executable = root / "cache/burrow/hovel/0.4.4/hovel"
         absent = root / "no-start"
-        refused = subprocess.run([str(executable), "shell", "--workspace", str(absent)], env=env | {"HOVEL_DAEMON_ENDPOINT": str(absent / "hoveld.sock")}, capture_output=True, timeout=10)
+        refused = subprocess.run(
+            [str(executable), "shell", "--workspace", str(absent)],
+            env=env | {"HOVEL_DAEMON_ENDPOINT": str(absent / "hoveld.sock")},
+            capture_output=True,
+            timeout=10,
+        )
         assert refused.returncode != 0 and not absent.exists(), "explicit endpoint fell through to startup"
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         # Foreign endpoint/config environment must not redirect the embedded CLI.
         hostile = env | {"HOVEL_DAEMON_ENDPOINT": str(b / "hoveld.sock"), "HOVEL_CONFIG": str(root / "absent")}
-        terminal = subprocess.Popen([binary, "--workspace", str(a), "--offline"], env=hostile, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+        terminal = subprocess.Popen(
+            [binary, "--workspace", str(a), "--offline"],
+            env=hostile,
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            preexec_fn=controlling,
+        )
         wait("SAVED CONNECTION")
         assert re.search(rb"\x1b\[\?100[0236]h", output), "panel selection needs mouse events"
         assert b"\x1b]52;" not in output, "unexpected clipboard operation"
@@ -120,18 +170,23 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         send("profile create api-human 192.0.2.88 --user apiuser\r")
         wait('"state": "create"')
         select_route = routes["profile.select"]["agent"]["example"][1:]
-        select_route = [str(a) if token == "/absolute/workspace" else
-                        "api-human" if token == "target" else token for token in select_route]
+        select_route = [
+            str(a) if token == "/absolute/workspace" else "api-human" if token == "target" else token
+            for token in select_route
+        ]
         saved = json.loads(subprocess.check_output([binary, *select_route], env=env, text=True))
         assert (saved["name"], saved["host"], saved["user"]) == ("api-human", "192.0.2.88", "apiuser"), saved
         schema = inventory["results"][routes["profile.select"]["result"]]
         assert set(schema["required"]) <= saved.keys() <= schema["properties"].keys(), (schema, saved)
-        assert json.loads(subprocess.check_output([binary, "--workspace", str(a), "connections"], env=env, text=True)) == [], "saving settings connected"
+        assert (
+            json.loads(subprocess.check_output([binary, "--workspace", str(a), "connections"], env=env, text=True))
+            == []
+        ), "saving settings connected"
         send("management-draft")
         send(b"\x0c")
         wait("No collected command output")
         for width, height in ((200, 50), (120, 30), (80, 24), (160, 40)):
-            while select.select([master], [], [], .05)[0]:
+            while select.select([master], [], [], 0.05)[0]:
                 output.extend(os.read(master, 65536))
             output.clear()
             dimensions[:] = [width, height]
@@ -217,14 +272,14 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         send(b"\x1bs")  # restore native selection while Hovel retains focus
         wait("Ctrl+Shift+C/V")
         send(b"\x1b[200~op create pasted\n\x1b[201~")
-        time.sleep(.3)
+        time.sleep(0.3)
         assert "pasted" not in cli(a, "op", "list"), "paste executed a command"
         send(b"\x03")
-        time.sleep(.2)
+        time.sleep(0.2)
         assert terminal.poll() is None, "Ctrl-C quit outer UI"
         send(b"\x1bs")  # re-enable pointer controls for the remaining click scenarios
         for width, height in [(120, 30), (80, 24), (200, 50), (160, 40)]:
-            while select.select([master], [], [], .05)[0]:
+            while select.select([master], [], [], 0.05)[0]:
                 output.extend(os.read(master, 65536))
             output.clear()  # Bubble Tea redraws on resize; old cursor geometry is not replayed at the new size.
             dimensions[:] = [width, height]
@@ -283,7 +338,9 @@ with tempfile.TemporaryDirectory(prefix="bt-") as scratch:
         assert all(not Path(f"/proc/{pid}").exists() for pid in children), "frontend did not reap its CLI processes"
         assert termios.tcgetattr(slave) == before
         assert status(b)["pid"] == info_b["pid"]
-        print("PASS embedded pinned CLI: confirmation, rejection, workspace isolation, chrome, paste, resize, exit, daemon loss and retained daemon")
+        print(
+            "PASS embedded pinned CLI: confirmation, rejection, workspace isolation, chrome, paste, resize, exit, daemon loss and retained daemon"
+        )
     finally:
         if terminal and terminal.poll() is None:
             terminal.kill()

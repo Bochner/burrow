@@ -1,0 +1,25 @@
+<!-- burrow-doc: {"title":"Release preparation","group":"Engineering","order":310,"description":"Build and test the pipx wheel, configure PyPI Trusted Publishing, and publish an approved tag."} -->
+<article><h1>Release preparation</h1>
+<p>Burrow follows Hovel's prebuilt Go wheel and PyPI Trusted Publishing approach. The local release path is prepared; no public PyPI release is claimed. The distribution name is <code>burrow-ssh</code> and its console command is <code>burrow</code>. The public PyPI name <code>burrow</code> belongs to another project.</p>
+<h2>Build and verify locally</h2>
+<pre><code>aspect burrow-release build
+aspect burrow-release check
+aspect burrow-check preflight</code></pre>
+<p>The wheel lands under <code>dist/</code>, with its version taken from root <code>VERSION</code>. The initial candidate is <code>0.2.1.dev0</code>. The declared release binary is Linux amd64 without CGO; the wheel targets <code>manylinux_2_28_x86_64</code>, matching the managed Hovel runtime's Linux floor. No Go compiler or separate Hovel installation is needed on the operator host. The Python 3.10+ launcher replaces itself with the Go executable, preserving arguments, streams, signals and exit status.</p>
+<p>The required portable gate includes offline installation through digest-pinned pipx, deterministic wheel/RECORD checks, CLI error propagation, embedded skill installation, pinned Hovel startup, and upgrade/uninstall state preservation. The application keeps its embedded skill bundle and canonical base-module manifest. Packaging does not replace live workspace managers; the usual explicit restart and reconnect rules apply.</p>
+<h2>One-time PyPI setup</h2>
+<p>Sign into <a href="https://pypi.org/manage/account/publishing/">PyPI Account → Publishing</a> and add a pending GitHub publisher with these values:</p>
+<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>
+<tr><td>PyPI project name</td><td><code>burrow-ssh</code></td></tr>
+<tr><td>Owner</td><td><code>Bochner</code></td></tr>
+<tr><td>Repository</td><td><code>burrow</code></td></tr>
+<tr><td>Workflow filename</td><td><code>release.yml</code></td></tr>
+<tr><td>Environment</td><td><code>pypi</code></td></tr>
+</tbody></table>
+<p>Click Add. This creates a pending publisher, not a release or name reservation. No API key or copied LazySSH secret is required. The GitHub environment <code>pypi</code> is prepared with protected-branch deployments; the workflow additionally restricts publishing to dispatches from main. Its publishing job uses a short-lived OIDC credential. See <a href="https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/">PyPI's pending-publisher instructions</a>. The chosen name was unregistered when checked; PyPI must still accept it at first publication.</p>
+<h2>Rehearse, then publish an approved tag</h2>
+<p>After the owner requests merging the preparation, use GitHub Actions → Release → Run workflow on main. Leave Publish disabled for a build-only rehearsal. A tag is optional for rehearsals; supplied tags must match <code>VERSION</code> and the checked-out commit. The workflow runs the full required preflight, builds and checks the wheel, and uploads the artifact without contacting PyPI for publication.</p>
+<p>For an owner-authorized release, commit the intended <code>VERSION</code> (<code>X.Y.Z</code> or <code>X.Y.Z.devN</code>), merge through the normal approved PR path, and create the matching <code>vVERSION</code> tag. Run Release from main with that existing tag and Publish enabled. Publication requires a clean tagged commit contained in main and passing verification/build jobs. The build and publishing jobs check out the verified immutable commit, not a tag resolved again later.</p>
+<p>Only the separate publishing job receives <code>id-token: write</code>. It uploads the tested wheel through the pinned PyPA action with attestations, verifies the PyPI filename's SHA256 against the local artifact, and then attaches that wheel to the GitHub development release. An existing same-version file with a different digest fails verification. All uploads remain explicit; pushing a tag alone does not publish. Public PyPI uploads are publicly downloadable even though this GitHub repository is private.</p>
+<p>The required preflight includes all <a href="development-guide.html#hovel-follow-up-exception">Hovel compatibility checks</a>; the temporary #86 exception is retired with v0.4.4. The owner waived the manual walkthrough and accepted v0.2.0 in <a href="https://github.com/Bochner/burrow/issues/65">#65</a>; each later release still requires its own verification and publication approval. Hovel source attribution and release-tool changes are recorded in <code>core/tools/release/UPSTREAM.md</code>.</p>
+</article>

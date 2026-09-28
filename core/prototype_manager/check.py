@@ -207,7 +207,7 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
         denied_raw=json.dumps(denied)
         for k,v in {"workspace":str(w),"action":"connect","generation":owner["generation"],"session":owner["session"],"request":denied_raw,"review":hashlib.sha256(denied_raw.encode()).hexdigest()}.items():
             rpc(w,"SetChainConfig",{"Operation":op,"Chain":"request","Key":k,"Value":v})
-        hovel=root/"cache/burrow/hovel/0.4.2/hovel"
+        hovel=root/"cache/burrow/hovel/0.4.4/hovel"
         prefix=[hovel,"run","--workspace",w,"--daemon-endpoint",w/"hoveld.sock","--op",op,"--chain","request","--","throw","--now","--json"]
         command(*prefix,env=env,ok=False)
         rpc(w,"AttachEntity",{"id":"unapproved-reviewer","kind":"cli","operation":op,"activeChain":"request"})
@@ -261,9 +261,20 @@ with tempfile.TemporaryDirectory(prefix="bm-") as scratch:
             assert all(s["id"]!=cancelled["id"] for s in control(w,owner,"list"))
             assert connected(w,owner,password["id"]) and connected(w,owner,second["id"])
         prompt_path.unlink()
-        # One aggregate budget, including both connections and repeated management.
-        for _ in range(265):
-            assert len(control(w,owner,"list"))==2
+        # Public readers overlap daemon session writes; the same database gets
+        # a post-shutdown integrity check below, after owner/daemon loss checks.
+        def read_artifacts():
+            for _ in range(16):
+                rows = json.loads(command(hovel,"run","--workspace",w,"--","artifact","list","--json",env=env))
+                assert isinstance(rows,list), rows
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            reader = pool.submit(read_artifacts)
+            # One aggregate budget, including both connections and repeated management.
+            for _ in range(265):
+                assert len(control(w,owner,"list"))==2
+            reader.result()
+        assert rpc(w,"GetDaemonInfo",{})["pid"] == info["pid"]
+        print("PASS concurrent public artifact readers and daemon session writes preserve daemon identity",flush=True)
         assert connected(w,owner,password["id"])
         # Manager-aware #76 backend review across both opened workspaces.
         def quit_review():

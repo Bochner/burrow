@@ -55,6 +55,7 @@ type ShellControl struct {
 	Released      bool   `json:"released"`
 }
 type ShellOutput struct {
+	Revision        uint64       `json:"revision,omitempty"`
 	Shell           Shell        `json:"shell"`
 	Data            []byte       `json:"data"`
 	Oldest          uint64       `json:"oldest"`
@@ -107,6 +108,7 @@ func SessionCommand(ctx context.Context, w string, args []string, input io.Reade
 	if len(args) != 5 || args[0] != "session" || args[4] != "--request-stdin" {
 		return nil, fmt.Errorf("private shell request required")
 	}
+	defer launch.Phase("shell-private:" + args[1])()
 	raw, err := io.ReadAll(io.LimitReader(input, shellRequestLimit+1))
 	if err != nil || len(raw) > shellRequestLimit {
 		return nil, fmt.Errorf("private shell request exceeds 8192 bytes or cannot be read")
@@ -135,35 +137,102 @@ func SessionCommand(ctx context.Context, w string, args []string, input io.Reade
 }
 
 func observeShell(ctx context.Context, w string, args []string) (ShellOutput, error) {
-	s, err := inspectShell(ctx, w, args[2], args[3])
+	ref, err := findShell(ctx, w, args[2], args[3])
 	if err != nil {
 		return ShellOutput{}, err
 	}
-	if s.State == "unavailable" {
-		return ShellOutput{Shell: s, Lost: true, Synchronization: "out-of-sync"}, nil
-	}
 	after := "0"
-	if len(args) == 5 {
+	if len(args) >= 5 {
 		after = args[4]
 	}
 	arguments := []string{after}
+	if len(args) == 6 {
+		arguments = append(arguments, args[5])
+	}
 	if args[1] == "snapshot" && len(args) == 4 {
 		arguments = nil
 	}
-	result, err := ownerCommand(ctx, w, s.ID, args[1], arguments)
+	// Both observations contain the shell state under the owner's lock. Validate
+	// that state directly instead of requesting a separate, older inspection.
+	result, err := ownerCommand(ctx, w, ref.ID, args[1], arguments)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ShellOutput{}, ctx.Err()
+		}
+		// Distinguish owner loss from an invalid cursor or a failed snapshot.
+		// Never retry the observation or present a recovered inspect as a screen.
+		s, inspectionErr := shellState(ctx, w, ref)
+		if inspectionErr == nil && s.State == "unavailable" {
+			return ShellOutput{Shell: s, Lost: true, Synchronization: "out-of-sync"}, nil
+		}
 		return ShellOutput{}, err
 	}
 	var output ShellOutput
-	if json.Unmarshal([]byte(result.Stdout), &output) != nil || output.Shell.ID != s.ID {
+	if json.Unmarshal([]byte(result.Stdout), &output) != nil || output.Shell.ID != ref.ID || output.Shell.Connection.Name != ref.Name || output.Shell.Workspace != w {
 		return ShellOutput{}, fmt.Errorf("invalid shell observation")
 	}
 	return output, nil
 }
 
+// WaitShellSnapshot retains fresh discovery and identity checks. Revision zero
+// requests an immediate snapshot, including compatibility with older owners.
+// A current revision waits at most one second; cancellation ends local waiting.
+func WaitShellSnapshot(ctx context.Context, w, name, id string, offset int, revision uint64) (ShellOutput, error) {
+	args := []string{"session", "snapshot", name, id, strconv.Itoa(offset)}
+	if err := ValidateCommand(w, args); err != nil {
+		return ShellOutput{}, err
+	}
+	if revision != 0 {
+		args = append(args, strconv.FormatUint(revision, 10))
+	}
+	return observeShell(ctx, w, args)
+}
+
+// Called under mu, shared with every observable mutation. Closing the channel
+// wakes all independent observers, including output arriving before they wait.
+func (s *retainedShell) screenChanged() {
+	s.revision++
+	if s.changed != nil {
+		close(s.changed)
+	}
+	s.changed = make(chan struct{})
+}
+
+// Enter and leave with mu held, but never hold it while waiting. The pinned SDK
+// does not pass cancellation to providers: abandoned waits expire in one second.
+func (s *retainedShell) waitScreen(args []string) error {
+	offset, offsetErr := strconv.Atoi(args[0])
+	revision, err := strconv.ParseUint(args[1], 10, 64)
+	if offsetErr != nil || offset < 0 || offset > 1000 || err != nil || revision > s.revision {
+		return fmt.Errorf("invalid screen wait revision or history offset")
+	}
+	// Bound abandoned/concurrent waits; excess readers get an immediate snapshot.
+	if revision != s.revision || s.record.State != "running" || s.waiters >= 32 {
+		return nil
+	}
+	changed := s.changed
+	s.waiters++
+	s.mu.Unlock()
+	timer := time.NewTimer(time.Second)
+	select {
+	case <-changed:
+	case <-timer.C:
+	}
+	timer.Stop()
+	s.mu.Lock()
+	s.waiters--
+	return nil
+}
+
 // Called under the shell lock. Reuse operation notes, not the SDK's finite log
 // budget or another event store. Never pass the private request to the writer.
 func (s *retainedShell) controlCommand(req hovel.PayloadCommandRequest) (any, error) {
+	before := s.record.AuditError
+	defer func() {
+		if req.Command != "input" || s.record.AuditError != before {
+			s.screenChanged()
+		}
+	}()
 	evidence := map[string]any{
 		"id": s.record.ID, "connectionID": s.record.Connection.Creation,
 		"connectionName": s.record.Connection.Name, "runID": s.record.RunID,
@@ -226,16 +295,17 @@ func (s *retainedShell) sharedCommand(req hovel.PayloadCommandRequest) (any, err
 			closed = false
 		}
 	}
-	if req.Command == "snapshot" && len(req.Args) <= 1 && req.InputData == "" && req.InputEncoding == "" {
+	if req.Command == "snapshot" && len(req.Args) <= 2 && req.InputData == "" && req.InputEncoding == "" {
+		defer launch.Phase("shell-snapshot")()
 		offset := 0
-		if len(req.Args) == 1 {
+		if len(req.Args) >= 1 {
 			var err error
 			offset, err = strconv.Atoi(req.Args[0])
 			if err != nil || offset < 0 || offset > 1000 {
 				return nil, fmt.Errorf("invalid history offset; expected 0..1000")
 			}
 		}
-		out := ShellOutput{Shell: s.record, Data: []byte{}, Oldest: s.record.Dropped, Next: s.record.Received, Closed: closed, Lost: s.record.State == "lost", Synchronization: "out-of-sync"}
+		out := ShellOutput{Revision: s.revision, Shell: s.record, Data: []byte{}, Oldest: s.record.Dropped, Next: s.record.Received, Closed: closed, Lost: s.record.State == "lost", Synchronization: "out-of-sync"}
 		if s.screen != nil {
 			history := s.screen.ScrollbackLen()
 			offset = min(offset, history)
@@ -363,7 +433,9 @@ func (s *retainedShell) sharedCommand(req hovel.PayloadCommandRequest) (any, err
 		if err := s.pty.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			return nil, fmt.Errorf("shell input deadline unavailable; input refused")
 		}
+		written := launch.Phase("shell-pty-write")
 		n, err := s.pty.Write(input.Data)
+		written()
 		result.AcceptedBytes, result.Backpressure = n, errors.Is(err, os.ErrDeadlineExceeded)
 		if err != nil && !result.Backpressure {
 			result.InputError = "PTY write failed; only the reported prefix was accepted; inspect before continuing"

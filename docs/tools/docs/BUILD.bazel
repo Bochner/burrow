@@ -3,6 +3,12 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 package(default_visibility = ["//visibility:public"])
 exports_files(["parity.json"])
 
+filegroup(
+    name = "python_format_sources",
+    srcs = glob(["*.py"]),
+    visibility = ["//:__pkg__"],
+)
+
 py_binary(
     name = "report",
     srcs = ["report.py"],
@@ -11,7 +17,8 @@ py_binary(
 
 py_test(
     name = "report_test",
-    size = "small",
+    # Multi-process CLI matrix; each call retains its own 20-second bound.
+    size = "medium",
     srcs = ["report_test.py"],
     args = ["$(rootpath :report)"],
     data = [":report"],

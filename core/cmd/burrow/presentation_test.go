@@ -367,7 +367,7 @@ func TestLiveOutputNavigation(t *testing.T) {
 		}
 		// Presentation fixture only; follow_lab exercises these observations
 		// through real SSH, capture failures and independent terminal processes.
-		view := m.current().follow.follow
+		view := m.current().follow
 		exit := 0
 		chunk := connection.RunOutput{Data: base64.StdEncoding.EncodeToString([]byte("partial")), NextOffset: 7,
 			State: "exited", RemoteExit: &exit, Budget: 7, Stored: 7, Received: 14,
@@ -993,6 +993,276 @@ func TestFileTabsAndContextMenus(t *testing.T) {
 	}
 }
 
+func TestFileModeReturnContext(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			for _, recalled := range []bool{false, true} {
+				m := newFrame(launch.Info{Workspace: "/tmp/file-return"}, plain, launch.Options{})
+				t.Cleanup(m.terminals.close)
+				frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+				m.updateManagement(m.active, connectionList{states: []connection.State{{Name: "gateway", State: "connected"}}})
+				m.updateManagement(m.active, profilesReady{history: []string{"status", "help"}})
+				u := &m.current().management
+				u.output = "first line\nsecond line\nretained output\nfourth line"
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+				frameEvent(m, tea.PasteMsg{Content: "draft notes"})
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+				want := "draft note"
+				if recalled {
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+					want = "status"
+				}
+				frameEvent(m, tea.KeyPressMsg{Code: tea.KeyLeft})
+				before := m.View().Content
+				for _, exit := range []string{"back", "exit", "ctrl+c"} {
+					// Exercise the existing in-place transition with a populated prompt;
+					// frame file tabs normally start this transition with a fresh UI.
+					u.openFiles("gateway")
+					t.Cleanup(u.files.cancel)
+					frameEvent(m, tea.PasteMsg{Content: "temporary file draft"})
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+					frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+					if u.files == nil || u.busy || u.input.Value() != "temporary file draft" {
+						t.Fatal("cancelling browse must retain the file prompt")
+					}
+					if exit == "ctrl+c" {
+						frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+					} else {
+						frameEvent(m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+						frameEvent(m, tea.PasteMsg{Content: exit})
+						frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+					}
+					if u.files != nil || u.input.Value() != want || m.View().Content != before {
+						t.Fatalf("%s lost prompt or scrolled output (%v, plain=%t, recalled=%t)", exit, size, plain, recalled)
+					}
+				}
+				frameEvent(m, tea.KeyPressMsg{Code: '!', Text: "!"})
+				if got := u.input.Value(); got != want[:len(want)-1]+"!"+want[len(want)-1:] {
+					t.Fatal("return lost editing cursor", got)
+				}
+				if recalled {
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+					if u.input.Value() != "help" {
+						t.Fatal("return lost recall position")
+					}
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+					if u.input.Value() != "draft note" {
+						t.Fatal("return lost pre-recall draft")
+					}
+				} else {
+					frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+					if u.input.Value() != "help" {
+						t.Fatal("return lost command history")
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestFileBrowseSurvivesHistoryWriteFailure(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		for _, size := range [][2]int{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/history-failure"}, plain, launch.Options{})
+			t.Cleanup(m.terminals.close)
+			frameEvent(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			frameEvent(m, connectionList{states: []connection.State{{Name: "gateway", State: "connected"}}})
+			frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			u := m.current().file
+			t.Cleanup(u.files.cancel)
+			frameEvent(m, fileResult{mode: u.files, sequence: u.files.sequence, operation: "cd",
+				value: connection.FileListing{Path: "/retrieved", Entries: []connection.FileEntry{{Name: "kept.txt"}}},
+				err:   fmt.Errorf("file command completed but history unavailable: Hovel AppendLog rejected: HTTP 500")})
+			view := ansi.Strip(m.View().Content)
+			if !strings.Contains(view, "1 entries") || !strings.Contains(view, "WARNING:") || strings.Contains(view, "REFUSED:") || u.files.remote != "/retrieved" || u.files.listing.Entries[0].Name != "kept.txt" {
+				t.Fatal("successful browse or truthful warning lost", size, view)
+			}
+			if !plain {
+				screen := vt.NewEmulator(size[0], size[1])
+				screen.Write([]byte(m.View().Content))
+				for y, line := range strings.Split(screen.String(), "\n") {
+					if at := strings.Index(line, "WARNING:"); at >= 0 && !colorMatches(screen.CellAt(ansi.StringWidth(line[:at]), y).Style.Fg, warningStyle.GetForeground()) {
+						t.Fatal("history uncertainty lost its warning color")
+					}
+				}
+				screen.Close()
+			}
+		}
+	}
+}
+
+func TestFileHistoryReadFailureRecovery(t *testing.T) {
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
+			m := newFrame(launch.Info{Workspace: "/tmp/history-read"}, plain, launch.Options{})
+			t.Cleanup(m.terminals.close)
+			frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+			frameEvent(m, connectionList{states: []connection.State{{Name: "gateway", State: "connected"}}})
+			frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			u := m.current().file
+			t.Cleanup(u.files.cancel)
+			result := fileResult{mode: u.files, sequence: u.files.sequence, operation: "cd",
+				value:      connection.FileListing{Path: "/retrieved", Entries: []connection.FileEntry{{Name: "kept.txt"}}},
+				historyErr: fmt.Errorf("Hovel ActiveLogs rejected: HTTP 500")}
+			check := func(status, name string) {
+				t.Helper()
+				screen := capturePresentation(t, m, fmt.Sprintf("history-read-%s-%dx%d-%t", name, size.X, size.Y, plain))
+				if !strings.Contains(screen.String(), status) {
+					t.Fatal("missing recall status", status, screen.String())
+				}
+				if strings.HasPrefix(status, "Recall") && !plain {
+					role := "#f9e2af"
+					if status == "Recall unavailable" {
+						role = "#f38ba8"
+					}
+					assertTextRole(t, screen, image.Rect(0, 0, size.X, size.Y), status, role)
+				}
+			}
+			frameEvent(m, result)
+			check("Recall unavailable", "initial-failure")
+			if !strings.Contains(ansi.Strip(m.View().Content), "1 entries") || u.files.remote != "/retrieved" {
+				t.Fatal("history read failure hid successful browse")
+			}
+			frameEvent(m, tea.PasteMsg{Content: "history"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+			check("Recall unavailable", "unknown-history")
+			if strings.Contains(ansi.Strip(m.View().Content), "No saved commands") {
+				t.Fatal("failed read claimed empty history")
+			}
+			result.historyErr = nil
+			frameEvent(m, result) // A successful nil slice is known empty too.
+			check("No saved commands", "empty")
+			result.historyErr = fmt.Errorf("read failed again")
+			frameEvent(m, result)
+			check("Recall outdated", "empty-outdated")
+			result.historyErr = nil
+			result.history = []string{"scp peer tree /private", "lls upload", "scp gateway pwd"}
+			frameEvent(m, result)
+			check("lls upload", "populated")
+			if strings.Contains(ansi.Strip(m.View().Content), "/private") || strings.Contains(ansi.Strip(m.View().Content), "Recall outdated") {
+				t.Fatal("recovery lost scoping or kept the error")
+			}
+			frameEvent(m, tea.PasteMsg{Content: "draft"})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+			result.historyErr = fmt.Errorf("read failed")
+			result.history = []string{"scp gateway tree /partial"}
+			frameEvent(m, result)
+			check("Recall outdated", "retained")
+			if !slices.Equal(u.history, []string{"lls upload", "pwd"}) || u.input.Value() != "lls upload" {
+				t.Fatal("failed read replaced recall or current input")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+			if u.input.Value() != "pwd" {
+				t.Fatal("failed read moved recall position")
+			}
+			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+			if u.input.Value() != "draft" {
+				t.Fatal("failed read lost draft")
+			}
+			result.historyErr = nil
+			result.history = []string{"scp gateway ls /recovered"}
+			frameEvent(m, result)
+			if !slices.Equal(u.history, []string{"ls /recovered"}) || strings.Contains(ansi.Strip(m.View().Content), "Recall outdated") {
+				t.Fatal("successful read did not replace recall and clear its warning")
+			}
+		}
+	}
+}
+
+func TestFileResultOriginIsolation(t *testing.T) {
+	m := newFrame(launch.Info{Workspace: "/tmp/files-one"}, true, launch.Options{})
+	t.Cleanup(m.terminals.close)
+	frameEvent(m, tea.WindowSizeMsg{Width: 160, Height: 40})
+	send := func(workspace string, msg tea.Msg) {
+		frameEvent(m, m.dispatch(workspace, func() tea.Msg { return msg })())
+	}
+	one := m.active
+	two := "/tmp/files-two"
+	send(one, workspaceOpened{info: launch.Info{Workspace: two}})
+	state := connection.State{Name: "gateway", State: "connected", Creation: "original", Generation: "one"}
+	send(one, connectionList{states: []connection.State{state}})
+	send(two, connectionList{states: []connection.State{state}})
+	frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	first := m.current().file
+	t.Cleanup(first.files.cancel)
+	frameEvent(m, tea.PasteMsg{Content: "first draft"})
+	result := fileResult{mode: first.files, sequence: first.files.sequence, operation: "cd", value: connection.FileListing{Path: "/first"}, history: []string{"scp gateway pwd"}}
+	delayed := m.dispatch(one, func() tea.Msg { return result })()
+	m.selectWorkspace(1)
+	frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	second := m.current().file
+	t.Cleanup(second.files.cancel)
+	frameEvent(m, tea.PasteMsg{Content: "second draft"})
+	before := m.View().Content
+	frameEvent(m, delayed)
+	if m.active != two || m.current().file != second || m.View().Content != before {
+		t.Fatal("background file result changed the selected workspace/tab")
+	}
+	result.historyErr = fmt.Errorf("background history read failed")
+	result.history = []string{}
+	send(one, result)
+	if m.View().Content != before {
+		t.Fatal("background history failure changed the selected workspace/tab")
+	}
+	m.selectWorkspace(0)
+	m.activate("file-tab:0")
+	if first.input.Value() != "first draft" || first.files.remote != "/first" || !strings.Contains(ansi.Strip(m.View().Content), "Recall outdated") {
+		t.Fatal("background file result lost its originating tab or draft")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyUp})
+	if first.input.Value() != "pwd" {
+		t.Fatal("background file history did not reach its originating tab")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	if first.input.Value() != "first draft" {
+		t.Fatal("background file history lost the tab draft")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+	frameEvent(m, tea.PasteMsg{Content: "ls"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	t.Cleanup(first.files.cancel)
+	result.sequence = first.files.sequence
+	result.value = connection.FileListing{Path: "/stale"}
+	result.history = []string{"scp gateway tree /stale"}
+	frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	before = m.View().Content
+	send(one, result)
+	if m.View().Content != before || first.files.remote != "/first" {
+		t.Fatal("cancelled browse result changed the retained file view")
+	}
+	frameEvent(m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if len(m.current().fileViews) != 0 || m.current().tab != "" {
+		t.Fatal("leaving files did not close the originating tab")
+	}
+	state.Generation = "replacement"
+	send(one, connectionList{states: []connection.State{state}})
+	frameEvent(m, tea.PasteMsg{Content: "scp gateway"})
+	frameEvent(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	replacement := m.current().file
+	t.Cleanup(replacement.files.cancel)
+	frameEvent(m, tea.PasteMsg{Content: "replacement draft"})
+	before = m.View().Content
+	send(one, result)
+	send(one, fileDiscovery{mode: result.mode, listing: connection.FileListing{Notice: "stale discovery"}})
+	frameEvent(m, delayed)
+	if m.current().file != replacement || m.View().Content != before || replacement.files.remote != "~" {
+		t.Fatal("closed tab result changed a replacement view")
+	}
+	m.selectWorkspace(1)
+	m.activate("file-tab:0")
+	if second.input.Value() != "second draft" || second.files.remote != "~" {
+		t.Fatal("replacement view changed another workspace's file context")
+	}
+}
+
 func TestFilePresentation(t *testing.T) {
 	for _, plain := range []bool{false, true} {
 		for _, size := range []image.Point{{160, 40}, {200, 50}, {120, 30}, {80, 24}} {
@@ -1328,6 +1598,37 @@ func TestCompletionPresentation(t *testing.T) {
 			frameEvent(m, tea.KeyPressMsg{Code: tea.KeyTab})
 			if m.current().management.input.Value() != "connect -ip " {
 				t.Fatal("editing did not reset command cycle", m.current().management.input.Value())
+			}
+		}
+	}
+}
+
+func TestRetainedShellCompletionGuidance(t *testing.T) {
+	if got := completionDescription("shells"); got != "Discover retained shells in this workspace" {
+		t.Fatal("incorrect retained-shell inventory guidance", got)
+	}
+	for _, plain := range []bool{false, true} {
+		for _, size := range []image.Point{{80, 24}, {120, 30}, {160, 40}, {200, 50}} {
+			for _, check := range []struct{ prefix, candidate, description string }{
+				{"res", "resume 2", "Focus an attached shell tab by ID"},
+				{"shell-c", "shell-close 2", "Close retained shell; preserve connection"},
+			} {
+				m := newFrame(launch.Info{Workspace: "/tmp/shell-guidance"}, plain, launch.Options{})
+				defer m.terminals.close()
+				frameEvent(m, tea.WindowSizeMsg{Width: size.X, Height: size.Y})
+				m.current().shells = []*cliTab{{id: "2", connection: "gateway", session: "retained-id"}}
+				frameEvent(m, tea.PasteMsg{Content: check.prefix})
+				u := &m.current().management
+				if !slices.Contains(u.input.MatchedSuggestions(), check.candidate) {
+					t.Fatal("dynamic shell candidate missing", u.input.MatchedSuggestions())
+				}
+				if got := completionDescription(check.candidate); got != check.description {
+					t.Fatal("incorrect attachment guidance", got)
+				}
+				screen := capturePresentation(t, m, fmt.Sprintf("shell-guidance-%s-%dx%d-%t", check.prefix, size.X, size.Y, plain))
+				if !strings.Contains(screen.String(), check.candidate) || (size.X >= 160 && !strings.Contains(screen.String(), check.description)) {
+					t.Fatal("missing shell completion guidance", screen.String())
+				}
 			}
 		}
 	}

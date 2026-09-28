@@ -7,3 +7,9 @@ go_library(
     visibility = ["//visibility:public"],
     deps = ["//core/launch", "@hovel_sdk//:hovel"],
 )
+
+filegroup(
+    name = "format_sources",
+    srcs = glob(["*.go"]),
+    visibility = ["//:__pkg__"],
+)

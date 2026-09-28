@@ -92,7 +92,7 @@ def check(root, env, proof, w, daemon_pid, owner, first, second, workspace, run,
 
             # Bypass frontend validation to exercise the real confirmed adapter:
             # modifying the approved request or action still cannot dispatch.
-            hovel = root / "cache/burrow/hovel/0.4.2/hovel"
+            hovel = root / "cache/burrow/hovel/0.4.4/hovel"
             for mutation in ["request", "action", "owner", "policy"]:
                 approved, _ = prepare("consume")
                 raw = json.dumps(approved)

@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/Bochner/burrow/core/connection"
+	"github.com/Bochner/burrow/core/launch"
 	ptyhost "github.com/Bochner/burrow/core/terminal"
 )
 
@@ -69,7 +70,9 @@ func (m *frame) attachShared(path string, tab *cliTab, create bool) tea.Cmd {
 			}
 			id = value.(connection.Shell).ID
 		}
+		attached := launch.Phase("shell-attachment")
 		host, err := ptyhost.Attach(lifetime.context, path, name, id)
+		attached()
 		if err != nil {
 			lifetime.jobs.Done()
 			return cliOpened{tab: tab, err: fmt.Errorf("shell %s observation failed; retained state unverified: %w", id, err)}

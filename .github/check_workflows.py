@@ -1,4 +1,5 @@
 """Check every declared workflow with the pinned actionlint executable."""
+
 import subprocess
 import sys
 

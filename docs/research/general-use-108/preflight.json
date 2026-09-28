@@ -1,0 +1,1755 @@
+{
+  "schemaVersion": 1,
+  "suite": "all",
+  "status": "PASSED",
+  "exitCode": 0,
+  "finished": true,
+  "started": "2026-09-26T22:31:54.764775+00:00",
+  "environment": {
+    "os": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "python": "3.12.13",
+    "runAttempt": "",
+    "runID": ""
+  },
+  "selectedTargets": [
+    "//:go_format_behavior_test",
+    "//:go_format_test",
+    "//:python_format_behavior_test",
+    "//:python_format_test",
+    "//:workflow_test",
+    "//core/cmd/burrow:activity_test",
+    "//core/cmd/burrow:agent_test",
+    "//core/cmd/burrow:capabilities_test",
+    "//core/cmd/burrow:connection_test",
+    "//core/cmd/burrow:files_test",
+    "//core/cmd/burrow:interaction_test",
+    "//core/cmd/burrow:manager_compatibility_test",
+    "//core/cmd/burrow:profile_test",
+    "//core/cmd/burrow:setup_test",
+    "//core/cmd/burrow:ssh_automation_test",
+    "//core/cmd/burrow:ssh_chains_test",
+    "//core/cmd/burrow:ssh_files_test",
+    "//core/cmd/burrow:ssh_follow_test",
+    "//core/cmd/burrow:ssh_lifecycle_test",
+    "//core/cmd/burrow:ssh_reports_test",
+    "//core/cmd/burrow:ssh_reverse_test",
+    "//core/cmd/burrow:ssh_runs_test",
+    "//core/cmd/burrow:ssh_shell_test",
+    "//core/cmd/burrow:terminal_test",
+    "//core/cmd/burrow:workspace_test",
+    "//core/connection:forward_control_test",
+    "//core/launch:audit_test",
+    "//core/launch:digest_test",
+    "//core/launch:online_test",
+    "//core/prototype_agent:check",
+    "//core/prototype_sdk:protocol_test",
+    "//core/prototype_sdk:reuse_test",
+    "//core/prototype_sessions:check",
+    "//core/prototype_terminal:check",
+    "//core/prototype_terminal:cli_test",
+    "//core/prototype_terminal:terminal_test",
+    "//core/prototype_terminal:vt_cli_test",
+    "//core/prototype_terminal:vt_test",
+    "//core/prototype_transport:direct_script_test",
+    "//core/terminal:host_test",
+    "//core/tools/release:release_test",
+    "//core/tools/release:wheel_test",
+    "//docs/tools/docs:report_test",
+    "//docs/tools/docs:site_test",
+    "//docs/tools/docs:stage_site_test"
+  ],
+  "targets": [
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/aa5ea0626e52bc8dcb5f-test.log.txt",
+              "sha256": "c1b8a87c535f04bfc00ca3cc0530c80cf4ff5b34a1b4c27f459a3d98b7ce1476"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/aa5ea0626e52bc8dcb5f-test.xml.txt",
+              "sha256": "3e35ef1feb077f16508d7daec8c3445cefe381a8724fd1d2142a0cb7e27b57c9"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:go_format_behavior_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:go_format_behavior_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/13eb1c2594ee3a76279e-test.log.txt",
+              "sha256": "a4ff482ac9bbdff22e97a00d52136e09db4d440b060868a4a22aeafef028528f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/13eb1c2594ee3a76279e-test.xml.txt",
+              "sha256": "ae6c7c1ed9ef535c58307fe3f603cc03fe23bb8057d4dc8f57cbe137fa9982d2"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:go_format_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:go_format_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/89e671e8f030bae2d54e-test.log.txt",
+              "sha256": "f53be8d3180df35d1da1930819a88676142e9fa25bf6adce435366304e6fbf62"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/89e671e8f030bae2d54e-test.xml.txt",
+              "sha256": "859c7b02496c60c2f280ad0aeab9baa356d48629401537517650c04b45454315"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:python_format_behavior_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:python_format_behavior_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/43749d551484368cad8c-test.log.txt",
+              "sha256": "95553754a9c9fe8a42ff5851c87e3dc3e47427cb4b368d4986cb02797ab2830b"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/43749d551484368cad8c-test.xml.txt",
+              "sha256": "5ae42738f04bf8f04bbef79d6e53f7bd9933c2632154762ad2aeeab0f8ac3c60"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:python_format_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:python_format_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/eb2f56f9122bb213ce5d-test.log.txt",
+              "sha256": "9ca0bf442b70d075c7af843b071028b7c53738329f6f17c18d24936372c81a04"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/eb2f56f9122bb213ce5d-test.xml.txt",
+              "sha256": "3c01b7ab16349b69d5db1c6249341c01e1165874de509e19932f98bc03446848"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//:workflow_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//:workflow_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/8ea2c59061771baf07fd-test.log.txt",
+              "sha256": "b22637d062fa576b477380e65c91b60896d4ce40bd6d0edadda03d48501c85be"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/8ea2c59061771baf07fd-test.xml.txt",
+              "sha256": "fcc6a767fe9889ca6e1ec88028c63cefcf0b71c0283869fed2b8af66c302965c"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:activity_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:activity_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/d174b2bdf685b055b600-test.log.txt",
+              "sha256": "f42179106e08fa97a6303ee38beaa91de91495513dfd824e85892e7dc6fe60ba"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/d174b2bdf685b055b600-test.xml.txt",
+              "sha256": "d1cd7c1e4fcd744c5628136c0f3505f391cdd9a22e22d3d2d32fa2302d058daf"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:agent_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:agent_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/ca3e06043c79666135ad-test.log.txt",
+              "sha256": "89f6ee03f997279238796d9e98f70caa9e2030a2c64a7ff51707a7c99a171c90"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/ca3e06043c79666135ad-test.xml.txt",
+              "sha256": "263a1055b4141f8d27353b9a8795299b3caff243a997f600942506502efd8620"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:capabilities_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:capabilities_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/cd470f6a08f3ec2be37b-test.log.txt",
+              "sha256": "e5ac1e8f5caa03403b4d6a82fbf5edf8eb0843a0780c9002fe9084e72ce87ea2"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/cd470f6a08f3ec2be37b-test.xml.txt",
+              "sha256": "b74dba3796b8b699991b8402320fa58f9df45e567ce7e4e910d0515da47db3d1"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:connection_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:connection_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/e78fbede0838c99027c0-test.log.txt",
+              "sha256": "362eeba22db9cc1f2a3a7078a2fa038bf941b2c3e11f3c864a9fba9b4da60bdc"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/e78fbede0838c99027c0-test.xml.txt",
+              "sha256": "ecbe2aa3edf550ba6df5eec2c1fc2886b1cf153027bdd4bb5e48b4cce5329f3d"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:files_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:files_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/f5f91c10c343a2fbcdcd-test.log.txt",
+              "sha256": "27ead30fdc836aefacbb4f266b916efb1284141011e0c744f0415bd74a4d0788"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/f5f91c10c343a2fbcdcd-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:interaction_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:interaction_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/c9fd02af6e3df823f377-test.log.txt",
+              "sha256": "fdf8038cc2d127079e8d35583fd8cbb2fa2fdfad32583aaaeca14e35d750ef89"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/c9fd02af6e3df823f377-test.xml.txt",
+              "sha256": "b30cde776d01b8606b950a9117f845abeb4a1e59a42bf8d21b289c5ce04fd4a0"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:manager_compatibility_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:manager_compatibility_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/384bb2041c23deb31456-test.log.txt",
+              "sha256": "76dce3f274825dcb32f4acb0c406437d269359b261e4bee592361d82248db442"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/384bb2041c23deb31456-test.xml.txt",
+              "sha256": "291d1e17ca55a69cbb26cacb528cb00c4cb353a02778522e687cb8ad266b2955"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:profile_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:profile_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/a8c164b10dfc5f35c5db-test.log.txt",
+              "sha256": "85bc782e71a857ccd3a6770dc2bf7eb156208b4941b347ac39e53d157a74d93f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/a8c164b10dfc5f35c5db-test.xml.txt",
+              "sha256": "b64946ece555fd1534e63f544a3a5c770f3fd0cff4d7a631972b51d0b369c9be"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:setup_test",
+            "run": 2,
+            "shard": 1
+          },
+          "status": "PASSED"
+        },
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/ac65b97817e156290209-test.log.txt",
+              "sha256": "85bc782e71a857ccd3a6770dc2bf7eb156208b4941b347ac39e53d157a74d93f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/ac65b97817e156290209-test.xml.txt",
+              "sha256": "b64946ece555fd1534e63f544a3a5c770f3fd0cff4d7a631972b51d0b369c9be"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:setup_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        },
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/7733a6f0872f6a9fdc88-test.log.txt",
+              "sha256": "85bc782e71a857ccd3a6770dc2bf7eb156208b4941b347ac39e53d157a74d93f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/7733a6f0872f6a9fdc88-test.xml.txt",
+              "sha256": "b64946ece555fd1534e63f544a3a5c770f3fd0cff4d7a631972b51d0b369c9be"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:setup_test",
+            "run": 3,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 3,
+      "label": "//core/cmd/burrow:setup_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/a1e7eaf9f0f448bde48b-test.log.txt",
+              "sha256": "2a3e14899ec9231684880165595ee034fcaa96db2d9c2e233d2d74cf891e5e4a"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/a1e7eaf9f0f448bde48b-test.xml.txt",
+              "sha256": "6e700461e5fef933bd6ec9326e94402c2b2346a7da7fdd693b39edc469b4b4cf"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_automation_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_automation_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-automation",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/f4d04e44615bc0f349ee-test.log.txt",
+              "sha256": "dc441472de322919ae4681e92778c7821b2c2a8558b03e690f965b3600e28fa2"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/f4d04e44615bc0f349ee-test.xml.txt",
+              "sha256": "d148b15ce93e84f059c3f6b5022d810c0d5fdf94cc64da95de0fde899ae12838"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_chains_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_chains_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-chains",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/c0d5ce90063deead2d21-test.log.txt",
+              "sha256": "2816439855e146f1161801582bec1d3afea0026292c1dfbc00f23be6ff46a658"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/c0d5ce90063deead2d21-test.xml.txt",
+              "sha256": "a72659f94f71b98a744e06da973cc27356229551984eb2fa46bbbfa05947ac3f"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_files_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_files_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-files",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/bbe518cb11a6f87241b7-test.log.txt",
+              "sha256": "f2e519550eb94083aa20d08e9ad1f42a3efb3d25bb1d90fa001c5344f65becef"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/bbe518cb11a6f87241b7-test.xml.txt",
+              "sha256": "d3850892ff7fcba620891e23575ff1317a74b57b7262020ae3da6a926bd181d6"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_follow_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_follow_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-follow",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/3cf02fdabe57cd7f8095-test.log.txt",
+              "sha256": "02187f9544e5c1a43128908965f701a0efb13b0aedf98f89897a418a6c5fbb9a"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/3cf02fdabe57cd7f8095-test.xml.txt",
+              "sha256": "87b3e754ab380eb38b58f39cbf6aa7f1d4a15d43edc3054cc337256cd3d70610"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_lifecycle_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_lifecycle_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-lifecycle",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/b1ca32b1caafbf0b6388-test.log.txt",
+              "sha256": "3de9013e520c4bac3a331de07d46ddee4fb0da517ad0b101654c8679a16a3b67"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/b1ca32b1caafbf0b6388-test.xml.txt",
+              "sha256": "aee4569c2cd9f0b3f86e9bc5fb519337d645a0d3362663fb65303b7c1417b905"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_reports_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_reports_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-reports",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/5ad624598fcb51be781e-test.log.txt",
+              "sha256": "b9842cc5945ce5a25eeb1df07c1435c5e41eae67b6379da0407c0b1ed48c96be"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/5ad624598fcb51be781e-test.xml.txt",
+              "sha256": "b1da7d9543d24bc2492d328bbde1987362b40f0fd5806fcb339977070ab9f760"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_reverse_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_reverse_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-reverse",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/21f12934741f7ed3f78a-test.log.txt",
+              "sha256": "a3977727a4e75f657accad763314012c60836bb2f55993985301b30f5ee33a7e"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/21f12934741f7ed3f78a-test.xml.txt",
+              "sha256": "fed1afbd0777e48c8218abe33a17bd776d2633f98998edcb8cddc75c7bdd4bcc"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_runs_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_runs_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-runs",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/b6f963afe6535cd5b77e-test.log.txt",
+              "sha256": "a767a2dbf534481f712c5e0ccde539b57808d5450e826a4050c17974628b4787"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/b6f963afe6535cd5b77e-test.xml.txt",
+              "sha256": "87215cbebd7977907f1fd8d81ed384a5a7ef59337bbffce3bfa3d9980a5a9185"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:ssh_shell_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:ssh_shell_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-shell",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/57d7c011cd6e466cad14-test.log.txt",
+              "sha256": "9596e3df27cdc3374e4138e6a2c25b50af3448f4eb2dfce0d25b8f4d1fc304ba"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/57d7c011cd6e466cad14-test.xml.txt",
+              "sha256": "9d5358111aadb2d44eec6de36837b3ab8b058b2407584dfccd7c06877eca5db8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:terminal_test",
+            "run": 2,
+            "shard": 1
+          },
+          "status": "PASSED"
+        },
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/8cbc46328100d4553e8d-test.log.txt",
+              "sha256": "9596e3df27cdc3374e4138e6a2c25b50af3448f4eb2dfce0d25b8f4d1fc304ba"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/8cbc46328100d4553e8d-test.xml.txt",
+              "sha256": "48bf24a421a574d2a789203aa1c2b9eb8e3539f6df6d022212087dce46b1c873"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:terminal_test",
+            "run": 3,
+            "shard": 1
+          },
+          "status": "PASSED"
+        },
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/d34f372403967972d779-test.log.txt",
+              "sha256": "9596e3df27cdc3374e4138e6a2c25b50af3448f4eb2dfce0d25b8f4d1fc304ba"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/d34f372403967972d779-test.xml.txt",
+              "sha256": "f7840c91c5b531bea45437008d6bfbc61799f15248acfc3813d72901d058a65a"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:terminal_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 3,
+      "label": "//core/cmd/burrow:terminal_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/cf199c1f1d5a95c472aa-test.log.txt",
+              "sha256": "1f8177c0a47918d714e3fda58171de44bd115d18a276c46eae2bece977c0ef5e"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/cf199c1f1d5a95c472aa-test.xml.txt",
+              "sha256": "d4d1d73715baa9bb03544fef0e23d36fd1d616c0112db965dd66205e09121d34"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/cmd/burrow:workspace_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/cmd/burrow:workspace_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/8d795dc698170fd1616e-test.log.txt",
+              "sha256": "da5fb6f44c55f46b4b41b4e337313d25a4d5cc1e59b915c357e16ecaedc1a111"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/8d795dc698170fd1616e-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/connection:forward_control_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/connection:forward_control_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/39a849f8c577c417af21-test.log.txt",
+              "sha256": "f9c6b833fa0d4174033422b7bf38d766542b834e36840a190ae5d1b0c0dbb08a"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/39a849f8c577c417af21-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/launch:audit_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/launch:audit_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/75240795c35a23999186-test.log.txt",
+              "sha256": "4e85eed790f75fc55b4de1c42eeb8fe7d1fea1534b74b44dcd8be9a219321ea2"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/75240795c35a23999186-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/launch:digest_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/launch:digest_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/c84ec8167f84849d84fc-test.log.txt",
+              "sha256": "d4acdcfcabb76fc8547d4ec6a00b4e636c0a05f72b051e426718529f424c8c44"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/c84ec8167f84849d84fc-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/launch:online_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/launch:online_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/1635b3f130dc70489d73-test.log.txt",
+              "sha256": "c70e2bd376048e38ed679ff90635d7bb94b42df097f8490e890a802b51e2f0b9"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/1635b3f130dc70489d73-test.xml.txt",
+              "sha256": "c88b5e84b6113002fc97923251d3582ecf50078b52ee79176138bfdf1776d479"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_agent:check",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_agent:check",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/364649604663f2ac0328-test.log.txt",
+              "sha256": "3acf38d5a7516e78d19437f9e5ea9f882b2388903f21d52491574ceb58288d02"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/364649604663f2ac0328-test.xml.txt",
+              "sha256": "796e2512e3deade9f3b319becddf4e25c4683889c9f6d2ec9b561aa60a62a6b0"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_sdk:protocol_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_sdk:protocol_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/8b61568bc4a2b8f263f5-test.log.txt",
+              "sha256": "9fdb7ecebd39ce2db7fec70b0827972855f8f3cb9f119a334c18c6f9961d1d4f"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/8b61568bc4a2b8f263f5-test.xml.txt",
+              "sha256": "94aa9119e0517e66906a0558a50140e82e599c090b6bc46dfb1b66599a0500c9"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_sdk:reuse_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_sdk:reuse_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/ad4f773417e5b2412eba-test.log.txt",
+              "sha256": "503f17d02179dbb23b8030ed36a49356f635516f0dc05a0be750f8cb590516b3"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/ad4f773417e5b2412eba-test.xml.txt",
+              "sha256": "c3970332978c100fc7e9f9f925e318a3dbf5c14ff3c8b6ebbef75cb69f0f197d"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_sessions:check",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_sessions:check",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "acceptance",
+        "acceptance-shell",
+        "external",
+        "local"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/b169b9e50a52fe257328-test.log.txt",
+              "sha256": "68da5bda639c72d211c83477b1cc0455d6e227f3cacab3c186cc212de7fc78b1"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/b169b9e50a52fe257328-test.xml.txt",
+              "sha256": "6c3379c821181b97cb97f46853d4a1c9ffe2d7540d483d4c71fc845b5933e410"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:check",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:check",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/333fa33a42bbc576dcc9-test.log.txt",
+              "sha256": "c1fbdd20139ffec3e865a1071a720f3e79af2eacd61136f199f2dfec7580efcb"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/333fa33a42bbc576dcc9-test.xml.txt",
+              "sha256": "c525bf3d65f3ac96ae5870a95dba92fee8c9f5b72df1be207928c87758917b9d"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:cli_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:cli_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/44c2960c49f6ee0fff6f-test.log.txt",
+              "sha256": "4bc7060eef06b57c667851e756576032791ae4ff95e46951b428310f25e373ac"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/44c2960c49f6ee0fff6f-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:terminal_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:terminal_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/e00d784cd8ee9f57b5c5-test.log.txt",
+              "sha256": "2bf9f89e5410a5bbdfee69e15884b688f29f23b1e2bc521cfd95d3b062050146"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/e00d784cd8ee9f57b5c5-test.xml.txt",
+              "sha256": "c82d91cc4d8ea9c9ebabb3b682ae85878755b3129f8c967c0a5cb4c7c2e0cc3d"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:vt_cli_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:vt_cli_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/4a08f11d8da98074903e-test.log.txt",
+              "sha256": "d29ff5c1a43d6c60c25308096cbbc208ada5151b9bf7c673ef1d38e5db593701"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/4a08f11d8da98074903e-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_terminal:vt_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_terminal:vt_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/000f657d9ab86984a63f-test.log.txt",
+              "sha256": "e4489e25e0442b49edac9d1d5e27471a0d50f4d36235d1512203793509c86cbf"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/000f657d9ab86984a63f-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/prototype_transport:direct_script_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/prototype_transport:direct_script_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/212154eac4925a52222f-test.log.txt",
+              "sha256": "441cb242a325ac341998b342ece88d2ab27f022d863f3aead500569d4f5be8b4"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/212154eac4925a52222f-test.xml.txt",
+              "sha256": "00ccbda1bc1ea96383e5eef14fd46b3cfd7eca781add7238a4d1669798775da8"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/terminal:host_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/terminal:host_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/f0da5633d9242adf421e-test.log.txt",
+              "sha256": "5d30abbb08edcd19a661dcd1abade332f700c698c00953e941a3accad910d003"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/f0da5633d9242adf421e-test.xml.txt",
+              "sha256": "9414e33b5136395fc757bc983d1a866c2f8d5fe0ec6c8472b9abb43e8f45e577"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/tools/release:release_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/tools/release:release_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/f904d7ac540006951791-test.log.txt",
+              "sha256": "f0dfbbe8332dc1ffa8ddbce0ba6200c349498d193791def9567b2f8e9edd8b7e"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/f904d7ac540006951791-test.xml.txt",
+              "sha256": "138a4f5b82f1bd1da98ca9463298fa038fbd88c842afac7fbd983f94a149ccb1"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//core/tools/release:wheel_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//core/tools/release:wheel_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": [
+        "no-sandbox"
+      ]
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/7f86b580738afbb06b41-test.log.txt",
+              "sha256": "8031859a485e36d2335cfb1e150186949ae6c5fad6527fb8b2e1bc0ddee61597"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/7f86b580738afbb06b41-test.xml.txt",
+              "sha256": "c03172fda82e18ef773926bb9af3ca7dbb12e92a50bf9bfe62655f5eeec05734"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//docs/tools/docs:report_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//docs/tools/docs:report_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/c4932910328943e554a2-test.log.txt",
+              "sha256": "eacfd15fb786619d36bd0831199b40514d7377833c06909603908083b423399a"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/c4932910328943e554a2-test.xml.txt",
+              "sha256": "d953c541d6c0d4eb2b73bdb8f3609628285f71ba62c61bac3f7c3d5e05910d3f"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//docs/tools/docs:site_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//docs/tools/docs:site_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    },
+    {
+      "attempts": [
+        {
+          "files": [
+            {
+              "kind": "test.log",
+              "path": "evidence/d4a1c0fe7bf575d08ef5-test.log.txt",
+              "sha256": "c5269def5472ae4ce43e0c02a2da3b8653b29d8dab57fd7bea61e09d492ec04d"
+            },
+            {
+              "kind": "test.xml",
+              "path": "evidence/d4a1c0fe7bf575d08ef5-test.xml.txt",
+              "sha256": "7b80fea7b4ea201d0504ce34ff605fb83f197b00596991ca2f6a7af6d380807b"
+            }
+          ],
+          "identity": {
+            "attempt": 1,
+            "configuration": {
+              "id": "17a20dff6aba71652e66dcf5399959b6f3dbb278a44e3e891a1c56c3e5f033cc"
+            },
+            "label": "//docs/tools/docs:stage_site_test",
+            "run": 1,
+            "shard": 1
+          },
+          "status": "PASSED"
+        }
+      ],
+      "expectedRuns": 1,
+      "label": "//docs/tools/docs:stage_site_test",
+      "status": "PASSED",
+      "summaryStatus": "PASSED",
+      "tags": []
+    }
+  ],
+  "source": {
+    "commit": "ee4e5a852ec517d1e2a0a941c2de24a0b5a1efe8",
+    "dirty": true,
+    "treeSHA256": "c49489a8a0efb6f2da10ea4e8fca117224e17269d068c26257b923afbaa3bd4d",
+    "pins": {
+      ".aspect/version.axl": {
+        "content": "version(\"2026.33.3\")\n",
+        "sha256": "287133e2b1c3e0d64bf4cf0605c73065abc84251d384638559866aee70a81612"
+      },
+      ".bazelversion": {
+        "content": "9.1.1\n",
+        "sha256": "7b6188c072705b1c51d6ccdedea92238feb4199b75c58b321c5b632d981b0aba"
+      },
+      "MODULE.bazel": {
+        "content": "module(\n    name = \"burrow\",\n    version = \"0.0.0\",\n)\n\n# Documentation toolchain pins match Hovel c461ba282a8aecc7aa3a079a4613bf5e2640c388.\nbazel_dep(name = \"aspect_rules_js\", version = \"3.2.2\")\nbazel_dep(name = \"rules_nodejs\", version = \"6.7.5\")\nbazel_dep(name = \"rules_python\", version = \"2.2.0\")\n\npython = use_extension(\"@rules_python//python/extensions:python.bzl\", \"python\")\npython.toolchain(python_version = \"3.12\")\n\nnode = use_extension(\"@rules_nodejs//nodejs:extensions.bzl\", \"node\")\nnode.toolchain(node_version_from_nvmrc = \"//docs/site:.nvmrc\")\nuse_repo(node, \"nodejs_toolchains\")\n\npnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"pnpm\")\npnpm.pnpm(pnpm_version_from = \"//docs/site:package.json\")\nuse_repo(pnpm, \"pnpm\")\n\nnpm = use_extension(\"@aspect_rules_js//npm:extensions.bzl\", \"npm\")\nnpm.npm_translate_lock(\n    name = \"npm\",\n    npmrc = \"//docs/site:.npmrc\",\n    pnpm_lock = \"//docs/site:pnpm-lock.yaml\",\n    run_lifecycle_hooks = False,\n)\nuse_repo(npm, \"npm\")\n\n# Pinned runtime v0.4.2 (c461ba282a8a); GitHub asset digest.\n# SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.\nhttp_file = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_file\")\n\n# pipx 1.17.6 (MIT), upstream standalone zipapp and GitHub asset SHA256.\n# Test tool only; Burrow's wheel has no Python runtime dependencies.\nhttp_file(\n    name = \"pipx\",\n    urls = [\"https://github.com/pypa/pipx/releases/download/1.17.6/pipx.pyz\"],\n    sha256 = \"63b10dd9a15a57ec4066e29388d1e83565be4b127bd1cf6e3f150fcc39ded8b2\",\n    downloaded_file_path = \"pipx.pyz\",\n)\n\nhttp_file(\n    name = \"hovel_linux_wheel\",\n    downloaded_file_path = \"hovel.whl\",\n    sha256 = \"7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933\",\n    urls = [\"https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl\"],\n)\n\n# Real full-screen SSH acceptance only: Alpine 3.24 x86_64 Vim executable.\n# Alpine aports b7c31805c49a6e75b725aee8601e2e99e1d693e9; Vim license.\n# The lab uses -u NONE -i NONE --noplugin, without runtime scripts or xxd.\nhttp_file(\n    name = \"shell_lab_vim\",\n    downloaded_file_path = \"vim.apk\",\n    sha256 = \"6677af51cdce462afaf06af353acfe059b4a3c68c4257a539121c3ce46d25c68\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/vim-9.2.1091-r0.apk\"],\n)\n\n# Dropbear interoperability fixture only, Alpine 3.24 x86_64 (MIT).\n# aports e56a1d711fb2dd69206223dcdfd609d91d40ad02; shared libraries ISC.\n# Executed inside the digest-pinned OpenSSH lab image, never installed on hosts.\nhttp_file(\n    name = \"chain_lab_dropbear\",\n    downloaded_file_path = \"dropbear.apk\",\n    sha256 = \"cba11fe37aa85d7259ae44d494544e869bb58879e35124d0ba33b32c3b1201d7\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/dropbear-2026.91-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_utmps\",\n    downloaded_file_path = \"utmps.apk\",\n    sha256 = \"497f0f1cb51f0e6c1acc338fded0dc7722b1d43ea17bdb749f0d556794f8b2d8\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/utmps-libs-0.1.3.3-r0.apk\"],\n)\nhttp_file(\n    name = \"chain_lab_skalibs\",\n    downloaded_file_path = \"skalibs.apk\",\n    sha256 = \"3301f6ccbeaea49cdd966c7e636898a8612fb8fe964a15f24f6d204b3944c3f3\",\n    urls = [\"https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/skalibs-libs-2.15.0.0-r0.apk\"],\n)\n\n# Disposable external SDK proof, pinned to the research baseline.\nbazel_dep(name = \"rules_go\", version = \"0.61.1\")\nbazel_dep(name = \"gazelle\", version = \"0.51.3\")\nbazel_dep(name = \"rules_pkg\", version = \"1.2.0\")\n\ngo_sdk = use_extension(\"@rules_go//go:extensions.bzl\", \"go_sdk\")\ngo_sdk.download(name = \"burrow_go_sdk\", version = \"1.26.5\")\nuse_repo(go_sdk, \"burrow_go_sdk\")\n\ngo_deps = use_extension(\"@gazelle//:extensions.bzl\", \"go_deps\")\ngo_deps.from_file(go_mod = \"//core/prototype_sdk:go.mod\")\nuse_repo(go_deps, \"com_github_charmbracelet_colorprofile\", \"com_github_charmbracelet_x_ansi\", \"com_github_charmbracelet_x_term\", \"com_github_charmbracelet_x_vt\", \"com_github_pkg_sftp\", \"land_charm_bubbles_v2\", \"land_charm_bubbletea_v2\", \"land_charm_lipgloss_v2\", \"org_golang_x_crypto\", \"org_golang_x_sys\")\nuse_repo(go_deps, \"com_github_charmbracelet_ultraviolet\", \"land_charm_huh_v2\", \"land_charm_glamour_v2\")\n\nhttp_archive = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_archive\")\n\n# Ruff 0.16.3 (MIT), matching Hovel 541e78ada0af's sdk/python/uv.lock.\n# Linux amd64 release asset; SHA256 from Astral's GitHub release metadata.\nhttp_archive(\n    name = \"ruff\",\n    urls = [\"https://github.com/astral-sh/ruff/releases/download/0.16.3/ruff-x86_64-unknown-linux-gnu.tar.gz\"],\n    sha256 = \"7ab3b978d2c0b1c96b2323d4e5c4f35284ae1cdf35d2f7399595c74c805f5fa3\",\n    strip_prefix = \"ruff-x86_64-unknown-linux-gnu\",\n    build_file_content = \"exports_files([\\\"ruff\\\"])\",\n)\n\n# Workflow syntax/expression checks: rhysd/actionlint v1.7.12, MIT;\n# SHA256 from the upstream GitHub release asset (Linux amd64 operator baseline).\nhttp_archive(\n    name = \"actionlint\",\n    urls = [\"https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz\"],\n    sha256 = \"8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8\",\n    build_file_content = \"exports_files([\\\"actionlint\\\"])\",\n)\n\nhttp_archive(\n    name = \"hovel_sdk\",\n    build_file = \"//core/prototype_sdk:hovel.BUILD.bazel\",\n    patch_cmds = [\"rm sdk/go/hovel/BUILD.bazel\"],\n    sha256 = \"9080e5060787f4ba5ee6715611e10112af2af316318369b748c9f566c1f3b6e9\",\n    strip_prefix = \"hovel-a4cbfdf7769a9551695088c11061e3cabc368e07\",\n    type = \"tar.gz\",\n    urls = [\"https://codeload.github.com/vibepwners/hovel/tar.gz/a4cbfdf7769a9551695088c11061e3cabc368e07\"],\n)\n",
+        "sha256": "c3787a81a2536ef633c4da0cfe94f1cb34e1537f5c962173d894c3f89ec0b6b3"
+      },
+      "core/connection/lab-image.txt": {
+        "content": "linuxserver/openssh-server@sha256:47f82202bcbffe214cea77dc7f5ed24b875e81ce6ebf0e0368e2954727bf5116\n",
+        "sha256": "37ddf54b54253c8ed34b1b5a558352a365d857477af7bf9b8653a2394022a288"
+      },
+      "docs/site/.nvmrc": {
+        "content": "22.20.0\n",
+        "sha256": "a0e27aeeac42d6102f4ff2bce40d8fb011c07e5cb28eff3c9d77e68df29e5dd6"
+      },
+      "docs/site/package.json": {
+        "content": "{\n  \"name\": \"@burrow/docs-site\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"packageManager\": \"pnpm@10.20.0\",\n  \"engines\": {\n    \"node\": \"22.20.0\"\n  },\n  \"pnpm\": {\n    \"onlyBuiltDependencies\": []\n  },\n  \"devDependencies\": {\n    \"astro\": \"7.0.7\"\n  }\n}\n",
+        "sha256": "30da9cf880c71790efb95d13f96637783887d945f5f39817bf59d5c2202fe2c9"
+      }
+    },
+    "note": "The tree fingerprint includes the pre-existing untracked audit research. No source changed during collection. Issue 108 report/artifacts were added afterward; runtime/build/test files remain identical."
+  },
+  "command": "rtk proxy aspect burrow-check preflight",
+  "elapsed": "9m 22s",
+  "originalSuiteSHA256": "bce32a06e26184927275a0004b5ffb0e02c5825d182a17f0048a57532489751b",
+  "originalSuiteLocalPath": ".report-input/all/suite.json",
+  "gateLogSHA256": "a3f1a0c48bdc69fcbf0727de6cbf6f80e8d9f822aca1b5665ccf112d7af482cb",
+  "gateLogLocalPath": "/tmp/burrow-108-preflight.log",
+  "note": "Target attempts and evidence hashes are copied verbatim. Per-attempt paths remain relative to the local original suite directory; focused file/shell logs are also retained here."
+}

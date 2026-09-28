@@ -11,6 +11,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Bochner/burrow/core/launch"
@@ -88,6 +89,7 @@ func validateFileQuery(q FileQuery) error {
 
 // Browse binds every request to a specific live connection creation.
 func Browse(ctx context.Context, w string, s State, q FileQuery) (any, error) {
+	defer launch.Phase("files-browse")()
 	if err := validateFileQuery(q); err != nil {
 		return nil, err
 	}
@@ -216,6 +218,7 @@ func (s *owner) browse(ctx context.Context, q FileQuery) (value any, failure err
 }
 
 func (s *owner) browseFiles(ctx context.Context, q FileQuery) (any, error) {
+	defer launch.Phase("files-owner")()
 	// TryLock coalesces speculative requests rather than queueing remote work.
 	if q.Operation == "complete" {
 		if !s.fileMu.TryLock() {
@@ -266,11 +269,16 @@ func (s *owner) browseFiles(ctx context.Context, q FileQuery) (any, error) {
 		}
 	}
 	s.fileNext = time.Now().Add(time.Second)
+	setup := launch.Phase("files-sftp-setup")
 	client, closeClient, err := openFileClient(operation, state)
+	setup()
 	if err != nil {
 		return nil, err
 	}
-	defer closeClient()
+	defer func() {
+		defer launch.Phase("files-sftp-teardown")()
+		closeClient()
+	}()
 	remote := key
 	if key == "~" || strings.HasPrefix(key, "~/") {
 		home, e := client.RealPath(".")
@@ -279,7 +287,9 @@ func (s *owner) browseFiles(ctx context.Context, q FileQuery) (any, error) {
 		}
 		remote = home + strings.TrimPrefix(key, "~")
 	}
+	canonicalize := launch.Phase("files-canonicalize")
 	canonical, err := client.RealPath(remote)
+	canonicalize()
 	if err != nil {
 		return nil, fmt.Errorf("remote path unavailable: %w", err)
 	}
@@ -361,11 +371,15 @@ func (s *owner) cacheFiles(key string, listing FileListing) {
 }
 
 func (s *owner) readFiles(ctx context.Context, client *sftp.Client, dir string, state State, enrich bool) (FileListing, error) {
+	defer launch.Phase("files-metadata")()
 	out := FileListing{Path: dir, Entries: []FileEntry{}}
+	read := launch.Phase("files-readdir")
 	infos, err := client.ReadDirContext(ctx, dir)
+	read()
 	if err != nil {
 		return out, fmt.Errorf("remote directory cannot be read: %w", err)
 	}
+	var links []int
 	for _, info := range infos {
 		name := info.Name()
 		if name == "." || name == ".." || name == "" || strings.ContainsAny(name, "/\x00") {
@@ -377,16 +391,38 @@ func (s *owner) readFiles(ctx context.Context, client *sftp.Client, dir string, 
 		}
 		entry := FileEntry{Name: name, Path: path.Join(dir, name), Permissions: filePermissions(info.Mode()), UID: attrs.UID, GID: attrs.GID, Owner: strconv.FormatUint(uint64(attrs.UID), 10), Group: strconv.FormatUint(uint64(attrs.GID), 10), Size: info.Size(), Modified: info.ModTime(), Directory: info.IsDir()}
 		if info.Mode()&os.ModeSymlink != 0 {
-			entry.Link, err = client.ReadLink(entry.Path)
-			if err != nil {
-				entry.Error = "link target unavailable"
-			} else if target, e := client.Stat(entry.Path); e != nil {
-				entry.Error = "broken or inaccessible link"
-			} else {
-				entry.Directory = target.IsDir()
-			}
+			links = append(links, len(out.Entries))
 		}
 		out.Entries = append(out.Entries, entry)
+	}
+	// The existing request owns this client; cancellation closes its SSH pipes.
+	// Each worker writes only its entry, and sorting/enrichment waits for all four.
+	var workers sync.WaitGroup
+	for worker := range min(4, len(links)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for i := worker; i < len(links) && ctx.Err() == nil; i += 4 {
+				entry := &out.Entries[links[i]]
+				link := launch.Phase("files-link")
+				var err error
+				entry.Link, err = client.ReadLink(entry.Path)
+				if err != nil {
+					entry.Error = "link target unavailable"
+				} else if ctx.Err() == nil {
+					if target, err := client.Stat(entry.Path); err != nil {
+						entry.Error = "broken or inaccessible link"
+					} else {
+						entry.Directory = target.IsDir()
+					}
+				}
+				link()
+			}
+		}()
+	}
+	workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return out, err
 	}
 	if enrich {
 		s.resolveAccounts(ctx, state, out.Entries)
@@ -409,6 +445,7 @@ func (s *owner) readFiles(ctx context.Context, client *sftp.Client, dir string, 
 }
 
 func (s *owner) resolveAccounts(ctx context.Context, state State, entries []FileEntry) {
+	defer launch.Phase("files-accounts")()
 	if s.fileAccounts == nil {
 		s.fileAccounts = map[string]accountName{}
 	}
@@ -449,6 +486,7 @@ func (s *owner) resolveAccounts(ctx context.Context, state State, entries []File
 	lookup, stop := context.WithTimeout(ctx, 2*time.Second)
 	defer stop()
 	cmd := fileSSH(lookup, state, "unused", script.String())
+	defer launch.Phase("files-account-process")()
 	var output limitedFileOutput
 	cmd.Stdout = &output
 	if cmd.Run() != nil || output.full {

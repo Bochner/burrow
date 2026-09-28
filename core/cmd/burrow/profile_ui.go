@@ -222,7 +222,7 @@ var completionDescriptions = map[string]string{
 	"tunnel create": "CONNECTION forward|reverse LISTEN HOST PORT", "tunc": "CONNECTION l|r LISTEN HOST PORT", "tunnel list": "List retained forwarding inventory", "tunnel remove": "Remove selected listener", "tund": "Remove selected listener", "tunnel check": "Test tunnel connectivity (destination greeting)",
 	"status": "Verify workspace and daemon", "connect": "Open SSH connection form", "connections": "List active SSH connections",
 	"inspect": "Inspect connection state", "reconnect": "Replace a lost SSH connection", "close": "Review and close connection",
-	"shell": "Open interactive SSH shell", "shells": "List this frontend's local shells", "resume": "Resume a local shell ID", "shell-close": "Close selected local shell or ID", "help": "Show command reference", "quit": "Review connections and quit",
+	"shell": "Open interactive SSH shell", "shells": "Discover retained shells in this workspace", "resume": "Focus an attached shell tab by ID", "shell-close": "Close retained shell; preserve connection", "help": "Show command reference", "quit": "Review connections and quit",
 	"profiles": "List saved connections", "history": "Show retained command history",
 	"profile create": "Save connection settings", "profile edit": "Replace saved settings", "profile save": "Save authenticated settings",
 	"profile select": "Inspect saved settings", "profile delete": "Delete saved settings only", "profile connect": "Connect saved SSH profile",

@@ -37,3 +37,9 @@ go_test(
  tags = ["no-sandbox"],
  deps = [":launch"],
 )
+
+filegroup(
+    name = "format_sources",
+    srcs = glob(["*.go"]),
+    visibility = ["//:__pkg__"],
+)

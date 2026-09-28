@@ -1,4 +1,5 @@
 """Retained commands through the public Burrow/Hovel interface and real SSH."""
+
 import base64
 import hashlib
 import json
@@ -14,6 +15,7 @@ import time
 def run_checks(burrow, workspace, connection, container, command, hv, binary, env, decoder, scripts_only=False):
     if not scripts_only:
         inspection_checks(burrow, workspace, connection, container, command, hv, binary, env)
+
     def run(*args, **kw):
         return burrow(workspace, "run", *args, **kw)
 
@@ -23,7 +25,7 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
             state = run("inspect", run_id)
             if state["state"] not in ("prepared", "running"):
                 return state
-            time.sleep(.1)
+            time.sleep(0.1)
         raise AssertionError(state)
 
     def remote_ready(path):
@@ -32,13 +34,15 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
             result = subprocess.run(["docker", "exec", container, "test", "-s", path], capture_output=True)
             if result.returncode == 0:
                 return
-            time.sleep(.05)
+            time.sleep(0.05)
         raise AssertionError("remote command never published " + path)
 
     def master_loss_checks():
         missing = run("prepare", connection["name"], "--", "true")
         source.write_text("sleep 60\n")
-        loss = run("prepare", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--")
+        loss = run(
+            "prepare", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--"
+        )
         run("launch", loss["id"], "--yes")
         socket = Path(connection["socket"])
         hidden = socket.with_name("master-hidden")
@@ -63,16 +67,32 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     uploads = Path(burrow(workspace, "local")["upload"])
     source = uploads / "quoted script.sh"
     source.write_text("printf '<%s>\\n' \"$@\"; printf separate >&2; exit 7\n")
-    scripted = run("prepare", connection["name"], "--script", source.name,
-                   "--mode", "stream", "--interpreter", "/bin/sh", "--",
-                   "My Documents", "café", "$(hostname)", "a'b", "")
+    scripted = run(
+        "prepare",
+        connection["name"],
+        "--script",
+        source.name,
+        "--mode",
+        "stream",
+        "--interpreter",
+        "/bin/sh",
+        "--",
+        "My Documents",
+        "café",
+        "$(hostname)",
+        "a'b",
+        "",
+    )
     source.write_text("exit 99\n")
     review = run("launch", scripted["id"])
     assert "stream" in review["review"] and "quoted script.sh" in review["review"]
     run("launch", scripted["id"], "--review", review["digest"], "--yes")
     state = finished(scripted["id"])
     assert state["remoteExit"] == 7 and state["outputComplete"], state
-    assert base64.b64decode(run("output", scripted["id"], "stdout", "0")["data"]) == "<My Documents>\n<café>\n<$(hostname)>\n<a'b>\n<>\n".encode()
+    assert (
+        base64.b64decode(run("output", scripted["id"], "stdout", "0")["data"])
+        == "<My Documents>\n<café>\n<$(hostname)>\n<a'b>\n<>\n".encode()
+    )
     assert base64.b64decode(run("output", scripted["id"], "stderr", "0")["data"]) == b"separate"
     assert run("collect", scripted["id"], "--yes")["collection"] == "succeeded"
     run("close", scripted["id"], "--yes")
@@ -101,8 +121,19 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     print("PASS inline source and independent binary stdin", flush=True)
     source.write_text("printf '%s\\n' \"$0\"; cat; exit 7\n")
     data.write_bytes(b"staged-input")
-    staged = run("prepare", connection["name"], "--script", source.name, "--mode", "stage",
-                 "--interpreter", "/bin/sh", "--stdin", data.name, "--")
+    staged = run(
+        "prepare",
+        connection["name"],
+        "--script",
+        source.name,
+        "--mode",
+        "stage",
+        "--interpreter",
+        "/bin/sh",
+        "--stdin",
+        data.name,
+        "--",
+    )
     stage = staged["input"]["stagePath"]
     command("docker", "exec", container, "test", "!", "-e", str(Path(stage).parent))
     run("launch", staged["id"], "--yes")
@@ -114,12 +145,26 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("close", staged["id"], "--yes")
     print("PASS explicit staging and nonzero-exit cleanup", flush=True)
     source.write_text("printf kept\n")
-    kept = run("now", connection["name"], "--script", source.name, "--mode", "stage",
-               "--interpreter", "/bin/sh", "--keep", "--yes", "--")
+    kept = run(
+        "now",
+        connection["name"],
+        "--script",
+        source.name,
+        "--mode",
+        "stage",
+        "--interpreter",
+        "/bin/sh",
+        "--keep",
+        "--yes",
+        "--",
+    )
     assert kept["stageCleanup"] == "kept" and kept["collection"] == "succeeded", kept
     stage = kept["input"]["stagePath"]
     assert command("docker", "exec", container, "cat", stage) == "printf kept\n"
-    assert command("docker", "exec", container, "stat", "-c", "%a", str(Path(stage).parent), stage).split() == ["700", "600"]
+    assert command("docker", "exec", container, "stat", "-c", "%a", str(Path(stage).parent), stage).split() == [
+        "700",
+        "600",
+    ]
     run("close", kept["id"], "--yes")
     command("docker", "exec", container, "test", "-f", stage)
 
@@ -130,15 +175,18 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("close", existing["id"], "--yes")
 
     source.write_text('printf preserve > "$(dirname "$0")/unrelated"\n')
-    unrelated = run("now", connection["name"], "--script", source.name, "--mode", "stage",
-                    "--interpreter", "/bin/sh", "--yes", "--")
+    unrelated = run(
+        "now", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--yes", "--"
+    )
     stage = unrelated["input"]["stagePath"]
     assert unrelated["remoteExit"] == 0 and unrelated["stageCleanup"].startswith("failed"), unrelated
     command("docker", "exec", container, "test", "!", "-e", stage)
     assert command("docker", "exec", container, "cat", str(Path(stage).parent / "unrelated")) == "preserve"
     run("close", unrelated["id"], "--yes")
 
-    collision = run("prepare", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--")
+    collision = run(
+        "prepare", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--"
+    )
     stage = collision["input"]["stagePath"]
     command("docker", "exec", container, "mkdir", str(Path(stage).parent))
     command("docker", "exec", container, "sh", "-c", 'printf original > "$1"', "sh", stage)
@@ -158,8 +206,18 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
         options = ["--timeout", "2s"] if timeout else []
         if keep:
             options.append("--keep")
-        stopped = run("prepare", connection["name"], "--script", source.name, "--mode", "stage",
-                      "--interpreter", "/bin/sh", *options, "--")
+        stopped = run(
+            "prepare",
+            connection["name"],
+            "--script",
+            source.name,
+            "--mode",
+            "stage",
+            "--interpreter",
+            "/bin/sh",
+            *options,
+            "--",
+        )
         run("launch", stopped["id"], "--yes")
         if timeout:
             state = finished(stopped["id"])
@@ -167,12 +225,22 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
         else:
             state = run("cancel", stopped["id"], "--yes")
             assert state["state"] == "cancelled", state
-        assert state["cancellation"] == "ordinary-group-terminated" and state["stageCleanup"] == ("kept" if keep else "removed"), state
+        assert state["cancellation"] == "ordinary-group-terminated" and state["stageCleanup"] == (
+            "kept" if keep else "removed"
+        ), state
         pids = base64.b64decode(run("output", stopped["id"], "stdout", "0")["data"]).split()
         assert len(pids) == 2
         for pid in pids:
-            command("docker", "exec", container, "sh", "-c",
-                    'test ! -e /proc/$1/stat || test "$(cut -d " " -f 3 /proc/$1/stat)" = Z', "sh", pid.decode())
+            command(
+                "docker",
+                "exec",
+                container,
+                "sh",
+                "-c",
+                'test ! -e /proc/$1/stat || test "$(cut -d " " -f 3 /proc/$1/stat)" = Z',
+                "sh",
+                pid.decode(),
+            )
         assert run("inspect", sibling["id"])["state"] == "running", "script cancellation killed sibling"
         assert run("collect", stopped["id"], "--yes")["collection"] == "succeeded"
         run("close", stopped["id"], "--yes")
@@ -180,7 +248,9 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("close", sibling["id"], "--yes")
     print("PASS script cancellation/timeout, cleanup and sibling usability", flush=True)
     source.write_text('mv "$0" "$0.original"; printf replacement > "$0"\n')
-    replaced_script = run("now", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--yes", "--")
+    replaced_script = run(
+        "now", connection["name"], "--script", source.name, "--mode", "stage", "--interpreter", "/bin/sh", "--yes", "--"
+    )
     assert replaced_script["stageCleanup"].startswith("failed"), replaced_script
     assert command("docker", "exec", container, "cat", replaced_script["input"]["stagePath"]) == "replacement"
     run("close", replaced_script["id"], "--yes")
@@ -194,9 +264,31 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     before = set(workspace.glob(".burrow-run-*"))
     for local in ("../outside.sh", "outside-link", "input-pipe"):
         run("prepare", connection["name"], "--stdin", local, "--", "cat", ok=False)
-    run("prepare", connection["name"], "--script", source.name, "--mode", "inline", "--interpreter", "/bin/sh", "--", ok=False)
+    run(
+        "prepare",
+        connection["name"],
+        "--script",
+        source.name,
+        "--mode",
+        "inline",
+        "--interpreter",
+        "/bin/sh",
+        "--",
+        ok=False,
+    )
     source.write_bytes(b"printf '\x00'\n")
-    run("prepare", connection["name"], "--script", source.name, "--mode", "inline", "--interpreter", "/bin/sh", "--", ok=False)
+    run(
+        "prepare",
+        connection["name"],
+        "--script",
+        source.name,
+        "--mode",
+        "inline",
+        "--interpreter",
+        "/bin/sh",
+        "--",
+        ok=False,
+    )
     assert set(workspace.glob(".burrow-run-*")) == before, "failed preparation leaked working files"
     for p in workspace.rglob("*"):
         if p.is_file() and p.name.endswith((".log", ".db", ".db-wal", ".json")):
@@ -215,18 +307,27 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     assert base64.b64decode(run("output", immediate["id"], "stdout", "0")["data"]) == b"--yes"
     artifacts = [a for a in json.loads(hv("artifact", "list", "--json")) if a["runId"] == immediate["runID"]]
     assert len(artifacts) == 3, artifacts
-    stdout, = [a for a in artifacts if a["name"].endswith("-stdout")]
+    (stdout,) = [a for a in artifacts if a["name"].endswith("-stdout")]
     assert (workspace / stdout["path"]).read_bytes() == b"--yes"
     run("close", immediate["id"], "--yes")
 
     # A failed final audit write must still identify a command that executed.
-    audit_command = ["/bin/sh", "-c", "echo ready >/tmp/burrow-now-audit; while [ ! -f /tmp/burrow-now-release ]; do sleep .1; done; printf audit-output"]
-    caller = subprocess.Popen([binary, "--workspace", str(workspace), "run", "now", connection["name"], "--yes", "--", *audit_command],
-                              env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    audit_command = [
+        "/bin/sh",
+        "-c",
+        "echo ready >/tmp/burrow-now-audit; while [ ! -f /tmp/burrow-now-release ]; do sleep .1; done; printf audit-output",
+    ]
+    caller = subprocess.Popen(
+        [binary, "--workspace", str(workspace), "run", "now", connection["name"], "--yes", "--", *audit_command],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     log = workspace / "burrow-logs/operations.log"
     try:
         remote_ready("/tmp/burrow-now-audit")
-        audit_run, = [r for r in run("list") if r["command"] == audit_command]
+        (audit_run,) = [r for r in run("list") if r["command"] == audit_command]
         log.chmod(0o400)
         command("docker", "exec", container, "touch", "/tmp/burrow-now-release")
         _, error = caller.communicate(timeout=20)
@@ -240,11 +341,16 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("close", audit_run["id"], "--yes")
 
     interrupted_command = ["/bin/sh", "-c", "echo ready >/tmp/burrow-now-interrupt; sleep 300"]
-    caller = subprocess.Popen([binary, "--workspace", str(workspace), "run", "now", connection["name"], "--yes", "--", *interrupted_command],
-                              env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    caller = subprocess.Popen(
+        [binary, "--workspace", str(workspace), "run", "now", connection["name"], "--yes", "--", *interrupted_command],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     try:
         remote_ready("/tmp/burrow-now-interrupt")
-        interrupted, = [r for r in run("list") if r["command"] == interrupted_command]
+        (interrupted,) = [r for r in run("list") if r["command"] == interrupted_command]
         caller.send_signal(signal.SIGINT)
         _, error = caller.communicate(timeout=15)
         assert caller.returncode != 0 and interrupted["id"] in error, error
@@ -269,7 +375,18 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
         return json.loads(result["summary"])
 
     source.write_text("printf hovel-script\n")
-    scripted = hovel_run("now", connection["name"], "--script", source.name, "--mode", "stream", "--interpreter", "/bin/sh", "--yes", "--")
+    scripted = hovel_run(
+        "now",
+        connection["name"],
+        "--script",
+        source.name,
+        "--mode",
+        "stream",
+        "--interpreter",
+        "/bin/sh",
+        "--yes",
+        "--",
+    )
     assert scripted["collection"] == "succeeded" and scripted["remoteExit"] == 0, scripted
     assert base64.b64decode(run("output", scripted["id"], "stdout", "0")["data"]) == b"hovel-script"
     run("close", scripted["id"], "--yes")
@@ -277,9 +394,12 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     now_review = hovel_run("now", connection["name"], "--", "printf", "reviewed-now")
     contract = burrow(workspace, "capabilities", "run.now")
     review_shape = contract["results"]["RunReview"]["anyOf"][0]
-    assert set(review_shape["required"]) <= now_review.keys() <= review_shape["properties"].keys(), (review_shape, now_review)
+    assert set(review_shape["required"]) <= now_review.keys() <= review_shape["properties"].keys(), (
+        review_shape,
+        now_review,
+    )
     assert run("inspect", now_review["id"])["state"] == "prepared", now_review
-    assert now_review["confirm"] == f'run launch {now_review["id"]} --collect --review {now_review["digest"]} --yes'
+    assert now_review["confirm"] == f"run launch {now_review['id']} --collect --review {now_review['digest']} --yes"
     assert hovel_run(*shlex.split(now_review["confirm"])[1:])["collection"] == "succeeded"
     assert finished(now_review["id"])["remoteExit"] == 0
     assert base64.b64decode(run("output", now_review["id"], "stdout", "0")["data"]) == b"reviewed-now"
@@ -290,8 +410,14 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     assert finished(hovel_now["id"])["remoteExit"] == 0
     run("close", hovel_now["id"], "--yes")
 
-    prepared = hovel_run("prepare", connection["name"], "--", "/bin/sh", "-c",
-                   "sleep 1; printf 'retained stdout'; printf 'separate stderr' >&2; exit 7")
+    prepared = hovel_run(
+        "prepare",
+        connection["name"],
+        "--",
+        "/bin/sh",
+        "-c",
+        "sleep 1; printf 'retained stdout'; printf 'separate stderr' >&2; exit 7",
+    )
     run_id = prepared["id"]
     assert prepared["state"] == "prepared" and prepared["remoteExit"] is None
     assert run("inspect", run_id)["state"] == "prepared"
@@ -335,8 +461,16 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
         assert (workspace / item["path"]).exists(), item
 
     # Binary streams exceed preview/RPC chunk size and retain exact bytes.
-    binary_run = run("prepare", connection["name"], "--budget", "3000000", "--",
-                 "/bin/sh", "-c", "head -c 2097152 /dev/zero; head -c 1048576 /dev/zero >&2")
+    binary_run = run(
+        "prepare",
+        connection["name"],
+        "--budget",
+        "3000000",
+        "--",
+        "/bin/sh",
+        "-c",
+        "head -c 2097152 /dev/zero; head -c 1048576 /dev/zero >&2",
+    )
     run("launch", binary_run["id"], "--yes")
     state = finished(binary_run["id"])
     assert state["remoteExit"] == 0 and state["storedBytes"] == [2097152, 1048576], state
@@ -351,7 +485,7 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     # Cleanup stays with the original private directory, not a replacement.
     before = set(workspace.glob(".burrow-run-*"))
     replaced = run("prepare", connection["name"], "--", "true")
-    spool, = set(workspace.glob(".burrow-run-*")) - before
+    (spool,) = set(workspace.glob(".burrow-run-*")) - before
     run("launch", replaced["id"], "--yes")
     finished(replaced["id"])
     moved = spool.with_name(spool.name + "-moved")
@@ -366,8 +500,16 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("close", replaced["id"], "--yes")
     assert not spool.exists()
 
-    budget = run("prepare", connection["name"], "--budget", "7", "--",
-                 "/bin/sh", "-c", "printf 123456789; printf abc >&2; exit 9")
+    budget = run(
+        "prepare",
+        connection["name"],
+        "--budget",
+        "7",
+        "--",
+        "/bin/sh",
+        "-c",
+        "printf 123456789; printf abc >&2; exit 9",
+    )
     run("launch", budget["id"], "--yes")
     state = finished(budget["id"])
     assert state["remoteExit"] == 9 and not state["outputComplete"], state
@@ -376,8 +518,7 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("close", budget["id"], "--yes")
 
     # Kernel-enforced write failure, not a simulated capture result.
-    disk = run("prepare", connection["name"], "--", "/bin/sh", "-c",
-               "sleep 3; head -c 8192 /dev/zero; exit 4")
+    disk = run("prepare", connection["name"], "--", "/bin/sh", "-c", "sleep 3; head -c 8192 /dev/zero; exit 4")
     run("launch", disk["id"], "--yes")
     prior = resource.prlimit(disk["ownerPID"], resource.RLIMIT_FSIZE)
     resource.prlimit(disk["ownerPID"], resource.RLIMIT_FSIZE, (1024, prior[1]))
@@ -390,18 +531,30 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
 
     sibling = run("prepare", connection["name"], "--", "sleep", "60")
     run("launch", sibling["id"], "--yes")
-    child = run("prepare", connection["name"], "--", "/bin/sh", "-c",
-                "echo $$ >/tmp/burrow-run-leader; sleep 60 & echo $! >/tmp/burrow-run-child; wait")
+    child = run(
+        "prepare",
+        connection["name"],
+        "--",
+        "/bin/sh",
+        "-c",
+        "echo $$ >/tmp/burrow-run-leader; sleep 60 & echo $! >/tmp/burrow-run-child; wait",
+    )
     run("launch", child["id"], "--yes")
     remote_ready("/tmp/burrow-run-child")
     assert run("inspect", child["id"])["state"] == "running"
     cancelled = run("cancel", child["id"], "--yes")
     assert cancelled["cancellation"] == "ordinary-group-terminated", cancelled
     assert cancelled["remoteExit"] is None
-    command("docker", "exec", container, "sh", "-c",
-            'for f in /tmp/burrow-run-leader /tmp/burrow-run-child; do '
-            'pid=$(cat "$f"); test ! -e /proc/$pid/stat || '
-            'test "$(cut -d " " -f 3 /proc/$pid/stat)" = Z || exit 1; done')
+    command(
+        "docker",
+        "exec",
+        container,
+        "sh",
+        "-c",
+        "for f in /tmp/burrow-run-leader /tmp/burrow-run-child; do "
+        'pid=$(cat "$f"); test ! -e /proc/$pid/stat || '
+        'test "$(cut -d " " -f 3 /proc/$pid/stat)" = Z || exit 1; done',
+    )
     assert burrow(workspace, "inspect", connection["name"])["state"] == "connected"
     assert run("inspect", sibling["id"])["state"] == "running", "cancel killed sibling"
     assert run("cancel", child["id"], "--yes")["cancellation"] == "ordinary-group-terminated"
@@ -428,10 +581,13 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("close", cleanup["id"], "--yes")
 
     # Lose the launch caller after the remote action, then retry the same run.
-    killed = run("prepare", connection["name"], "--", "/bin/sh", "-c",
-                 "echo once >>/tmp/burrow-launch-count; sleep 60")
-    caller = subprocess.Popen([binary, "--workspace", str(workspace), "run", "launch", killed["id"], "--yes"],
-                              env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    killed = run("prepare", connection["name"], "--", "/bin/sh", "-c", "echo once >>/tmp/burrow-launch-count; sleep 60")
+    caller = subprocess.Popen(
+        [binary, "--workspace", str(workspace), "run", "launch", killed["id"], "--yes"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     try:
         remote_ready("/tmp/burrow-launch-count")
         caller.kill()
@@ -448,21 +604,43 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
 
     # A descendant deliberately leaves the process group. The launch leader
     # exits while the descendant holds SSH output open; no stale group signal.
-    escaped = run("prepare", connection["name"], "--", "/bin/sh", "-c",
-                  "setsid /bin/sh -c 'echo $$ >/tmp/burrow-escaped; sleep 60' & exit 0")
+    escaped = run(
+        "prepare",
+        connection["name"],
+        "--",
+        "/bin/sh",
+        "-c",
+        "setsid /bin/sh -c 'echo $$ >/tmp/burrow-escaped; sleep 60' & exit 0",
+    )
     run("launch", escaped["id"], "--yes")
     remote_ready("/tmp/burrow-escaped")
     result = run("cancel", escaped["id"], "--yes")
     assert result["cancellation"].startswith("unconfirmed"), result
-    command("docker", "exec", container, "sh", "-c", 'kill -0 $(cat /tmp/burrow-escaped)')
-    command("docker", "exec", container, "sh", "-c", 'kill -TERM -$(cat /tmp/burrow-escaped)')
+    command("docker", "exec", container, "sh", "-c", "kill -0 $(cat /tmp/burrow-escaped)")
+    command("docker", "exec", container, "sh", "-c", "kill -TERM -$(cat /tmp/burrow-escaped)")
     run("close", escaped["id"], "--yes")
 
     # Waiting outlives the ordinary one-minute frontend request deadline.
     # Keep this separate from direct Hovel setup writers (see HovelDispatch).
-    slow = subprocess.Popen([binary, "--workspace", str(workspace), "run", "now", connection["name"], "--yes", "--",
-                             "/bin/sh", "-c", "sleep 61; printf delayed-output; printf delayed-error >&2; exit 7"],
-                            env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    slow = subprocess.Popen(
+        [
+            binary,
+            "--workspace",
+            str(workspace),
+            "run",
+            "now",
+            connection["name"],
+            "--yes",
+            "--",
+            "/bin/sh",
+            "-c",
+            "sleep 61; printf delayed-output; printf delayed-error >&2; exit 7",
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     out, error = slow.communicate(timeout=75)
     assert slow.returncode == 0, error
     slow_result = json.loads(out)
@@ -474,8 +652,7 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
 
     # Lost retained owners are never adopted or relaunched. Registered evidence
     # survives; abandoned working files are deliberately not automatic recovery.
-    lost = run("prepare", connection["name"], "--", "/bin/sh", "-c",
-               "echo $$ >/tmp/burrow-lost-run; sleep 60")
+    lost = run("prepare", connection["name"], "--", "/bin/sh", "-c", "echo $$ >/tmp/burrow-lost-run; sleep 60")
     run("launch", lost["id"], "--yes")
     remote_ready("/tmp/burrow-lost-run")
     os.kill(lost["ownerPID"], signal.SIGKILL)
@@ -484,7 +661,7 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
     run("collect", lost["id"], "--yes", ok=False)
     for item in artifacts:
         assert (workspace / item["path"]).exists()
-    command("docker", "exec", container, "sh", "-c", 'kill -TERM -$(cat /tmp/burrow-lost-run)')
+    command("docker", "exec", container, "sh", "-c", "kill -TERM -$(cat /tmp/burrow-lost-run)")
 
     master_loss_checks()
 
@@ -492,42 +669,63 @@ def run_checks(burrow, workspace, connection, container, command, hv, binary, en
 def inspection_checks(burrow, workspace, connection, container, command, hv, binary, env):
     project = workspace / "agent-inspection"
     project.mkdir()
-    installed = subprocess.run([binary, "agent", "install", "codex", "--scope", "project"],
-                               cwd=project, env=env, capture_output=True, text=True, timeout=15)
+    installed = subprocess.run(
+        [binary, "agent", "install", "codex", "--scope", "project"],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
     assert installed.returncode == 0, installed.stderr
     reference = project / ".agents/skills/burrow-inspect/references/commands.md"
     assert "find /var/log -type f -name '*.log'" in reference.read_text()
     contract = json.loads(command(binary, "capabilities", env=env))
     ops = {op["id"]: op for op in contract["operations"]}
-    assert all(ops[name]["agent"]["status"] == "supported" for name in
-               ("connection.list", "connection.inspect", "run.prepare", "run.launch", "run.output", "run.collect"))
+    assert all(
+        ops[name]["agent"]["status"] == "supported"
+        for name in ("connection.list", "connection.inspect", "run.prepare", "run.launch", "run.output", "run.collect")
+    )
     burrow(workspace, "workspace", "inspect")
-    selected, = [c for c in burrow(workspace, "connections") if c["name"] == connection["name"]]
+    (selected,) = [c for c in burrow(workspace, "connections") if c["name"] == connection["name"]]
     assert selected["generation"] == connection["generation"] and selected["state"] == "connected"
     selected = burrow(workspace, "inspect", selected["name"])
     assert selected["creation"] == connection["creation"]
     # Controlled target data: one useful filename plus an unreadable directory.
-    command("docker", "exec", container, "sh", "-c",
-            "mkdir -p /tmp/burrow-inspection/private; touch /tmp/burrow-inspection/observed.log; "
-            "chmod 755 /tmp/burrow-inspection; chmod 700 /tmp/burrow-inspection/private")
+    command(
+        "docker",
+        "exec",
+        container,
+        "sh",
+        "-c",
+        "mkdir -p /tmp/burrow-inspection/private; touch /tmp/burrow-inspection/observed.log; "
+        "chmod 755 /tmp/burrow-inspection; chmod 700 /tmp/burrow-inspection/private",
+    )
+
     def run(*args):
         return burrow(workspace, "run", *args)
+
     prepared = run("prepare", selected["name"], "--", "find", "/tmp/burrow-inspection", "-type", "f", "-name", "*.log")
     assert prepared["connection"]["creation"] == selected["creation"] and prepared["execution"] == "remote"
     review = run("launch", prepared["id"])
     assert selected["name"] in review["review"] and "/tmp/burrow-inspection" in review["review"]
     assert run("inspect", prepared["id"])["state"] == "prepared", "review executed the search"
+
     # Hovel writes administrative chain-KV artifacts for invocations. Identify
     # this retained run's evidence by its name, independently of command run IDs.
     def run_artifacts():
-        return [a for a in json.loads(hv("artifact", "list", "--json"))
-                if a["name"].startswith("run-" + prepared["id"] + "-")]
+        return [
+            a
+            for a in json.loads(hv("artifact", "list", "--json"))
+            if a["name"].startswith("run-" + prepared["id"] + "-")
+        ]
+
     assert not run_artifacts()
     run("launch", prepared["id"], "--review", review["digest"], "--yes")
     deadline = time.monotonic() + 15
     while (state := run("inspect", prepared["id"]))["state"] == "running":
         assert time.monotonic() < deadline, state
-        time.sleep(.1)
+        time.sleep(0.1)
     assert state["remoteExit"] != 0 and state["remoteExit"] is not None and state["outputComplete"], state
     output = []
     for stream in ("stdout", "stderr"):
@@ -548,11 +746,14 @@ def inspection_checks(burrow, workspace, connection, container, command, hv, bin
     artifacts = run_artifacts()
     assert len(artifacts) == 3 and all(a["runId"] == collected["runID"] for a in artifacts), artifacts
     for stream, content in zip(("stdout", "stderr"), output):
-        artifact, = [a for a in artifacts if a["name"].endswith("-" + stream)]
+        (artifact,) = [a for a in artifacts if a["name"].endswith("-" + stream)]
         assert (workspace / artifact["path"]).read_bytes() == content
     run("close", prepared["id"], "--yes")
     assert all((workspace / a["path"]).is_file() for a in artifacts)
-    print("PASS installed inspection recipe: explicit live identity, review, partial search/complete capture, stdout/stderr and explicit Hovel evidence", flush=True)
+    print(
+        "PASS installed inspection recipe: explicit live identity, review, partial search/complete capture, stdout/stderr and explicit Hovel evidence",
+        flush=True,
+    )
 
 
 def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
@@ -565,17 +766,41 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
     script = Path(burrow(workspace, "local")["upload"]) / "viewer script.sh"
     execution = ["--local"] if local else []
     mode = "stream" if local else "stage"
-    script.write_text("printf 'retained viewer output\\nremote\\033]52;c;untrusted\\007\\n'; printf 'viewer stderr\\n' >&2; exit 7\n")
-    saved = burrow(workspace, "run", "prepare", connection, *execution, "--script", script.name, "--mode", mode, "--interpreter", "/bin/sh", "--")
+    script.write_text(
+        "printf 'retained viewer output\\nremote\\033]52;c;untrusted\\007\\n'; printf 'viewer stderr\\n' >&2; exit 7\n"
+    )
+    saved = burrow(
+        workspace,
+        "run",
+        "prepare",
+        connection,
+        *execution,
+        "--script",
+        script.name,
+        "--mode",
+        mode,
+        "--interpreter",
+        "/bin/sh",
+        "--",
+    )
     burrow(workspace, "run", "launch", saved["id"], "--yes")
     deadline = time.monotonic() + 15
     while burrow(workspace, "run", "inspect", saved["id"])["state"] == "running":
         assert time.monotonic() < deadline
-        time.sleep(.1)
+        time.sleep(0.1)
     burrow(workspace, "run", "collect", saved["id"], "--yes")
     burrow(workspace, "run", "close", saved["id"], "--yes")
-    prepared = burrow(workspace, "run", "prepare", connection, *execution, "--", "/bin/sh", "-c",
-                      "printf 'remote\\033]52;c;untrusted\\007'; sleep 60")
+    prepared = burrow(
+        workspace,
+        "run",
+        "prepare",
+        connection,
+        *execution,
+        "--",
+        "/bin/sh",
+        "-c",
+        "printf 'remote\\033]52;c;untrusted\\007'; sleep 60",
+    )
     run_id = prepared["id"]
     outer, slave = pty.openpty()
     before = termios.tcgetattr(slave)
@@ -585,17 +810,25 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
         os.setsid()
         fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
-    frontend = subprocess.Popen([binary, "--workspace", str(workspace), "tui"], env=env,
-                                stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+    frontend = subprocess.Popen(
+        [binary, "--workspace", str(workspace), "tui"],
+        env=env,
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        preexec_fn=controlling,
+    )
     output = bytearray()
     dimensions = [160, 40]
 
     def wait(needle, *also):
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
-            if select.select([outer], [], [], .05)[0]:
+            if select.select([outer], [], [], 0.05)[0]:
                 output.extend(os.read(outer, 65536))
-            screen = subprocess.run([decoder, *map(str, dimensions)], input=output, capture_output=True, check=True).stdout.decode()
+            screen = subprocess.run(
+                [decoder, *map(str, dimensions)], input=output, capture_output=True, check=True
+            ).stdout.decode()
             if all(value in screen for value in (needle, *also)):
                 return screen
             assert frontend.poll() is None, screen
@@ -604,7 +837,7 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
     def finish():
         deadline = time.monotonic() + 10
         while frontend.poll() is None and time.monotonic() < deadline:
-            if select.select([outer], [], [], .05)[0]:
+            if select.select([outer], [], [], 0.05)[0]:
                 output.extend(os.read(outer, 65536))
         assert frontend.poll() is not None, "frontend exit stalled"
 
@@ -617,7 +850,7 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
         if local:
             wait("local tool; remote outcome unconfirmed")
         for width, height in ((200, 50), (120, 30), (80, 24), (160, 40)):
-            while select.select([outer], [], [], .05)[0]:
+            while select.select([outer], [], [], 0.05)[0]:
                 output.extend(os.read(outer, 65536))
             output.clear()
             dimensions[:] = [width, height]
@@ -664,7 +897,7 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
         wait("run now " + connection + " -- ")
         os.write(outer, b"printf %s --yes\r")
         wait("Proceed?")
-        pending, = [r for r in burrow(workspace, "run", "list") if r["id"] not in before_now]
+        (pending,) = [r for r in burrow(workspace, "run", "list") if r["id"] not in before_now]
         assert pending["state"] == "prepared" and pending["command"] == ["printf", "%s", "--yes"]
         os.write(outer, b"\t\r")
         wait('"launchRunID"', '"id": "' + pending["id"] + '"')
@@ -672,7 +905,7 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
         deadline = time.monotonic() + 10
         while burrow(workspace, "run", "inspect", pending["id"])["state"] == "running":
             assert time.monotonic() < deadline
-            time.sleep(.1)
+            time.sleep(0.1)
         assert base64.b64decode(burrow(workspace, "run", "output", pending["id"], "stdout", "0")["data"]) == b"--yes"
         burrow(workspace, "run", "close", pending["id"], "--yes")
         os.write(outer, b"\x0c")
@@ -683,11 +916,23 @@ def run_ui(binary, env, decoder, burrow, workspace, connection, local=False):
         wait("    --yes")
         os.write(outer, b"\x0c")
         wait("COMMAND OUTPUT")
-        os.write(outer, ("run now " + connection + (" --local" if local else "") + " --script " + shlex.quote(script.name) + " --mode " + mode + " --interpreter /bin/sh --\r").encode())
+        os.write(
+            outer,
+            (
+                "run now "
+                + connection
+                + (" --local" if local else "")
+                + " --script "
+                + shlex.quote(script.name)
+                + " --mode "
+                + mode
+                + " --interpreter /bin/sh --\r"
+            ).encode(),
+        )
         wait("Proceed?")
         if local:
             wait("local (on the daemon host)")
-        cancelled, = [r for r in burrow(workspace, "run", "list") if r["id"] not in before_now]
+        (cancelled,) = [r for r in burrow(workspace, "run", "list") if r["id"] not in before_now]
         os.write(outer, b"\x1b")
         wait("COMMAND OUTPUT")
         assert burrow(workspace, "run", "inspect", cancelled["id"])["state"] == "prepared"

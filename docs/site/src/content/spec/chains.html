@@ -121,7 +121,7 @@ shell target</code></pre>
 <p>Set these variables in your local shell, not in either application prompt. The key or unlocked agent must be accessible to the daemon.</p>
 <pre data-lang="Local shell"><code>CHAIN_WORKSPACE=/home/operator/burrow-lab
 CHAIN_KEY=/home/operator/.ssh/lab_ed25519
-CHAIN_HOVEL="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.2/hovel"
+CHAIN_HOVEL="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.4/hovel"
 burrow --workspace "$CHAIN_WORKSPACE" status</code></pre>
 <h3>Export without authenticating</h3>
 <pre data-lang="Local shell"><code>burrow --workspace "$CHAIN_WORKSPACE" chain connect target 192.0.2.10 --user tester \
@@ -174,7 +174,7 @@ burrow --workspace /absolute/workspace chain connect target 192.168.10.50 \
   --user alice --port 22 --password &gt; /absolute/workspace/password.chain.json</code></pre>
 <p>Stderr reports that JSON is ready. Nothing has authenticated yet. Stdout contains only the chain JSON.</p></li>
 <li><p>In terminal B, run the exported chain with the pinned Hovel executable. Review and confirm normally:</p>
-<pre data-lang="Terminal B"><code>HOVEL_BIN="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.2/hovel"
+<pre data-lang="Terminal B"><code>HOVEL_BIN="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.4/hovel"
 "$HOVEL_BIN" throw /absolute/workspace/password.chain.json \
   --workspace /absolute/workspace --daemon-endpoint /absolute/workspace/hoveld.sock \
   --allow-dangerous --json</code></pre></li>
@@ -189,7 +189,7 @@ burrow --workspace /absolute/workspace chain connect target 192.168.10.50 \
 burrow --workspace /absolute/workspace chain connect target 192.168.10.50 \
   --user alice --port 22 --password PASSWORD &gt; /absolute/workspace/password.chain.json</code></pre>
 <p>Wait for “Chain JSON exported” on stderr before starting process B. After reviewing the generated operation, an unattended caller can explicitly approve its throw:</p>
-<pre data-lang="Process B · local shell"><code>HOVEL_BIN="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.2/hovel"
+<pre data-lang="Process B · local shell"><code>HOVEL_BIN="${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.4/hovel"
 "$HOVEL_BIN" throw /absolute/workspace/password.chain.json \
   --workspace /absolute/workspace --daemon-endpoint /absolute/workspace/hoveld.sock \
   --allow-dangerous --now --json</code></pre>

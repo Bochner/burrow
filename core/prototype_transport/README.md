@@ -41,6 +41,9 @@ master to reproduce the failure. It must not be pointed at an existing master.
 
 ## Pins and provenance
 
+These are the original proof inputs. Current checks follow `MODULE.bazel`;
+the Hovel runtime and SDK were upgraded together to v0.4.4.
+
 - Go 1.26.5, `rules_go` 0.61.1, Gazelle 0.51.3: inherited archived SDK proof.
 - `golang.org/x/crypto` v0.53.0; `github.com/pkg/sftp` v1.13.10 and its
   `github.com/kr/fs` v0.1.0 dependency: module checksums from Go's checksum database.

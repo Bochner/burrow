@@ -296,6 +296,17 @@ func (m *frame) shellEntries() []shellEntry {
 }
 
 func (w *workspaceView) terminals() []*cliTab { return append([]*cliTab{w.cli}, w.shells...) }
+
+func (m *frame) updateShellVisibility() {
+	for path, w := range m.workspaces {
+		for _, tab := range w.shells {
+			if host, ok := tab.host.(*ptyhost.Shared); ok {
+				host.SetVisible(path == m.active && w.tab == "shell" && w.shell == tab)
+			}
+		}
+	}
+}
+
 func (w *workspaceView) ownsTerminal(tab *cliTab) bool {
 	return w.cli == tab || slices.Contains(w.shells, tab)
 }
@@ -518,7 +529,7 @@ func (m *frame) terminalBounds() image.Rectangle {
 }
 func (m *frame) terminalFocused() bool {
 	w := m.current()
-	return m.modal == "" && !w.activeUI().help && !w.activeUI().quitting && (w.tab == "hovel" || w.tab == "shell") && w.focus == "terminal"
+	return m.modal == "" && !w.activeHelp().help && !w.activeUI().quitting && (w.tab == "hovel" || w.tab == "shell") && w.focus == "terminal"
 }
 func (m *frame) openCLI() tea.Cmd {
 	w := m.current()
@@ -573,14 +584,20 @@ func (m *frame) restartCLI() tea.Cmd {
 }
 func (m *frame) readCLI(path string, tab *cliTab) tea.Cmd {
 	return m.dispatch(path, func() tea.Msg {
-		// ponytail: 30 ms snapshots; switch to dirty-screen notifications if rendering costs warrant it.
-		timer := time.NewTimer(30 * time.Millisecond)
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-		case <-m.terminals.context.Done():
+		var screen ptyhost.Snapshot
+		if shared, ok := tab.host.(*ptyhost.Shared); ok {
+			screen = shared.WaitSnapshot(m.terminals.context)
+		} else {
+			// ponytail: local PTYs still use 30 ms samples; add host notifications
+			// only if their independently measured rendering cost warrants it.
+			timer := time.NewTimer(30 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+			case <-m.terminals.context.Done():
+			}
+			screen = tab.host.Snapshot()
 		}
-		screen := tab.host.Snapshot()
 		if screen.Exited && tab.auditDone != nil {
 			if err := <-tab.auditDone; err != nil {
 				screen.Err = errors.Join(screen.Err, err)
@@ -648,6 +665,9 @@ func (m *frame) terminalResult(path string, msg tea.Msg) tea.Cmd {
 			return nil
 		} // Explicit close reports after reaping.
 		v.tab.screen = v.screen
+		if v.screen.Shared != nil {
+			launch.Phase("shell-frontend-accept")()
+		}
 		v.tab.prepareChainInput()
 		if v.tab.connection != "" && v.screen.Exited {
 			if v.tab.logs != nil {
@@ -714,6 +734,9 @@ func (m *frame) sendTerminal(event any) {
 	tab := m.current().activeTerminal()
 	if tab == nil || tab.pending || tab.host == nil {
 		return
+	}
+	if tab.screen.Shared != nil {
+		defer launch.Phase("shell-frontend-input")()
 	}
 	if press, ok := event.(uv.KeyPressEvent); ok && press.Code == 'c' && press.Mod == uv.ModCtrl && tab == m.current().cli && m.attempt != nil && m.attempt.chain && m.attempt.path == m.active {
 		m.attempt.cancel()

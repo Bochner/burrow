@@ -45,7 +45,7 @@ The report uses the production capability inventory and explicit selected-check
 bindings, separating CLI reachability, JSON shape documentation and observed
 behavior. No Hovel test results or coverage percentages are reused. Evidence
 and the staged site bind to the same source; Pages verifies the eligible commit
-and artifact hashes. The #86 diagnostics remain visibly advisory.
+and artifact hashes. The #86 diagnostics became required again with the official Hovel v0.4.4 pin.
 
 The #65 comparison also inspected the published Hovel report generated on
 2026-09-24 at source `b4190bb548c49263003d7d398571c3837717890f`.

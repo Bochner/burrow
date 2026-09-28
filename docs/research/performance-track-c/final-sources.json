@@ -1,0 +1,9 @@
+{
+  "core/connection/session_control_linux.go": "5f6b7849e7b33db6571fcb7b33d821467128ab59acc0d3e08d721b17b15e19eb",
+  "core/connection/sessions_linux.go": "f42c54e0d3457a7679e63b8aa61ba7efb011f1235e562b1d6cfc93a1d861d0a5",
+  "core/connection/remote_files.go": "a85b14617948ccf98f9fbf9cfc4e0044d627921e66173f59615a03011a9a8bba",
+  "core/terminal/shared_linux.go": "d4307185c2bd0466053e1fe6cf6a49e7cd491440c4f12cd1c8e56d92cb374371",
+  "core/cmd/burrow/sessions_lab.py": "b68e5edf8cda6aa8fbc87c643a7f42360f1924f5fa6b34ec82d2c1d0f662a48d",
+  "core/cmd/burrow/files_lab.py": "33774400bd7dceffa54f8adcb56b1bfadf23f26bd28d21204a900c86a33ddba5",
+  "core/cmd/burrow/shell_lab.py": "5782e60c5d4f9c3487fa34c947e1d0a81393e17aaa244c057852fcf9783649f8"
+}

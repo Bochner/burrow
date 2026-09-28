@@ -64,7 +64,7 @@ restart [--yes] retires the workspace's Burrow manager, then opens the current T
 It ends that manager's connections and shells; saved settings, evidence and Hovel remain.
 Inside the interface: status, connections, connect, chain connect, inspect, shell, reconnect, close, help, quit.
 Type chain then F1 for SSH chain examples and options; Alt+B selects Burrow management.
-Linux amd64 only. Cache: $XDG_CACHE_HOME/burrow/hovel/0.4.2 (or ~/.cache).
+Linux amd64 only. Cache: $XDG_CACHE_HOME/burrow/hovel/0.4.4 (or ~/.cache).
 Unknown/stale resources require manual investigation; no automatic cleanup.
 `
 
@@ -105,6 +105,7 @@ func run(args []string) (failure error) {
 		return fmt.Errorf("legacy connection-module entry point retired; use Burrow connect for reviewed manager submission; existing retained owners remain available through connections/inspect/close")
 	}
 	if len(args) == 1 && args[0] == "module" {
+		launch.Phase("module-ready")()
 		hovel.Serve(connection.Module{})
 		return nil
 	}

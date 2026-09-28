@@ -1,0 +1,5 @@
+interface:
+  display_name: "Closeout"
+  short_description: "Verify completion, close the issue, and find the next"
+policy:
+  allow_implicit_invocation: false

@@ -1,4 +1,5 @@
 """Check the emitted Pages book, navigation, assets, and search under /burrow/."""
+
 import json
 import os
 import re
@@ -53,7 +54,7 @@ assert contract.pop("provenance")["binarySHA256"]
 assert binary_contract.pop("provenance")["binarySHA256"]
 assert contract == binary_contract, "site inventory differs from the real binary"
 for operation in contract["operations"]:
-    page = root / f'api/{operation["category"]}.html'
+    page = root / f"api/{operation['category']}.html"
     html = page.read_text()
     assert f'id="{operation["id"]}"' in html, operation["id"]
     assert operation["agent"]["status"] in html, operation["id"]
@@ -66,7 +67,7 @@ report_html = (root / "reports/index.html").read_text()
 assert {op["id"] for op in report["parity"]["capabilities"]} == {op["id"] for op in contract["operations"]}
 assert not report["publishable"] and report["coverage"]["status"] == "MISSING"
 assert 'aria-current="page">Reports</a>' in report_html
-assert 'Optional MCP is not measured as typed MCP coverage' in report_html
+assert "Optional MCP is not measured as typed MCP coverage" in report_html
 assert 'aria-label="Report sections"' in report_html and 'tabindex="0"' in report_html
 for page in pages:
     assert re.search(r'href="[^"]*reports/"[^>]*>Reports</a>', page.read_text()), page

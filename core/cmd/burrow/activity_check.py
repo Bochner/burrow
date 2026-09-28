@@ -1,4 +1,6 @@
 """Workspace activity through the real follower and pinned Hovel daemon."""
+
+import ctypes
 import json
 import fcntl
 import http.client
@@ -17,30 +19,51 @@ import termios
 
 binary, wheel, decoder = [str(Path(p).resolve()) for p in sys.argv[1:]]
 
+# Own the orphaned fixture daemon so exit checks do not depend on host PID 1.
+assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
+
+
 def assert_role(rows, value, color):
     matches = []
     for row in rows:
         line = "".join(c["text"] or " " for c in row)
         start = line.find(value)
         if start >= 0:
-            matches.append(row[start:start+len(value)])
+            matches.append(row[start : start + len(value)])
     assert matches and any(all(c["color"] == color for c in cells) for cells in matches), (value, matches)
+
 
 with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
     root = Path(scratch)
-    env = dict(os.environ, HOME=scratch, XDG_CACHE_HOME=str(root / "cache"),
-               XDG_DATA_HOME=str(root / "data"), XDG_CONFIG_HOME=str(root / "config"))
+    env = dict(
+        os.environ,
+        HOME=scratch,
+        XDG_CACHE_HOME=str(root / "cache"),
+        XDG_DATA_HOME=str(root / "data"),
+        XDG_CONFIG_HOME=str(root / "config"),
+    )
     workspace = root / "w"
     viewers = []
     daemon = None
+
+    def stop_daemon(pid):
+        os.kill(pid, signal.SIGTERM)
+        deadline = time.monotonic() + 10
+        while not os.waitpid(pid, os.WNOHANG)[0]:
+            assert time.monotonic() < deadline, "daemon did not exit after SIGTERM"
+            time.sleep(0.05)
 
     def rpc(method, value):
         client = http.client.HTTPConnection("localhost", timeout=10)
         client.sock = socket.socket(socket.AF_UNIX)
         client.sock.connect(str(workspace / "hoveld.sock"))
         try:
-            client.request("POST", "/hovel.daemon.v1.DaemonService/" + method,
-                           json.dumps(value), {"Content-Type": "application/json"})
+            client.request(
+                "POST",
+                "/hovel.daemon.v1.DaemonService/" + method,
+                json.dumps(value),
+                {"Content-Type": "application/json"},
+            )
             response = client.getresponse()
             data = response.read()
             assert response.status == 200, (method, response.status, data)
@@ -49,14 +72,19 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
             client.close()
 
     def cli(*args):
-        p = subprocess.run([binary, "--workspace", str(workspace), *args],
-                           env=env, capture_output=True, text=True, timeout=40)
+        p = subprocess.run(
+            [binary, "--workspace", str(workspace), *args], env=env, capture_output=True, text=True, timeout=40
+        )
         assert p.returncode == 0, (args, p.stdout, p.stderr)
         return json.loads(p.stdout)
 
     def follower(structured=True):
-        p = subprocess.Popen([binary, "--workspace", str(workspace), "follow", *(["--json"] if structured else [])],
-                             env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen(
+            [binary, "--workspace", str(workspace), "follow", *(["--json"] if structured else [])],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
         view = {"process": p, "pending": b"", "events": []}
         viewers.append(view)
         return view
@@ -68,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
             for event in view["events"]:
                 if predicate(event):
                     return event
-            if select.select([p.stdout], [], [], .1)[0]:
+            if select.select([p.stdout], [], [], 0.1)[0]:
                 chunk = os.read(p.stdout.fileno(), 65536)
                 assert chunk, (p.poll(), p.stderr.read().decode())
                 view["pending"] += chunk
@@ -78,8 +106,9 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
         raise AssertionError(view["events"])
 
     try:
-        missing = subprocess.run([binary, "--workspace", str(workspace), "follow", "--json"],
-                                 env=env, capture_output=True, timeout=10)
+        missing = subprocess.run(
+            [binary, "--workspace", str(workspace), "follow", "--json"], env=env, capture_output=True, timeout=10
+        )
         assert missing.returncode != 0 and not list(root.iterdir())
         daemon = cli("--hovel-package", wheel, "workspace", "open")["pid"]
         a, b = follower(), follower(False)
@@ -98,8 +127,12 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
         assert reviewed["review"]
         wait(b, lambda e: e["kind"] == "review" and e["message"].startswith("profile edit watched"))
         assert next(p for p in cli("profiles")["profiles"] if p["name"] == "watched")["host"] == "192.0.2.10"
-        duplicate = subprocess.run([binary, "--workspace", str(workspace), "profile", "create", "watched", "192.0.2.99", "--user", "alice"],
-                                   env=env, capture_output=True, timeout=20)
+        duplicate = subprocess.run(
+            [binary, "--workspace", str(workspace), "profile", "create", "watched", "192.0.2.99", "--user", "alice"],
+            env=env,
+            capture_output=True,
+            timeout=20,
+        )
         assert duplicate.returncode != 0
         wait(b, lambda e: e["kind"] == "failed" and e["message"].startswith("profile create watched"))
         snapshot = cli("logs", "--json")
@@ -114,12 +147,21 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
             (workspace / "burrow" / name).mkdir(mode=0o700)
             wait(b, lambda e: e["source"] == "burrow/connection" and e.get("target") == name and e["state"] == "lost")
         (workspace / "burrow" / "lost-left").rmdir()
-        wait(b, lambda e: e["source"] == "burrow/connection" and e.get("target") == "lost-left" and e["state"] == "unavailable")
+        wait(
+            b,
+            lambda e: (
+                e["source"] == "burrow/connection" and e.get("target") == "lost-left" and e["state"] == "unavailable"
+            ),
+        )
         assert [s["name"] for s in cli("connections")] == ["lost-right"]
         (workspace / "burrow" / "lost-right").rmdir()
         # Read real operation evidence, including unavailable/partial storage.
-        refused = subprocess.run([binary, "--workspace", str(workspace), "run", "launch", "missing", "--yes"],
-                                 env=env, capture_output=True, timeout=20)
+        refused = subprocess.run(
+            [binary, "--workspace", str(workspace), "run", "launch", "missing", "--yes"],
+            env=env,
+            capture_output=True,
+            timeout=20,
+        )
         assert refused.returncode != 0
         wait(b, lambda e: e["kind"] == "failed" and e["source"] == "burrow/audit")
         notes = workspace / "burrow-logs" / "operations.log"
@@ -140,18 +182,37 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
         # A blocked consumer must still be able to quit the viewer.
         stalled = follower()
         wait(stalled, lambda e: e["kind"] == "ready")
-        rpc("AppendLog", {"Operation": "burrow", "Chain": "profiles", "Entries": [
-            {"Source": "backpressure", "Message": "x" * 4096} for _ in range(64)]})
-        time.sleep(.5)
+        rpc(
+            "AppendLog",
+            {
+                "Operation": "burrow",
+                "Chain": "profiles",
+                "Entries": [{"Source": "backpressure", "Message": "x" * 4096} for _ in range(64)],
+            },
+        )
+        time.sleep(0.5)
         stalled["process"].send_signal(signal.SIGINT)
         assert stalled["process"].wait(timeout=5) == 0
         # Pause only the observer, then overflow the real Hovel log broker.
         b["process"].send_signal(signal.SIGSTOP)
         try:
             for batch in range(9):
-                rpc("AppendLog", {"Operation": "burrow", "Chain": "profiles", "Entries": [
-                    {"Source": "flood", "Kind": "event", "Message": "retained-tail-" + str(batch),
-                     "Fields": {"detail": "x" * 300}} for _ in range(512)]})
+                rpc(
+                    "AppendLog",
+                    {
+                        "Operation": "burrow",
+                        "Chain": "profiles",
+                        "Entries": [
+                            {
+                                "Source": "flood",
+                                "Kind": "event",
+                                "Message": "retained-tail-" + str(batch),
+                                "Fields": {"detail": "x" * 300},
+                            }
+                            for _ in range(512)
+                        ],
+                    },
+                )
         finally:
             b["process"].send_signal(signal.SIGCONT)
         wait(b, lambda e: e["kind"] == "gap" and "no longer available" in e["message"])
@@ -165,17 +226,10 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
             os.kill(daemon, signal.SIGCONT)
         wait(b, lambda e: e["kind"] == "resumed" and e["source"] == "hovel")
         # A new daemon incarnation resets only observer cursors.
-        os.kill(daemon, signal.SIGTERM)
-        deadline = time.monotonic() + 10
-        while (workspace / "hoveld.sock").exists() and time.monotonic() < deadline:
-            time.sleep(.1)
+        stop_daemon(daemon)
+        daemon = None
         # Recovery is an explicit operator action in this disposable workspace;
         # the follower must never remove a stale ownership receipt itself.
-        try:
-            os.kill(daemon, 0)
-            raise AssertionError("old daemon still exists")
-        except ProcessLookupError:
-            pass
         (workspace / "burrow-launch.json").unlink()
         (workspace / "burrow").rmdir()  # Must be empty: no retained resources here.
         (workspace / "burrow-launch.log").rename(workspace / "previous-launch.log")
@@ -186,25 +240,52 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                 outer, slave = pty.openpty()
                 before = termios.tcgetattr(slave)
                 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
-                terminal_env = env | {"TERM": "xterm-256color", "COLORTERM": "truecolor", "NO_COLOR": "1" if plain else ""}
-                help_result = subprocess.run([binary, "--workspace", str(workspace), "follow", "--help"], env=terminal_env,
-                                             stdin=slave, stdout=slave, stderr=slave, timeout=10)
+                terminal_env = env | {
+                    "TERM": "xterm-256color",
+                    "COLORTERM": "truecolor",
+                    "NO_COLOR": "1" if plain else "",
+                }
+                help_result = subprocess.run(
+                    [binary, "--workspace", str(workspace), "follow", "--help"],
+                    env=terminal_env,
+                    stdin=slave,
+                    stdout=slave,
+                    stderr=slave,
+                    timeout=10,
+                )
                 assert help_result.returncode == 0
                 help_output = bytearray()
-                while select.select([outer], [], [], .05)[0]:
+                while select.select([outer], [], [], 0.05)[0]:
                     help_output.extend(os.read(outer, 65536))
-                help_rows = json.loads(subprocess.run([decoder, str(width), str(height), "--cells"],
-                                       input=help_output, capture_output=True, check=True).stdout)
-                for value, color in (("burrow", "#89b4fa"), ("follow", "#89b4fa"), ("--json", "#89b4fa"), ("PATH", "#f9e2af"), ("Ctrl+C", "#cba6f7")):
-                    assert_role(help_rows,value,"" if plain else color)
-                p = subprocess.Popen([binary, "--workspace", str(workspace), "follow"], env=terminal_env,
-                                     stdin=slave, stdout=slave, stderr=slave)
+                help_rows = json.loads(
+                    subprocess.run(
+                        [decoder, str(width), str(height), "--cells"],
+                        input=help_output,
+                        capture_output=True,
+                        check=True,
+                    ).stdout
+                )
+                for value, color in (
+                    ("burrow", "#89b4fa"),
+                    ("follow", "#89b4fa"),
+                    ("--json", "#89b4fa"),
+                    ("PATH", "#f9e2af"),
+                    ("Ctrl+C", "#cba6f7"),
+                ):
+                    assert_role(help_rows, value, "" if plain else color)
+                p = subprocess.Popen(
+                    [binary, "--workspace", str(workspace), "follow"],
+                    env=terminal_env,
+                    stdin=slave,
+                    stdout=slave,
+                    stderr=slave,
+                )
                 output = bytearray()
 
                 def terminal_wait(needle):
                     deadline = time.monotonic() + 10
                     while time.monotonic() < deadline:
-                        if select.select([outer], [], [], .1)[0]:
+                        if select.select([outer], [], [], 0.1)[0]:
                             output.extend(os.read(outer, 65536))
                         if needle in output:
                             return
@@ -215,24 +296,51 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                     terminal_wait(b"BURROW FOLLOW")
                     if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
                         Path(directory, f"activity-empty-{width}x{height}-{plain}.ansi").write_bytes(output)
-                    rpc("AppendLog", {"Operation": "burrow", "Chain": "profiles", "Entries": [
-                        {"Source": "safety", "Kind": "event", "Level": "error", "Message": "terminal-safety\u001b]52;c;hostile\u0007",
-                         "Fields": {"password": "SECRET-FEED-CANARY", "host": "192.0.2.11", "user": "alice", "port": "2222"}}]})
+                    rpc(
+                        "AppendLog",
+                        {
+                            "Operation": "burrow",
+                            "Chain": "profiles",
+                            "Entries": [
+                                {
+                                    "Source": "safety",
+                                    "Kind": "event",
+                                    "Level": "error",
+                                    "Message": "terminal-safety\u001b]52;c;hostile\u0007",
+                                    "Fields": {
+                                        "password": "SECRET-FEED-CANARY",
+                                        "host": "192.0.2.11",
+                                        "user": "alice",
+                                        "port": "2222",
+                                    },
+                                }
+                            ],
+                        },
+                    )
                     terminal_wait(b"192.0.2.11")
                     assert b"SECRET-FEED-CANARY" not in output and b"\x1b]52;c;hostile" not in output, output
                     assert b"\\u001b]52;c;hostile\\u0007" in output, output
                     assert (b"\x1b[38;2;" in output) != plain, output
                     assert not any(control in output for control in (b"?1049", b"?1000", b"?1002", b"?2004")), output
                     assert termios.tcgetattr(slave) == before
-                    rows = json.loads(subprocess.run([decoder, str(width), str(height), "--cells"],
-                                      input=output, capture_output=True, check=True).stdout)
-                    for value, color in (("192.0.2.11", "#f5c2e7"), ("alice", "#a6e3a1"), ("2222", "#f9e2af"),
-                                         ("ERROR", "#f38ba8"), ("host", "#89b4fa")):
-                        assert_role(rows,value,"" if plain else color)
+                    rows = json.loads(
+                        subprocess.run(
+                            [decoder, str(width), str(height), "--cells"], input=output, capture_output=True, check=True
+                        ).stdout
+                    )
+                    for value, color in (
+                        ("192.0.2.11", "#f5c2e7"),
+                        ("alice", "#a6e3a1"),
+                        ("2222", "#f9e2af"),
+                        ("ERROR", "#f38ba8"),
+                        ("host", "#89b4fa"),
+                    ):
+                        assert_role(rows, value, "" if plain else color)
                     if directory := os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
                         Path(directory, f"activity-{width}x{height}-{plain}.ansi").write_bytes(output)
                         Path(directory, f"activity-{width}x{height}-{plain}.txt").write_text(
-                            "\n".join("".join(c["text"] or " " for c in row).rstrip() for row in rows))
+                            "\n".join("".join(c["text"] or " " for c in row).rstrip() for row in rows)
+                        )
                 finally:
                     p.send_signal(signal.SIGINT)
                     assert p.wait(timeout=5) == 0
@@ -249,6 +357,6 @@ with tempfile.TemporaryDirectory(prefix="ba-") as scratch:
                 p.wait(timeout=10)
         if daemon:
             try:
-                os.kill(daemon, signal.SIGTERM)
+                stop_daemon(daemon)
             except ProcessLookupError:
                 pass

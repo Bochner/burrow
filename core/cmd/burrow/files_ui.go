@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/tree"
 	"github.com/Bochner/burrow/core/connection"
+	"github.com/Bochner/burrow/core/launch"
 )
 
 const fileHelp = `# FILE BROWSING
@@ -56,7 +58,7 @@ F1 / Esc\tClose help
 
 // Navigation is frontend state; roots and transport identity remain workspace-owned.
 type fileMode struct {
-	saved                    ui
+	saved                    fileReturnState
 	state                    connection.State
 	roots                    connection.FileRoots
 	remote, upload, download string
@@ -67,11 +69,22 @@ type fileMode struct {
 	cancel                   context.CancelFunc
 	discoveryRequest         string
 	historyView              bool
+	historyLoaded            bool
+	historyErr               error
 	cache                    map[string]fileObservation
 	matches                  []string
 	edit                     uint64
 	lookup                   bool
 	nextLookup               time.Time
+}
+
+type fileReturnState struct {
+	input        textinput.Model
+	history      []string
+	historyIndex int
+	draft        string
+	output       string
+	outputOffset int
 }
 
 type fileObservation struct {
@@ -97,6 +110,7 @@ type fileResult struct {
 	roots           connection.FileRoots
 	err             error
 	history         []string
+	historyErr      error
 }
 
 func (m *ui) openFiles(name string) tea.Cmd {
@@ -104,7 +118,10 @@ func (m *ui) openFiles(name string) tea.Cmd {
 		if state.Name != name || state.State != "connected" {
 			continue
 		}
-		saved := *m
+		saved := fileReturnState{
+			input: m.input, history: m.history, historyIndex: m.historyIndex,
+			draft: m.draft, output: m.output, outputOffset: m.outputOffset,
+		}
 		m.files = &fileMode{saved: saved, state: state, remote: "~", cache: map[string]fileObservation{}}
 		m.history, m.historyIndex, m.draft = nil, 0, ""
 		m.input.Placeholder = "ls · cd · tree · local · back"
@@ -247,6 +264,8 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 	f.cancel = stop
 	return func() tea.Msg {
 		defer stop()
+		defer launch.Phase("files-tui-command")()
+		defer func() { launch.Phase("files-tui-ready")() }()
 		roots, err := connection.TransferRoots(ctx, w)
 		var value any
 		if err == nil {
@@ -256,18 +275,21 @@ func (m *ui) fileCommand(args []string) tea.Cmd {
 				value, err = connection.Browse(ctx, w, state, query)
 				if err == nil {
 					err = connection.RecordFileCommand(ctx, w, []string{"scp", state.Name, op, query.Path})
+				} else {
+					value = nil
 				}
 			}
 		}
 		if changed, ok := value.(connection.FileRoots); ok {
 			roots = changed
 		}
-		history, _ := connection.FileHistory(ctx, w)
-		return fileResult{mode: f, sequence: seq, operation: op, area: area, value: value, roots: roots, err: err, history: history}
+		history, historyErr := connection.FileHistory(ctx, w)
+		return fileResult{mode: f, sequence: seq, operation: op, area: area, value: value, roots: roots, err: err, history: history, historyErr: historyErr}
 	}
 }
 
 func (m *ui) acceptFiles(result fileResult) {
+	defer launch.Phase("files-tui-accept")()
 	f := m.files
 	if f == nil || result.mode != f || result.sequence != f.sequence {
 		return
@@ -275,7 +297,9 @@ func (m *ui) acceptFiles(result fileResult) {
 	m.busy = false
 	f.cancel = nil
 	f.request = ""
-	if result.history != nil {
+	f.historyErr = result.historyErr
+	if result.historyErr == nil {
+		f.historyLoaded = true
 		m.history = nil
 		for _, line := range result.history {
 			args, e := connection.Split(line)
@@ -303,7 +327,7 @@ func (m *ui) acceptFiles(result fileResult) {
 	if result.roots.Version != 0 {
 		f.roots = result.roots
 	}
-	if result.err != nil {
+	if result.err != nil && result.value == nil {
 		m.output = "REFUSED: " + safe(result.err.Error())
 		return
 	}
@@ -339,6 +363,9 @@ func (m *ui) acceptFiles(result fileResult) {
 		f.tree = &value
 	case connection.FileRoots:
 		m.output = "Workspace roots verified; existing files preserved"
+	}
+	if result.err != nil {
+		m.output = strings.TrimSpace(m.output + "\nWARNING: " + safe(result.err.Error()))
 	}
 	m.input.SetSuggestions(m.suggestions())
 	m.fileMatches()
@@ -539,6 +566,13 @@ func (m ui) fileContent(w int) string {
 		b.WriteString(m.paint(errorStyle, strings.ToUpper(status)+" · previous listing retained; reconnect explicitly") + "\n")
 	}
 	b.WriteByte('\n')
+	if f.historyErr != nil {
+		status, style := "Recall unavailable", errorStyle
+		if f.historyLoaded {
+			status, style = "Recall outdated · last loaded", warningStyle
+		}
+		b.WriteString(m.paint(style, status+": "+safe(f.historyErr.Error())) + "\n")
+	}
 	for _, field := range [][2]string{{"Remote", f.remote}, {"Download root", f.roots.Download}, {"Upload root", f.roots.Upload}} {
 		value := field[1]
 		if value == "" {
@@ -565,6 +599,9 @@ func (m ui) fileContent(w int) string {
 	}
 	if f.historyView {
 		b.WriteString(m.paint(heading, "SCP HISTORY") + "\n")
+		if f.historyLoaded && f.historyErr == nil && len(m.history) == 0 {
+			b.WriteString(m.paint(secondary, "No saved commands") + "\n")
+		}
 		for _, line := range m.history[min(m.outputOffset, len(m.history)):] {
 			b.WriteString(m.syntax(safe(line), false) + "\n")
 		}

@@ -92,7 +92,25 @@ func connectionTimer() tea.Cmd {
 	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return connectionTick{} })
 }
 
+// One observation belongs to a workspace; file tabs keep their own interaction
+// state and exact connection identity, but read this current inventory.
+type workspaceInventory struct {
+	info               launch.Info
+	connections        []connection.State
+	connectionError    string
+	connectionObserved bool
+	tunnels            []connection.Tunnel
+	tunnelError        string
+}
+
+type helpState struct {
+	help       bool
+	helpOffset int
+}
+
 type ui struct {
+	helpState
+	*workspaceInventory
 	follow                        *runView
 	runs                          []connection.Run
 	downloads                     connection.Downloads
@@ -100,8 +118,6 @@ type ui struct {
 	downloadError                 string
 	downloadBar                   progress.Model
 	files                         *fileMode
-	tunnels                       []connection.Tunnel
-	tunnelError                   string
 	tunnelOffset                  int
 	shellIDs                      []string
 	shellControl                  []string
@@ -109,21 +125,16 @@ type ui struct {
 	profileError, selectedProfile string
 	profileOffset                 int
 	profileHistoryLoaded          bool
-	info                          launch.Info
 	input                         textinput.Model
 	width, height                 int
-	noColor, busy, help, quitting bool
+	noColor, busy, quitting       bool
 	demo                          bool
-	connectionObserved            bool
 	output                        string
 	history                       []string
 	historyIndex                  int
 	draft                         string
 	outputOffset                  int
 	connectionOffset              int
-	connections                   []connection.State
-	connectionError               string
-	helpOffset                    int
 	completionValues              []string
 	completionIndex               int
 	completionValue               string
@@ -140,7 +151,7 @@ func newUI(info launch.Info, noColor bool) ui {
 	input.KeyMap.PrevSuggestion = previous
 	input.CharLimit = 2048
 	input.Focus()
-	m := ui{downloadBar: newDownloadBar(), info: info, input: input, noColor: noColor, tunnelError: "UNVERIFIED · loading forwarding inventory", output: "Verified daemon · quit reviews connections: keep or close."}
+	m := ui{workspaceInventory: &workspaceInventory{info: info, tunnelError: "UNVERIFIED · loading forwarding inventory"}, downloadBar: newDownloadBar(), input: input, noColor: noColor, output: "Verified daemon · quit reviews connections: keep or close."}
 	m.input.SetSuggestions(m.suggestions())
 	return m
 }

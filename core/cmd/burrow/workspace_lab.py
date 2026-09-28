@@ -1,4 +1,5 @@
 """Independent CLI and TUI clients observe one real SSH owner and retirement."""
+
 import fcntl
 import json
 import os
@@ -26,25 +27,31 @@ def workspace_checks(binary, env, decoder, root, sibling_workspace, burrow, wait
         os.setsid()
         fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
-    frontend = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"],
-                                env=env | {"TERM": "xterm-256color", "NO_COLOR": "1"},
-                                stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+    frontend = subprocess.Popen(
+        [binary, "--workspace", str(w), "--offline", "tui"],
+        env=env | {"TERM": "xterm-256color", "NO_COLOR": "1"},
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        preexec_fn=controlling,
+    )
     output = bytearray()
 
     def screen(needle, absent=b""):
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
-            if select.select([outer], [], [], .1)[0]:
+            if select.select([outer], [], [], 0.1)[0]:
                 output.extend(os.read(outer, 65536))
-            text = subprocess.run([decoder, *map(str, dimensions)], input=output,
-                                  capture_output=True, check=True, timeout=3).stdout
+            text = subprocess.run(
+                [decoder, *map(str, dimensions)], input=output, capture_output=True, check=True, timeout=3
+            ).stdout
             if needle in text and (not absent or absent not in text):
                 return text
             assert frontend.poll() is None, text
         raise AssertionError((needle, absent, text))
 
     def connected(workspace, name):
-        return wait(lambda: (s if (s := burrow(workspace, "inspect", name))["state"] == "connected" else None))
+        return wait(lambda: s if (s := burrow(workspace, "inspect", name))["state"] == "connected" else None)
 
     def failure(action, digest):
         return json.loads(burrow(w, "workspace", action, "--yes", "--review", digest, ok=False))["error"]
@@ -85,9 +92,25 @@ def workspace_checks(binary, env, decoder, root, sibling_workspace, burrow, wait
         retained = burrow(w, "run", "inspect", evidence["id"])
 
         def artifacts():
-            hovel = root / "cache/burrow/hovel/0.4.2/hovel"
-            p = subprocess.run([str(hovel), "run", "--workspace", str(w), "--daemon-endpoint", str(w / "hoveld.sock"),
-                                "--", "artifact", "list", "--json"], env=env, capture_output=True, text=True, timeout=20)
+            hovel = root / "cache/burrow/hovel/0.4.4/hovel"
+            p = subprocess.run(
+                [
+                    str(hovel),
+                    "run",
+                    "--workspace",
+                    str(w),
+                    "--daemon-endpoint",
+                    str(w / "hoveld.sock"),
+                    "--",
+                    "artifact",
+                    "list",
+                    "--json",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
             assert p.returncode == 0, p.stderr
             return [a for a in json.loads(p.stdout) if a["runId"] == evidence["runID"]]
 
@@ -107,7 +130,11 @@ def workspace_checks(binary, env, decoder, root, sibling_workspace, burrow, wait
         added = connected(w, "added")
         result = burrow(w, "workspace", "restart", "--yes", "--review", restart["digest"])
         assert result["state"] == "ready" and result["owner"] == restart["owner"]
-        assert {s["creation"] for s in result["connections"]} == {replacement["creation"], sibling["creation"], added["creation"]}
+        assert {s["creation"] for s in result["connections"]} == {
+            replacement["creation"],
+            sibling["creation"],
+            added["creation"],
+        }
         screen(b"No connections", absent=b"cli-live")
         assert frontend.poll() is None
         assert burrow(w, "workspace", "inspect")["pid"] == info["pid"]
@@ -158,12 +185,15 @@ def workspace_checks(binary, env, decoder, root, sibling_workspace, burrow, wait
         os.write(outer, b"\t\r")
         until = time.monotonic() + 10
         while frontend.poll() is None and time.monotonic() < until:
-            if select.select([outer], [], [], .1)[0]:
+            if select.select([outer], [], [], 0.1)[0]:
                 os.read(outer, 65536)
         assert frontend.wait(timeout=5) == 0
         assert termios.tcgetattr(slave) == before
         burrow(sibling_workspace, "close", "outside", "--yes")
-        print("PASS headless lifecycle: shared CLI/TUI owner, stale reviews, siblings, evidence, retirement and loss", flush=True)
+        print(
+            "PASS headless lifecycle: shared CLI/TUI owner, stale reviews, siblings, evidence, retirement and loss",
+            flush=True,
+        )
     finally:
         if frontend.poll() is None:
             frontend.kill()

@@ -1,10 +1,13 @@
 # Daily-use release verification — #65
 
-Candidate work starts at `c00563df028385c4932c9510871fc630548e2090` on
-`mvp5`. This record distinguishes implemented behavior, executable evidence,
-and owner acceptance. **The complete MVP is not yet accepted.** Final evidence
-must identify the candidate commit; earlier ticket checks are useful history,
-not a substitute for that run or the human walkthrough.
+Candidate work started at `c00563df028385c4932c9510871fc630548e2090` on
+`mvp5`. The delivered MVP at `7a9491a6d7002d295ddb6e1dad18449dcc672cbe`
+(v0.2.0) was accepted on 2026-09-26: the owner explicitly waived the manual
+shared-workspace walkthrough and directed [#65 closeout](https://github.com/Bochner/burrow/issues/65).
+No manual walkthrough was performed or claimed as passing. Required main CI
+and Pages passed for that exact commit; #65 records the verification and review
+evidence. Later branch changes require their own gates. This record preserves
+the source mapping, earlier failures and the unchanged #86 runtime limitation.
 
 ## Source-backed LazySSH mapping
 
@@ -44,7 +47,7 @@ live-server test. Historical `prototype_*` targets never earn completion credit.
 | Download/upload | `scp_mode.py:cmd_get/cmd_put`, `test_scp_mode.py` | Reviewed byte-exact transfer, overwrite, measured progress, cancellation, labelled partials and durable evidence: files partition. Upload containment intentionally replaces permissive outside-path copying (#33/#55). |
 | Batch download | `scp_mode.py:cmd_mget`, `test_scp_mode.py` | Nonrecursive discovery, frozen exact review, per-file/overall progress, zero matches and partial results: files partition. Patterns never become a shell command. |
 | Prompt UX | `command_mode.py` completion/dispatch/help, `scp_mode.py` prompt, corresponding tests | Quoting, required-first suggestions, separate history, contextual help and keyboard navigation: `interaction_test`, `terminal_test`, lifecycle/files partitions. |
-| Visual/accessibility | `console_instance.py`, `ui.py`, `test_plain_text_mode.py`, `test_animation_disable.py`, `test_ui_env_vars.py`, `test_refresh_rate_bounds.py` | Catppuccin Mocha (#67), no-color/reduced-animation, resize, text labels and safe management text: `interaction_test`, `terminal_test`, shell partition. Actual terminal support still needs the owner walkthrough. |
+| Visual/accessibility | `console_instance.py`, `ui.py`, `test_plain_text_mode.py`, `test_animation_disable.py`, `test_ui_env_vars.py`, `test_refresh_rate_bounds.py` | Catppuccin Mocha (#67), no-color/reduced-animation, resize, text labels and safe management text: `interaction_test`, `terminal_test`, shell partition. Manual terminal acceptance was waived by the owner on 2026-09-26; automated evidence retains its stated scope. |
 | Logging/evidence | `logging_module.py`, `test_logging_module.py` | Workspace-isolated Hovel evidence and private operation notes, explicit collection, complete/partial distinctions and secret exclusion: lifecycle/files/runs/reports/follow partitions. Shared shell input counts do not establish command completion. |
 | Plugin discovery | `plugin_manager.py` discovery/metadata, `test_plugin_manager.py`, `test_command_plugin.py` | Hovel module/chain discovery and six installed workflow skills replace the legacy plugin API (#13/#33). `agent_test`, `capabilities_test`, chains/runs partitions. No unchanged-plugin compatibility claim. |
 | Plugin execution | `plugin_manager.py:execute_plugin/execute_plugin_streaming`, associated tests | Explicit remote script modes and local tools, separate stdout/stderr, exit status, timeout, cancellation and collection: runs/automation/follow partitions. Bundled engagement plugins are not copied (#7/#16). |
@@ -82,7 +85,7 @@ only a matching passing report proves it ran for the candidate.
 | Installed skill suite (#63/#64) | `agent_test`, installed recipe in runs partition; six workflows, six destinations, conflict preservation and interrupted-update recovery. Native client discovery is opt-in. |
 | Shared ownership and control (#93/#94) | Shell partition (`sessions_lab.py`); one controller, fenced takeover, private requests, independent observers and truthful loss. |
 | Shared TUI (#95) | Shell partition (`shell_lab.py`); human/agent takeover, observer isolation, history/snapshot recovery, two full-screen shells and retained detach/quit. |
-| Shared owner walkthrough (#65) | **Pending.** The owner must actually observe and manually operate the TUI/follower while the agent uses the same workspace. Automated PTYs and the #64 model exercise do not replace this. |
+| Shared owner walkthrough (#65) | **Waived by the owner on 2026-09-26.** #65 is closed using the verified release evidence. No manual walkthrough or observed manual result is claimed. |
 
 ## Hovel report comparison
 
@@ -108,27 +111,28 @@ No claim of equal numerical coverage or exhaustive semantic equivalence is made.
 
 ## Required evidence and acceptance status
 
-- Candidate preflight: require every production partition to pass. The generated
+- Candidate preflight: require every non-advisory production partition to pass. The generated
   report and #65 closeout identify the exact commit and outcomes; this source
   mapping alone is not execution evidence. Preserve failed runs before any new attempt.
 - Coverage and staged API/Reports: require the exact unchanged candidate and
   `aspect burrow-report release`; the required CI report job enforces this gate.
-- Separate #86 diagnostics: record the candidate's actual results; the exception covers
-  only the three tagged diagnostic targets, not production SSH/follower failures.
+- #86 exception: record actual results. Following the v0.2.0 acceptance, the owner
+  extended the three-diagnostic exception to SSH follow in PR #110 until an
+  official fixed runtime is pinned and verified. Follow still runs automatically;
+  its failures remain visible and earn no passing behavior credit. Other production
+  SSH failures remain required.
 - Native skills: #64 verified all six skills installed and updated in Codex and
   Claude user/project scopes; OpenCode was absent. This is prior evidence.
-- Owner walkthrough: explicitly deferred by the owner on 2026-09-25. Use the isolated fixture, have the agent operate
-  installed skills while the owner observes the same TUI/follower, manually
-  takes over and returns control, then reviews keep/close/cancel. Record only
-  outcomes, candidate identity and unresolved defects; omit credentials, tokens,
-  private hosts and raw terminal transcripts from tracked files.
+- Owner walkthrough: the 2026-09-25 deferral was superseded by the owner's
+  explicit waiver and closeout instruction on 2026-09-26. Automated PTYs and
+  the #64 model exercise remain their own evidence; no manual result is inferred.
 
 ## Runner stability and regression review
 
-The required pipeline runs ten independent partitions without matrix fail-fast,
+The pipeline runs ten independent partitions (nine required, follow advisory) without matrix fail-fast,
 retains failure artifacts for 14 days, repeats setup/terminal checks three times,
 and permits no failed-test retries. Only the three tagged #86 diagnostics run
-in the advisory workflow. Local report regeneration archives previous inputs
+in the manually dispatched advisory workflow. Local report regeneration archives previous inputs
 under `.report-input/archive/`; archives are not promoted as current evidence.
 
 Reviewed prior hosted failures
@@ -136,8 +140,9 @@ Reviewed prior hosted failures
 (WAL lifetime and the two retained-manager proofs) and
 [`35488920596`](https://github.com/Bochner/burrow/actions/runs/35488920596)
 (retained-manager refusal and a production reports daemon loss). The existing
-scoped exception covers the former diagnostics. Production daemon loss remains
-known and is not excused by that tag or by a later passing run. The #65 portable
+scoped exception originally covered only the former diagnostics; the subsequent
+owner decision makes follow advisory too. Production daemon loss remains known
+and is not resolved by an exception or a later passing run. The #65 portable
 development gate reproduced the WAL diagnostic; it is not evidence of a new fix.
 
 New checks use public CLI/SSH and report-generation boundaries. They exposed
@@ -225,14 +230,15 @@ Official Hovel v0.4.3 (`b4190bb`) was inspected on 2026-09-25: its SQLite
 implementation is unchanged and it does not fix #86. The existing patch passed
 SQLite normal and race tests in an isolated v0.4.3 source proof. This is not an
 official runtime release or a shipped Burrow dependency. Burrow keeps its exact
-official v0.4.2 runtime pin and the existing three-diagnostic exception. Required
-production failures still block promotion; the known runtime risk remains.
+official v0.4.2 runtime pin. The subsequent owner-approved PR #110 exception
+adds SSH follow to the three advisory diagnostics; other production failures
+still block promotion. The known runtime risk remains.
 
 ## Explicit follow-up status
 
 | Follow-up | Status and release boundary |
 | --- | --- |
-| #86 SQLite WAL lock lifetime | Open upstream defect; three diagnostics advisory by owner decision. Prior required SIGBUS failures remain known, including the #64 follower run; a passing retry does not resolve them. Official runtime fix/pin and restoration of the strict gate remain outstanding. |
+| #86 SQLite WAL lock lifetime | Open upstream defect; three diagnostics and SSH follow advisory by owner decision until a fixed official runtime is verified. Prior required SIGBUS failures remain known, including the #64 follower run; a passing retry does not resolve them. Official runtime fix/pin and restoration of the strict gate remain outstanding. |
 | #28 daemon compatibility | Open upstream contract; only verified Burrow-started pinned daemons are supported. General local/remote attachment remains deferred. |
 | #29 terminal geometry | Open upstream native API; accepted typed public session commands implement Burrow's geometry contract now (#87/#93–96). |
 | #30 lifetime module logging | Open upstream; bounded diagnostics and operation evidence remain distinct. No claim that suppressed SDK logs are retained. |
@@ -241,4 +247,4 @@ production failures still block promotion; the known runtime risk remains.
 | #75 attached Hovel catalog refresh | Open upstream; Burrow verifies registration and the embedded frontend's availability; general attached-shell refresh is not claimed. |
 | Prebuilt Linux archive | Owner authorized the v0.2.0 development release on 2026-09-25. Build the existing package, verify it and publish the archive/checksum from the successful main candidate; `DISTRIBUTION-FOLLOWUP.md` records the contract. v0.1.0 remains source-only. |
 | Other platforms, SMB/WinRM, generic Mesh routing, automatic recovery, plugin distribution | Deferred outside this MVP by #16/#33 and the Wayfinder map. No placeholder runtime adapters. |
-| PR, merge, Pages/distribution visibility, LazySSH archive | Owner authorized merge to main, Pages and a new tagged development release on 2026-09-25 after required CI passes. The owner walkthrough is deferred, not performed or waived; #65 remains open for that acceptance. Repository visibility and archiving LazySSH remain unchanged. |
+| PR, merge, Pages/distribution visibility, LazySSH archive | Owner authorized merge to main, Pages and v0.2.0 on 2026-09-25 after required CI passes. On 2026-09-26 the owner waived the manual walkthrough and closed #65. Repository visibility and archiving LazySSH remain unchanged; later delivery actions require their own authorization. |

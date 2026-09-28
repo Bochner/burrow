@@ -1,6 +1,12 @@
-load("@rules_go//go:def.bzl", "go_binary", "go_test")
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+filegroup(
+    name = "python_format_sources",
+    srcs = glob(["*.py"]),
+    visibility = ["//:__pkg__"],
+)
 
 py_test(
     name = "agent_test",
@@ -53,9 +59,16 @@ py_test(
     legacy_create_init = 0,
 )
 
+py_library(
+    name = "file_history_lab",
+    srcs = ["file_history_lab.py"],
+    testonly = True,
+)
+
 py_test(
     name = "files_test",
     srcs = ["files_check.py"],
+    deps = [":file_history_lab"],
     main = "files_check.py",
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)"],
     data = [":burrow", "@hovel_linux_wheel//file"],
@@ -85,7 +98,8 @@ py_test(
 )
 [py_test(
     name = name,
-    srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "workspace_lab.py", "latency_lab.py", "shell_lab.py", "sessions_lab.py", "forward_lab.py", "files_lab.py", "runs_lab.py", "follow_lab.py", "automation_lab.py", "reports_lab.py", "chains_lab.py", "agent_lab.py"],
+    srcs = ["connection_lab.py", "authentication_lab.py", "manager_lab.py", "workspace_lab.py", "latency_lab.py", "interaction_latency.py", "attachment_cost.py", "file_latency.py", "shell_lab.py", "sessions_lab.py", "forward_lab.py", "files_lab.py", "runs_lab.py", "follow_lab.py", "automation_lab.py", "reports_lab.py", "chains_lab.py", "agent_lab.py"],
+    deps = [":file_history_lab"],
     main = "connection_lab.py",
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)", "$(location @shell_lab_vim//file)", "$(location //core/connection:survey_ubuntu.sh)", "$(location @chain_lab_dropbear//file)", "$(location @chain_lab_utmps//file)", "$(location @chain_lab_skalibs//file)"] + (["--" + suite + "-check"] if suite else []),
     data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check", ":legacy_module", "@shell_lab_vim//file", "//core/connection:survey_ubuntu.sh", "@chain_lab_dropbear//file", "@chain_lab_utmps//file", "@chain_lab_skalibs//file"],
@@ -113,9 +127,9 @@ go_binary(
     testonly = True,
 )
 
-go_binary(
-    name = "burrow",
-    visibility = ["//core/prototype_manager:__pkg__", "//core/prototype_sessions:__pkg__", "//docs/site:__pkg__", "//docs/tools/docs:__pkg__"],
+go_library(
+    name = "burrow_lib",
+    importpath = "github.com/Bochner/burrow/core/cmd/burrow",
     srcs = ["agent.go", "activity.go", "capabilities.go", "workspace.go", "main.go", "quit.go", "selection.go", "tui.go", "frame.go", "theme.go", "demo.go", "terminal.go", "shared_shells.go", "auth.go", "forms.go", "profile_ui.go", "files_ui.go", "editor.go", "logs.go", "log_notes.go", "collected_notes.go", "downloads_ui.go", "follow_ui.go", "reports_ui.go"],
     deps = [
         "@land_charm_bubbles_v2//progress", "@land_charm_bubbles_v2//timer", "@land_charm_bubbles_v2//spinner",
@@ -128,6 +142,22 @@ go_binary(
         "@com_github_charmbracelet_x_term//:term", "@com_github_charmbracelet_colorprofile//:colorprofile",
     ],
 )
+go_binary(
+    name = "burrow",
+    embed = [":burrow_lib"],
+    visibility = ["//core/prototype_manager:__pkg__", "//core/prototype_sessions:__pkg__", "//docs/site:__pkg__", "//docs/tools/docs:__pkg__"],
+)
+
+# Match Hovel's wheel build: no host libc dependency in the Go executable.
+go_binary(
+    name = "burrow_linux_amd64",
+    embed = [":burrow_lib"],
+    goos = "linux",
+    goarch = "amd64",
+    pure = "on",
+    visibility = ["//core/tools/release:__pkg__"],
+)
+
 pkg_tar(
     name = "package",
     visibility = ["//agent/tools:__pkg__"],
@@ -177,4 +207,10 @@ py_test(
     size = "medium",
     tags = ["no-sandbox"],
     legacy_create_init = 0,
+)
+
+filegroup(
+    name = "format_sources",
+    srcs = glob(["*.go"]),
+    visibility = ["//:__pkg__"],
 )

@@ -1,0 +1,260 @@
+{
+  "suite": "all",
+  "started": "2026-09-27T00:32:35.560779+00:00",
+  "status": "PASSED",
+  "exitCode": 0,
+  "finished": true,
+  "environment": {
+    "os": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "python": "3.12.13",
+    "runAttempt": "",
+    "runID": ""
+  },
+  "source": {
+    "commit": "c2131ffeffb0fb94e211e214781763660e4be2d1",
+    "dirty": true,
+    "treeSHA256": "c5d61ca383f5363defb2eb666383bff7deb148b672dfd4f882865e1a19779fb1"
+  },
+  "targets": [
+    {
+      "label": "//:go_format_behavior_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//:go_format_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//:python_format_behavior_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//:python_format_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//:python_lint_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//:workflow_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:activity_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:agent_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:capabilities_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:connection_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:files_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:interaction_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:manager_compatibility_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:profile_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:setup_test",
+      "status": "PASSED",
+      "attempts": 3
+    },
+    {
+      "label": "//core/cmd/burrow:ssh_automation_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:ssh_chains_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:ssh_files_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:ssh_follow_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:ssh_lifecycle_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:ssh_reports_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:ssh_reverse_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:ssh_runs_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:ssh_shell_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/cmd/burrow:terminal_test",
+      "status": "PASSED",
+      "attempts": 3
+    },
+    {
+      "label": "//core/cmd/burrow:workspace_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/connection:command_fuzz_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/connection:forward_control_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/launch:audit_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/launch:digest_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/launch:online_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_agent:check",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_sdk:protocol_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_sdk:reuse_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_sessions:check",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_terminal:check",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_terminal:cli_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_terminal:terminal_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_terminal:vt_cli_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_terminal:vt_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/prototype_transport:direct_script_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/terminal:host_race_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/terminal:host_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/tools/release:release_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//core/tools/release:wheel_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//docs/tools/docs:report_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//docs/tools/docs:site_test",
+      "status": "PASSED",
+      "attempts": 1
+    },
+    {
+      "label": "//docs/tools/docs:stage_site_test",
+      "status": "PASSED",
+      "attempts": 1
+    }
+  ]
+}

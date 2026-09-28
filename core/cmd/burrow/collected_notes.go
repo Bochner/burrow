@@ -148,7 +148,7 @@ func writeCollectedNotes(ctx context.Context, workspace string, dst io.Writer) (
 				fmt.Fprintf(out, "  PREVIEW TRUNCATED: first %d of %d saved bytes; full output is in the file above.\n", len(data), stream.Size)
 			}
 		}
-		fmt.Fprintln(out, "\n----------------------------------------\n")
+		fmt.Fprint(out, "\n----------------------------------------\n\n")
 	}
 	return nil
 }

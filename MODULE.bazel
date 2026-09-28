@@ -28,15 +28,24 @@ npm.npm_translate_lock(
 )
 use_repo(npm, "npm")
 
-# Pinned runtime v0.4.2 (c461ba282a8a); GitHub asset digest.
-# SDK source is pinned separately below; no runtime/SDK changes through a4cbfdf.
+# Pinned runtime v0.4.4 (1789ce47554a); GitHub asset digest.
+# SDK source is pinned to the v0.4.4 release commit below.
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# pipx 1.17.6 (MIT), upstream standalone zipapp and GitHub asset SHA256.
+# Test tool only; Burrow's wheel has no Python runtime dependencies.
+http_file(
+    name = "pipx",
+    urls = ["https://github.com/pypa/pipx/releases/download/1.17.6/pipx.pyz"],
+    sha256 = "63b10dd9a15a57ec4066e29388d1e83565be4b127bd1cf6e3f150fcc39ded8b2",
+    downloaded_file_path = "pipx.pyz",
+)
 
 http_file(
     name = "hovel_linux_wheel",
     downloaded_file_path = "hovel.whl",
-    sha256 = "7edccdabe04e30098e417d27ab48064c11a8612149124b7df0797251e88a0933",
-    urls = ["https://github.com/vibepwners/hovel/releases/download/v0.4.2/hovel-0.4.2-py3-none-manylinux_2_28_x86_64.whl"],
+    sha256 = "87205142bb21af86e68819372467b814949d9f5f86b321003e8aa2c721fb503a",
+    urls = ["https://github.com/vibepwners/hovel/releases/download/v0.4.4/hovel-0.4.4-py3-none-manylinux_2_28_x86_64.whl"],
 )
 
 # Real full-screen SSH acceptance only: Alpine 3.24 x86_64 Vim executable.
@@ -77,7 +86,14 @@ bazel_dep(name = "gazelle", version = "0.51.3")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.26.5")
+go_sdk.download(name = "burrow_go_sdk", version = "1.26.5")
+go_sdk.nogo(
+    nogo = "//:go_analysis",
+    includes = ["//core/%s:__pkg__" % area for area in [
+        "agent", "cmd/burrow", "connection", "launch", "reports", "terminal",
+    ]],
+)
+use_repo(go_sdk, "burrow_go_sdk")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//core/prototype_sdk:go.mod")
@@ -85,6 +101,16 @@ use_repo(go_deps, "com_github_charmbracelet_colorprofile", "com_github_charmbrac
 use_repo(go_deps, "com_github_charmbracelet_ultraviolet", "land_charm_huh_v2", "land_charm_glamour_v2")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Ruff 0.16.3 (MIT), matching Hovel 541e78ada0af's sdk/python/uv.lock.
+# Linux amd64 release asset; SHA256 from Astral's GitHub release metadata.
+http_archive(
+    name = "ruff",
+    urls = ["https://github.com/astral-sh/ruff/releases/download/0.16.3/ruff-x86_64-unknown-linux-gnu.tar.gz"],
+    sha256 = "7ab3b978d2c0b1c96b2323d4e5c4f35284ae1cdf35d2f7399595c74c805f5fa3",
+    strip_prefix = "ruff-x86_64-unknown-linux-gnu",
+    build_file_content = "exports_files([\"ruff\"])",
+)
 
 # Workflow syntax/expression checks: rhysd/actionlint v1.7.12, MIT;
 # SHA256 from the upstream GitHub release asset (Linux amd64 operator baseline).
@@ -99,8 +125,8 @@ http_archive(
     name = "hovel_sdk",
     build_file = "//core/prototype_sdk:hovel.BUILD.bazel",
     patch_cmds = ["rm sdk/go/hovel/BUILD.bazel"],
-    sha256 = "9080e5060787f4ba5ee6715611e10112af2af316318369b748c9f566c1f3b6e9",
-    strip_prefix = "hovel-a4cbfdf7769a9551695088c11061e3cabc368e07",
+    sha256 = "12fcff5ffc2458a83aadab12f7a69396758f0efb078e25f0cb28d9edeb609b6a",
+    strip_prefix = "hovel-1789ce47554a2ee17c7bd46d391b63946af60d0a",
     type = "tar.gz",
-    urls = ["https://codeload.github.com/vibepwners/hovel/tar.gz/a4cbfdf7769a9551695088c11061e3cabc368e07"],
+    urls = ["https://codeload.github.com/vibepwners/hovel/tar.gz/1789ce47554a2ee17c7bd46d391b63946af60d0a"],
 )

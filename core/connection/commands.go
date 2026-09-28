@@ -562,6 +562,7 @@ func ValidateCommand(workspace string, args []string) error {
 func ownerCommand(ctx context.Context, workspace, id, command string, args []string) (hovel.PayloadCommandResult, error) {
 	var result hovel.PayloadCommandResult
 	e := launch.Call(ctx, workspace, "RunSessionCommand", map[string]any{"SessionID": id, "Request": hovel.PayloadCommandRequest{Command: command, Args: args}}, &result)
+	launch.AttachmentMetric("command:"+command, len(result.Stdout))
 	return result, e
 }
 func profileCommand(ctx context.Context, w string, s State) (hovel.PayloadCommandResult, error) {

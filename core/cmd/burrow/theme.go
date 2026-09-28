@@ -31,7 +31,7 @@ const (
 
 var accent = lipgloss.NewStyle().Foreground(lipgloss.Color(lavenderColor)).Bold(true)
 
-// Solid blocks and stippled shadow match pinned Hovel v0.4.2's wide CLI
+// Solid blocks and stippled shadow follow Hovel v0.4.2's wide CLI
 // wordmark technique, redrawn for Burrow's 28-cell sidebar.
 const burrowWordmark = `██  █ █ ██  ██  ███ █   █
 █░█ █░█░█░█ █░█ █░█░█░  █░
@@ -441,7 +441,7 @@ func (m *frame) commandHelp() string {
 	if m.current().activeUI().files != nil {
 		keys = []key.Binding{binding("back", "management"), binding("Ctrl+C", "cancel/back"), binding("F1", "help"), binding("PgUp/PgDn", "scroll"), showHovel}
 	}
-	if m.current().activeUI().follow != nil {
+	if m.current().tab == "follow" {
 		keys = []key.Binding{binding("Esc/Ctrl+C", "close viewer"), binding("Tab", "streams"), binding("End", "follow"), binding("PgUp/PgDn", "scroll"), binding("F1", "help"), showBurrow}
 		return solid(" "+h.ShortHelpView(keys), m.width, 1, "#11111b", m.noColor)
 	}

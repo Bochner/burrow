@@ -1,4 +1,13 @@
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("@rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
+
+# Reuse rules_go 0.61.1's pinned x/tools printf analyzer (v0.34.0).
+# Diagnostic formatting matters for audit/errors; no upstream-wide lint policy.
+nogo(
+    name = "go_analysis",
+    deps = [analyzer for analyzer in TOOLS_NOGO if "/printf:" in analyzer],
+    visibility = ["//visibility:public"],
+)
 
 _WORKFLOWS = glob([".github/workflows/*.yml", ".github/workflows/*.yaml"], allow_empty = True)
 
@@ -13,7 +22,7 @@ py_test(
 )
 
 # This target checks the metadata build graph, not document accuracy.
-exports_files(["Makefile"])
+exports_files(["Makefile", "VERSION"])
 filegroup(
     name = "research",
     srcs = glob(["docs/**/*.md"]) + [
@@ -21,4 +30,89 @@ filegroup(
         "CONTEXT.md",
         "README.md",
     ],
+)
+
+_SOURCES = ["//core/%s:format_sources" % area for area in [
+    "agent", "cmd/burrow", "connection", "launch", "reports", "terminal",
+]]
+_GOFMT = "@burrow_go_sdk//:bin/gofmt"
+_ARGS = ["$(location %s)" % _GOFMT] + ["$(locations %s)" % source for source in _SOURCES]
+
+# Explicit package scope; globs discover new drivers without including prototypes.
+_PYTHON_SOURCES = glob([".aspect/*.py", ".github/**/*.py"]) + [
+    "//core/cmd/burrow:python_format_sources",
+    "//docs/tools/docs:python_format_sources",
+    "//agent/tools:python_format_sources",
+    "//core/tools/release:python_format_sources",
+]
+_RUFF = "@ruff//:ruff"
+_PYTHON_CONFIG = ".aspect/ruff.toml"
+_PYTHON_ARGS = ["$(location %s)" % path for path in [_RUFF, _PYTHON_CONFIG]] + ["$(locations %s)" % source for source in _PYTHON_SOURCES]
+
+py_binary(
+    name = "python_format",
+    main = ".aspect/python_format.py",
+    srcs = [".aspect/python_format.py"],
+    args = _PYTHON_ARGS,
+    data = [_RUFF, _PYTHON_CONFIG] + _PYTHON_SOURCES,
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "python_format_test",
+    size = "small",
+    main = ".aspect/python_format.py",
+    srcs = [".aspect/python_format.py"],
+    args = _PYTHON_ARGS,
+    data = [_RUFF, _PYTHON_CONFIG] + _PYTHON_SOURCES,
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "python_format_behavior_test",
+    size = "small",
+    main = ".aspect/python_format_test.py",
+    srcs = [".aspect/python_format_test.py", ".aspect/python_format.py"],
+    args = ["$(location %s)" % path for path in [_RUFF, _PYTHON_CONFIG]],
+    data = [_RUFF, _PYTHON_CONFIG],
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "python_lint_test",
+    size = "small",
+    main = ".aspect/python_format.py",
+    srcs = [".aspect/python_format.py"],
+    args = _PYTHON_ARGS + ["--lint"],
+    data = [_RUFF, _PYTHON_CONFIG] + _PYTHON_SOURCES,
+    legacy_create_init = 0,
+)
+
+py_binary(
+    name = "go_format",
+    main = ".aspect/go_format.py",
+    srcs = [".aspect/go_format.py"],
+    args = _ARGS,
+    data = [_GOFMT] + _SOURCES,
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "go_format_test",
+    size = "small",
+    srcs = [".aspect/go_format.py"],
+    main = ".aspect/go_format.py",
+    args = _ARGS,
+    data = [_GOFMT] + _SOURCES,
+    legacy_create_init = 0,
+)
+
+py_test(
+    name = "go_format_behavior_test",
+    main = ".aspect/go_format_test.py",
+    size = "small",
+    srcs = [".aspect/go_format_test.py", ".aspect/go_format.py"],
+    args = ["$(location %s)" % _GOFMT],
+    data = [_GOFMT],
+    legacy_create_init = 0,
 )

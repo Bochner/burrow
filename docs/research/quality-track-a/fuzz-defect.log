@@ -1,0 +1,51 @@
+→ 🎬 Running burrow task
+→ 🎬 Running test task
+
+→ 🔧 Setup · Running setup
+
+→ 🧪 Test · Spawning bazel test
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: target //core/connection:command_fuzz_test (0 packages loaded, 0 targets configured)
+Analyzing: target //core/connection:command_fuzz_test (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //core/connection:command_fuzz_test (0 packages loaded, 4138 targets configured).
+[128 / 135] GoCompilePkg core/connection/command_fuzz_test.internal.a; 1s linux-sandbox
+[134 / 135] [Prepa] runfiles for //core/connection:command_fuzz_test
+FAIL: //core/connection:command_fuzz_test (Exit 1) (see /home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/testlogs/core/connection/command_fuzz_test/test.log)
+INFO: From Testing //core/connection:command_fuzz_test:
+==================== Test output for //core/connection:command_fuzz_test:
+fuzz: elapsed: 0s, gathering baseline coverage: 0/10 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 10/10 completed, now fuzzing with 1 workers
+fuzz: minimizing 31-byte failing input file
+fuzz: elapsed: 0s, minimizing
+--- FAIL: FuzzCommandLine (0.03s)
+    --- FAIL: FuzzCommandLine (0.00s)
+        commands_fuzz_test.go:42: intentional retention probe: "0"
+
+    Failing input written to testdata/fuzz/FuzzCommandLine/771e938e4458e983
+    To re-run:
+    go test -run=FuzzCommandLine/771e938e4458e983
+FAIL
+================================================================================
+INFO: Found 1 test target...
+Target //core/connection:command_fuzz_test up-to-date:
+  bazel-bin/core/connection/command_fuzz_test_/command_fuzz_test
+INFO: Elapsed time: 3.528s, Critical Path: 3.06s
+INFO: 9 processes: 91 action cache hit, 2 internal, 7 linux-sandbox.
+INFO: Build completed, 1 test FAILED, 9 total actions
+INFO:
+//core/connection:command_fuzz_test                                      FAILED in 0.1s
+  /home/bochner/.cache/bazel/_bazel_bochner/600736f58282de05449d4e4ce2f691e6/execroot/_main/bazel-out/k8-fastbuild/testlogs/core/connection/command_fuzz_test/test.log
+
+Executed 1 out of 1 test: 1 fails locally.
+INFO: Build Event Protocol files produced successfully.
+
+→ ❌ Failed test task (exit code 3) in 3.5s · Tests failed
+    🔧 Setup   0ms  Prepare the task environment
+    🧪 Test   3.5s  Run bazel tests (failed)
+
+→ ❌ Failed burrow task (exit code 3) in 3.7s

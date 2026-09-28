@@ -4,7 +4,9 @@ Source baseline: `a16c0698dff817b0ab203c1063a1ee2e7df45ed8` on `mvp5`.
 Reviewed 2026-09-23 against production source, command help, the generated
 capability contract, ADRs 0001/0002 and #92. This record is not a public chapter
 or historical research/decision rewrite. Final release reconciliation and the
-owner's daily-use walkthrough remain #65.
+owner's daily-use walkthrough were tracked in #65. The owner subsequently waived
+the manual walkthrough and closed #65 on 2026-09-26; this historical audit does
+not claim that a walkthrough occurred.
 
 ## Chapter coverage
 

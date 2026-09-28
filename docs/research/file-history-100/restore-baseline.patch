@@ -1,0 +1,14 @@
+--- a/core/connection/files.go
++++ b/core/connection/files.go
+@@ -129,6 +129,11 @@
+ 	case "local", "lcd", "lls":
+ 	default:
+ 		return fmt.Errorf("not a file command")
++	}
++	for _, args := range [][]string{{"op", "create", "burrow"}, {"chain", "create", "files"}} {
++		if _, err := launch.HovelCLI(ctx, w, append([]string{"--op", "burrow", "--chain", "files", "--"}, args...)...); err != nil {
++			return err
++		}
+ 	}
+ 	var ignored struct{}
+ 	// Named append creates missing operation/chain state. A failed acknowledgement

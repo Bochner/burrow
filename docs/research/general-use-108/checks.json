@@ -1,0 +1,60 @@
+{
+  "scope": "Issue 108 integration commands, sequentially run; runtime/build/test source identical to revision throughout. Report/artifacts added after full preflight, with further prose after remaining gates.",
+  "runs": [
+    {
+      "command": "rtk proxy aspect burrow-check preflight",
+      "revision": "ee4e5a852ec517d1e2a0a941c2de24a0b5a1efe8",
+      "exitCode": 0,
+      "targets": 45,
+      "passed": 45,
+      "failed": [],
+      "elapsed": "9m22s",
+      "log": "preflight.log",
+      "logSHA256": "a3f1a0c48bdc69fcbf0727de6cbf6f80e8d9f822aca1b5665ccf112d7af482cb",
+      "sourceTreeSHA256": "c49489a8a0efb6f2da10ea4e8fca117224e17269d068c26257b923afbaa3bd4d",
+      "collectorStatus": "PASSED",
+      "sourceUnchangedDuringCollection": true
+    },
+    {
+      "command": "rtk proxy aspect burrow-check ci",
+      "revision": "ee4e5a852ec517d1e2a0a941c2de24a0b5a1efe8",
+      "exitCode": 3,
+      "targets": 36,
+      "passed": 35,
+      "failed": [
+        "//core/launch:hovel_wal_test"
+      ],
+      "elapsed": "1m57s",
+      "log": "ci.log",
+      "logSHA256": "295af9a031f2632084655f0d02476019151d66d61859f3bcaa904e0cc1ef4bbb"
+    },
+    {
+      "command": "rtk proxy aspect burrow-check preflight hovel",
+      "revision": "ee4e5a852ec517d1e2a0a941c2de24a0b5a1efe8",
+      "exitCode": 3,
+      "targets": 3,
+      "passed": 2,
+      "failed": [
+        "//core/launch:hovel_wal_test"
+      ],
+      "elapsed": "14.5s",
+      "log": "hovel.log",
+      "logSHA256": "98c3c2478dab17fcecf159c9f7ad0396847339250feebf6e9867201d3537146b",
+      "sourceTreeSHA256": "41b353e5306acf6c3a6e98b8900058ce698782a12f366db3c02141309772f328",
+      "collectorStatus": "FAILED",
+      "sourceUnchangedDuringCollection": true
+    },
+    {
+      "command": "rtk proxy aspect burrow-site check",
+      "revision": "ee4e5a852ec517d1e2a0a941c2de24a0b5a1efe8",
+      "exitCode": 0,
+      "targets": 2,
+      "passed": 2,
+      "failed": [],
+      "elapsed": null,
+      "log": "site.log",
+      "logSHA256": "ccb3f7a01923f85593b26e10db9dee592e774ca3b2affe6f8451e002f169ec59",
+      "cache": "Both test targets cached; both also executed uncached in the full preflight."
+    }
+  ]
+}

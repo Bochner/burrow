@@ -83,6 +83,13 @@ preserved proofs, pins, results and commands that preceded the production code.
 
 ## Develop
 
+Current source can also build a pipx-installable wheel with
+`aspect burrow-release build`; validate it with `aspect burrow-release check`.
+Install the resulting `dist/burrow_ssh-*.whl` with pipx. The proposed public
+distribution is `burrow-ssh`, while the command remains `burrow`; PyPI
+publication is pending. See [release preparation](docs/site/src/content/spec/releasing.html)
+for the one-time Trusted Publisher setup and build-only rehearsal.
+
 For human use, the Makefile offers shortcuts (GNU Make must be installed):
 
 ```sh
@@ -122,9 +129,9 @@ Useful commands:
 | Command | Description |
 | --- | --- |
 | `aspect burrow-check` | Run metadata, documentation, SDK, daemon reuse and production SSH checks; requires Docker and OpenSSH client tools. |
-| `aspect burrow-check preflight` | Run the required release gate, repeating only setup and terminal checks three times; no cached test results or failed-test retries. Hovel #86 diagnostics run separately. |
-| `aspect burrow-check preflight SUITE` | Run one GitHub partition: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow or runs. The Hovel follow-up proofs are excluded from these required partitions. |
-| `aspect burrow-check preflight hovel` | Run the advisory WAL-lock regression and two Docker-backed manager proofs tracked in #86. |
+| `aspect burrow-check preflight` | Rehearse release checks locally, repeating only setup and terminal checks three times; no cached test results or failed-test retries. Includes the required Hovel compatibility checks. |
+| `aspect burrow-check preflight SUITE` | Run one GitHub partition: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow, runs or hovel. |
+| `aspect burrow-check preflight hovel` | Run the required WAL-lock regression and two Docker-backed manager proofs tracked in #86. |
 | `aspect burrow-check ci` | Build production packages and proofs and run portable checks without Docker. |
 | `aspect burrow package` | Build the production Linux amd64 package. |
 | `aspect burrow check` | Run the production frontend, launch, terminal and profile checks. |
@@ -134,19 +141,15 @@ Useful commands:
 | `aspect burrow-site check` | Validate generated pages, internal links, assets, and search. |
 | `aspect burrow-site stage` | Materialize the documentation site under `_site/`. |
 
-PR and main CI run ten independent `aspect burrow-check preflight SUITE`
+PR and main CI run eleven independent `aspect burrow-check preflight SUITE`
 jobs, each capped at 15 minutes. The required `repository` check runs even
-after failure and succeeds only when every partition succeeds. Full and
-preflight gates allow at most two local test processes; preflight repeats
-setup and terminal checks three times, while the SIGTERM regression already
-exercises 40 cycles inside its unit check. Guided field transitions repeat three
-times inside lifecycle acceptance; each SSH partition runs once.
-A separate **Hovel compatibility** workflow runs the three `hovel-followup`
-targets and reports real failures without blocking the required release gate.
-This is a scoped exception for [#86](https://github.com/Bochner/burrow/issues/86);
-restore those checks to the required gate after an official Hovel fix is pinned
-and verified. `aspect burrow-check` remains the strict full gate, including
-these diagnostics. The portable job stages `docs-base`; the report job combines matching test and
+after failure and requires every partition, coverage and report assembly.
+Full and preflight gates allow at most two local test processes; preflight
+repeats setup and terminal checks three times without failed-test retries.
+Each SSH partition runs once. The `hovel` partition requires the WAL-lock
+regression and both retained-manager proofs; Hovel v0.4.4 retires the temporary
+[#86](https://github.com/Bochner/burrow/issues/86) exception.
+The portable job stages `docs-base`; the report job combines matching test and
 coverage evidence, enforces operational agent parity through `burrow-report release`,
 and publishes the verified `docs-site` artifact. Every job retains logs, XML,
 terminal captures and available phase/daemon logs as `test-results-SUITE` for
@@ -162,14 +165,14 @@ The historical transport proof keeps its own
 host-binary prerequisites documented in
 [its README](core/prototype_transport/README.md).
 
-## Known upstream limitation
+## Hovel runtime
 
-The pinned official Hovel v0.4.2 runtime can crash while concurrent clients
-access its SQLite workspace. This can interrupt active connections and runs;
-reconnect remains manual. The release exception does not fix that defect.
-Evidence, a proposed upstream patch, and the required follow-up are tracked in
-[#86](https://github.com/Bochner/burrow/issues/86). Burrow does not ship a custom
-Hovel runtime.
+Burrow pins the official Hovel v0.4.4 runtime and matching public SDK source.
+This release includes the SQLite WAL-lock, retained-session log, shell catalog
+refresh and terminal restoration fixes contributed upstream. The installer
+verifies both the release wheel and extracted executable. See the
+[launch guide](docs/site/src/content/spec/launch.html#upgrade) before upgrading
+workspaces with a running older daemon.
 
 ## Repository layout
 

@@ -1,4 +1,5 @@
 """Production command acceptance; isolated real Hovel, never operator state."""
+
 import concurrent.futures
 import fcntl
 import json
@@ -22,11 +23,24 @@ binary, wheel, package, screen_check = [str(Path(p).resolve()) for p in sys.argv
 with tempfile.TemporaryDirectory(prefix="br-") as scratch:
     root = Path(scratch)
     env = {k: v for k, v in os.environ.items() if not k.startswith("HOVEL_")}
-    env.update(HOME=scratch, XDG_DATA_HOME=str(root / "data"), XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), NO_COLOR="1", TERM="xterm-256color")
+    env.update(
+        HOME=scratch,
+        XDG_DATA_HOME=str(root / "data"),
+        XDG_CACHE_HOME=str(root / "cache"),
+        XDG_CONFIG_HOME=str(root / "config"),
+        NO_COLOR="1",
+        TERM="xterm-256color",
+    )
     processes = set()
 
     def run(w, *options, ok=True, use_env=None):
-        result = subprocess.run([binary, "--workspace", str(w), *options, "status"], env=use_env or env, capture_output=True, text=True, timeout=50)
+        result = subprocess.run(
+            [binary, "--workspace", str(w), *options, "status"],
+            env=use_env or env,
+            capture_output=True,
+            text=True,
+            timeout=50,
+        )
         assert (result.returncode == 0) == ok, (result.stdout, result.stderr)
         if ok:
             data = json.loads(result.stdout)
@@ -58,7 +72,12 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         assert not any(p.is_file() for p in (root / "cache").rglob("hovel"))
         assert "unavailable" in run(w, "--hovel-package", str(root / "missing"), ok=False)
         assert "not cached" in run(w, "--offline", ok=False)
-        network_env = env | {"XDG_CACHE_HOME": str(root / "no-network-cache"), "HTTPS_PROXY": "http://127.0.0.1:1", "HTTP_PROXY": "http://127.0.0.1:1", "NO_PROXY": ""}
+        network_env = env | {
+            "XDG_CACHE_HOME": str(root / "no-network-cache"),
+            "HTTPS_PROXY": "http://127.0.0.1:1",
+            "HTTP_PROXY": "http://127.0.0.1:1",
+            "NO_PROXY": "",
+        }
         assert "download unavailable" in run(root / "no-network", ok=False, use_env=network_env)
         # Simultaneous first launch must result in one daemon and one receipt.
         w = root / "w"
@@ -76,7 +95,14 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         evidence = w / "operator-evidence.txt"
         evidence.write_text("keep this evidence")
         original = receipt.read_text()
-        for key, value in [("pid", os.getpid()), ("boot", "other-boot"), ("ticks", "0"), ("sha256", "0" * 64), ("workspace", str(root / "other")), ("startedAt", "yesterday")]:
+        for key, value in [
+            ("pid", os.getpid()),
+            ("boot", "other-boot"),
+            ("ticks", "0"),
+            ("sha256", "0" * 64),
+            ("workspace", str(root / "other")),
+            ("startedAt", "yesterday"),
+        ]:
             changed = json.loads(original)
             changed[key] = value
             private(receipt, json.dumps(changed))
@@ -117,15 +143,20 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         pending.unlink()
         # Kill the real launcher during its visible publication window.
         interrupted = root / "interrupted"
-        launcher = subprocess.Popen([binary, "--workspace", str(interrupted), "--offline", "status"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        launcher = subprocess.Popen(
+            [binary, "--workspace", str(interrupted), "--offline", "status"],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
         deadline = time.monotonic() + 10
         while not (interrupted / "burrow-launch.json.pending").exists():
             assert launcher.poll() is None, launcher.communicate()
             assert time.monotonic() < deadline
-            time.sleep(.001)
+            time.sleep(0.001)
         launcher.kill()
         launcher.wait(timeout=5)
-        time.sleep(.15)
+        time.sleep(0.15)
         daemon_lock = interrupted / "daemon.lock"
         if daemon_lock.exists():
             processes.add(int(daemon_lock.read_text().strip().split(":")[1]))
@@ -160,7 +191,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         long = root / ("x" * 100)
         assert "shorter workspace" in run(long, "--offline", ok=False)
         assert not long.exists()
-        cache = root / "cache/burrow/hovel/0.4.2"
+        cache = root / "cache/burrow/hovel/0.4.4"
         executable = cache / "hovel"
         backup = cache / "original"
         executable.rename(backup)
@@ -198,17 +229,23 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             result = subprocess.run(prefix + ["--", *args], env=env, capture_output=True, text=True, timeout=20)
             assert result.returncode == 0, result.stdout + result.stderr
             return result.stdout
+
         installed = json.loads(hovel("module", "installed", "--json"))["modules"]
         assert [m["name"] for m in installed if m["name"].startswith("burrow")] == ["burrow"], installed
         module = next(m for m in installed if m["name"] == "burrow")
         source = Path(module["source"])
         assert module["linked"] and module["installed"], module
-        assert hashlib.sha256((source / "burrow").read_bytes()).digest() == hashlib.sha256(Path(binary).read_bytes()).digest()
+        assert (
+            hashlib.sha256((source / "burrow").read_bytes()).digest()
+            == hashlib.sha256(Path(binary).read_bytes()).digest()
+        )
         lock = w / "module-lock.yaml"
         registered = lock.read_bytes()
         installed_at = lock.stat().st_mtime_ns
         assert run(w, "--offline")["pid"] == info["pid"]
-        assert lock.read_bytes() == registered and lock.stat().st_mtime_ns == installed_at, "matching build was reinstalled"
+        assert lock.read_bytes() == registered and lock.stat().st_mtime_ns == installed_at, (
+            "matching build was reinstalled"
+        )
         # Matching module ID/version is not proof of build provenance.
         alternate = root / "other-build"
         alternate.mkdir(mode=0o700)
@@ -237,7 +274,10 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         assert str(w) in json.dumps(result), result
 
         # Real public SDK framing, including the shared verified status operation.
-        with subprocess.Popen([binary, "module"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as module:
+        with subprocess.Popen(
+            [binary, "module"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        ) as module:
+
             def rpc(method, params=None, error=None):
                 body = json.dumps(dict(jsonrpc="2.0", id=1, method=method, params=params or {})).encode()
                 module.stdin.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
@@ -253,14 +293,22 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
                             return
                         assert "error" not in response, response
                         return response["result"]
+
             assert "burrow" in json.dumps(rpc("handshake"))
             assert "workspace" in json.dumps(rpc("schema"))
             assert "connection" in json.dumps(rpc("schema"))
-            result = rpc("execute", dict(runId="setup-check", moduleId="burrow@0.1.0", target="local", chainConfig={"workspace": str(w)}))
+            result = rpc(
+                "execute",
+                dict(runId="setup-check", moduleId="burrow@0.1.0", target="local", chainConfig={"workspace": str(w)}),
+            )
             assert str(w) in json.dumps(result), result
             # Ambiguous actions and cross-workspace connection inputs never launch.
-            params = dict(runId="refused", moduleId="burrow@0.1.0", target="local",
-                          chainConfig={"workspace": str(w), "command": "profiles", "connection": "{}"})
+            params = dict(
+                runId="refused",
+                moduleId="burrow@0.1.0",
+                target="local",
+                chainConfig={"workspace": str(w), "command": "profiles", "connection": "{}"},
+            )
             rpc("execute", params, error="mutually exclusive")
             params["chainConfig"] = {"workspace": str(w), "connection": json.dumps({"workspace": str(root / "other")})}
             rpc("execute", params, error="legacy per-connection submission retired")
@@ -272,24 +320,49 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         before = termios.tcgetattr(slave)
+
         def controlling():
             os.setsid()
             fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-        terminal = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"], env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+
+        terminal = subprocess.Popen(
+            [binary, "--workspace", str(w), "--offline", "tui"],
+            env=env,
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            preexec_fn=controlling,
+        )
         output = bytearray()
         screen_dimensions = ["160", "40"]
+
         def read_until(needle, absent=b""):
             deadline = time.monotonic() + 8
             fresh = bytearray()
             while time.monotonic() < deadline:
-                if select.select([master], [], [], .1)[0]:
+                if select.select([master], [], [], 0.1)[0]:
                     data = os.read(master, 65536)
                     fresh.extend(data)
                     output.extend(data)
-                    screen = subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3, check=True).stdout
+                    screen = subprocess.run(
+                        [screen_check, *screen_dimensions],
+                        input=bytes(output),
+                        capture_output=True,
+                        timeout=3,
+                        check=True,
+                    ).stdout
                     if needle in screen and (not absent or absent not in screen):
                         return screen
-            raise AssertionError((needle, subprocess.run([screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3).stdout, bytes(fresh)))
+            raise AssertionError(
+                (
+                    needle,
+                    subprocess.run(
+                        [screen_check, *screen_dimensions], input=bytes(output), capture_output=True, timeout=3
+                    ).stdout,
+                    bytes(fresh),
+                )
+            )
+
         try:
             read_until(b"SAVED CONNECTION")
             # Real command palette keeps the draft isolated and filters actions.
@@ -344,13 +417,13 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             os.write(master, b"\r")
             read_until(b"Verified daemon PID")
             os.write(master, b"\x1b[200~quit\nstatus\x1b[201~")
-            time.sleep(.1)
+            time.sleep(0.1)
             assert terminal.poll() is None, "paste executed"
             os.write(master, b"\x15")  # discard pasted draft
             for height, width in [(8, 30), (2, 8), (50, 200), (40, 160)]:
                 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
                 os.kill(terminal.pid, signal.SIGWINCH)
-                time.sleep(.1)
+                time.sleep(0.1)
                 assert terminal.poll() is None
             os.write(master, b"\x03")
             read_until(b"Keep working")
@@ -373,7 +446,14 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         before = termios.tcgetattr(slave)
         color_env = env | {"COLORTERM": "truecolor"}
         color_env.pop("NO_COLOR")
-        terminal = subprocess.Popen([binary, "--workspace", str(w), "--offline", "tui"], env=color_env, stdin=slave, stdout=subprocess.PIPE, stderr=slave, preexec_fn=controlling)
+        terminal = subprocess.Popen(
+            [binary, "--workspace", str(w), "--offline", "tui"],
+            env=color_env,
+            stdin=slave,
+            stdout=subprocess.PIPE,
+            stderr=slave,
+            preexec_fn=controlling,
+        )
         output = bytearray()
         screen_dimensions = ["120", "30"]
         try:
@@ -391,7 +471,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             # A failed refresh must invalidate the visible daemon identity.
             os.kill(info["pid"], signal.SIGTERM)
             processes.remove(info["pid"])
-            time.sleep(.2)
+            time.sleep(0.2)
             os.write(master, b"status\r")
             screen = read_until(b"UNVERIFIED")
             assert info["health"].encode() not in screen, screen
@@ -402,7 +482,7 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
             # Keep consuming terminal repaint bytes while the renderer shuts down.
             deadline = time.monotonic() + 5
             while terminal.poll() is None and time.monotonic() < deadline:
-                if select.select([master], [], [], .1)[0]:
+                if select.select([master], [], [], 0.1)[0]:
                     output.extend(os.read(master, 65536))
             assert terminal.wait(timeout=5) == 0
             assert terminal.stdout.read() == b"", "TUI leaked into captured stdout"
@@ -417,7 +497,14 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         demo_cache = root / "unused-demo-cache"
-        terminal = subprocess.Popen([binary, "--demo"], env=env | {"XDG_CACHE_HOME": str(demo_cache)}, stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+        terminal = subprocess.Popen(
+            [binary, "--demo"],
+            env=env | {"XDG_CACHE_HOME": str(demo_cache)},
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            preexec_fn=controlling,
+        )
         output = bytearray()
         screen_dimensions = ["160", "40"]
         try:
@@ -441,7 +528,9 @@ with tempfile.TemporaryDirectory(prefix="br-") as scratch:
         for path in w.rglob("*"):
             if path.is_file():
                 assert canary not in path.read_bytes(), path
-        print("PASS packaged production setup: concurrent/offline launch, refusal without mutation, public SDK, real PTY, retention and loss")
+        print(
+            "PASS packaged production setup: concurrent/offline launch, refusal without mutation, public SDK, real PTY, retention and loss"
+        )
     finally:
         for pid in processes:
             try:

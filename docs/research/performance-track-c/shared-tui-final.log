@@ -1,0 +1,49 @@
+→ 🎬 Running burrow task
+→ 🎬 Running run task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Building //core/cmd/burrow:connection_lab
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80 --announce_rc
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: target //core/cmd/burrow:connection_lab (0 packages loaded, 0 targets configured)
+Analyzing: target //core/cmd/burrow:connection_lab (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //core/cmd/burrow:connection_lab (0 packages loaded, 144 targets configured, 1 aspect application).
+[274 / 275] [Prepa] runfiles for //core/cmd/burrow:connection_lab
+INFO: Found 1 target...
+INFO: Elapsed time: 1.487s, Critical Path: 1.14s
+INFO: 8 processes: 267 action cache hit, 2 internal, 6 linux-sandbox.
+INFO: Build completed successfully, 8 total actions
+INFO:
+INFO: Build Event Protocol files produced successfully.
+
+→ 🚀 Run · Running //core/cmd/burrow:connection_lab
+TIMING fixture and workspace setup: 1.9s (total 1.9s)
+TIMING connect unknown submission-to-CLI-return: 0.471s
+TIMING connect gateway submission-to-CLI-return: 0.290s
+PASS idle screen waiting: 1 visible / 1 hidden snapshots
+PASS fresh observer navigation after hidden mode change: 0.182s
+PASS TUI/headless takeover both ways, observer isolation, independent dimensions and gap/snapshot recovery
+TIMING shell switch and input during 4,000-line background output: 0.668s
+PASS observer scrollback, retained reattach, frontend disappearance, cancel and Keep running preserve another controller
+TIMING connect shell-close submission-to-CLI-return: 0.328s
+TIMING connect shell-master submission-to-CLI-return: 0.314s
+TIMING connect shell-frontend submission-to-CLI-return: 0.338s
+PASS two SSH shells on one master, vim/less/top switching/resize, background output, input/NUL/Ctrl-C, close/exit/reopen/loss, VT isolation, secret exclusion and quit/reaping/restoration
+TIMING connect gateway submission-to-CLI-return: 0.562s
+TIMING connect gateway submission-to-CLI-return: 0.595s
+PASS restart cancellation, manager replacement, daemon/evidence preservation and explicit reconnect
+TIMING acceptance before cleanup: 65.3s (total 67.2s)
+PASS post-shutdown database integrity and confirmed Hovel forwarding evidence
+TIMING fixture cleanup: 0.6s (total 67.8s)
+
+→ ✅ Passed run task in 1m 9s · Ran //core/cmd/burrow:connection_lab
+    🔧 Setup    0ms  Prepare the task environment
+    🔨 Build   1.5s  Build run target
+    🚀 Run    1m 8s  Run target
+
+→ ✅ Passed burrow task in 1m 9s

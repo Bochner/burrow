@@ -1,4 +1,5 @@
 """Local forwarding through the production command seam and real SSH master."""
+
 import socket
 import socketserver
 import threading
@@ -24,7 +25,7 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
 
     def absent(port):
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=.2):
+            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
                 return False
         except OSError:
             return True
@@ -68,7 +69,18 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
     with socket.socket() as held:
         held.bind(("127.0.0.1", 0))
         held.listen()
-        burrow(w, "tunnel", "create", "gateway", "forward", str(held.getsockname()[1]), "localhost", "2222", "--yes", ok=False)
+        burrow(
+            w,
+            "tunnel",
+            "create",
+            "gateway",
+            "forward",
+            str(held.getsockname()[1]),
+            "localhost",
+            "2222",
+            "--yes",
+            ok=False,
+        )
         assert burrow(w, "tunnel", "list") == before, "failed bind fabricated inventory"
     burrow(w, "tunnel", "remove", created["id"], "--yes")
     assert burrow(w, "tunnel", "list") == []
@@ -79,7 +91,10 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
     burrow(w, "tund", replacement["id"], "--yes")
     assert absent(port)
     # Explicit exposure and retained inventory beyond the visible table window.
-    siblings = [burrow(w, "tunnel", "create", "gateway", "forward", f"127.0.0.1:{free_port()}", "localhost", "2222", "--yes") for _ in range(7)]
+    siblings = [
+        burrow(w, "tunnel", "create", "gateway", "forward", f"127.0.0.1:{free_port()}", "localhost", "2222", "--yes")
+        for _ in range(7)
+    ]
     broad = burrow(w, "tunnel", "create", "gateway", "forward", f"0.0.0.0:{free_port()}", "localhost", "2222", "--yes")
     siblings.append(broad)
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
@@ -113,26 +128,40 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
         burrow(w, "tunnel", "remove", t["id"], "--yes")
 
     # Server refusal is observed when traffic opens its destination channel.
-    command("docker", "exec", container, "sh", "-c", "sed -i 's/^AllowTcpForwarding yes$/AllowTcpForwarding no/' /config/sshd/sshd_config; kill -HUP $(cat /config/sshd.pid)")
+    command(
+        "docker",
+        "exec",
+        container,
+        "sh",
+        "-c",
+        "sed -i 's/^AllowTcpForwarding yes$/AllowTcpForwarding no/' /config/sshd/sshd_config; kill -HUP $(cat /config/sshd.pid)",
+    )
     try:
         burrow(w, "connect", "restricted", "127.0.0.1", "tester", *options)
         for _ in range(100):
             if burrow(w, "inspect", "restricted")["state"] == "connected":
                 break
-            time.sleep(.1)
+            time.sleep(0.1)
         t = burrow(w, "tunnel", "create", "restricted", "forward", str(free_port()), "localhost", "2222", "--yes")
         assert burrow(w, "tunnel", "check", t["id"])["state"] == "failed"
         burrow(w, "close", "restricted", "--yes")
         assert absent(int(t["listen"].rsplit(":", 1)[1]))
     finally:
-        command("docker", "exec", container, "sh", "-c", "sed -i 's/^AllowTcpForwarding no$/AllowTcpForwarding yes/' /config/sshd/sshd_config; kill -HUP $(cat /config/sshd.pid)")
+        command(
+            "docker",
+            "exec",
+            container,
+            "sh",
+            "-c",
+            "sed -i 's/^AllowTcpForwarding no$/AllowTcpForwarding yes/' /config/sshd/sshd_config; kill -HUP $(cat /config/sshd.pid)",
+        )
 
     burrow(w, "connect", "forward-owner", "127.0.0.1", "tester", *options)
     for _ in range(100):
         owner = burrow(w, "inspect", "forward-owner")
         if owner["state"] == "connected":
             break
-        time.sleep(.1)
+        time.sleep(0.1)
     port = free_port()
     t = burrow(w, "tunnel", "create", "forward-owner", "forward", str(port), "localhost", "2222", "--yes")
     traffic(t)
@@ -141,7 +170,7 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
     for _ in range(100):
         if burrow(w, "inspect", "forward-owner")["state"] == "lost":
             break
-        time.sleep(.1)
+        time.sleep(0.1)
     assert absent(port)
     assert burrow(w, "tunnel", "list")[0]["state"] == "unavailable"
     burrow(w, "tunnel", "check", t["id"], ok=False)
@@ -149,9 +178,22 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
     for _ in range(100):
         if burrow(w, "inspect", "forward-owner")["state"] == "connected":
             break
-        time.sleep(.1)
+        time.sleep(0.1)
     assert burrow(w, "tunnel", "list") == [] and absent(port)
-    burrow(w, "tunnel", "create", "forward-owner", "forward", str(port), "localhost", "2222", "--review", old_review["digest"], "--yes", ok=False)
+    burrow(
+        w,
+        "tunnel",
+        "create",
+        "forward-owner",
+        "forward",
+        str(port),
+        "localhost",
+        "2222",
+        "--review",
+        old_review["digest"],
+        "--yes",
+        ok=False,
+    )
     fresh = burrow(w, "tunnel", "create", "forward-owner", "forward", str(port), "localhost", "2222", "--yes")
     burrow(w, "tunnel", "remove", t["id"], "--yes", ok=False)
     traffic(fresh)
@@ -162,26 +204,40 @@ def forward_checks(binary, env, decoder, burrow, w, first, options, container, c
     return created
 
 
-def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, reverse=False, destination_port="2222", proxy=False):
+def forward_ui(
+    binary, env, decoder, burrow, workspace, free_port, siblings, reverse=False, destination_port="2222", proxy=False
+):
     outer, slave = pty.openpty()
     before = termios.tcgetattr(slave)
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+
     def controlling():
         os.setsid()
         fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-    frontend = subprocess.Popen([binary, "--workspace", str(workspace), "tui"], env=env,
-                                stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling)
+
+    frontend = subprocess.Popen(
+        [binary, "--workspace", str(workspace), "tui"],
+        env=env,
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        preexec_fn=controlling,
+    )
     output = bytearray()
+
     def wait(needle, present=True):
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
-            if select.select([outer], [], [], .05)[0]:
+            if select.select([outer], [], [], 0.05)[0]:
                 output.extend(os.read(outer, 65536))
-            screen = subprocess.run([decoder, "160", "40"], input=output, capture_output=True, check=True).stdout.decode()
+            screen = subprocess.run(
+                [decoder, "160", "40"], input=output, capture_output=True, check=True
+            ).stdout.decode()
             if (needle in screen) == present:
                 return
             assert frontend.poll() is None, screen
         raise AssertionError((needle, screen))
+
     try:
         if proxy:
             wait("gateway")
@@ -236,9 +292,10 @@ def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, rev
         os.write(outer, b"\t\r")
         wait('"removed"')
         # External automation and the watching TUI share the retained inventory.
-        external = burrow(workspace, "tunc", "gateway", "r" if reverse else "l",
-                          str(port), "localhost", destination_port, "--yes")
-        inventory_count = f"of {len(siblings)+1} · Alt+Shift+"
+        external = burrow(
+            workspace, "tunc", "gateway", "r" if reverse else "l", str(port), "localhost", destination_port, "--yes"
+        )
+        inventory_count = f"of {len(siblings) + 1} · Alt+Shift+"
         wait(inventory_count)
         burrow(workspace, "tund", external["id"], "--yes")
         wait(inventory_count, present=False)
@@ -259,6 +316,7 @@ def forward_ui(binary, env, decoder, burrow, workspace, free_port, siblings, rev
 
 def reverse_checks(binary, env, decoder, burrow, w, first, options, container, command):
     canary = "reverse-canary-" + os.urandom(12).hex()
+
     class Echo(socketserver.BaseRequestHandler):
         def handle(self):
             try:
@@ -270,22 +328,35 @@ def reverse_checks(binary, env, decoder, burrow, w, first, options, container, c
                 pass  # The passive production check intentionally closes after one byte.
 
     def listeners(port):
-        return command("docker", "exec", container, "sh", "-c",
-                       f"awk '$4 == \"0A\" && $2 ~ /:{int(port):04X}$/ {{print $2}}' /proc/net/tcp /proc/net/tcp6").split()
+        return command(
+            "docker",
+            "exec",
+            container,
+            "sh",
+            "-c",
+            f"awk '$4 == \"0A\" && $2 ~ /:{int(port):04X}$/ {{print $2}}' /proc/net/tcp /proc/net/tcp6",
+        ).split()
 
     def traffic(t):
         host, port = t["listen"].rsplit(":", 1)
         host = {"0.0.0.0": "127.0.0.1", "[::]": "::1"}.get(host, host.strip("[]"))
-        response = command("docker", "exec", container, "sh", "-c",
-                           f"printf 'reverse-request\\n' | nc -w 1 {host} {port}")
+        response = command(
+            "docker", "exec", container, "sh", "-c", f"printf 'reverse-request\\n' | nc -w 1 {host} {port}"
+        )
         assert response.startswith("reverse-ready\n") and response.endswith("reverse-request\n"), response
         assert burrow(w, "tunnel", "check", t["id"])["state"] == "traffic-observed"
 
     def policy(gateway="no", forwarding="yes"):
-        command("docker", "exec", container, "sh", "-c",
-                "sed -i '/^GatewayPorts /d; /^AllowTcpForwarding /d' /config/sshd/sshd_config; "
-                f"printf 'GatewayPorts {gateway}\\nAllowTcpForwarding {forwarding}\\n' >> /config/sshd/sshd_config; "
-                "kill -HUP $(cat /config/sshd.pid)")
+        command(
+            "docker",
+            "exec",
+            container,
+            "sh",
+            "-c",
+            "sed -i '/^GatewayPorts /d; /^AllowTcpForwarding /d' /config/sshd/sshd_config; "
+            f"printf 'GatewayPorts {gateway}\\nAllowTcpForwarding {forwarding}\\n' >> /config/sshd/sshd_config; "
+            "kill -HUP $(cat /config/sshd.pid)",
+        )
 
     def connect(name):
         burrow(w, "connect", name, "127.0.0.1", "tester", *options)
@@ -293,7 +364,7 @@ def reverse_checks(binary, env, decoder, burrow, w, first, options, container, c
             state = burrow(w, "inspect", name)
             if state["state"] == "connected":
                 return state
-            time.sleep(.1)
+            time.sleep(0.1)
         raise AssertionError(state)
 
     with socketserver.ThreadingTCPServer(("127.0.0.1", 0), Echo) as echo:
@@ -319,7 +390,9 @@ def reverse_checks(binary, env, decoder, burrow, w, first, options, container, c
             # A same-port local greeting must never satisfy a reverse check.
             with socket.socket() as held:
                 held.bind(("127.0.0.1", 0))  # Reserved but deliberately not listening.
-                denied = burrow(w, "tunc", "gateway", "r", destination, "127.0.0.1", str(held.getsockname()[1]), "--yes")
+                denied = burrow(
+                    w, "tunc", "gateway", "r", destination, "127.0.0.1", str(held.getsockname()[1]), "--yes"
+                )
                 assert burrow(w, "tunnel", "check", denied["id"])["state"] == "failed"
                 burrow(w, "tund", denied["id"], "--yes")
             burrow(w, *args, "--yes", ok=False)
@@ -342,8 +415,17 @@ def reverse_checks(binary, env, decoder, burrow, w, first, options, container, c
             for t in randoms:
                 traffic(t)
             # Rejected TUI review, alias approval, qualified removal and keep-running quit.
-            forward_ui(binary, env, decoder, burrow, w, lambda: 32452,
-                       [replacement, *randoms], reverse=True, destination_port=destination)
+            forward_ui(
+                binary,
+                env,
+                decoder,
+                burrow,
+                w,
+                lambda: 32452,
+                [replacement, *randoms],
+                reverse=True,
+                destination_port=destination,
+            )
             for t in [replacement, *randoms]:
                 traffic(t)
                 burrow(w, "tund", t["id"], "--yes")
@@ -360,7 +442,10 @@ def reverse_checks(binary, env, decoder, burrow, w, first, options, container, c
             burrow(w, "tund", reverse["id"], "--yes")
             assert burrow(w, "tunnel", "check", local["id"])["state"] == "traffic-observed"
             burrow(w, "tund", local["id"], "--yes")
-            print("PASS reverse review, remote-origin round trips, random siblings, stale IDs and real TUI completion", flush=True)
+            print(
+                "PASS reverse review, remote-origin round trips, random siblings, stale IDs and real TUI completion",
+                flush=True,
+            )
 
             for gateway, forwarding, binds in [
                 ("yes", "yes", ["127.0.0.1:32451"]),
@@ -390,12 +475,18 @@ printf '%s' "$n" > /tmp/reverse-probe-count
                 condition = {"always": "true", "second": '[ "$n" = 2 ]', "after-first": '[ "$n" -ge 2 ]'}[failure]
                 script += f"if {condition}; then printf '%s' {shlex.quote(canary)}; exit 0; fi\n"
                 script += 'exec /bin/sh -c "$SSH_ORIGINAL_COMMAND"\n'
-                command("docker", "exec", container, "sh", "-c",
-                        f"printf %s {shlex.quote(script)} > /tmp/reverse-probe; "
-                        "printf 0 > /tmp/reverse-probe-count; "
-                        "chmod 666 /tmp/reverse-probe-count; "
-                        "printf 'ForceCommand sh /tmp/reverse-probe\\n' >> /config/sshd/sshd_config; "
-                        "kill -HUP $(cat /config/sshd.pid)")
+                command(
+                    "docker",
+                    "exec",
+                    container,
+                    "sh",
+                    "-c",
+                    f"printf %s {shlex.quote(script)} > /tmp/reverse-probe; "
+                    "printf 0 > /tmp/reverse-probe-count; "
+                    "chmod 666 /tmp/reverse-probe-count; "
+                    "printf 'ForceCommand sh /tmp/reverse-probe\\n' >> /config/sshd/sshd_config; "
+                    "kill -HUP $(cat /config/sshd.pid)",
+                )
                 try:
                     connect("reverse-unverified")
                     burrow(w, "tunc", "reverse-unverified", "r", "32451", "127.0.0.1", destination, "--yes", ok=False)
@@ -410,9 +501,18 @@ printf '%s' "$n" > /tmp/reverse-probe-count
                     burrow(w, "close", "reverse-unverified", "--yes")
                     assert burrow(w, "tunnel", "list") == []
                 finally:
-                    command("docker", "exec", container, "sh", "-c",
-                            "sed -i '/^ForceCommand /d' /config/sshd/sshd_config; kill -HUP $(cat /config/sshd.pid)")
-            print("PASS failed remote observation refuses allocation or verifies cleanup; uncertainty remains visible", flush=True)
+                    command(
+                        "docker",
+                        "exec",
+                        container,
+                        "sh",
+                        "-c",
+                        "sed -i '/^ForceCommand /d' /config/sshd/sshd_config; kill -HUP $(cat /config/sshd.pid)",
+                    )
+            print(
+                "PASS failed remote observation refuses allocation or verifies cleanup; uncertainty remains visible",
+                flush=True,
+            )
             owner = connect("reverse-owner")
             t = burrow(w, "tunc", "reverse-owner", "r", "32451", "127.0.0.1", destination, "--yes")
             traffic(t)
@@ -421,13 +521,25 @@ printf '%s' "$n" > /tmp/reverse-probe-count
             for _ in range(100):
                 if burrow(w, "inspect", "reverse-owner")["state"] == "lost" and not listeners(32451):
                     break
-                time.sleep(.1)
+                time.sleep(0.1)
             assert burrow(w, "tunnel", "list")[0]["state"] == "unavailable" and not listeners(32451)
             burrow(w, "tunnel", "check", t["id"], ok=False)
             burrow(w, "close", "reverse-owner", "--yes")
             connect("reverse-owner")
             assert burrow(w, "tunnel", "list") == []
-            burrow(w, "tunc", "reverse-owner", "r", "32451", "127.0.0.1", destination, "--review", old_review["digest"], "--yes", ok=False)
+            burrow(
+                w,
+                "tunc",
+                "reverse-owner",
+                "r",
+                "32451",
+                "127.0.0.1",
+                destination,
+                "--review",
+                old_review["digest"],
+                "--yes",
+                ok=False,
+            )
             fresh = burrow(w, "tunc", "reverse-owner", "r", "32451", "127.0.0.1", destination, "--yes")
             burrow(w, "tund", t["id"], "--yes", ok=False)
             traffic(fresh)
@@ -440,7 +552,9 @@ printf '%s' "$n" > /tmp/reverse-probe-count
                 if path.is_file():
                     assert canary.encode() not in path.read_bytes(), path
             assert burrow(w, "inspect", "gateway")["masterPID"] == first["masterPID"]
-            print("PASS reverse GatewayPorts policies, IPv6, server refusal, loss/close and secret exclusion", flush=True)
+            print(
+                "PASS reverse GatewayPorts policies, IPv6, server refusal, loss/close and secret exclusion", flush=True
+            )
             return first_tunnel
         finally:
             policy()

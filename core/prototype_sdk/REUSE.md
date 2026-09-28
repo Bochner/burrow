@@ -11,9 +11,10 @@ aspect burrow-prototype reuse
 aspect burrow-check
 ```
 
-The declared test uses the existing verified Hovel v0.4.2 wheel and inert SDK
-package. Source, package digest and toolchain provenance remain in [SETUP.md](SETUP.md)
-and `MODULE.bazel`. Python 3.12 is declared through Aspect/Bazel. No new dependency
+The declared test uses the verified Hovel wheel pinned in
+[MODULE.bazel](../../MODULE.bazel) and the inert SDK package.
+[SETUP.md](SETUP.md) records the original v0.4.2 measurement provenance.
+Python 3.12 is declared through Aspect/Bazel. No new dependency
 or Hovel modification was needed. The test requires Linux procfs, Unix peer
 credentials, pidfds, and glibc's `pidfd_open`/`pidfd_send_signal` symbols: the
 pinned standalone Python does not expose its usual pidfd wrappers, so this
