@@ -15,7 +15,7 @@ required again. Merge remains owner-controlled.
 
 ## Established scope
 
-- The repository is private under `Bochner/burrow`.
+- The repository is public under `Bochner/burrow`.
 - SSH comes first: reach full useful LazySSH workflow parity, using a modern
   Charm-based terminal experience and Go implementation.
 - Follow Hovel's Aspect/Bazel build approach and public integration contracts.

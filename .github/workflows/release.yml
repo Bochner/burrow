@@ -4,31 +4,38 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing v-prefixed tag matching VERSION; blank for a build-only rehearsal
+        description: Existing v-prefixed tag matching VERSION; blank rehearses the selected main commit
         required: false
         type: string
-      publish:
-        description: Publish the tested wheel to PyPI and attach it to the GitHub release
-        required: true
-        default: false
+      destination:
+        description: Rehearse only, publish GitHub assets, or also publish the wheel to PyPI
+        type: choice
+        default: rehearsal
+        options: [rehearsal, github, github-and-pypi]
+      prerelease:
+        description: Mark the GitHub release as a prerelease
         type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ inputs.tag || github.ref }}
+  group: release-${{ inputs.tag || github.sha }}
   cancel-in-progress: false
 
 jobs:
-  verify:
-    if: ${{ !inputs.publish || github.ref == 'refs/heads/main' }}
+  prepare:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
     outputs:
       commit: ${{ steps.source.outputs.commit }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0; matches Hovel
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.tag || github.sha }}
           fetch-depth: 0
@@ -36,45 +43,60 @@ jobs:
       - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9
         with:
           launcher-version: "2026.33.3"
+          disk-cache: burrow-portable
+          repository-cache: burrow-portable
       - name: Validate release source
         id: source
         env:
           RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_PUBLISH: ${{ inputs.publish }}
+          RELEASE_PUBLISH: ${{ inputs.destination != 'rehearsal' }}
         run: aspect burrow-release validate -- --tag "$RELEASE_TAG" --publish "$RELEASE_PUBLISH"
-      - run: aspect burrow-check preflight
+      - name: Fetch the exact tested main bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: aspect burrow-release fetch
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
         with:
-          name: release-checks
-          path: .report-input/
-          include-hidden-files: true
-          retention-days: 14
+          name: release-bundle
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
 
-  build:
-    needs: verify
+  github-release:
+    if: inputs.destination != 'rehearsal'
+    needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ needs.verify.outputs.commit }}
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
       - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9
         with:
           launcher-version: "2026.33.3"
-      - run: aspect burrow-release build
-      - run: aspect burrow-release check
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: burrow-wheel
-          path: dist/*.whl
-          if-no-files-found: error
-          retention-days: 14
+          name: release-bundle
+          path: dist
+      - run: aspect burrow-release verify-bundle
+      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          tag_name: ${{ inputs.tag }}
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.tar.gz
+            dist/*.whl
+            dist/SHA256SUMS
+            dist/bundle.json
 
-  publish:
-    if: ${{ inputs.publish }}
-    needs: [verify, build]
+  pypi:
+    if: inputs.destination == 'github-and-pypi'
+    needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: pypi
@@ -84,37 +106,19 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ needs.verify.outputs.commit }}
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
       - uses: aspect-build/setup-aspect@2306377a61c45954ab2df7c7311698b109364352 # v2026.26.9
         with:
           launcher-version: "2026.33.3"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: burrow-wheel
+          name: release-bundle
           path: dist
-      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0; matches Hovel
+      - run: aspect burrow-release prepare-pypi
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         with:
-          packages-dir: dist
+          packages-dir: dist/pypi
           skip-existing: true
           attestations: true
       - run: aspect burrow-release verify-pypi
-
-  github-release:
-    needs: [verify, publish]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: burrow-wheel
-          path: dist
-      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1; matches Hovel
-        with:
-          tag_name: ${{ inputs.tag }}
-          prerelease: true
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: dist/*.whl

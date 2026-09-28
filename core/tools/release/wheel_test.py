@@ -11,10 +11,12 @@ import signal
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 import zipfile
 
-binary, version_file, license_file, pipx, hovel = [str(Path(p).resolve()) for p in sys.argv[1:]]
+binary, version_file, license_file, pipx, hovel = [str(Path(p).resolve()) for p in sys.argv[1:6]]
+artifact_dir = Path(sys.argv[6]).resolve() if len(sys.argv) == 7 else None
 builder = str(Path(__file__).with_name("build_wheel.py"))
 with tempfile.TemporaryDirectory(prefix="burrow-wheel-") as temporary:
     root = Path(temporary)
@@ -42,7 +44,21 @@ with tempfile.TemporaryDirectory(prefix="burrow-wheel-") as temporary:
         run(sys.executable, builder, binary, version, license_file, "--out-dir", destination)
         return next(destination.glob("*.whl"))
 
-    wheel = build(version_file, root / "dist")
+    version = Path(version_file).read_text().strip()
+    wheel = (
+        (artifact_dir / f"burrow_ssh-{version}-py3-none-manylinux_2_28_x86_64.whl")
+        if artifact_dir
+        else build(version_file, root / "dist")
+    )
+    if artifact_dir:
+        package = artifact_dir / f"burrow-v{version}-linux-amd64.tar.gz"
+        unpacked = root / "archive"
+        with tarfile.open(package) as archive:
+            archive.extractall(unpacked, filter="data")
+        packaged = unpacked / "burrow"
+        assert json.loads(run(packaged, "capabilities").stdout)["schemaVersion"] == 1
+        assert run(packaged, "--help").returncode == 0
+        assert json.loads(run(packaged, "agent", "install", "codex", "--scope", "project").stdout)["complete"]
     executable = Path(binary).read_bytes()
     assert executable[:6] == b"\x7fELF\x02\x01" and struct.unpack_from("<H", executable, 18)[0] == 62
     offset = struct.unpack_from("<Q", executable, 32)[0]
@@ -100,6 +116,10 @@ with tempfile.TemporaryDirectory(prefix="burrow-wheel-") as temporary:
         assert evidence.read_text() == "preserve workspace across pipx upgrade and uninstall"
         assert (root / "cache/burrow/hovel/0.4.4/hovel").exists()
         print("PASS deterministic wheel, offline pipx install/upgrade/uninstall, CLI, embedded skills and pinned Hovel")
+        if artifact_dir:
+            (artifact_dir / ".smoke.json").write_text(
+                json.dumps({file.name: hashlib.sha256(file.read_bytes()).hexdigest() for file in (wheel, package)})
+            )
     finally:
         if daemon:
             try:

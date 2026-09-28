@@ -29,23 +29,31 @@ output directories so repeated staging can replace read-only Bazel artifacts.
 
 ## Public test reports (#91)
 
-Report presentation and evidence structure adapt the current Hovel revision
-`a4cbfdf7769a9551695088c11061e3cabc368e07` (verified against upstream main on
-2026-09-23): `docs/site/public/assets/report.css`, `report.js`,
-`src/pages/reports/tests/latest/index.astro`, and `tools/testreport/`.
-Copyright 2026 William Born; Apache-2.0 under the retained license.
-Burrow keeps the hero/sidebar, overview metrics, coverage, suite and target
-evidence layout. It renders static HTML with native anchor navigation, tables
-and details rather than copying Hovel's JavaScript application, linter runners
-or SDK coverage tooling. `public/assets/report.css` contains the adapted subset.
-`docs/tools/docs/report.py` and its CLI checks are original Burrow code.
+The owner requested Hovel's report application and enforcement model on
+2026-09-28. Source pin:
+[`1789ce47554a2ee17c7bd46d391b63946af60d0a`](https://github.com/vibepwners/hovel/tree/1789ce47554a2ee17c7bd46d391b63946af60d0a).
+Copied active `docs/site/public/assets/report.js` and `report.css`, the report
+page shell, and `tools/testreport/testreport.py` (vendored as
+`docs/tools/docs/hovel_testreport.py`). The UI regression check adapts Hovel's
+`docs/site/report_ui_test.py`. Copyright 2026 William Born; Apache-2.0 under
+the retained license.
 
-All measurements come from Burrow's declared targets, BEP attempts and LCOV.
-The report uses the production capability inventory and explicit selected-check
-bindings, separating CLI reachability, JSON shape documentation and observed
-behavior. No Hovel test results or coverage percentages are reused. Evidence
-and the staged site bind to the same source; Pages verifies the eligible commit
-and artifact hashes. The #86 diagnostics became required again with the official Hovel v0.4.4 pin.
+The full tabbed application replaces Burrow's former reduced static rendering.
+Adaptations: `/reports/` data URL, Burrow commands and metrics, honest missing
+measurements, links to original repetition outputs, and original execution
+identity in Jobs. Static checks reuse their actual target logs; source ignore
+inventories are explicitly unmeasured. Test language comes from the declared
+BEP rule kind rather than Hovel-specific label guesses. Coverage describes the measured six Go targets without
+inventing a threshold; Burrow's JSON schemas are not labeled typed MCP coverage.
+The Python adapter supplies Burrow's BEP, XML, LCOV and capability inventory to
+Hovel's report model. No Hovel results or coverage percentages are reused.
+
+Publication follows structured evidence, complete referenced files, parity and
+the successful workflow gate. Burrow's additional exact-source/run/log-hash and
+site-hash report guards are removed by the owner's instruction. Safe CI evidence
+selection still verifies the successful run, source tree and artifact download;
+release bundles retain checksums. These are pipeline eligibility checks, not a
+second enforced report format. Hovel v0.4.4 compatibility checks stay required.
 
 The #65 comparison also inspected the published Hovel report generated on
 2026-09-24 at source `b4190bb548c49263003d7d398571c3837717890f`.
@@ -66,7 +74,7 @@ Action revisions match Hovel's CI/Pages workflows. No upstream credentials,
 remote cache configuration, runtime history, or test reports are copied.
 
 The book publishes only explicit `docs/site` content and assets, not the full
-private research directory or local worktrees. This attribution applies to
+research directory or local worktrees. This attribution applies to
 adapted upstream material; it does not select a license for all Burrow code.
 
 ## Operator book reconciliation (#92)
@@ -105,3 +113,13 @@ binding submits. Burrow explicitly maps Tab to selection and Enter to approval.
 The existing Bubble Tea v2.0.9, Bubbles v2.2.1 and Lip Gloss v2.0.6 pins remain.
 Dependency resolution enters through `aspect burrow-prototype deps`; Go module
 checksums and declared `MODULE.bazel`/BUILD dependencies record the graph.
+
+## README reconciliation (2026-09-28)
+
+The root README now follows Hovel's README at
+`1789ce47554a2ee17c7bd46d391b63946af60d0a`: project overview, documentation,
+agent installation, operator installation, development commands, repository
+layout, contribution and licensing. Burrow-specific release assets and Linux
+requirements replace Hovel's PyPI/SDK/module installation instructions. Milestone
+history, CI internals, private-project links and detailed restart/cleanup notes
+are removed from the front page; development shortcuts remain in the book.

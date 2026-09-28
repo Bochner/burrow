@@ -2,18 +2,18 @@ def _impl(ctx: TaskContext) -> int:
     root = ctx.std.env.aspect_root_dir()
     mode = ctx.args.mode[0]
     suite = ctx.args.mode[1] if len(ctx.args.mode) > 1 else "all"
-    if mode not in ["full", "ci", "preflight"]:
-        print("expected full, ci or preflight")
+    if mode not in ["full", "ci", "preflight", "verify"]:
+        print("expected full, ci, preflight or verify")
         return 2
-    if suite not in ["all", "portable", "lifecycle", "files", "reverse", "shell", "chains", "reports", "automation", "follow", "runs", "hovel"] or (mode != "preflight" and suite != "all"):
+    if suite not in ["all", "portable", "lifecycle", "files", "reverse", "shell", "chains", "reports", "automation", "follow", "runs", "hovel"] or (mode not in ["preflight", "verify"] and suite != "all"):
         print("optional preflight suite: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow, runs or hovel")
         return 2
     # Discover every declared test; adding a target must not require updating
     # a second, hand-maintained list. Release checks execute rather than cache-hit.
-    tests = ["test", "--bazel-flag=--build_tests_only", "--bazel-flag=--nocache_test_results", "--bazel-flag=--flaky_test_attempts=1", "--bazel-flag=--noruns_per_test_detects_flakes", "--bazel-flag=--runs_per_test=1"]
+    tests = ["test", "--bazel-flag=--build_tests_only", "--bazel-flag=--cache_test_results=" + ("auto" if mode == "verify" else "no"), "--bazel-flag=--flaky_test_attempts=1", "--bazel-flag=--noruns_per_test_detects_flakes", "--bazel-flag=--runs_per_test=1"]
     filters = ["-manual"]
     tests += ["--bazel-flag=--local_test_jobs=2"]
-    if mode == "preflight":
+    if mode in ["preflight", "verify"]:
         # Repeat actual race surfaces, not every long-running SSH scenario.
         tests += ["--bazel-flag=--runs_per_test=//core/cmd/burrow:(setup|terminal)_test$@3"]
         if suite != "all":
@@ -22,13 +22,13 @@ def _impl(ctx: TaskContext) -> int:
     if suite in ["all", "portable"]:
         commands.append(["build", "//core/cmd/burrow:package", "//:research", "//core/prototype_sdk:package", "//core/prototype_sdk:frontend", "//core/prototype_transport:package", "//core/prototype_agent:burrow", "//core/prototype_terminal:terminal", "//core/prototype_manager:burrow", "//core/prototype_manager:baseline"])
     if mode == "ci":
-        filters += ["-external"]
+        filters += ["-requires-docker"]
     elif suite == "portable":
         filters += ["-acceptance"]
     elif suite not in ["all", "hovel"]:
         filters += ["acceptance-" + suite]
     tests += ["--bazel-flag=--test_tag_filters=" + ",".join(filters)]
-    if mode == "preflight":
+    if mode in ["preflight", "verify"]:
         commands.insert(0, ["run", "//docs/tools/docs:report", "--", "begin", "--suite", suite])
         tests += ["--bazel-flag=--build_event_json_file=" + root + "/.report-input/" + suite + "/bep.json"]
     commands.append(tests + ["//..."])
@@ -37,13 +37,13 @@ def _impl(ctx: TaskContext) -> int:
         if status.code:
             break
     result = status.code or 0
-    if mode == "preflight":
+    if mode in ["preflight", "verify"]:
         collected = ctx.std.process.command("aspect").args(["run", "//docs/tools/docs:report", "--", "collect", "--suite", suite, "--exit-code", str(result)]).current_dir(root).spawn().wait().code or 0
         return result or collected
     return result
 
 burrow_check = task(
     args = {"mode": args.positional(default = ["full"], minimum = 0, maximum = 2)},
-    summary = "Run all checks (full), checks without Docker (ci), the release gate (preflight [suite]), or required Hovel compatibility checks (preflight hovel).",
+    summary = "Run all checks (full), portable checks (ci), uncached preflight [suite], or routine verify [suite] with deterministic test caching.",
     implementation = _impl,
 )

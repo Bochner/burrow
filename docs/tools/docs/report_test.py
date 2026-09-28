@@ -1,4 +1,4 @@
-"""Exercise the evidence CLI, including failures and publication refusals."""
+"""Exercise the evidence CLI, including failures and Hovel-style publication requirements."""
 
 import json
 import os
@@ -81,10 +81,19 @@ with tempfile.TemporaryDirectory() as scratch:
     log = directory / "raw.log"
     log.write_text('<script>alert("remote")</script>\x1b[31mFAIL\n')
     events = [
-        {"id": {"targetConfigured": {"label": "//core/example:check"}}, "configured": {"testSize": "SMALL"}},
+        {
+            "id": {"targetConfigured": {"label": "//core/example:check"}},
+            "configured": {"testSize": "SMALL", "targetKind": "py_test rule"},
+        },
         {
             "id": {"testResult": {"label": "//core/example:check", "run": 1, "shard": 0, "attempt": 1}},
-            "testResult": {"status": "FAILED", "testActionOutput": [{"name": "test.log", "uri": log.as_uri()}]},
+            "testResult": {
+                "status": "FAILED",
+                "testAttemptDuration": "0.302s",
+                "testAttemptDurationMillis": "302",
+                "cachedLocally": True,
+                "testActionOutput": [{"name": "test.log", "uri": log.as_uri()}],
+            },
         },
         {
             "id": {"testSummary": {"label": "//core/example:check"}},
@@ -100,8 +109,10 @@ with tempfile.TemporaryDirectory() as scratch:
     (directory / "bep.json").write_text("".join(json.dumps(event) + "\n" for event in events))
     run("collect", "--root", root, "--suite", "portable", "--exit-code", 3)
     report = json.loads((directory / "suite.json").read_text())
-    assert report["status"] == "FAILED" and report["source"]["dirty"] is False
+    assert report["status"] == "FAILED" and report["source"]["commit"]
     assert report["targets"][0]["status"] == "FAILED"
+    assert report["targets"][0]["attempts"][0]["duration"] == 0.302
+    assert report["targets"][0]["attempts"][0]["cached"]
     evidence = report["targets"][0]["attempts"][0]["files"][0]
     assert (directory / evidence["path"]).read_text() == log.read_text()
     # A passing summary cannot hide a failed repetition.
@@ -114,12 +125,10 @@ with tempfile.TemporaryDirectory() as scratch:
     (site / "api").mkdir(parents=True)
     (site / "reports").mkdir()
     (site / "api/inventory.json").write_text(json.dumps(inventory))
-    (site / "reports/index.html").write_text(
-        "<html><main><!-- burrow-report:start -->old<!-- burrow-report:end --></main></html>"
-    )
+    (site / "reports/index.html").write_text('<html><main id="report-app"></main></html>')
     (site / "search-index.json").write_text(json.dumps([{"href": "reports/", "text": "old"}]))
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json")
-    report = json.loads((site / "reports/report.json").read_text())
+    report = json.loads((site / "reports/verification.json").read_text())
     assert not report["publishable"] and not report["releaseReady"]
     assert report["suites"]["portable"]["status"] == "FAILED"
     assert report["suites"]["files"]["status"] == "MISSING"
@@ -128,13 +137,14 @@ with tempfile.TemporaryDirectory() as scratch:
     assert report["parity"]["total"] == 2 and report["parity"]["presentationOnly"] == 1
     assert report["parity"]["reachable"] == 2 and report["parity"]["demonstrated"] == 0
     assert report["parity"]["schemas"] == 0, "prose-only object options counted as a documented shape"
-    html = (site / "reports/index.html").read_text()
-    assert "&lt;script&gt;alert" in html and "<script>" not in html
-    assert "\\x1b" in html and "\x1b" not in html
-    assert '<nav aria-label="Report sections">' in html
-    before = (site / "reports/index.html").read_bytes()
+    ui = json.loads((site / "reports/report.json").read_text())
+    assert ui["targets"][0]["language"] == "python"
+    assert ui["targets"][0]["status"] == "FAILED" and ui["totals"]["statuses"]["FAILED"] == 1
+    assert ui["operator_parity"]["totals"]["capabilities"] == 2
+    assert (site / "reports" / ui["targets"][0]["log_path"]).read_text() == log.read_text()
+    before = (site / "reports/report.json").read_bytes()
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-publishable", ok=False)
-    assert (site / "reports/index.html").read_bytes() == before, "failed publication replaced staged site"
+    assert (site / "reports/report.json").read_bytes() == before, "failed publication replaced staged site"
     # An unregistered capability fails drift checks instead of disappearing.
     inventory["operations"].append(dict(inventory["operations"][0], id="example.new"))
     (site / "api/inventory.json").write_text(json.dumps(inventory))
@@ -219,7 +229,6 @@ with tempfile.TemporaryDirectory() as scratch:
             )
         run("collect", "--root", root, "--suite", suite, "--exit-code", 0)
         assert json.loads((destination / "suite.json").read_text())["status"] == "PASSED"
-    (site / ".source.json").write_text(json.dumps(json.loads((directory / "start.json").read_text())["source"]))
     run(
         "render",
         "--root",
@@ -231,12 +240,12 @@ with tempfile.TemporaryDirectory() as scratch:
         "--require-publishable",
         "--require-parity",
     )
-    report = json.loads((site / "reports/report.json").read_text())
+    report = json.loads((site / "reports/verification.json").read_text())
     assert report["publishable"] and report["releaseReady"]
     assert report["coverage"]["covered"] == 1 and report["coverage"]["total"] == 2
     assert report["parity"]["demonstrated"] == 2
     assert report["parity"]["schemas"] == 2
-    # Former #86 exceptions now block publication on missing, failed or stale evidence.
+    # Required partitions block publication on missing or failed evidence.
     for suite in ("follow", "hovel"):
         partition = root / ".report-input" / suite
         partition.rename(root / ".report-input/saved-partition")
@@ -259,7 +268,7 @@ with tempfile.TemporaryDirectory() as scratch:
         failed["targets"][0]["attempts"][0]["status"] = "FAILED"
         (partition / "suite.json").write_text(json.dumps(failed))
         run("render", "--root", root, "--site", site, "--parity", root / "parity.json")
-        failed_report = json.loads((site / "reports/report.json").read_text())
+        failed_report = json.loads((site / "reports/verification.json").read_text())
         assert not failed_report["publishable"] and not failed_report["releaseReady"]
         assert failed_report["suites"][suite]["status"] == "FAILED"
         assert failed_report["suites"][suite]["advisory"] is False
@@ -277,13 +286,11 @@ with tempfile.TemporaryDirectory() as scratch:
         stale = json.loads(original)
         stale["source"]["commit"] = "0" * 40
         (partition / "suite.json").write_text(json.dumps(stale))
-        result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
-        assert "stale or inconsistent suite evidence" in result.stderr
+        run("render", "--root", root, "--site", site, "--parity", root / "parity.json")
         stale = json.loads(original)
         stale["environment"]["runID"] = "another-run"
         (partition / "suite.json").write_text(json.dumps(stale))
-        result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
-        assert "evidence from another CI run" in result.stderr
+        run("render", "--root", root, "--site", site, "--parity", root / "parity.json")
         (partition / "suite.json").write_text(original)
     # One passing compatibility target cannot replace the complete Hovel partition.
     hovel = root / ".report-input/hovel/suite.json"
@@ -351,7 +358,7 @@ with tempfile.TemporaryDirectory() as scratch:
         "--require-publishable",
         "--require-parity",
     )
-    combined_report = json.loads((site / "reports/report.json").read_text())
+    combined_report = json.loads((site / "reports/verification.json").read_text())
     assert {t["label"] for t in combined_report["suites"]["shell"]["targets"]} == {
         "//core/cmd/burrow:ssh_shell_test",
         "//core/prototype_sessions:check",
@@ -374,19 +381,14 @@ with tempfile.TemporaryDirectory() as scratch:
         )
     )
     run("render", "--root", root, "--site", site, "--parity", alternate)
-    partial = json.loads((site / "reports/report.json").read_text())
+    partial = json.loads((site / "reports/verification.json").read_text())
     tab = next(op for op in partial["parity"]["capabilities"] if op["id"] == "example.tab")
     assert tab["semanticStatus"] == "INCOMPLETE" and not partial["releaseReady"]
     run("render", "--root", root, "--site", site, "--parity", root / "parity.json", "--require-parity")
-    assert (site / "reports/index.html").read_text().count('<details id="target-') == 15, (
-        "coverage repetitions lost their individual evidence"
-    )
-    commit = git("rev-parse", "HEAD").decode().strip()
-    run("verify", "--site", site, "--commit", commit)
-    run("verify", "--site", site, "--commit", "0" * 40, ok=False)
-    (site / "reports/index.html").write_text("unverified replacement")
-    run("verify", "--site", site, "--commit", commit, ok=False)
-    (site / "reports/index.html").write_text("<main><!-- burrow-report:start --><!-- burrow-report:end --></main>")
+    ui = json.loads((site / "reports/report.json").read_text())
+    assert len(ui["targets"]) == 15, "coverage repetitions lost their evidence"
+    assert ui["coverage"][0]["percentage"] == 50
+    assert not (site / ".publication.json").exists()
     # Required CI success never manufactures agent parity for missing routes.
     inventory["operations"][0]["agent"]["status"] = "unsupported"
     (site / "api/inventory.json").write_text(json.dumps(inventory))
@@ -420,10 +422,14 @@ with tempfile.TemporaryDirectory() as scratch:
         assert incomplete["status"] == "FAILED" and incomplete["targets"][0]["status"] == "MISSING"
     (directory / "suite.json").write_text(original)
     evidence = json.loads((directory / "suite.json").read_text())["targets"][0]["attempts"][0]["files"][0]
-    (directory / evidence["path"]).write_text("tampered")
-    result = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
-    assert "inconsistent evidence hash" in result.stderr
-    (root / "core/launch/example.go").write_text("package changed\n")
-    result = run("collect", "--root", root, "--suite", "portable", "--exit-code", 0, ok=False)
-    assert "source changed" in result.stderr, result.stderr
-print("PASS commit-bound collection, failed attempts and retained evidence")
+    # Removing the hash contract must preserve output path safety.
+    (site / "reports/escape").symlink_to(root / "core/launch/example.go")
+    refused = run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
+    assert "symlink" in refused.stderr
+    (site / "reports/escape").unlink()
+    # Hovel requires referenced evidence, not bespoke per-file/source hashes.
+    (directory / evidence["path"]).write_text("updated log")
+    run("render", "--root", root, "--site", site, "--parity", root / "parity.json")
+    (directory / evidence["path"]).unlink()
+    run("render", "--root", root, "--site", site, "--parity", root / "parity.json", ok=False)
+print("PASS Hovel report model, required evidence, failed attempts and parity")

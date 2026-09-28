@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and future specifications live in the private
+Issues and future specifications live in the public
 [Bochner/burrow](https://github.com/Bochner/burrow/issues) repository.
 Use the installed `gh-axi` skill and `npx -y gh-axi <command> --help` for current
 CLI syntax. Use its `api` command for native GitHub relationships that lack a

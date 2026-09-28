@@ -9,7 +9,7 @@ py_test(
     args = ["$(location @hovel_linux_wheel//file)", "$(location :package)"],
     data = ["@hovel_linux_wheel//file", ":package"],
     size = "medium",
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
     legacy_create_init = 0,
 )
 

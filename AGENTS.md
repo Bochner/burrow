@@ -64,6 +64,8 @@ When editing the Pages book, components, assets, or deployment workflow, read
 - `aspect help`: discover the checked-in workflows.
 - `aspect burrow-check`: metadata, documentation, SDK, daemon reuse and production SSH gate; requires Docker and OpenSSH client tools.
 - `aspect burrow-check ci`: builds production packages and proofs and runs portable checks without Docker.
+- `aspect burrow-check verify [suite]`: routine full validation with native deterministic test caching; external/process/race checks remain fresh and setup/terminal checks repeat three times.
+- `aspect burrow-release bundle`: build and smoke-test the exact archive and wheel, then record checksums for CI promotion.
 - `aspect burrow-check preflight`: local rehearsal of the GitHub release gate; runs all tests uncached, including nine SSH partitions and the three Hovel compatibility checks, and repeats setup/terminal checks three times without failed-test retries.
 - `aspect burrow ssh-check`: production connection acceptance against a declared, digest-pinned disposable OpenSSH Docker server.
 - `aspect burrow-check preflight hovel`: run the required WAL-lock regression and two retained-manager compatibility proofs. Hovel v0.4.4 replaces the temporary #86 exception.
@@ -97,7 +99,7 @@ Do not discard unrelated changes. Keep prototype labels and open decisions expli
 
 ### Issue tracker
 
-Use the private `Bochner/burrow` GitHub repository. See
+Use the public `Bochner/burrow` GitHub repository. See
 `docs/agents/issue-tracker.md`.
 
 ### Triage labels

@@ -1,9 +1,8 @@
-"""Collect and publish Burrow's commit-bound test evidence through Aspect."""
+"""Adapt Burrow's declared test evidence to Hovel's report model and application."""
 
 import argparse
 from datetime import datetime, timezone
 import hashlib
-import html
 import json
 import os
 from pathlib import Path
@@ -11,8 +10,10 @@ import platform
 import re
 import shutil
 import subprocess
-import unicodedata
+from dataclasses import asdict
 from urllib.parse import unquote, urlsplit
+
+import hovel_testreport as upstream
 
 SUITES = (
     "portable",
@@ -33,7 +34,27 @@ HOVEL_TARGETS = {
     "//core/prototype_manager:consumer_check",
 }
 PRODUCTION = re.compile(r"^core/(cmd/burrow|connection|launch|reports|agent|terminal)/[^/]+\.go$")
-START, END = "<!-- burrow-report:start -->", "<!-- burrow-report:end -->"
+DOCUMENTATION_TARGETS = {"//docs/tools/docs:site_test", "//docs/tools/docs:stage_site_test"}
+
+
+def documentation_path(name):
+    path = Path(name)
+    return name == "README.md" or (
+        name.startswith("docs/research/")
+        and path.suffix == ".md"
+        or name.startswith("docs/site/src/content/")
+        and path.suffix == ".html"
+    )
+
+
+def reusable_source(tested, current, documentation=False):
+    if tested["dirty"] or current["dirty"]:
+        return False
+    return (
+        tested["applicationTree"] == current["applicationTree"]
+        if documentation
+        else tested["gitTree"] == current["gitTree"]
+    )
 
 
 def digest(data):
@@ -49,34 +70,21 @@ def snapshot(root):
     def git(*args):
         return subprocess.check_output(["git", "-C", str(root), *args])
 
-    names = sorted(set(git("ls-files", "-c", "-o", "--exclude-standard", "-z").decode().split("\0")) - {""})
-    files = {}
-    for name in names:
-        path = root / name
-        if path.is_symlink():
-            data = os.readlink(path).encode()
-        elif path.is_file():
-            data = path.read_bytes()
-        else:
-            data = b"<deleted>"
-        files[name] = digest(data)
+    files = {
+        entry.split("\t", 1)[1]: entry.split("\t", 1)[0]
+        for entry in git("ls-tree", "-r", "-z", "HEAD").decode().split("\0")
+        if entry
+    }
     return {
         "commit": git("rev-parse", "HEAD").decode().strip(),
+        "gitTree": git("rev-parse", "HEAD^{tree}").decode().strip(),
+        "applicationTree": digest(
+            json.dumps(
+                {name: value for name, value in files.items() if not documentation_path(name)}, sort_keys=True
+            ).encode()
+        ),
         "dirty": bool(git("status", "--porcelain", "--untracked-files=normal")),
-        "treeSHA256": digest(json.dumps(files, sort_keys=True).encode()),
         "files": files,
-        "pins": {
-            name: {"sha256": files[name], "content": (root / name).read_text()}
-            for name in (
-                ".bazelversion",
-                ".aspect/version.axl",
-                "MODULE.bazel",
-                "docs/site/.nvmrc",
-                "docs/site/package.json",
-                "core/connection/lab-image.txt",
-            )
-            if name in files
-        },
     }
 
 
@@ -99,7 +107,9 @@ def begin(root, suite):
     write_json(
         directory / "start.json",
         {
-            "source": snapshot(root),
+            "source": {
+                "commit": subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            },
             "started": datetime.now(timezone.utc).isoformat(),
             "environment": {
                 "os": platform.platform(),
@@ -114,8 +124,6 @@ def begin(root, suite):
 def collect(root, suite, exit_code):
     directory = suite_directory(root, suite)
     metadata = json.loads((directory / "start.json").read_text())
-    if metadata["source"] != snapshot(root):
-        raise ValueError("source changed during evidence collection; rerun this partition")
     targets, selected, finished = {}, set(), False
     bep = directory / "bep.json"
     for line in bep.read_text().splitlines() if bep.exists() else []:
@@ -132,9 +140,17 @@ def collect(root, suite, exit_code):
                 target = targets.setdefault(label, {"label": label, "status": "MISSING", "attempts": []})
                 if kind == "targetConfigured":
                     target["tags"] = event["configured"].get("tag", [])
+                    target["kind"] = event["configured"].get("targetKind", "")
         if "testResult" in event:
             result = event["testResult"]
-            attempt = {"identity": identity["testResult"], "status": result.get("status", "MISSING"), "files": []}
+            attempt = {
+                "identity": identity["testResult"],
+                "status": result.get("status", "MISSING"),
+                "files": [],
+                "cached": bool(result.get("cachedLocally") or result.get("executionInfo", {}).get("cachedRemotely")),
+                "duration": upstream.parse_float(str(result.get("testAttemptDuration", "")).removesuffix("s"))
+                or upstream.parse_float(result.get("testAttemptDurationMillis")) / 1000,
+            }
             for item in result.get("testActionOutput", []):
                 if item["name"] not in ("test.log", "test.xml"):
                     continue
@@ -155,7 +171,7 @@ def collect(root, suite, exit_code):
                 destination = directory / name
                 destination.parent.mkdir(exist_ok=True)
                 destination.write_bytes(data)
-                attempt["files"].append({"path": name, "sha256": digest(data), "kind": item["name"]})
+                attempt["files"].append({"path": name, "kind": item["name"]})
             target["attempts"].append(attempt)
         if "testSummary" in event:
             target["summaryStatus"] = event["testSummary"].get("overallStatus", "MISSING")
@@ -186,7 +202,7 @@ def collect(root, suite, exit_code):
     }
     coverage = directory / "coverage.lcov"
     if coverage.exists():
-        result["coverage"] = {"path": "coverage.lcov", "sha256": digest(coverage.read_bytes())}
+        result["coverage"] = {"path": "coverage.lcov"}
     write_json(directory / "suite.json", result)
 
 
@@ -268,10 +284,7 @@ def verified_file(directory, item):
     path = directory / item["path"]
     if Path(item["path"]).is_absolute() or not path.resolve().is_relative_to(directory.resolve()):
         raise ValueError("unsafe evidence path")
-    data = path.read_bytes()
-    if digest(data) != item["sha256"]:
-        raise ValueError("inconsistent evidence hash: " + item["path"])
-    return data
+    return path.read_bytes()
 
 
 def coverage_summary(data):
@@ -335,16 +348,14 @@ def report_model(inventory, parity, root=None):
     target_results = {}
     coverage = {"status": "MISSING", "files": [], "covered": 0, "total": 0}
     if root:
-        for name in (*SUITES, "all", "coverage"):
+        for name in (*SUITES, "all", "coverage", "documentation"):
             directory = suite_directory(root, name)
             path = directory / "suite.json"
             if not path.exists():
                 continue
             data = json.loads(path.read_text())
-            if data["schemaVersion"] != 1 or data["suite"] != name or data["source"] != source:
-                raise ValueError("stale or inconsistent suite evidence: " + name)
-            if data["environment"]["runID"] != os.environ.get("GITHUB_RUN_ID", ""):
-                raise ValueError("evidence from another CI run: " + name)
+            if data["schemaVersion"] != 1 or data["suite"] != name:
+                raise ValueError("unsupported or inconsistent suite evidence: " + name)
             if len({target["label"] for target in data["targets"]}) != len(data["targets"]):
                 raise ValueError("duplicate target in suite: " + name)
             if set(data["selectedTargets"]) != {target["label"] for target in data["targets"]}:
@@ -357,6 +368,8 @@ def report_model(inventory, parity, root=None):
             )
             if data["status"] != ("PASSED" if passed else "FAILED"):
                 raise ValueError("inconsistent suite status: " + name)
+            if name == "documentation" and set(data["selectedTargets"]) != DOCUMENTATION_TARGETS:
+                raise ValueError("wrong documentation targets")
             if name in SUITES:
                 # The graph can select additional checks in a partition;
                 # they never replace its mandatory production acceptance target.
@@ -375,7 +388,7 @@ def report_model(inventory, parity, root=None):
                             raise ValueError("unexpected evidence artifact")
                         item["path"] = name + "/" + item["path"]
                         evidence[item["path"]] = content
-                if name != "coverage":
+                if name not in ("coverage", "documentation"):
                     if target["label"] in target_results:
                         raise ValueError("duplicate target evidence: " + target["label"])
                     target_results[target["label"]] = target
@@ -395,7 +408,7 @@ def report_model(inventory, parity, root=None):
                         "evidence": "all/suite.json",
                     }
             else:
-                if suites[name]["status"] != "MISSING":
+                if name in suites and suites[name]["status"] != "MISSING":
                     raise ValueError("duplicate suite evidence: " + name)
                 suites[name] = data | {"evidence": name + "/suite.json"}
             if name == "coverage" and "coverage" in data:
@@ -479,10 +492,7 @@ def report_model(inventory, parity, root=None):
         "demonstrated": sum(op["semanticStatus"] == "PASSED" and op["agentUsable"] for op in operational),
     }
     publishable = bool(
-        source
-        and not source["dirty"]
-        and coverage["status"] == "MEASURED"
-        and all(suite["status"] == "PASSED" for suite in suites.values())
+        source and coverage["status"] == "MEASURED" and all(suite["status"] == "PASSED" for suite in suites.values())
     )
     return {
         "schemaVersion": 1,
@@ -498,316 +508,174 @@ def report_model(inventory, parity, root=None):
     }, evidence
 
 
-def safe_text(value):
-    text = str(value)
-    return html.escape(
-        "".join(
-            char
-            if char in "\n\t" or unicodedata.category(char) not in ("Cc", "Cf")
-            else (f"\\x{ord(char):02x}" if ord(char) < 256 else f"\\u{ord(char):04x}")
-            for char in text
-        )
-    )
+def report_html():
+    # Shell and application follow Hovel 1789ce47; assets own the interactive UI.
+    return """<section class="report-hero"><p class="hero-tag">// quality and test evidence</p>
+<h1>Burrow Test Report</h1><p id="report-meta" class="report-meta">No generated test evidence is attached to this site build.</p></section>
+<section id="report-app" class="report-app" aria-live="polite"><p class="empty-state">Run <code>aspect burrow-check preflight</code> and <code>aspect burrow-report coverage</code>, stage the site, then run <code>aspect burrow-report render</code>.</p></section>"""
 
 
-def table(headers, rows):
-    return (
-        '<div class="report-table" tabindex="0" role="region" aria-label="'
-        + safe_text(headers[0])
-        + '"><table><thead><tr>'
-        + "".join('<th scope="col">' + safe_text(h) + "</th>" for h in headers)
-        + "</tr></thead><tbody>"
-        + "".join("<tr>" + "".join("<td>" + cell + "</td>" for cell in row) + "</tr>" for row in rows)
-        + "</tbody></table></div>"
-    )
-
-
-def link(path, label):
-    return '<a href="' + safe_text(path) + '">' + safe_text(label) + "</a>"
-
-
-def render_html(report, evidence):
-    source, parity, coverage = report["source"], report["parity"], report["coverage"]
-    categories = {op["id"]: op["category"] for op in parity["capabilities"]}
-    sections = ("overview", "coverage", "parity", "suites", "targets", "provenance")
-    parts = [
-        START,
-        '<article class="report-shell"><div class="report-hero"><p class="hero-tag">// quality and operator evidence</p><h1>Burrow Test Report</h1>',
-        "<p>Source: "
-        + safe_text(
-            source["commit"] + (" (uncommitted changes)" if source["dirty"] else "")
-            if source
-            else "No test evidence attached to this build"
-        )
-        + "</p></div>",
-        '<div class="report-app"><nav aria-label="Report sections">'
-        + "".join(link("#" + name, name.title()) for name in sections)
-        + '</nav><div class="report-panels">',
-        '<section id="overview"><h2>Overview</h2><p>'
-        + (
-            "Required verification passed; site evidence is eligible for promotion."
-            if report["publishable"]
-            else "Not eligible for publication: required results, coverage or a clean matching source are missing or failed."
-        )
-        + "</p>",
-        "<p>Final agent parity: "
-        + (
-            "usable routes and required behavior evidence passed; owner acceptance remains separate."
-            if report["releaseReady"]
-            else "incomplete. This report does not claim milestone completion."
-        )
-        + "</p>",
-        '<div class="summary-grid">'
-        + "".join(
-            '<div class="metric"><span>'
-            + safe_text(label)
-            + "</span><strong>"
-            + str(value)
-            + " / "
-            + str(parity["total"])
-            + "</strong></div>"
-            for label, value in [
-                ("Agent reachability", parity["reachable"]),
-                ("Documented schemas", parity["schemas"]),
-                ("Selected agent semantics", parity["demonstrated"]),
-            ]
-        )
-        + "</div>",
-        "<p>"
-        + link("report.json", "Download report and provenance JSON")
-        + " · Reproduce: <code>aspect burrow-check preflight</code>, <code>aspect burrow-report coverage</code>, <code>aspect burrow-site stage</code>, <code>aspect burrow-report render</code>.</p></section>",
-        '<section id="coverage"><h2>Production Go coverage</h2><p>Measured executable lines from six declared production Go test targets on Linux. Excludes prototypes, dependencies, test code and test-only binaries. The production SSH/CLI/PTY acceptance partitions run separately and do not contribute to these counters. This is not branch coverage or exhaustive behavioral coverage. No percentage threshold is invented.</p>',
-    ]
+def hovel_report(model, root=None):
+    targets = []
+    for suite, data in model["suites"].items():
+        for item in data["targets"]:
+            target = upstream.new_target(
+                item["label"] + (" [" + suite + "]" if suite in ("coverage", "documentation") else "")
+            )
+            target.suite = suite
+            target.language = {
+                "py_test rule": "python",
+                "go_test rule": "go",
+                "sh_test rule": "shell",
+                "js_test rule": "javascript",
+            }.get(item.get("kind"), "unknown")
+            target.status = item["status"]
+            target.duration = sum(attempt.get("duration", 0) for attempt in item["attempts"])
+            target.attempts = len(item["attempts"])
+            for attempt in item["attempts"]:
+                for file in attempt["files"]:
+                    target.outputs.append(file["path"])
+                    if file["kind"] == "test.log":
+                        target.log_path = file["path"]
+                    elif file["kind"] == "test.xml":
+                        target.xml_path = file["path"]
+                        if root:
+                            upstream.enrich_from_xml(target, root / ".report-input" / file["path"])
+            targets.append(target)
+    targets.sort(key=lambda target: (upstream.STATUS_ORDER.get(target.status, 99), target.suite, target.label))
+    coverage = model["coverage"]
+    metrics = []
     if coverage["status"] == "MEASURED":
-        percent = 100 * coverage["covered"] / coverage["total"]
-        parts += [
-            f"<p><strong>{percent:.2f}%</strong> ({coverage['covered']} / {coverage['total']} measured lines). Coverage suite: "
-            + safe_text(coverage["suiteStatus"])
-            + ". "
-            + link(coverage["evidence"], "Raw LCOV baseline")
-            + "</p>",
-            table(
-                ["Production file", "Covered lines", "Measured lines"],
-                [[safe_text(row["source"]), str(row["covered"]), str(row["total"])] for row in coverage["files"]],
-            ),
-        ]
-    else:
-        parts.append(
-            '<p class="empty-state">MISSING: no measured coverage is attached. A missing measurement is not zero coverage.</p>'
-        )
-    if coverage.get("unmeasuredFiles"):
-        parts.append(
-            "<details><summary>Production files without a line measurement</summary><pre>"
-            + safe_text("\n".join(coverage["unmeasuredFiles"]))
-            + "</pre></details>"
-        )
-    parts += [
-        '</section><section id="parity"><h2>Operator interface parity</h2><p>Reachability requires a supported CLI route or explicit supported equivalents. Every equivalent must have passing behavior evidence before its human adapter earns semantic credit. Schema coverage counts fully documented JSON shapes; prose and opaque payloads do not count. Neither metric proves behavior. Optional MCP is not measured as typed MCP coverage. Selected checks do not prove exhaustive outcome coverage.</p><p>'
-        + str(parity["total"])
-        + " operational capabilities; "
-        + str(parity["presentationOnly"])
-        + " explicitly identified presentation-only entries remain below and require their own behavior checks, but do not enter the operational denominator.</p>",
-        table(
-            [
-                "Capability / human route",
-                "Agent route",
-                "Risk / review",
-                "Contract status",
-                "Selected behavior evidence",
-            ],
-            [
-                [
-                    "<strong>"
-                    + link("../api/" + op["category"] + ".html#" + op["id"], op["id"])
-                    + "</strong><br>"
-                    + safe_text(op["human"]),
-                    safe_text(op["agent"]["status"])
-                    + "<br><code>"
-                    + safe_text(op["agent"]["syntax"])
-                    + "</code><p>"
-                    + safe_text(op["agent"].get("limitation", ""))
-                    + "</p>"
-                    + "".join(
-                        link("../api/" + categories[name] + ".html#" + name, name) + "<br>"
-                        for name in op["agent"].get("equivalents", [])
-                    ),
-                    safe_text(op["effects"]) + "<p>" + safe_text(op["review"]) + "</p>",
-                    (
-                        "Presentation only: " + safe_text(op["presentationOnly"])
-                        if op.get("presentationOnly")
-                        else "Documented shape"
-                        if op["schemaDocumented"]
-                        else "Partial / no structured shape"
-                    )
-                    + "<br>Semantics: "
-                    + safe_text(op["semanticStatus"]),
-                    "".join(
-                        "<p>"
-                        + (
-                            link("#target-" + digest(item["target"].encode())[:16], item["target"])
-                            if item["status"] != "MISSING"
-                            else safe_text(item["target"])
-                        )
-                        + "<br>"
-                        + safe_text(item["source"])
-                        + "<br>"
-                        + safe_text(item["scope"])
-                        + "<br>"
-                        + safe_text(item["status"])
-                        + "</p>"
-                        for item in op["checks"]
-                    ),
-                ]
-                for op in parity["capabilities"]
-            ],
-        ),
-        '</section><section id="suites"><h2>Required suites</h2><p>Every suite is required, including SSH follow and the three Hovel compatibility checks restored with the v0.4.4 runtime. Failed or missing evidence blocks publication and earns no passing behavior credit.</p>',
-        table(
-            ["Suite", "Requirement", "Status", "Targets / metadata"],
-            [
-                [
-                    safe_text(name),
-                    "Required",
-                    safe_text(suite["status"]),
-                    str(len(suite["targets"]))
-                    + (" · " + link(suite["evidence"], "Evidence") if "evidence" in suite else ""),
-                ]
-                for name, suite in report["suites"].items()
-            ],
-        ),
-        '</section><section id="targets"><h2>Individual test evidence</h2><p>Every repetition is retained. Failed, missing and skipped results do not count as passed. Log previews escape HTML and control characters; downloads retain the original bytes. Long previews are limited to 16,000 characters.</p>',
-    ]
-    seen = set()
-    for suite_name, suite in report["suites"].items():
-        for target in suite["targets"]:
-            key = target["label"]
-            anchor = suite_name + ":" + key if key in seen else key
-            seen.add(key)
-            parts.append(
-                '<details id="target-'
-                + digest(anchor.encode())[:16]
-                + '"><summary>'
-                + safe_text(key + " (" + suite_name + ") — " + target["status"])
-                + "</summary>"
-            )
-            for attempt in target["attempts"]:
-                parts.append("<p>" + safe_text(attempt["identity"]) + ": " + safe_text(attempt["status"]) + "</p>")
-                for item in attempt["files"]:
-                    parts.append(
-                        "<p>"
-                        + link(item["path"], item["kind"] + " (original)")
-                        + " · SHA256 <code>"
-                        + safe_text(item["sha256"])
-                        + "</code></p>"
-                    )
-                    if item["kind"] == "test.log":
-                        parts.append(
-                            '<pre tabindex="0">'
-                            + safe_text(evidence[item["path"]].decode(errors="replace")[:16000])
-                            + "</pre>"
-                        )
-            parts.append("</details>")
-    parts += [
-        '</section><section id="provenance"><h2>Source and tool provenance</h2><p>Source digests bind every tracked and nonignored input, including dependency locks, Aspect workflows, Go toolchain pins and the SSH lab image. Each suite JSON also records its collection time, OS, Python toolchain and CI run identity.</p>',
-        "<pre>"
-        + safe_text(
-            json.dumps(
-                {
-                    "source": {key: value for key, value in (source or {}).items() if key != "files"},
-                    "runtime": report["provenance"],
-                },
-                indent=2,
+        metrics.append(
+            upstream.CoverageMetric(
+                name="Production Go",
+                scope="Six declared production targets; excludes SSH acceptance and prototypes",
+                metric_type="line",
+                language="Go",
+                platforms=["Linux amd64"],
+                covered=coverage["covered"],
+                total=coverage["total"],
+                percentage=100 * coverage["covered"] / coverage["total"],
+                minimum=0,
+                status="MEASURED",
+                source_path=coverage["evidence"],
             )
         )
-        + "</pre>",
-        "<p>Report layout and evidence approach adapted from Hovel <code>a4cbfdf7769a9551695088c11061e3cabc368e07</code>, Copyright 2026 William Born, Apache-2.0. "
-        + link("../LICENSE-HOVEL", "License")
-        + " · "
-        + link("https://github.com/Bochner/burrow/blob/main/docs/site/UPSTREAM.md", "Adaptation notes")
-        + ". All measurements are Burrow data.</p></section></div></div></article>",
-        END,
+    parity = model["parity"]
+    total = parity["total"]
+    operator = {
+        "schemaVersion": "burrow.operator-parity/v1",
+        "totals": {
+            "capabilities": total,
+            "reachabilityPercentage": 100 * parity["reachable"] / total if total else 0,
+            "schemaPercentage": 100 * parity["schemas"] / total if total else 0,
+            "contractPercentage": 100 * parity["demonstrated"] / total if total else 0,
+        },
+        "capabilities": [
+            {
+                "id": op["id"],
+                "humanRoutes": [op["human"]],
+                "agentRoutes": [{"tool": op["agent"].get("syntax", "")}],
+                "risk": op["effects"],
+                "status": op["semanticStatus"],
+            }
+            for op in parity["capabilities"]
+        ],
+    }
+    jobs = [
+        upstream.TestJob(
+            name=name,
+            category="verification",
+            status=data["status"],
+            duration=sum(attempt.get("duration", 0) for target in data["targets"] for attempt in target["attempts"]),
+            description="Evidence collected at "
+            + data.get("source", {}).get("commit", "unknown revision")
+            + "; collecting GitHub run "
+            + (data.get("environment", {}).get("runID") or "local")
+            + ". Cached attempts: "
+            + str(sum(attempt.get("cached", False) for target in data["targets"] for attempt in target["attempts"])),
+        )
+        for name, data in model["suites"].items()
     ]
-    return "".join(parts)
+    linters = []
+    for label, name, scope in (
+        ("//:python_lint_test", "Ruff", "Selected correctness rules on declared Python sources"),
+        ("//:python_format_test", "Python formatting", "Declared Python sources"),
+        ("//:go_format_test", "Go formatting", "Six production Go packages"),
+        ("//:workflow_test", "actionlint", "GitHub Actions workflows"),
+    ):
+        target = next((target for target in targets if target.label == label), None)
+        if target:
+            linters.append(
+                upstream.LintTool(
+                    id=label,
+                    name=name,
+                    kind="static check",
+                    scope=scope,
+                    status=target.status,
+                    duration=target.duration,
+                    commands=["aspect test " + label],
+                    ignore_statements=[],
+                    log_path=target.log_path,
+                )
+            )
+    result = upstream.TestReport(
+        title="Burrow Test Report",
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        workflow=os.environ.get("GITHUB_WORKFLOW", "local"),
+        job=os.environ.get("GITHUB_JOB", "local"),
+        commit=(model["source"] or {}).get("commit", ""),
+        ref=os.environ.get("GITHUB_REF_NAME", ""),
+        totals=upstream.summarize(targets),
+        linters=linters,
+        coverage=metrics,
+        operator_parity=operator,
+        jobs=jobs,
+        targets=targets,
+    )
+    rendered = asdict(result)
+    for linter in rendered["linters"]:
+        # Burrow collects actual tool results, not an ignore-directive inventory.
+        linter["ignores_measured"] = False
+    return rendered
 
 
 def render(root, site, parity, require_publishable=False, require_parity=False):
-    site_hashes(site)  # Refuse preexisting symlinks before writing attached artifacts.
+    # Preserve safe output paths independently of the removed hash manifest.
+    if site.is_symlink() or any(path.is_symlink() for path in site.rglob("*")):
+        raise ValueError("refusing symlink in report output")
     inventory = json.loads((site / "api/inventory.json").read_text())
     model, evidence = report_model(inventory, parity, root)
-    stamp = site / ".source.json"
-    if stamp.exists() and json.loads(stamp.read_text()) != model["source"]:
-        raise ValueError("stale site source; restage before attaching evidence")
-    if require_publishable and (not model["publishable"] or not stamp.exists()):
-        raise ValueError(
-            "publication requires clean matching site, every required suite and measured production coverage"
-        )
+    if require_publishable and not model["publishable"]:
+        raise ValueError("publication requires every required suite and measured production coverage")
     if require_parity and not model["releaseReady"]:
         raise ValueError(
             "final release requires usable agent routes and passing required behavior evidence for every capability"
         )
-    page = site / "reports/index.html"
-    body = page.read_text()
-    if body.count(START) != 1 or body.count(END) != 1:
-        raise ValueError("site is missing its report insertion boundary")
-    content = render_html(model, evidence)
-    before, rest = body.split(START)
-    _, after = rest.split(END)
+    # Hovel-style enforcement: structured evidence, complete referenced files,
+    # parity and the successful workflow gate. No same-source/run/site hash gate.
     for name, data in evidence.items():
         path = site / "reports" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-    write_json(site / "reports/report.json", model)
-    page.write_text(before + content + after)
-    index_path = site / "search-index.json"
-    index = json.loads(index_path.read_text())
-    for entry in index:
-        if entry["href"] == "reports/":
-            entry["text"] = html.unescape(re.sub(r"<[^>]*>", " ", content))
-    write_json(index_path, index)
-    publication = site / ".publication.json"
-    if publication.exists():
-        publication.unlink()
-    if model["publishable"]:
-        write_json(publication, {"commit": model["source"]["commit"], "files": site_hashes(site)})
-
-
-def site_hashes(site):
-    files = {}
-    for path in sorted(site.rglob("*")):
-        if path.is_symlink():
-            raise ValueError("published site contains a symlink")
-        if path.is_file() and path != site / ".publication.json":
-            files[str(path.relative_to(site))] = digest(path.read_bytes())
-    return files
-
-
-def verify_publication(site, commit):
-    publication = json.loads((site / ".publication.json").read_text())
-    report = json.loads((site / "reports/report.json").read_text())
-    stamp = json.loads((site / ".source.json").read_text())
-    if (
-        not re.fullmatch(r"[a-f0-9]{40}", commit)
-        or publication["commit"] != commit
-        or report["source"]["commit"] != commit
-        or report["source"] != stamp
-        or stamp["dirty"]
-        or not report["publishable"]
-        or publication["files"] != site_hashes(site)
-    ):
-        raise ValueError("publication evidence does not match the eligible commit and site artifact")
+    write_json(site / "reports/report.json", hovel_report(model, root))
+    write_json(site / "reports/verification.json", model)
+    for target in json.loads((site / "reports/report.json").read_text())["targets"]:
+        for name in (target["log_path"], target["xml_path"], *target["outputs"]):
+            if name and not (site / "reports" / name).is_file():
+                raise ValueError("missing report evidence: " + name)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("begin", "collect", "default", "render", "verify"))
+    parser.add_argument("mode", choices=("begin", "collect", "default", "render"))
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")))
-    parser.add_argument("--suite", choices=(*SUITES, "all", "coverage"))
+    parser.add_argument("--suite", choices=(*SUITES, "all", "coverage", "documentation"))
     parser.add_argument("--exit-code", type=int, default=0)
     parser.add_argument("--inventory", type=Path)
     parser.add_argument("--parity", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--site", type=Path)
-    parser.add_argument("--commit")
     parser.add_argument("--require-publishable", action="store_true")
     parser.add_argument("--require-parity", action="store_true")
     args = parser.parse_args()
@@ -817,11 +685,9 @@ def main():
         collect(args.root, args.suite, args.exit_code)
     elif args.mode == "default":
         model, evidence = report_model(json.loads(args.inventory.read_text()), json.loads(args.parity.read_text()))
-        write_json(args.output, {"report": model, "html": render_html(model, evidence)})
+        write_json(args.output, {"report": hovel_report(model), "verification": model, "html": report_html()})
     elif args.mode == "render":
         render(args.root, args.site, json.loads(args.parity.read_text()), args.require_publishable, args.require_parity)
-    else:
-        verify_publication(args.site, args.commit)
 
 
 if __name__ == "__main__":

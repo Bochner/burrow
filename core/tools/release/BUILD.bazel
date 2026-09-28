@@ -18,7 +18,7 @@ py_test(
     args = _ARGS + ["$(location @pipx//file)", "$(location @hovel_linux_wheel//file)"],
     data = _INPUTS + ["@pipx//file", "@hovel_linux_wheel//file"],
     size = "medium",
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
     legacy_create_init = 0,
 )
 
@@ -26,6 +26,7 @@ py_binary(
     name = "release",
     srcs = ["release.py"],
     data = ["//:VERSION"],
+    deps = ["//:ci_lib"],
     legacy_create_init = 0,
 )
 
@@ -38,6 +39,18 @@ filegroup(
 py_test(
     name = "release_test",
     srcs = ["release_test.py", "release.py"],
+    deps = ["//:ci_lib"],
+    imports = ["."],
     size = "small",
+    legacy_create_init = 0,
+)
+
+# Run against the exact staged distribution, not a newly built substitute.
+py_binary(
+    name = "bundle_smoke",
+    srcs = ["wheel_test.py", "build_wheel.py"],
+    main = "wheel_test.py",
+    args = _ARGS + ["$(location @pipx//file)", "$(location @hovel_linux_wheel//file)"],
+    data = _INPUTS + ["@pipx//file", "@hovel_linux_wheel//file"],
     legacy_create_init = 0,
 )

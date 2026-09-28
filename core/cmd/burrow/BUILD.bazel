@@ -24,7 +24,7 @@ py_test(
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :screen_check)"],
     data = [":burrow", "@hovel_linux_wheel//file", ":screen_check"],
     size = "medium",
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
     legacy_create_init = 0,
 )
 
@@ -35,7 +35,7 @@ py_test(
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)"],
     data = [":burrow", "@hovel_linux_wheel//file"],
     size = "medium",
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
     legacy_create_init = 0,
 )
 
@@ -55,7 +55,7 @@ py_test(
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :legacy_module)", "$(location //core/connection:hovel-module.yaml)"],
     data = [":burrow", "@hovel_linux_wheel//file", ":legacy_module", "//core/connection:hovel-module.yaml"],
     size = "medium",
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
     legacy_create_init = 0,
 )
 
@@ -73,7 +73,7 @@ py_test(
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)"],
     data = [":burrow", "@hovel_linux_wheel//file"],
     size = "medium",
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
     legacy_create_init = 0,
 )
 
@@ -84,7 +84,7 @@ py_test(
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :package)", "$(location :screen_check)"],
     data = [":burrow", ":package", ":screen_check", "@hovel_linux_wheel//file"],
     size = "medium",
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
     legacy_create_init = 0,
 )
 
@@ -103,7 +103,7 @@ py_test(
     main = "connection_lab.py",
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location //core/connection:lab-image.txt)", "$(location :screen_check)", "$(location :legacy_module)", "$(location @shell_lab_vim//file)", "$(location //core/connection:survey_ubuntu.sh)", "$(location @chain_lab_dropbear//file)", "$(location @chain_lab_utmps//file)", "$(location @chain_lab_skalibs//file)"] + (["--" + suite + "-check"] if suite else []),
     data = [":burrow", "@hovel_linux_wheel//file", "//core/connection:lab-image.txt", ":screen_check", ":legacy_module", "@shell_lab_vim//file", "//core/connection:survey_ubuntu.sh", "@chain_lab_dropbear//file", "@chain_lab_utmps//file", "@chain_lab_skalibs//file"],
-    tags = ["local", "external"] + (["acceptance", "acceptance-" + suite] if suite else ["manual"]),
+    tags = ["local", "external", "requires-docker"] + (["acceptance", "acceptance-" + suite] if suite else ["manual"]),
     size = "large",
     timeout = "long" if suite else "eternal",
     legacy_create_init = 0,
@@ -179,7 +179,7 @@ py_test(
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)", "$(location :package)", "$(location :screen_check)"],
     data = [":burrow", ":package", ":screen_check", "@hovel_linux_wheel//file"],
     size = "medium",
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
     legacy_create_init = 0,
 )
 
@@ -205,7 +205,7 @@ py_test(
     args = ["$(location :burrow)", "$(location @hovel_linux_wheel//file)"],
     data = [":burrow", "@hovel_linux_wheel//file"],
     size = "medium",
-    tags = ["no-sandbox"],
+    tags = ["external", "no-sandbox"],
     legacy_create_init = 0,
 )
 

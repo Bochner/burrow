@@ -4,7 +4,7 @@
 <p>Burrow supports Linux amd64. It installs a verified Hovel runtime on first workspace launch and manages that local daemon. You do not need to install Hovel separately or run it on the SSH target.</p>
 <nav aria-label="On this page"><p><strong>On this page:</strong> <a href="#distribution">Available distribution</a> · <a href="#requirements">Requirements</a> · <a href="#build">Build and install</a> · <a href="#first-launch">Open your first workspace</a> · <a href="#offline">Offline and managed Hovel setup</a> · <a href="#upgrade">Upgrade deliberately</a></p></nav>
 <h2 id="distribution">Available distribution</h2>
-<p>The <a href="https://github.com/Bochner/burrow/releases/tag/v0.2.1">v0.2.1 release</a> provides <a href="https://github.com/Bochner/burrow/releases/download/v0.2.1/burrow-v0.2.1-linux-amd64.tar.gz">burrow-v0.2.1-linux-amd64.tar.gz</a>, a <a href="https://github.com/Bochner/burrow/releases/download/v0.2.1/burrow_ssh-0.2.1-py3-none-manylinux_2_28_x86_64.whl">pipx wheel</a> and <a href="https://github.com/Bochner/burrow/releases/download/v0.2.1/SHA256SUMS">SHA256SUMS</a>. Download the archive and checksums using an account with repository access, then verify before extracting:</p>
+<p>The <a href="https://github.com/Bochner/burrow/releases/tag/v0.2.1">v0.2.1 release</a> provides <a href="https://github.com/Bochner/burrow/releases/download/v0.2.1/burrow-v0.2.1-linux-amd64.tar.gz">burrow-v0.2.1-linux-amd64.tar.gz</a>, a <a href="https://github.com/Bochner/burrow/releases/download/v0.2.1/burrow_ssh-0.2.1-py3-none-manylinux_2_28_x86_64.whl">pipx wheel</a> and <a href="https://github.com/Bochner/burrow/releases/download/v0.2.1/SHA256SUMS">SHA256SUMS</a>. Download the public archive and checksums, then verify before extracting:</p>
 <pre data-lang="Local shell"><code>sha256sum --check --ignore-missing SHA256SUMS
 mkdir -m 700 "$HOME/burrow-v0.2.1"
 tar -xzf burrow-v0.2.1-linux-amd64.tar.gz -C "$HOME/burrow-v0.2.1"
@@ -14,7 +14,7 @@ export PATH="$HOME/burrow-v0.2.1:$PATH"</code></pre>
 <p>The older v0.1.0 release has source only and lacks <code>capabilities</code>, <code>workspace</code> subcommands, <code>follow</code> and <code>agent install</code>. The public module identity <code>burrow@0.1.0</code> is not a feature-version check. See <a href="user-guide.html#versions">release scope and acceptance status</a>.</p>
 <h2 id="requirements">Requirements</h2>
 <table><thead><tr><th>Use</th><th>Required</th></tr></thead><tbody>
-<tr><td>Build</td><td>Linux amd64, Git and the <a href="https://github.com/aspect-build/aspect-cli#installation">Aspect CLI launcher</a>. Repository access and network access for uncached pinned dependencies.</td></tr>
+<tr><td>Build</td><td>Linux amd64, Git and the <a href="https://github.com/aspect-build/aspect-cli#installation">Aspect CLI launcher</a>. Network access for the public repository and uncached pinned dependencies.</td></tr>
 <tr><td>Run</td><td>Linux amd64 with OpenSSH client tools (<code>ssh</code> and <code>ssh-keygen</code>), an account-owned private workspace and a terminal for the TUI. The pinned Hovel wheel targets manylinux 2.28 x86_64; other operator platforms are unsupported.</td></tr>
 <tr><td>View</td><td>Optional: Vim with syntax and JSON runtime files for profile editing and the Ctrl+N/Ctrl+L viewers. SSH shell history and the native Markdown report browser do not require Vim.</td></tr>
 <tr><td>SSH target</td><td>An already running SSH server and an authorized account. File workflows need SFTP. Reverse-listener verification and process-group cancellation need the Linux facilities documented in their chapters.</td></tr>
@@ -22,7 +22,7 @@ export PATH="$HOME/burrow-v0.2.1:$PATH"</code></pre>
 </tbody></table>
 <p>The checkout pins Aspect <code>2026.33.3</code> in <code>.aspect/version.axl</code> and Bazel <code>9.1.1</code> in <code>.bazelversion</code>. Run all build and check commands through Aspect; Go, Python, Node and site dependencies come from the declared toolchains.</p>
 <h2 id="build">Build and install</h2>
-<p>For the released baseline, clone the tag using an account with repository access:</p>
+<p>For the released baseline, clone the public release tag:</p>
 <pre data-lang="Local shell"><code>git clone --branch v0.2.1 https://github.com/Bochner/burrow.git
 cd burrow
 aspect burrow package</code></pre>

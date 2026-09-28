@@ -4,21 +4,14 @@
 
 Burrow is a Go SSH manager for homelab operations, authorized red-team
 emulation, controlled lab exercises, defensive validation, and operator workflow
-automation. Burrow transparently manages a pinned Hovel dependency, initially
-supporting only Hovel instances it starts. Normal quit reviews live connections
-and can keep them running in the retained daemon or close them explicitly.
-General existing-daemon attachment is deferred.
+automation. It brings saved connections, retained shells, forwarding, file
+transfers, commands and scripts, live output, local automation, Markdown reports,
+and SSH chains into one terminal interface.
 
-The project is implementing useful LazySSH SSH parity in five approved
-milestones. Linux amd64 is the initial operator platform. **MVP 1–4 are
-implemented: verified workspace setup, saved connections, retained SSH,
-independent shells, forwarding, file transfers, commands and scripts, live
-output, local automation, Ubuntu Markdown reports, and Hovel chains. MVP 5 adds
-shared shell control, independent observation, six agent workflows and interface
-reports. The owner accepted MVP 1–5 and waived the manual walkthrough in
-[#65](https://github.com/Bochner/burrow/issues/65).** See the
-[candidate verification record](docs/site/MVP-ACCEPTANCE.md). The owner deferred
-the shared-workspace walkthrough; no manual walkthrough result is claimed.
+Burrow manages a pinned [Hovel](https://github.com/vibepwners/hovel) runtime for
+workspace state and retained sessions. Operators and agents use the same
+capabilities through the terminal interface and CLI. Quitting the frontend lets
+you keep live connections running or close them explicitly.
 
 > **Authorized red-team emulation only.** Use Burrow only in environments you own
 > or are explicitly authorized to assess, with written scope and approvals. See
@@ -26,190 +19,90 @@ the shared-workspace walkthrough; no manual walkthrough result is claimed.
 
 ## Documentation
 
-The documentation uses the same Astro GitHub Pages book format as Hovel.
-
-`burrow capabilities` prints the current machine-readable operation contract
-without opening a workspace or TUI. Use `burrow capabilities run.output` to
-inspect one route. The generated [API reference](https://bochner.github.io/burrow/api/)
-publishes the same inventory, including human-only routes and current gaps.
+The canonical documentation is the GitHub Pages book:
 
 ## [bochner.github.io/burrow](https://bochner.github.io/burrow/index.html)
 
-GitHub Pages publishes the documentation after successful checks on main.
-Start with the [User Guide](docs/site/src/content/spec/user-guide.html) for current
-scope and status, then [Hovel Integration](docs/site/src/content/spec/hovel-integration.html).
-Contributors should read the [Development Guide](docs/site/src/content/spec/development-guide.html).
+Start with the [User Guide](docs/site/src/content/spec/user-guide.html) and
+[Install and launch](docs/site/src/content/spec/launch.html), then continue with
+[Connections](docs/site/src/content/spec/connections.html),
+[Files](docs/site/src/content/spec/files.html), and
+[Commands and scripts](docs/site/src/content/spec/runs.html).
+The generated [API reference](https://bochner.github.io/burrow/api/) documents
+the CLI operation contract; `burrow capabilities` prints the same inventory.
+Contributors should read the
+[Development Guide](docs/site/src/content/spec/development-guide.html).
 The source for the book lives under [`docs/site/src/content/`](docs/site/src/content/).
 
-The [Wayfinder map](https://github.com/Bochner/burrow/issues/1) is the canonical
-index of implementation decisions. Existing [research](docs/research/) provides
-evidence, not an approved architecture.
-Use the [Burrow project](https://github.com/users/Bochner/projects/9) to scan
-open and completed issues in the same views as Tirnaill.
+The [agent workflows](docs/site/src/content/spec/agent-skills.html) include
+Burrow skills for Claude Code, Codex, and OpenCode:
+
+```sh
+burrow agent install claude --scope user
+burrow agent install codex --scope project
+burrow agent install opencode --scope user
+```
 
 ## Install
 
-Build the production Linux amd64 package and run it against a private
-workspace. First launch downloads the pinned Hovel wheel into the user cache;
-`--offline` reuses a verified cached executable.
+The public [GitHub releases](https://github.com/Bochner/burrow/releases/latest)
+provide a Linux amd64 archive, a pipx wheel, and SHA256 checksums. The wheel
+contains the Go executable; Python 3.10+, pipx, and OpenSSH client tools are
+required. Install the current release with:
 
 ```sh
-aspect burrow package
-aspect burrow run -- --workspace /absolute/private/workspace
+pipx install https://github.com/Bochner/burrow/releases/download/v0.2.1/burrow_ssh-0.2.1-py3-none-manylinux_2_28_x86_64.whl
+burrow --workspace "$HOME/burrow-lab"
 ```
 
-The declared `//core/cmd/burrow:package` target produces an archive containing
-the `burrow` executable and the public-SDK module manifest. Follow the
-[launch guide](docs/site/src/content/spec/launch.html), then the
-[named connection](docs/site/src/content/spec/connections.html) and
-[saved collection](docs/site/src/content/spec/profiles.html) guides. The
-[v0.2.1 release](https://github.com/Bochner/burrow/releases/tag/v0.2.1)
-includes a Linux amd64 archive, pipx wheel and SHA256 checksums. It adds the
-general-use audit improvements, Hovel v0.4.4 upstream fixes and terminal output
-drain fixes to v0.2.0. Repository access is required
-to download the release. See the book’s
-[version table](docs/site/src/content/spec/user-guide.html#versions). See the
-[proposed Hovel compatibility convention](docs/research/hovel-daemon-compatibility-handoff.md)
-for the deferred upstream handoff and current development boundary.
-
-Continue with [commands and scripts](docs/site/src/content/spec/runs.html),
-[local automation](docs/site/src/content/spec/automation.html),
-[Ubuntu reports](docs/site/src/content/spec/reports.html), and
-[SSH and tunnel chains](docs/site/src/content/spec/chains.html). Chains can
-connect to an already-running SSH server or consume a selected live tunnel;
-server deployment and generic routing remain outside this implementation.
-
-The [prototype evidence guide](docs/research/prototype-evidence.md) indexes the
-preserved proofs, pins, results and commands that preceded the production code.
+First launch downloads and verifies the pinned Hovel runtime. No separate Go or
+Hovel installation is needed. For archive installation, checksum verification,
+offline use, and upgrades, see the
+[launch guide](docs/site/src/content/spec/launch.html).
+PyPI publication is pending; use the GitHub release assets.
 
 ## Develop
 
-Current source can also build a pipx-installable wheel with
-`aspect burrow-release build`; validate it with `aspect burrow-release check`.
-Install the resulting `dist/burrow_ssh-*.whl` with pipx. The proposed public
-distribution is `burrow-ssh`, while the command remains `burrow`; PyPI
-publication is pending. See [release preparation](docs/site/src/content/spec/releasing.html)
-for the one-time Trusted Publisher setup and build-only rehearsal.
-
-For human use, the Makefile offers shortcuts (GNU Make must be installed):
-
-```sh
-make run                         # defaults to ~/burrow-test
-make run WORKSPACE=/absolute/path # choose another workspace
-make restart                     # close connections and shells, then reopen without prompting
-make clean                       # build outputs only; not runtime cleanup
-make check                       # portable checks; no Docker required
-```
-
-Quit existing Burrow frontends before `make restart`. The shortcut passes
-`--yes`, ending the selected workspace's retained Burrow manager and all its
-connections/shells without another prompt. For a confirmation review, use
-`aspect burrow run -- --workspace /absolute/path restart` instead.
-Saved settings, evidence and the Hovel daemon remain;
-reconnect explicitly afterward to create an owner from the current build.
-Restart refuses ambiguous owners and unknown stale reservations rather than
-deleting them. `make clean` clears this checkout's Bazel build outputs, which
-are regenerated on the next build; it neither fixes stale running owners nor
-removes module caches, saved workspaces or source files.
-
-These are human-only conveniences: **agents use Aspect directly**. The Makefile
-delegates every workflow to Aspect rather than defining a second build system.
-
 Aspect CLI is the single entry point for building, testing, linting, formatting,
-packaging, and local runs. Tool versions are pinned in `.aspect/version.axl`,
-`.bazelversion`, `MODULE.bazel`, and the documentation dependency lockfile.
+release artifacts, and local runs.
 
 ```sh
 aspect help
-aspect burrow-check
-aspect burrow-site stage
+aspect burrow run -- --workspace "$HOME/burrow-dev"
+aspect burrow-check ci
 ```
 
 Useful commands:
 
 | Command | Description |
 | --- | --- |
-| `aspect burrow-check` | Run metadata, documentation, SDK, daemon reuse and production SSH checks; requires Docker and OpenSSH client tools. |
-| `aspect burrow-check preflight` | Rehearse release checks locally, repeating only setup and terminal checks three times; no cached test results or failed-test retries. Includes the required Hovel compatibility checks. |
-| `aspect burrow-check preflight SUITE` | Run one GitHub partition: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow, runs or hovel. |
-| `aspect burrow-check preflight hovel` | Run the required WAL-lock regression and two Docker-backed manager proofs tracked in #86. |
-| `aspect burrow-check ci` | Build production packages and proofs and run portable checks without Docker. |
-| `aspect burrow package` | Build the production Linux amd64 package. |
-| `aspect burrow check` | Run the production frontend, launch, terminal and profile checks. |
-| `aspect burrow ssh-check` | Run all nine production SSH acceptance partitions against digest-pinned disposable OpenSSH Docker servers. |
-| `aspect build //:research` | Check the research metadata build graph; not SSH behavior or prose. |
-| `aspect burrow-site build` | Build the hermetic Astro documentation book. |
-| `aspect burrow-site check` | Validate generated pages, internal links, assets, and search. |
-| `aspect burrow-site stage` | Materialize the documentation site under `_site/`. |
+| `aspect burrow-check ci` | Build packages and run portable checks without Docker. |
+| `aspect burrow-check preflight` | Run the complete uncached gate, including SSH and Hovel compatibility checks. Requires Docker and OpenSSH tools. |
+| `aspect burrow package` | Build the Linux amd64 application archive. |
+| `aspect burrow-release bundle` | Build and smoke-test the archive and wheel in `dist/`. |
+| `aspect burrow-site check` | Validate the documentation, links, search, and report UI structure. |
+| `aspect burrow-site stage` | Materialize the documentation under `_site/`. |
 
-PR and main CI run eleven independent `aspect burrow-check preflight SUITE`
-jobs, each capped at 15 minutes. The required `repository` check runs even
-after failure and requires every partition, coverage and report assembly.
-Full and preflight gates allow at most two local test processes; preflight
-repeats setup and terminal checks three times without failed-test retries.
-Each SSH partition runs once. The `hovel` partition requires the WAL-lock
-regression and both retained-manager proofs; Hovel v0.4.4 retires the temporary
-[#86](https://github.com/Bochner/burrow/issues/86) exception.
-The portable job stages `docs-base`; the report job combines matching test and
-coverage evidence, enforces operational agent parity through `burrow-report release`,
-and publishes the verified `docs-site` artifact. Every job retains logs, XML,
-terminal captures and available phase/daemon logs as `test-results-SUITE` for
-14 days, including after failure. Pages promotes that exact site after
-successful main CI and checks that its commit is still current. Manual Pages
-dispatch also requires a successful Repository run for that exact main commit;
-it downloads the existing artifact without rebuilding or rerunning tests.
-Main requires an up-to-date PR and the passing `repository` check, including for
-admins; the owner separately authorizes merging. See the
-[development guide](docs/site/src/content/spec/development-guide.html) and
-[CI audit evidence](docs/research/mvp4-ci-preflight.md).
-The historical transport proof keeps its own
-host-binary prerequisites documented in
-[its README](core/prototype_transport/README.md).
-
-## Hovel runtime
-
-Burrow pins the official Hovel v0.4.4 runtime and matching public SDK source.
-This release includes the SQLite WAL-lock, retained-session log, shell catalog
-refresh and terminal restoration fixes contributed upstream. The installer
-verifies both the release wheel and extracted executable. See the
-[launch guide](docs/site/src/content/spec/launch.html#upgrade) before upgrading
-workspaces with a running older daemon.
+See the [Development Guide](docs/site/src/content/spec/development-guide.html)
+for CI, formatting, and local shortcuts, and
+[Release preparation](docs/site/src/content/spec/releasing.html) for publishing.
 
 ## Repository layout
 
-The repository follows Hovel's separation of application, documentation, tooling,
-and agent instructions. Only areas with actual content are created.
-
 | Path | Purpose |
 | --- | --- |
+| `core/` | Go application, Hovel integration, behavior checks, and release tooling. |
+| `docs/` | Pages book, report tooling, research, and development conventions. |
+| `agent/` | Canonical Burrow agent skills and packaging tools. |
 | `.aspect/` | Repository workflows backed by declared Bazel targets. |
-| `core/cmd/burrow/` | Production Linux frontend: CLI, Charm terminal interface and behavior checks. |
-| `core/launch/` | Verified pinned Hovel setup, workspace launch and daemon operations. |
-| `core/connection/` | The `burrow` Hovel module: connections, profiles, forwarding, files, retained runs and chains. |
-| `core/reports/` | Markdown report registration and verified reading through Hovel artifacts. |
-| `core/terminal/` | Embedded terminal host for the Hovel CLI tab. |
-| `core/prototype_*/` | Bounded historical proofs, preserved as evidence rather than production code. |
-| `docs/site/` | Astro Pages source, book content, shared components, and assets. |
-| `docs/tools/docs/` | Documentation validation and staging tools. |
-| `docs/research/` | Primary-source evidence and upstream provenance. |
-| `docs/agents/` | Tracker, domain, triage, and documentation conventions. |
-| `.agents/skills/` | Installed project agent skills. |
-| `AGENTS.md`, `CLAUDE.md` | Canonical agent instructions and a symlink to the same file. |
-
-The Go application lives under `core/` following Hovel's organization.
-`modules/` and `sdk/` are reserved for real module packages or a supported Burrow
-SDK if needed. All production capabilities belong to the single base `burrow`
-Hovel module. Local upstream checkouts live under ignored `.references/`.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Run `aspect burrow-check` before landing
-changes. Describe what was tested and distinguish documentation/build checks
-from runtime interoperability evidence.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Changes should pass the relevant Aspect
+checks; `aspect burrow-check preflight` runs the complete gate.
 
 ## License
 
-Burrow has no project-wide distribution license selected yet. The adapted Hovel
-README structure, warning, agent conventions, and documentation theme retain
-Hovel's [Apache-2.0 license](docs/site/public/LICENSE-HOVEL) and
+Burrow has no project-wide distribution license selected yet. Adapted Hovel
+material retains its [Apache-2.0 license](docs/site/public/LICENSE-HOVEL) and
 [provenance/attribution](docs/site/UPSTREAM.md).

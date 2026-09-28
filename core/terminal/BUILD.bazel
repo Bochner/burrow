@@ -17,6 +17,7 @@ go_test(
 # Separate from preflight's repeated setup/terminal Python scenarios.
 go_test(
     name = "host_race_test",
+    tags = ["external"],
     srcs = ["drain_test.go", "host_test.go"],
     embed = [":terminal"],
     race = "on",

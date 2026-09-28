@@ -2,8 +2,6 @@ def _impl(ctx: TaskContext) -> int:
     root = ctx.std.env.aspect_root_dir()
     mode = ctx.args.mode[0]
     runner = ["run", "//docs/tools/docs:report", "--"]
-    if mode == "verify" and len(ctx.args.mode) == 2:
-        return ctx.std.process.command("aspect").args(runner + ["verify", "--site", root + "/_site", "--commit", ctx.args.mode[1]]).current_dir(root).spawn().wait().code or 0
     if mode == "coverage":
         commands = [
             runner + ["begin", "--suite", "coverage"],
@@ -27,6 +25,6 @@ def _impl(ctx: TaskContext) -> int:
 
 burrow_report = task(
     args = {"mode": args.positional(default = ["render"], minimum = 0, maximum = 2)},
-    summary = "Collect production Go coverage or attach validated test/coverage/parity evidence to the staged site.",
+    summary = "Collect production Go coverage or render Hovel-style test, coverage and parity reports.",
     implementation = _impl,
 )

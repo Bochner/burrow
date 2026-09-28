@@ -6,7 +6,7 @@ import re
 import sys
 import subprocess
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urlsplit, parse_qs
 
 root = Path(sys.argv[1]).resolve()
 pages = sorted(root.rglob("*.html"))
@@ -36,6 +36,10 @@ for page in pages:
             target /= "index.html"
         assert target.is_file(), (page, raw)
         if url.fragment and target.suffix == ".html":
+            if target == root / "reports/index.html" and url.fragment.startswith("view="):
+                view = parse_qs(url.fragment)["view"][0]
+                assert f'viewTab("{view}"' in (root / "assets/report.js").read_text(), raw
+                continue
             assert f'id="{unquote(url.fragment)}"' in target.read_text(), (page, raw)
 index = json.loads((root / "search-index.json").read_text())
 assert len(index) == len(pages), "search must cover every page"
@@ -64,11 +68,11 @@ for page in pages:
 assert 'aria-current="page">API</a>' in (root / "api/index.html").read_text()
 report = json.loads((root / "reports/report.json").read_text())
 report_html = (root / "reports/index.html").read_text()
-assert {op["id"] for op in report["parity"]["capabilities"]} == {op["id"] for op in contract["operations"]}
-assert not report["publishable"] and report["coverage"]["status"] == "MISSING"
+assert {op["id"] for op in report["operator_parity"]["capabilities"]} == {op["id"] for op in contract["operations"]}
+assert report["targets"] == [] and report["coverage"] == []
 assert 'aria-current="page">Reports</a>' in report_html
-assert "Optional MCP is not measured as typed MCP coverage" in report_html
-assert 'aria-label="Report sections"' in report_html and 'tabindex="0"' in report_html
+assert 'id="report-app"' in report_html and "assets/report.js" in report_html
+assert "report-page" in report_html and "report-shell" in report_html
 for page in pages:
     assert re.search(r'href="[^"]*reports/"[^>]*>Reports</a>', page.read_text()), page
 print(f"Validated {len(pages)} pages, internal links/assets, and search entries")

@@ -1,0 +1,29 @@
+def _impl(ctx: TaskContext) -> int:
+    root = ctx.std.env.aspect_root_dir()
+    mode = ctx.args.mode[0]
+    if mode == "docs":
+        runner = ["run", "//docs/tools/docs:report", "--"]
+        commands = [
+            runner + ["begin", "--suite", "documentation"],
+            ["build", "//:research"],
+            ["test", "--bazel-flag=--build_event_json_file=" + root + "/.report-input/documentation/bep.json", "//docs/tools/docs:site_test", "//docs/tools/docs:stage_site_test"],
+        ]
+        for command in commands:
+            status = ctx.std.process.command("aspect").args(command).current_dir(root).spawn().wait().code or 0
+            if status:
+                break
+        collected = ctx.std.process.command("aspect").args(runner + ["collect", "--suite", "documentation", "--exit-code", str(status)]).current_dir(root).spawn().wait().code or 0
+        return status or collected
+    if mode not in ["plan", "stamp"]:
+        print("expected plan, stamp or docs")
+        return 2
+    return ctx.std.process.command("aspect").args(["run", "//:ci", "--", mode] + ctx.args.options).current_dir(root).spawn().wait().code or 0
+
+burrow_ci = task(
+    args = {
+        "mode": args.positional(minimum = 1, maximum = 1),
+        "options": args.trailing_var_args(description = "--force-full for plan."),
+    },
+    summary = "Select verified GitHub evidence, stamp the CI artifact, or check documentation-only changes.",
+    implementation = _impl,
+)

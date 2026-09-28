@@ -13,8 +13,8 @@ export function getStaticPaths() {
 const page = getPage(Astro.props.slug);
 ---
 
-{page.area === "reports" ? <PageShell area="reports" current="Reports" root="../" tag="// test report" title="Test Report - Burrow" stylesheets={["../assets/report.css"]}>
-  <main id="main-content" class="content"><Fragment set:html={page.body} /></main>
+{page.area === "reports" ? <PageShell area="reports" current="Reports" root="../" tag="// test report" title="Test Report - Burrow" stylesheets={["../assets/report.css"]} scripts={["../assets/report.js"]}>
+  <main id="main-content" class="content report-shell"><Fragment set:html={page.body} /></main>
 </PageShell> : <DocsLayout page={page}>
   <Fragment set:html={page.body} />
 </DocsLayout>}
