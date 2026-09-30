@@ -1,77 +1,90 @@
 <!-- burrow-doc: {"title":"Development guide","group":"Engineering","order":300} -->
-<article><h1>Development guide</h1>
-<p>Aspect CLI is the entry point for builds, tests, formatting, packaging, and documentation. Run <code>aspect help</code> to discover the checked-in AXL tasks.</p>
-<nav aria-label="On this page"><p><strong>On this page:</strong> <a href="#choose-a-check">Choose a check</a> · <a href="#public-module-boundary">Public module boundary</a> · <a href="#repository-layout">Repository layout</a> · <a href="#documentation-authoring">Documentation authoring</a> · <a href="#ci-and-pr-preparation">CI and PR preparation</a> · <a href="#hovel-follow-up-exception">Hovel compatibility checks</a> · <a href="#public-test-and-parity-reports">Public test and parity reports</a> · <a href="#publishing">Publishing</a> · <a href="#upstream-provenance">Upstream provenance</a></p></nav>
-<pre><code>aspect burrow-check preflight
-aspect burrow-site build
-aspect burrow-site check
-aspect burrow-site stage</code></pre>
+<article>
+<h1>Development guide</h1>
+<p>Aspect is the entry point for builds, tests, formatting, packaging and documentation. Start with <code>aspect help</code>.</p>
 <h2 id="choose-a-check">Choose a check</h2>
-<table><thead><tr><th>Command</th><th>What it proves</th></tr></thead><tbody>
-<tr><td><code>aspect burrow-check preflight</code></td><td>The required release gate: production package, portable checks, nine SSH partitions, measured coverage and documentation. Requires Docker and OpenSSH tools.</td></tr>
-<tr><td><code>aspect burrow-check verify [SUITE]</code></td><td>Routine CI checks with deterministic test caching; process/race/SSH checks stay fresh; each target executes once.</td></tr>
-<tr><td><code>aspect burrow-check ci</code></td><td>Production package and portable tests without Docker; not the complete release gate.</td></tr>
-<tr><td><code>aspect burrow ssh-check</code></td><td>All nine production SSH partitions against disposable digest-pinned servers.</td></tr>
-<tr><td><code>aspect burrow-check</code></td><td>The strict full gate, including the known upstream diagnostics.</td></tr>
-<tr><td><code>aspect burrow-site check</code> / <code>stage</code></td><td>Generated pages, links, assets and search; stage materializes <code>_site/</code>.</td></tr>
+<table><thead><tr><th>Command</th><th>Scope</th></tr></thead><tbody>
+<tr><td><code>aspect burrow-check ci</code></td><td>Production package and portable checks; no Docker.</td></tr>
+<tr><td><code>aspect burrow-check verify SUITE</code></td><td>One routine partition; deterministic tests cache, external/process/race/fuzz checks stay fresh.</td></tr>
+<tr><td><code>aspect burrow-check preflight</code></td><td>Uncached release rehearsal: portable, nine SSH suites, Hovel compatibility and measured coverage.</td></tr>
+<tr><td><code>aspect burrow ssh-check</code></td><td>Nine SSH partitions against digest-pinned disposable Docker servers.</td></tr>
+<tr><td><code>aspect burrow-site check</code></td><td>Built pages, internal links/assets, search and report UI checks.</td></tr>
+<tr><td><code>aspect burrow-site stage</code></td><td>Materialize the declared site under <code>_site/</code>.</td></tr>
 </tbody></table>
-<p>Tests are discovered under <code>//...</code>, except manual or suite-excluded targets. Full and preflight allow two local test processes, run uncached and never retry failed tests. Preflight runs setup and terminal tests once and includes measured coverage. The SIGTERM check performs 40 cycles internally; guided connection entry repeats three times in lifecycle acceptance.</p>
-<details><summary>Partitions, special prerequisites and proof boundaries</summary>
-<p>The SSH partitions are lifecycle, files, reverse, shell, chains, reports, automation, follow and runs. Shell includes local forwarding, the focused <code>aspect burrow shared-tui-check</code> TUI/headless takeover and retained-attachment check, and the focused <code>aspect burrow sessions-check</code> retained-shell lifecycle and shared CLI/control check; lifecycle includes SOCKS, manager/profile behavior, authentication, TUI and ownership. It also checks that download outcomes and evidence survive loss. The composed <code>//core/cmd/burrow:connection_lab</code> is a manual diagnostic, not an additional routine suite.</p>
-<p>Workflow syntax is checked by digest-pinned actionlint. Skill-installer recovery uses Linux ptrace. Native client discovery is opt-in through <code>aspect burrow agent-discovery</code>, requires Bubblewrap and reports absent clients. The opt-in <code>aspect burrow agent-exercise -- /absolute/new/evidence-directory</code> fixture publishes prompts for an external client and checks real operations; see <a href="agent-skills.html">agent workflows</a>. Historical prototypes retain their own prerequisites and never establish production parity.</p>
-</details>
-<details><summary>Local Makefile shortcuts for human use</summary>
-<pre><code>make run                         # defaults to ~/burrow-test
-make run WORKSPACE=/absolute/path
-make restart                     # closes retained connections and shells
-make clean                       # build outputs only
-make check                       # portable checks without Docker</code></pre>
-<p>The Makefile requires GNU Make and delegates to Aspect. Agents use Aspect directly. Quit existing Burrow frontends before <code>make restart</code>; it passes <code>--yes</code> and closes the selected workspace's retained manager, connections and shells without another prompt. For confirmation, use <code>aspect burrow run -- --workspace /absolute/path restart</code>. Saved settings, evidence and the Hovel daemon remain; reconnect explicitly to create an owner from the current build. Restart refuses ambiguous owners and unknown stale reservations.</p>
-<p><code>make clean</code> clears this checkout's Bazel build outputs. It does not fix stale running owners or remove module caches, saved workspaces or source files.</p>
-</details>
-<h2 id="public-module-boundary">Public module boundary</h2>
-<p>All production capabilities belong to the single base <code>burrow</code> Hovel module. A second public identity requires an explicit owner requirement in the originating issue explaining why the base module cannot satisfy it. Internal Go packages, retained sessions and subprocesses do not justify another public module. The canonical production manifest is <code>core/connection/hovel-module.yaml</code>, packaged with the frontend and embedded for registration. Review registration and SDK entry points against this rule. Historical <code>core/prototype_*</code> modules and the test-only legacy-identity fixture are bounded evidence, never additional production packages.</p>
-<p>The setup/profile checks cover the fresh catalog and shared SDK routing. The controlled SSH gate checks real base-module connections and profile writes, legacy-owner retention/collision refusal/explicit close, manual catalog transition and sibling/evidence preservation. PTY checks preserve Hovel’s review/confirmation flow with the consolidated module’s danger allowance.</p>
+<p>Full checks require Docker and OpenSSH client tools. Partitions are portable, lifecycle, files, reverse, shell, chains, reports, automation, follow, runs and hovel. Each target runs once; failed tests are not retried.</p>
 <h2 id="repository-layout">Repository layout</h2>
-<table><thead><tr><th>Path</th><th>Responsibility</th></tr></thead><tbody><tr><td><code>.aspect/</code></td><td>Repository workflows.</td></tr><tr><td><code>core/cmd/burrow/</code></td><td>Production Linux frontend: CLI, Charm terminal interface and behavior checks.</td></tr><tr><td><code>core/launch/</code></td><td>Verified pinned Hovel setup, workspace launch and daemon operations.</td></tr><tr><td><code>core/connection/</code></td><td>The base <code>burrow</code> Hovel module: connections, profiles, forwarding, file transfers, retained commands/scripts, surveys and selected-tunnel chains.</td></tr><tr><td><code>core/reports/</code></td><td>Markdown report producers and verified reading over Hovel artifact storage.</td></tr><tr><td><code>core/agent/</code></td><td>Offline standalone operator-skill validation, installation and update recovery.</td></tr><tr><td><code>agent/skills/</code></td><td>Canonical product skills and workflow references, following Hovel.</td></tr><tr><td><code>agent/tools/</code></td><td>Declared skill bundling and opt-in native discovery checks.</td></tr><tr><td><code>core/terminal/</code></td><td>Local terminal host for Hovel/editors and independent retained SSH shell attachments.</td></tr><tr><td><code>core/prototype_*/</code></td><td>Bounded historical proofs preserved as evidence.</td></tr><tr><td><code>docs/site/</code></td><td>Astro book, HTML content, components, and static assets.</td></tr><tr><td><code>docs/tools/docs/</code></td><td>Declared documentation tooling and checks.</td></tr><tr><td><code>docs/research/</code></td><td>Source-backed evidence, distinct from decisions.</td></tr><tr><td><code>docs/agents/</code></td><td>Tracker and authoring conventions.</td></tr></tbody></table>
-<p>The Go application lives under <code>core/</code> following Hovel's organization; <code>aspect burrow package</code> builds it and <code>aspect burrow check</code> runs its focused checks. Historical proofs remain under <code>core/prototype_*/</code>. Create <code>modules/</code> only for actual module packages and <code>sdk/</code> only if Burrow exposes its own supported SDK. Keep upstream checkouts under ignored <code>.references/</code>.</p>
-<p><code>aspect burrow format-check</code> checks all repository-owned Go sources and tests in the six production package areas above without changing files. Run <code>aspect burrow format</code> to apply the same pinned Go 1.26.5 formatting locally. Package globs include newly added Go files; dependencies, generated build outputs and historical prototype packages are excluded. The declared formatting test runs in the portable CI/preflight gate.</p>
-<p><code>aspect burrow go-analysis</code> builds the real production graph with rules_go 0.61.1’s pinned x/tools printf analyzer (v0.34.0). All six production Go packages and their tests are checked during builds; prototype and upstream diagnostics are excluded. There is no second Go module or module-based lint wrapper.</p>
-<p><code>aspect burrow race-check</code> runs the existing real-PTY host tests with Go’s race detector: concurrent output drain, input/resize, snapshots, scrollback and close/cancellation. It stays separate from the instrumented host check because race instrumentation serves a different purpose; it does not claim exhaustive owner/transfer race coverage.</p>
-<p><code>aspect burrow fuzz-check</code> runs an uncached, coverage-guided command parser/recall smoke check with the pinned Go 1.26.5 compiler: ten seconds, one worker, one-second failure minimization and a 30-second test deadline. Seeds cover quoting, escaping, empty arguments, Unicode, malformed input and shell metacharacters. The production parser is instrumented; arguments must survive recall unchanged, and unfinished quotes/escapes must fail without executable partial arguments. New lint, race and fuzz targets are automatically discovered by portable CI/preflight.</p>
-<p>Fuzz failures are retained under <code>bazel-testlogs/core/connection/command_fuzz_test/test.outputs/</code> (possibly in <code>outputs.zip</code>), also uploaded with existing CI test diagnostics. Copy a minimized <code>testdata/fuzz/FuzzCommandLine/HASH</code> into <code>core/connection/testdata/fuzz/FuzzCommandLine/</code> and run <code>aspect test //core/connection:command_fuzz_test --bazel-flag=--test_arg=-test.fuzz= --bazel-flag=--test_arg=-test.run=FuzzCommandLine/HASH</code> to replay it without fuzzing. Checked-in regressions are also replayed by each smoke run; keep the smallest useful failing input when fixing a discovered bug.</p>
-<h2 id="documentation-authoring">Documentation authoring</h2>
-<p><code>aspect burrow python-format-check</code> checks Python formatting without changing files; <code>aspect burrow python-format</code> writes the same declared sources. Ruff 0.16.3 is digest-pinned for Linux amd64, with Hovel's Python 3.12 syntax and 120-column convention. Scope includes Python files in <code>core/cmd/burrow/</code>, <code>docs/tools/docs/</code>, <code>agent/tools/</code>, <code>core/tools/release/</code>, <code>.aspect/</code> and <code>.github/</code>; package globs discover new files. Prototypes and dependencies are excluded. Portable CI and preflight discover the formatter and check/write behavior tests automatically. The same source inventory feeds <code>aspect burrow python-lint</code>: selected undefined-name, broken assertion/literal, discarded-expression and swallowed-failure checks. Lab assertions, fixture strings and shebangs remain intact; deliberate subprocess failures and return-code inspection do not require <code>check=True</code>.</p>
-<p>Edit literal HTML fragments in <code>docs/site/src/content/</code>. Each begins with a <code>burrow-doc</code> JSON metadata comment and contains exactly one <code>h1</code>. Metadata generates the contents, chapter numbers, sidebar, and search. Change shared chrome in components/layouts; keep generated <code>_site/</code> out of source control.</p>
+<table><thead><tr><th>Path</th><th>Responsibility</th></tr></thead><tbody>
+<tr><td><code>.aspect/</code></td><td>Workflows.</td></tr>
+<tr><td><code>core/cmd/burrow/</code></td><td>CLI, TUI and behavior checks.</td></tr>
+<tr><td><code>core/launch/</code></td><td>Pinned Hovel setup, verified workspace/daemon operations.</td></tr>
+<tr><td><code>core/connection/</code></td><td>Base module: connections, files, forwarding, runs and chains.</td></tr>
+<tr><td><code>core/terminal/</code></td><td>PTY host and shared-shell attachments.</td></tr>
+<tr><td><code>core/reports/</code>, <code>core/agent/</code></td><td>Operational reports and skill installation.</td></tr>
+<tr><td><code>agent/skills/</code>, <code>agent/tools/</code></td><td>Canonical product skills and declared bundle/discovery tools.</td></tr>
+<tr><td><code>core/tools/release/</code></td><td>Release packaging and promotion checks.</td></tr>
+<tr><td><code>core/prototype_*/</code></td><td>Historical bounded proofs; not production packages.</td></tr>
+<tr><td><code>docs/site/</code>, <code>docs/tools/docs/</code></td><td>Book source/assets and documentation tooling.</td></tr>
+<tr><td><code>docs/research/</code>, <code>docs/adr/</code>, <code>docs/agents/</code></td><td>Evidence, accepted decisions and authoring conventions.</td></tr>
+</tbody></table>
+<p>Keep application code under core, documentation under docs/site, tooling under docs/tools/docs and research under docs/research. Create modules/ or sdk/ only for actual supported packages. Upstream checkouts belong under ignored .references/.</p>
+<h2 id="public-module-boundary">Module boundary</h2>
+<p>All capabilities use the single base Burrow module. A second public identity requires an explicit owner requirement explaining why the base cannot satisfy it. Internal packages and retained subprocesses do not justify another identity.</p>
+<p>The canonical manifest is <code>core/connection/hovel-module.yaml</code>. Use the public Hovel SDK/protocol; module stdout is framed JSON-RPC and progress uses SDK logging. Preserve confirmation, audit and ownership contracts.</p>
+<h2>Format and analyze</h2>
+<pre data-lang="Local shell"><code>aspect burrow format-check
+aspect burrow python-format-check
+aspect burrow go-analysis
+aspect burrow python-lint
+aspect burrow race-check
+aspect burrow fuzz-check</code></pre>
+<p>Use <code>aspect burrow format</code> or <code>python-format</code> to repair formatting. Declared package globs include new production files; dependencies and historical prototypes are excluded.</p>
+<p>Fuzz failures retain minimized inputs under <code>bazel-testlogs/core/connection/command_fuzz_test/test.outputs/</code>. Check useful regressions into <code>core/connection/testdata/fuzz/FuzzCommandLine/</code>, then replay:</p>
+<pre data-lang="Local shell"><code>aspect test //core/connection:command_fuzz_test \
+  --bazel-flag=--test_arg=-test.fuzz= \
+  --bazel-flag=--test_arg=-test.run=FuzzCommandLine/HASH</code></pre>
+<h2 id="documentation-authoring">Write documentation</h2>
+<p>Edit HTML fragments under <code>docs/site/src/content/</code>. Each starts with metadata and contains one h1:</p>
+<pre data-lang="HTML fragment"><code>&lt;!-- burrow-doc: {"title":"Example","group":"Foundations","order":170} --&gt;
+&lt;article&gt;
+  &lt;h1&gt;Example&lt;/h1&gt;
+  &lt;p&gt;Explain the outcome, then show the command.&lt;/p&gt;
+&lt;/article&gt;</code></pre>
+<ul>
+<li>Lead with the task or outcome. Use short paragraphs, ordered workflows and comparison tables.</li>
+<li>Put runnable examples in pre/code blocks with a data-lang surface label.</li>
+<li>Use diagrams for ownership, traffic direction or lifecycles; provide accessible titles/descriptions and explanatory text.</li>
+<li>Keep one-time account setup, historical acceptance and detailed test narratives outside the operator book.</li>
+<li>API content comes from the production capability inventory; do not hand-maintain a second command catalog.</li>
+</ul>
+<pre data-lang="Local shell"><code>aspect burrow-site check
+aspect burrow-site stage
+# Optional rendered-page checks with an installed Chromium browser:
+BURROW_DOCS_BROWSER=/absolute/path/to/chromium aspect burrow-site browser</code></pre>
+<p>The browser check exercises desktop/mobile scroll, diagram rendering and overflow. It uses an explicit local browser prerequisite; it is not a hermetic production acceptance suite. Keep generated _site/ out of source control.</p>
+<h2 id="agent-checks">Agent validation</h2>
+<pre data-lang="Local shell"><code>aspect burrow agent-discovery
+aspect burrow agent-exercise -- /absolute/new/evidence-directory</code></pre>
+<p>Discovery uses disposable configurations and Bubblewrap without network/model requests; absent clients are UNVERIFIED. The exercise publishes prompts for an external client and checks real resource behavior. An evaluator reviews its transcript separately. Neither is a default client/model prerequisite.</p>
 <h2 id="ci-and-pr-preparation">CI and PR preparation</h2>
-<p>Application PRs run eleven independent <code>aspect burrow-check verify SUITE</code> jobs on Ubuntu 24.04, each capped at 15 minutes: portable, lifecycle, files, reverse, shell, chains, reports, automation, follow, runs and hovel. <code>verify</code> permits deterministic test caching; external/process, race and fuzz checks remain fresh. Every test runs once with no failed-test retries. The six production coverage targets run in the coverage job and their same results satisfy behavior/parity checks; portable excludes them. <code>preflight</code> is the fully uncached local rehearsal.</p>
-<p>The full local <code>preflight</code> includes coverage. For explicit troubleshooting repetitions, use <code>aspect test --bazel-flag=--runs_per_test=3 //core/cmd/burrow:setup_test //core/cmd/burrow:terminal_test</code>; routine verification does not repeat those suites. Historical proof binaries build when selected behavior checks depend on them, rather than as an extra blanket packaging pass.</p>
-<h3>Reuse successful evidence</h3>
-<p>Main reuses successful same-repository PR evidence only when the actual tested merge tree and parents match the main checkout. A previously successful run for the exact main commit can also supply evidence. Missing/expired artifacts, unavailable APIs, source mismatches, forced pushes, fork PRs and unsupported merge shapes select full validation. Squash/rebase merges currently use that fallback.</p>
-<p>Prose-only PRs can inherit application evidence from a successful run of their exact main baseline, provided application/build inputs match. The allowlist is additions/edits to <code>README.md</code>, research Markdown and book HTML fragments. Documentation checks and site assembly run for the new revision. Deleted/renamed files and every other path select full validation. Original test commits and run IDs remain visible in the report's Jobs tab.</p>
-<h3>Required checks and artifacts</h3>
-<p>The stable <code>repository</code> aggregate always runs, rejects failures/cancellations/unexpected skips and requires the selected tests, coverage and report assembly. Main also builds and smoke-tests the exact release archive and wheel. The report retains complete referenced logs/XML, measured coverage and required operational parity. Matrix fail-fast is disabled so independent failures remain visible.</p>
-<p>Evidence, site and release bundles are retained for 30 days. Extra <code>test-results-SUITE</code> terminal/phase diagnostics are uploaded on failure for seven days. Dispatch Repository with <code>force_full</code> for an uncached rehearsal, including on an exact main commit whose release bundle expired. Hosted runner behavior still needs the actual PR/merge check. Main requires an up-to-date PR and passing <code>repository</code>, including for admins; owner authorization to merge remains separate.</p>
-<details><summary>Optional constrained-runner rehearsal</summary>
-<p>For a constrained Linux rehearsal, run <code>taskset -c 0,1 aspect burrow-check preflight</code> (choose two CPUs available on your host). Use a fresh Bazel output base for this rehearsal: an already-running Bazel server keeps its original CPU affinity. With a fresh server, this limits child processes as well as test concurrency. The pinned Bazel, Go, Python, Node, pnpm, Hovel and SSH-image inputs remain the same; Docker, OpenSSH and the hosted OS are environmental prerequisites. PTY checks wait for decoded screen state and drain output through exit. Timing measurements include scheduling and decoder work; they are not standalone frontend benchmarks.</p>
-</details>
-<h2 id="hovel-follow-up-exception">Hovel compatibility checks</h2>
-<p>The required <code>hovel</code> partition runs <code>aspect burrow-check preflight hovel</code>: the WAL-lock regression and two historical Docker-backed manager proofs tagged <code>hovel-followup</code>. It runs in every full validation alongside all nine SSH suites and the portable checks; inherited evidence must include its passing results. Hovel v0.4.4 includes the upstream fixes and retires the temporary <a href="https://github.com/Bochner/burrow/issues/86">#86 exception</a>. Failed or missing Hovel and SSH follow results block the Repository gate and report publication. The full local preflight includes all three compatibility checks.</p>
-<h2 id="public-test-and-parity-reports">Public test and parity reports</h2>
-<p>The <a href="../reports/">Reports tab</a> publishes Burrow test results, production Go line coverage and operator interface parity. It is separate from collected SSH survey reports. The initial site build shows missing measurements explicitly. Attach real local evidence with:</p>
-<pre><code>aspect burrow-check preflight
+<ol>
+<li>Work locally on the milestone/task branch; push, PR and merge each need owner authorization.</li>
+<li>Add a focused behavior check for nontrivial changes and run the relevant Aspect gate.</li>
+<li>Increment VERSION above main once per PR and add matching CHANGELOG notes. Recheck after updating main.</li>
+<li>Run Standards and Spec review against the branch baseline and originating requirements.</li>
+</ol>
+<p>Application CI runs all eleven partitions plus coverage/report assembly. Safe same-repository evidence reuse requires matching source inputs; missing, expired or mismatched evidence selects full validation. Narrow prose-only PRs still run current documentation checks.</p>
+<p>The required repository aggregate rejects failures, cancellations and unexpected skips. Main additionally smoke-tests the exact release bundle. Evidence/site/bundle retention is 30 days; extra failure diagnostics last seven days.</p>
+<h2 id="hovel-follow-up-exception">Hovel compatibility</h2>
+<p>The hovel partition requires the WAL-lock regression and both retained-manager proofs. Hovel v0.4.4 retires the old #86 exception; missing or failing results block the full gate.</p>
+<h2 id="public-test-and-parity-reports">Public test evidence</h2>
+<p>The <a href="../reports/">Reports tab</a> preserves Hovel's Overview, Linters, Coverage, Suites, Jobs and Targets. An initial build shows missing measurements. For a report with local evidence:</p>
+<pre data-lang="Local shell"><code>aspect burrow-check preflight
 aspect burrow-site stage
 aspect burrow-report render</code></pre>
-<p>The page copies Hovel's interactive Overview, Linters, Coverage, Suites, Jobs and Targets views. Evidence under <code>.report-input/</code> retains original commits, run identities, XML cases and individual repetition outputs. Like Hovel, publication requires structured results, complete referenced files and parity evidence; the former same-source/run/per-file-hash/site-hash report gate has been removed by owner request. Keep local evidence relevant to the source being inspected. Archive individual partitions before an all-suite run to avoid duplicate evidence.</p>
-<p>Coverage uses the existing six production Go test targets: interaction, forward control, daemon digest/RPC, online startup, audit and terminal host. It measures executable lines in <code>core/cmd/burrow</code>, <code>core/connection</code>, <code>core/launch</code>, <code>core/reports</code>, <code>core/agent</code> and <code>core/terminal</code>. Test code, test-only binaries, dependencies and prototypes are excluded. The separately run production SSH/CLI/PTY partitions establish behavior evidence but do not contribute to these counters. Unexecuted production code remains uncovered; unmeasured files remain listed. Raw LCOV, per-file numerators and denominators form the initial reproducible baseline, without an invented percentage target.</p>
-<p>The canonical <code>burrow capabilities</code> inventory supplies human and agent routes, effects, reviews and schemas. <code>docs/tools/docs/parity.json</code> explicitly binds each capability to selected behavior checks and their scope. A new inventory capability without a binding fails the site build; the discovery check also rejects orphan human help commands. Reachability, documented JSON shapes and selected passing behavior are separate metrics. Descriptions alone are not complete schemas; optional MCP is not reported as typed MCP coverage. Passing a selected check is not exhaustive semantic equivalence.</p>
-<p><code>aspect burrow-report publish</code> requires all eleven validation partitions, measured coverage and complete referenced evidence. <code>aspect burrow-report release</code> additionally requires usable agent routes and passing behavior for every operational capability. Human adapters identify their supported headless equivalents explicitly; each equivalent needs passing evidence. Presentation-only entries remain visible and require behavior checks, but do not enter the operational denominator. Owner acceptance remains separate.</p>
-<p>The required CI report job runs <code>aspect burrow-report release</code>, so a missing operational agent route or required behavior result blocks the <code>repository</code> check before a PR is ready to merge. There are no failed-test retries. Diagnose a failing target from its retained logs and reproduce that partition locally before another run.</p>
-<p>Starting another local suite preserves its previous input under <code>.report-input/archive/</code>. Archived failures remain evidence to diagnose; they are not combined with the current candidate's report. The <a href="https://github.com/Bochner/burrow/blob/main/docs/site/MVP-ACCEPTANCE.md">#65 verification record</a> maps the LazySSH source inventory, daily-use stories, Hovel reporting differences and the owner's manual-walkthrough waiver. Production line coverage does not measure branches; Burrow does not publish an SDK or claim Hovel's SDK coverage percentages.</p>
+<p>Six production Go coverage targets measure executable lines, not branches. Capability reachability, JSON schemas and selected behavior are separate measurements. Passing checks do not imply exhaustive semantic equivalence or owner acceptance.</p>
+<p>Keep evidence relevant to the source inspected. Local suites preserve previous inputs under .report-input/archive/. Diagnose archived failures; do not mix them into a candidate report. Full report rules live in <a href="https://github.com/Bochner/burrow/blob/main/docs/agents/docs.md">the documentation contract</a>.</p>
 <h2 id="publishing">Publishing</h2>
-<p>Each PR increments <code>VERSION</code> above main and adds its matching <code>CHANGELOG.md</code> entry. After that revision passes main CI, Release creates the version tag and publishes the exact tested GitHub bundle with those notes. Unchanged versions skip publication; tags are never moved. PyPI stays manual.</p>
-<p>For pipx wheels and PyPI Trusted Publishing, see <a href="releasing.html">release preparation</a>. Manual Release dispatch defaults to a publication-free artifact rehearsal. Automatic GitHub releases and Pages publication are separate workflows.</p>
-<p>The report job assembles fresh or explicitly inherited passing evidence into <code>docs-site</code>. The full workflow must succeed, including main packaging, before Pages can promote it. Failed required jobs retain diagnostics and cannot produce an eligible deployment.</p>
-<p>Pages follows Hovel's successful same-repository main artifact promotion. Manual dispatch selects an exact successful main run. Both paths download the existing site and skip deployment if main has advanced; neither rebuilds nor reruns application tests. Burrow's extra report/site hash gate is removed. GitHub Pages configuration remains separate from the public repository.</p>
-<h2 id="upstream-provenance">Upstream provenance</h2>
-<p>The book adapts Hovel's Apache-2.0 Astro renderer and styling. See <a href="https://github.com/Bochner/burrow/blob/main/docs/site/UPSTREAM.md">the pinned source and adaptation notes</a>.</p></article>
+<p>Successful main CI promotes its existing site artifact to Pages and its exact release bundle to GitHub. Pages skips deployment if main advanced; it does not rebuild. Version tags are never moved. See <a href="releasing.html">releasing</a>.</p>
+<h2 id="upstream-provenance">Attribution</h2>
+<p>The theme adapts Hovel's Apache-2.0 renderer. Keep <a href="https://github.com/Bochner/burrow/blob/main/docs/site/UPSTREAM.md">source pins and adaptation notes</a> current.</p>
+</article>

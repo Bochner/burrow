@@ -22,6 +22,11 @@ Run `aspect burrow-site check` after changes, and `aspect burrow-site stage` to
 materialize the artifact. All tools are declared Bazel inputs; update JS locks
 through the Bazel-managed pnpm target via Aspect. No CDN/runtime network assets.
 
+Optional local browser inspection uses `aspect burrow-site browser` with
+`BURROW_DOCS_BROWSER` set to an absolute Chromium executable path. This manual
+target is a host-tool exception: it checks rendering and scrolling but supplies
+no pinned CI evidence. Record the browser version with inspection results.
+
 Application PRs run eleven required `aspect burrow-check verify SUITE` jobs:
 portable, lifecycle, files, reverse, shell, chains, reports, automation, follow,
 runs and hovel. `verify` permits deterministic test caching; external/process,

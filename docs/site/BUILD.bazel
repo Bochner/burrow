@@ -33,7 +33,7 @@ filegroup(
 
 js_run_binary(
     name = "astro_site",
-    srcs = [":node_modules/astro", ":site_sources", ":api_inventory", ":report_default"],
+    srcs = [":node_modules/astro", ":node_modules/mermaid", ":site_sources", ":api_inventory", ":report_default"],
     args = ["build"],
     chdir = package_name(),
     env = {"ASTRO_TELEMETRY_DISABLED": "1"},

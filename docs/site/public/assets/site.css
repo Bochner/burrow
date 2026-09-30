@@ -1096,19 +1096,12 @@ blockquote {
 
 html.home-page {
   scroll-padding-top: 3.4rem;
-  scroll-snap-type: y mandatory;
-  scroll-behavior: smooth;
 }
 .home-main {
   overflow: clip;
 }
-.home-page .sitefoot {
-  scroll-snap-align: end;
-}
 .home-chapter {
   min-height: calc(100svh - 3.4rem);
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 .home-chapter-heading {
   max-width: 760px;
@@ -2624,4 +2617,51 @@ pre[data-lang]::before {
   .journey-tiles .tile {
     min-height: 0;
   }
+}
+
+/* Book and API additions; report application styles remain upstream-owned. */
+.book-content .mermaid {
+  white-space: pre;
+  overflow: auto;
+}
+.book-content .mermaid.rendered {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: center;
+}
+.book-content .mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: auto;
+}
+.book-content .api-operation {
+  border-top: 1px solid var(--border-2);
+  margin-top: 2.5rem;
+  padding-top: 0.5rem;
+}
+.book-content .api-parameters {
+  display: grid;
+  gap: 0.8rem;
+}
+.book-content .api-parameters > div {
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  min-width: 0;
+}
+.book-content .api-parameters dt {
+  color: var(--cyan);
+  font-family: var(--mono);
+}
+.book-content .api-parameters dd {
+  margin: 0.4rem 0 0;
+}
+.book-content details {
+  margin: 1rem 0;
+}
+.book-content summary {
+  cursor: pointer;
+  color: var(--cyan);
 }

@@ -1,30 +1,42 @@
-<!-- burrow-doc: {"title":"Release preparation","group":"Engineering","order":310,"description":"Build and test the pipx wheel, configure PyPI Trusted Publishing, and automatically publish tested versions to GitHub."} -->
-<article><h1>Release preparation</h1>
-<p>Burrow follows Hovel's prebuilt Go wheel and PyPI Trusted Publishing approach. The local release path is prepared; no public PyPI release is claimed. The distribution name is <code>burrow-ssh</code> and its console command is <code>burrow</code>. The public PyPI name <code>burrow</code> belongs to another project.</p>
-<h2>Build and verify locally</h2>
-<pre><code>aspect burrow-check preflight
+<!-- burrow-doc: {"title":"Release preparation","group":"Engineering","order":310,"description":"Version, test and promote the exact verified release bundle."} -->
+<article>
+<h1>Release preparation</h1>
+<p>A version change on main publishes the exact archive and wheel tested by Repository CI. Release promotion does not rebuild them.</p>
+<h2>Prepare the version</h2>
+<ol>
+<li>Increment root VERSION above main once per PR: patch for fixes/tooling, minor for compatible features, major for breaking changes.</li>
+<li>Add a matching nonempty CHANGELOG section describing user-visible changes and verification.</li>
+<li>Recheck the version after updating from main. Push, PR and merge still require owner authorization.</li>
+</ol>
+<p>Stable versions use X.Y.Z; development versions use X.Y.Z.devN and publish as prereleases. Unchanged versions skip publication. Downgrades, missing notes and existing tags pointing elsewhere fail; tags are never moved.</p>
+<h2>Rehearse locally</h2>
+<pre data-lang="Local shell"><code>aspect burrow-check preflight
 aspect burrow-release bundle</code></pre>
-<p>The bundle contains the archive, exact smoke-tested wheel, <code>SHA256SUMS</code> and <code>bundle.json</code>. Use a fresh <code>dist/</code> directory; preserve earlier artifacts elsewhere before rebuilding. The wheel lands under <code>dist/</code>, with its version taken from root <code>VERSION</code>. The declared release binary is Linux amd64 without CGO; the wheel targets <code>manylinux_2_28_x86_64</code>, matching the managed Hovel runtime's Linux floor. No Go compiler or separate Hovel installation is needed on the operator host. The Python 3.10+ launcher replaces itself with the Go executable, preserving arguments, streams, signals and exit status.</p>
-<p>The required portable gate includes offline installation through digest-pinned pipx, deterministic wheel/RECORD checks, CLI error propagation, embedded skill installation, pinned Hovel startup, and upgrade/uninstall state preservation. The application keeps its embedded skill bundle and canonical base-module manifest. Packaging does not replace live workspace managers; the usual explicit restart and reconnect rules apply.</p>
-<h2>GitHub release</h2>
-<p>The public <a href="https://github.com/Bochner/burrow/releases/tag/v0.2.1">v0.2.1 GitHub release</a> distributes the Linux amd64 archive, wheel and <code>SHA256SUMS</code>. For subsequent releases, successful main CI prepares the complete distribution and smoke-tests the exact files through offline pipx install/upgrade/uninstall, CLI, embedded skills and pinned Hovel checks. The archive is extracted and checked too. The Release workflow automatically promotes this bundle when VERSION increases, without another full gate or package build; GitHub publication does not depend on PyPI setup.</p>
-<h2>One-time PyPI setup</h2>
-<p>Sign into <a href="https://pypi.org/manage/account/publishing/">PyPI Account → Publishing</a> and add a pending GitHub publisher with these values:</p>
-<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>
-<tr><td>PyPI project name</td><td><code>burrow-ssh</code></td></tr>
-<tr><td>Owner</td><td><code>Bochner</code></td></tr>
-<tr><td>Repository</td><td><code>burrow</code></td></tr>
-<tr><td>Workflow filename</td><td><code>release.yml</code></td></tr>
-<tr><td>Environment</td><td><code>pypi</code></td></tr>
+<p>Use a fresh dist/ directory; preserve earlier artifacts elsewhere. The bundle contains:</p>
+<table><thead><tr><th>File</th><th>Purpose</th></tr></thead><tbody>
+<tr><td>Linux amd64 archive</td><td>Executable, module manifest, skills and attribution.</td></tr>
+<tr><td>manylinux_2_28_x86_64 wheel</td><td>Python 3.10+ launcher and the same prebuilt Go application.</td></tr>
+<tr><td>SHA256SUMS</td><td>Distribution checksums.</td></tr>
+<tr><td>bundle.json</td><td>Tested source and exact bundle metadata.</td></tr>
 </tbody></table>
-<p>Click Add. This creates a pending publisher, not a release or name reservation. No API key or copied LazySSH secret is required. The GitHub environment <code>pypi</code> is prepared with protected-branch deployments; the workflow additionally restricts publishing to dispatches from main. Its publishing job uses a short-lived OIDC credential. See <a href="https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/">PyPI's pending-publisher instructions</a>. The chosen name was unregistered when checked; PyPI must still accept it at first publication.</p>
-<h2>Automatic version releases</h2>
-<p>Each PR must increment root <code>VERSION</code> above main and add a matching nonempty <code>## [VERSION]</code> section to <code>CHANGELOG.md</code>. Bump once per PR and keep its notes current. Use <code>X.Y.Z</code> for stable versions or <code>X.Y.Z.devN</code> for development prereleases. Patch versions cover fixes and tooling, minor versions compatible features, and major versions breaking changes. Recheck the version after updating from main.</p>
-<p>After the owner requests the PR and merge, successful main Repository CI automatically starts Release. It compares <code>VERSION</code> with the previous main revision, creates <code>vVERSION</code> at the tested commit, and publishes the exact bundle with the matching changelog notes. An unchanged version skips publication. Downgrades, missing notes and existing tags pointing elsewhere fail; tags are never moved. Development versions are marked as prereleases. Rerunning the workflow can complete the same release without replacing existing assets.</p>
-<p>Publication validates main membership, successful source CI run/attempt, artifact digest, exact file set and distribution checksums. Both validation and publishing use the immutable tested commit. Automatic publication takes its bundle from the triggering Repository run; it never substitutes another revision or reruns the application gate. PyPI stays manual.</p>
-<h2>Manual rehearsal and optional PyPI publication</h2>
-<p>Run Release from main with destination <code>rehearsal</code> to verify a successful main bundle without publishing. A tag is optional for rehearsal; a supplied tag must match <code>VERSION</code> and the checked-out commit. For an existing version tag, destination <code>github</code> can complete GitHub publication, or <code>github-and-pypi</code> can also publish its verified wheel after the one-time PyPI setup. Stable releases default to normal release status; the manual prerelease option can opt in. Development versions remain prereleases.</p>
-<p>Bundles expire after 30 days. If no verified bundle exists, Release fails clearly; dispatch Repository with <code>force_full</code> if that revision is still main HEAD, then retry. Automatic reconstruction of older revisions is unsupported; prepare a new release revision on main instead. Do not substitute another revision’s bundle. Pushing a tag alone does not publish.</p>
-<p>The optional PyPI job alone receives <code>id-token: write</code>. It publishes only the verified wheel through the pinned PyPA action with attestations and checks PyPI's filename/digest afterward. An existing same-version file with a different digest fails. GitHub publication proceeds independently, so a PyPI failure can leave a successful GitHub release; inspect both job results before retrying. Both the GitHub repository and its release downloads are public.</p>
-<p>The required preflight includes all <a href="development-guide.html#hovel-follow-up-exception">Hovel compatibility checks</a>; the temporary #86 exception is retired with v0.4.4. The owner waived the manual walkthrough and accepted v0.2.0 in <a href="https://github.com/Bochner/burrow/issues/65">#65</a>; later versions publish automatically after an owner-authorized merge and successful CI. Hovel source attribution and release-tool changes are recorded in <code>core/tools/release/UPSTREAM.md</code>.</p>
+<p>Smoke checks cover archive extraction, offline pipx installation/upgrade/uninstall, CLI behavior, embedded skills and pinned Hovel startup. Installing a new frontend never automatically replaces live workspace owners.</p>
+<h2>Automatic GitHub publication</h2>
+<figure class="diagram"><figcaption>Tested artifact promotion</figcaption><pre class="mermaid">flowchart LR
+accTitle: Release promotion after main CI
+accDescr: An owner-authorized merge reaches main. Repository CI tests and builds the exact bundle. Release validates it, tags the tested revision and publishes its files and changelog notes.
+Merge[Authorized merge] --&gt; CI[Successful main CI]
+CI --&gt; Bundle[Tested bundle]
+Bundle --&gt; Verify[Validate source and checksums]
+Verify --&gt; Release[Tag and publish]</pre><p>Existing tags stay fixed. Pages and release publication are separate workflows.</p></figure>
+<p>Release validates main membership, source run/attempt, artifact digest, exact files and checksums. It tags the immutable tested revision and uses its changelog notes. Rerunning can complete the same release without replacing existing assets.</p>
+<h2>Manual rehearsal and recovery</h2>
+<table><thead><tr><th>Destination</th><th>Effect</th></tr></thead><tbody>
+<tr><td>rehearsal</td><td>Validate a successful main bundle without publishing.</td></tr>
+<tr><td>github</td><td>Complete GitHub publication for an existing matching version tag.</td></tr>
+<tr><td>github-and-pypi</td><td>Also publish the verified wheel through the separately configured manual PyPI path.</td></tr>
+</tbody></table>
+<p>Dispatch from main. Supplied tags must match VERSION and the checked-out revision. A tag push alone does not publish. PyPI publication remains an explicit manual choice.</p>
+<p>Bundles expire after 30 days. If main HEAD has no verified bundle, dispatch Repository with force_full, then retry Release. Reconstruction of older revisions is unsupported; prepare a new release instead of substituting another revision's files.</p>
+<p>GitHub and PyPI publication can finish independently. Inspect both results before retrying; a conflicting same-version digest fails. One-time publisher account setup is tracked separately from this public release procedure.</p>
+<p>See <a href="launch.html">operator installation</a>, <a href="development-guide.html#choose-a-check">validation gates</a> and <a href="https://github.com/Bochner/burrow/blob/main/core/tools/release/UPSTREAM.md">release-tool provenance</a>.</p>
 </article>

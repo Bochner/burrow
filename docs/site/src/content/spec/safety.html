@@ -1,11 +1,24 @@
 <!-- burrow-doc: {"title":"Authorized use and security","group":"Foundations","order":160} -->
-<article><h1>Authorized use and security</h1>
-<p><strong>Authorized red-team emulation only.</strong> Use Burrow only in environments you own or are explicitly authorized to assess, with written scope and approvals. See <a href="https://github.com/Bochner/burrow/blob/main/SECURITY.md">the security policy</a>.</p>
-<h2>Connection trust and sensitive data</h2>
-<p>See the <a href="user-guide.html#versions">version table</a> for release scope and acceptance status. The manual connection recap shows the actual SSH command; host trust follows the accepted LazySSH options recorded in <a href="https://github.com/Bochner/burrow/blob/main/docs/adr/0001-manual-connection-approval.md">the connection-control decision</a>. The policy uses <code>StrictHostKeyChecking=no</code> and <code>UserKnownHostsFile=/dev/null</code> for targets and jump hops; it does not authenticate the server against a retained user trust record. Chain-created connections follow Hovel's reviewed throw path. Saved settings contain no passwords or private-key contents.</p>
-<p><a href="runs.html">Run capture and cancellation</a> have explicit storage and ordinary-process-group limits; uncollected output can be lost on owner failure. <a href="automation.html">Local tools</a> run as the local user without a sandbox, and raw socket commands do not receive complete per-command audit. <a href="chains.html">Chain requests</a> preserve explicit selection and confirmation. Commands, script output, reports and artifacts can contain sensitive operational data; keep their workspace private.</p>
-<h2 id="hovel-limitation">Known Hovel runtime limitation</h2>
-<p>Burrow pins official Hovel v0.4.4, including the SQLite WAL-lock lifetime fix tracked in <a href="https://github.com/Bochner/burrow/issues/86">#86</a>. The WAL regression, both manager proofs and SSH follow are required checks. Older Burrow v0.1.0 and v0.2.0 releases still use Hovel v0.4.2 and carry its concurrent SQLite-access crash limitation; upgrade deliberately after reviewing active resources.</p>
-<p>After loss, inspect evidence and follow <a href="troubleshooting.html#ownership">manual ownership recovery</a>. Shared-session work does not promise recovery after daemon or owning-module loss. Workspaces are private operational directories, not isolation from another process running as the same user.</p>
-<h2>Reporting</h2>
-<p>Report repository vulnerabilities privately through <a href="https://github.com/Bochner/burrow/security/advisories/new">GitHub security advisories</a>. Keep credentials and third-party target data out of reports.</p></article>
+<article>
+<h1>Authorized use and security</h1>
+<p><strong>Authorized red-team emulation only.</strong> Use Burrow in environments you own or are explicitly authorized to assess, with written scope and approvals.</p>
+<h2>Host trust and credentials</h2>
+<p>Burrow uses the accepted LazySSH host-trust policy for targets and jump hosts:</p>
+<pre data-lang="OpenSSH options"><code>StrictHostKeyChecking=no
+UserKnownHostsFile=/dev/null</code></pre>
+<p>There is no separate host-key approval or retained user trust record. Review the actual SSH command and endpoint before connecting. See <a href="connections.html#authentication">authentication</a> and the <a href="https://github.com/Bochner/burrow/blob/main/docs/adr/0001-manual-connection-approval.md">connection-control decision</a>.</p>
+<p>Saved profiles contain settings and file references, not credentials. Hidden CLI prompts keep answers out of arguments and history; literal password arguments can expose them there. Ordinary TUI authentication fields are visible while typing; bare <code>--password</code> and chain authentication use hidden fields.</p>
+<h2>Operational boundaries</h2>
+<table><thead><tr><th>Surface</th><th>Boundary</th></tr></thead><tbody>
+<tr><td>Workspace</td><td>Private operational directory, not isolation from other processes running as the same user.</td></tr>
+<tr><td>Local tool</td><td>Runs as the local user without a sandbox. Raw socket commands have no complete per-command Hovel audit.</td></tr>
+<tr><td>Run</td><td>Capture budgets and ordinary-process-group cancellation limits are explicit. Uncollected output can be lost.</td></tr>
+<tr><td>Shared shell</td><td>One controller arbitrates input; terminal history is memory, not durable evidence or structured completion.</td></tr>
+<tr><td>Artifacts and logs</td><td>May contain sensitive operational output. Keep the workspace and redirected feeds private.</td></tr>
+</tbody></table>
+<h2 id="hovel-limitation">Runtime loss and older releases</h2>
+<p>The current runtime pins Hovel v0.4.4 with the SQLite WAL-lock fix. Older v0.1.0 and v0.2.0 Burrow releases used v0.4.2 and carried its concurrent SQLite-access crash limitation. Review active resources before <a href="launch.html#upgrade">upgrading</a>.</p>
+<p>Daemon or module loss does not guarantee remote cleanup, shell recovery or uncollected output recovery. Preserve evidence and follow <a href="troubleshooting.html#ownership">manual ownership recovery</a>.</p>
+<h2>Report a vulnerability</h2>
+<p>Use <a href="https://github.com/Bochner/burrow/security/advisories/new">private GitHub security advisories</a> and follow <a href="https://github.com/Bochner/burrow/blob/main/SECURITY.md">the security policy</a>. Exclude credentials and third-party target data.</p>
+</article>

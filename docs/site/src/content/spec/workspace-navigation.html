@@ -1,44 +1,59 @@
 <!-- burrow-doc: {"title":"Workspace navigation","group":"Foundations","order":120} -->
-<article><h1>Workspace navigation</h1>
-<p>Use an explicit workspace to keep connection names, settings and evidence together. The TUI navigation below is available in v0.1.0. Headless <code>workspace</code> commands and digest-bound close are <a href="user-guide.html#versions">v0.2.0 additions</a>.</p>
+<article>
+<h1>Workspace navigation</h1>
+<p>A workspace holds connection names, saved settings and evidence. Select the same canonical absolute path in every frontend that should share resources.</p>
 <h2 id="open-and-inspect-from-the-cli">Open and inspect from the CLI</h2>
-<p>Choose one absolute canonical path with <code>--workspace</code>. Each CLI invocation selects its own workspace; it does not change another frontend's selection. Open initializes or reuses the verified workspace through the same operation as the TUI. Inspect only verifies an existing daemon and never creates a destination or replaces an unavailable owner. The older <code>status</code> spelling remains an initializing alias for open.</p>
-<pre><code>burrow --workspace /absolute/workspace workspace open
+<pre data-lang="Local shell"><code>burrow --workspace /absolute/workspace workspace open
 burrow --workspace /absolute/workspace workspace inspect
 burrow workspace list /absolute/workspace /absolute/other-workspace</code></pre>
-<p>List observes only the supplied paths. Its result declares <code>scope: explicit-paths</code> and <code>registryAvailable: false</code>; each entry is verified or unverified with an error. This is not an authoritative inventory of all workspaces. Do not combine list with <code>--workspace</code>. Missing or repeated workspace selection refuses rather than choosing a target. Daemon health is separate from SSH state: use <code>connections</code> and <code>inspect NAME</code> for the shared connection owner's observations.</p>
-<h2 id="manager">Retire or update a connection manager</h2>
-<pre><code>burrow --workspace /absolute/workspace workspace restart
-# Read the review and copy its digest only after approving the whole owner:
-burrow --workspace /absolute/workspace workspace restart --yes --review HASH
-burrow --workspace /absolute/workspace workspace retire
-burrow --workspace /absolute/workspace workspace retire --yes --review HASH</code></pre>
-<p>Restart and retire first return a JSON review with the exact daemon and manager identities and current connections. Confirmation binds the action and manager incarnation. The connections array is a pre-action observation, not an exhaustive cleanup inventory when concurrent additions occur. It covers the whole owner, including concurrent additions; close other frontends before confirming if they could add work. Both end that manager's connections and dependent shells, transfers and tunnels while preserving the Hovel daemon, saved settings, collected evidence and separate retained-run records. Remote runs lose access when their master ends; preserved records do not guarantee ongoing remote execution. Restart also registers the current executable for future operations. Neither command opens a TUI, starts a replacement manager or reconnects SSH. The next explicitly approved connection activates a manager. The legacy terminal <code>restart [--yes]</code> keeps its interactive behavior and opens a TUI.</p>
-<p>Use the existing saved-setting and connection commands: <code>profile select</code> and <code>profile load</code> never connect. <code>profile connect NAME [--as NAME]</code> returns the same immutable connection review as <code>connect</code>; repeat with <code>--yes --review HASH</code> to bind approval. <code>close NAME</code> now returns a digest too: <code>close NAME --yes --review HASH</code> refuses a replacement creation or changed state instead of closing it. Other connections survive selected close. Use current-user key/agent authentication or the existing private interactive challenge flow; do not place passwords or passphrases in recorded agent command arguments. Lost connections still require explicit reconnect.</p>
-<h3>Read results and errors</h3>
-<p>Workspace subcommands, close, profile connect and session commands emit JSON for pipes and use the shared semantic colors on human terminals: results and reviews on stdout, errors as <code>{"error":{"operation":"workspace.retire","code":"review_changed","message":"…"}}</code> on stderr with exit 1. Errors include the workspace and review when available. A missing or changed review retains resources; <code>cleanup_unconfirmed</code> can follow partial cleanup and requires inspection before retrying. <code>registration_failed</code> includes a retired review state because the owner has already ended. Close, profile connect and session commands use code <code>operation_failed</code> with a descriptive message for validation, ownership, stale review and execution failures; no automatic retry is implied. Global flag parsing and other command errors remain text. See the generated <a href="../api/workspace.html">workspace routes</a> and <a href="../api/contract.html#errors">error contract</a>.</p>
-<p>An already open TUI automatically observes CLI-created and closed connections through the same retained owner. Failed observations show UNVERIFIED, never an empty inventory. Shared-shell tabs discover retained sessions when opening a workspace or running <code>shells</code>; activity following remains a separate capability. <code>aspect burrow workspace-check</code> exercises production CLI and a separate PTY against the controlled SSH server, including stale confirmations, sibling and evidence preservation, loss, cleanup and unverified observation. The lifecycle partition includes this check; <code>aspect test //core/cmd/burrow:workspace_test</code> covers read-only selection and discovery without SSH.</p>
-<h2 id="terminal-navigation">Terminal navigation</h2>
-<p>The left sidebar is split at the midpoint New/Menu row: WORKSPACES above, SHELLS - SSH below. Clicking a workspace above returns to its Burrow management view. The lower tree stays expanded with every local shell beneath its workspace; each list scrolls independently when needed, without replacing shells with a summary. The Burrow tab retains saved, active SSH and tunnel sections, command output and completion. The <a href="/burrow/spec/embedded-terminal.html">Hovel tab hosts its interactive CLI</a>; <a href="shells.html">shell NAME</a> opens another independent SSH pane through the existing master. Every shell has its own clickable top tab. Select a tree child, click its tab, or use <code>resume ID</code> to return to that exact shell.</p>
-<p>The workspace list contains only explicit paths opened in this frontend session. The pinned public Hovel contract has no cross-workspace enumeration operation. Burrow neither scans directories nor persists another live-resource registry.</p>
-<h3>Create a workspace</h3>
-<p>New asks for a workspace name; Enter or Create &amp; open creates and opens it under <code>$XDG_DATA_HOME/burrow/workspaces/&lt;name&gt;</code>, falling back to <code>~/.local/share/burrow/workspaces/&lt;name&gt;</code> when XDG_DATA_HOME is unset or relative. Tab or a field click edits the optional parent Location; Ctrl+O or Browse paths selects a directory. The override applies to this creation only. The form shows the resulting destination, accepts absolute canonical locations or <code>~/…</code>, and rejects invalid names and paths too long for even the shortest SSH connection name. Longer connection names must still fit the existing 90-byte socket-path limit. Opening the form does not create directories.</p>
-<p>Creation uses the same verified launch operation as the CLI, preserving its offline/package options, permissions and refusal policy. An existing destination is opened only if it passes the same ownership checks; it is never overwritten or blindly adopted. These are ordinary Hovel workspaces: use the same exact workspace and daemon for Hovel chains consuming Burrow resources. The embedded Hovel CLI already does so. A common parent folder does not share resources across different workspaces. The standalone CLI continues to require an explicit <code>--workspace</code>.</p>
-<h3>Switch without reconnecting</h3>
-<p>Each workspace retains its command draft, completion, history, output and scroll position, selected connection and background terminals. Top workspace selection shows management; select a shell or Hovel tab to resume it. Selecting a known workspace only verifies it; it never launches replacement daemons, reconnects SSH or closes other resources. Asynchronous commands and timers carry their originating workspace and a single-use request identity. A delayed result updates its original workspace. Escape can dismiss a pending launch; its completion does not steal the selected workspace, and launch failures remain in the originating workspace output.</p>
-<table><thead><tr><th>Input</th><th>Action</th></tr></thead><tbody>
-<tr><td>F6 / Shift+F6</td><td>Cycle prompt, workspaces, New, Menu, shells, tabs, resources and saved connections.</td></tr>
-<tr><td>Alt+1–9 / Alt+Left/Right</td><td>Select a numbered shell or cycle all shells in the current workspace. Numbers remain consecutive after close; terminal identity and state are preserved.</td></tr>
-<tr><td>Arrows / Enter</td><td>Select and activate focused navigation; arrows in resources select a connection for metadata.</td></tr>
-<tr><td>Tab / Shift+Tab in prompt</td><td>Cycle contextual completions forward/backward without losing the original matches. Typing starts a new match set; Enter runs the displayed command. Command names are blue and descriptions use Subtext.</td></tr>
-<tr><td>Alt+N / Ctrl+P (or Alt+M) / Alt+W</td><td>New workspace, searchable menu, workspace drawer.</td></tr>
-<tr><td>F1 / Escape</td><td>Contextual help; close a modal or return navigation focus to the prompt.</td></tr>
-<tr><td>Click / wheel</td><td>Activate displayed controls or resource rows; scroll the pointed list, output or metadata overlay.</td></tr>
+<table><thead><tr><th>Command</th><th>Behavior</th></tr></thead><tbody>
+<tr><td><code>workspace open</code></td><td>Initialize or reuse the verified workspace. <code>status</code> is an alias.</td></tr>
+<tr><td><code>workspace inspect</code></td><td>Verify an existing daemon. Creates no workspace or replacement owner.</td></tr>
+<tr><td><code>workspace list PATH…</code></td><td>Observe only supplied paths; do not combine with <code>--workspace</code>.</td></tr>
 </tbody></table>
-<p>The center shrinks with terminal width, and both sidebars remain visible while narrowing as needed. Tables keep left-aligned section titles and centered headers and values with Catppuccin Mocha semantic colors. Long values truncate within their columns; selected connection details remain available through metadata. There is no blocking 160×40 resize screen. Extremely small terminals show a clipped application view and allow Ctrl+C to exit while suppressing hidden controls. Modal input captures pointer events and preserves the management draft.</p>
-<h3>Read daemon and connection health</h3>
-<p>The Hovel bubble is green only after a recent verified success, yellow while checking, unknown or older than eight seconds, and red after verification fails or refuses identity. The selected workspace is polled without overlapping checks, normally three seconds after an observation. Metadata shows last-success age, measured verification duration, last-known PID and endpoint. Verification includes local receipt/process checks: its duration is not SSH or network latency. Hovel daemon identity, the Burrow connection owner and SSH connection snapshots are separate states.</p>
-<p><code>aspect burrow check</code> covers production interaction replay and real PTY workspace creation/switching. <code>aspect burrow ssh-check</code> also exercises two real workspaces with the same SSH connection name against the disposable pinned OpenSSH lab. The complete gate is <code>aspect burrow-check</code>. The owner approved the refined visual baseline at local commit <code>cd11ffb</code> for issue #67, including the centered tables, Catppuccin colors, searchable menu and shrinking center. Automated checks complement that walkthrough.</p>
-<p><code>aspect burrow run -- --demo</code> opens a labeled offline sample with private-IP hosts and sample transfer metadata. It does not create workspaces or connect to remote hosts. In a live workspace, the sidebar shows retained completed-download counts and bytes; unavailable observations are labelled. Future UI work must follow the project TUI standard linked from <code>AGENTS.md</code>.</p>
-<p>Sidebar circles describe observed SSH health, independently of selection: filled green means connected, half-filled yellow means opening/closing or reconnecting, and open red means disconnected or failed. Dotted circles distinguish unknown observations (muted) and unverified observations (red). Workspace health prioritizes failures and transitions over healthy connections. Shell numbers and dimmed connection names appear beneath their workspace; clicking a child opens that exact local shell. Scroll or use arrows with the shells section focused to reach overflow entries. Burrow, Hovel and individual shell tabs share the same active marker. Resource selection uses a soft background while preserving field colors. Click output or background, or press Escape from resource navigation, to clear row selections without closing shells.</p>
+<p>List reports <code>scope: explicit-paths</code> and <code>registryAvailable: false</code>. It is not a global inventory. Each CLI invocation selects its own workspace; it never changes another frontend's selection.</p>
+<h2 id="manager">Update or retire a connection manager</h2>
+<ol>
+<li>Inspect current connections and close frontends that could add work.</li>
+<li>Request restart or retirement and read the returned owner review.</li>
+<li>Confirm the chosen action with its returned digest. Changed manager identity refuses confirmation.</li>
+</ol>
+<pre data-lang="Local shell"><code>burrow --workspace /absolute/workspace connections
+burrow --workspace /absolute/workspace workspace restart
+# After approving the returned review:
+burrow --workspace /absolute/workspace workspace restart --yes --review HASH</code></pre>
+<p>Use <code>workspace retire</code> instead to end the owner without registering the current executable. Both actions cover the whole owner, including concurrent additions; the review's connection list is a pre-action observation.</p>
+<table><thead><tr><th>Effect</th><th>Restart / retire</th></tr></thead><tbody>
+<tr><td>Connections and dependent shells, listeners and transfers</td><td>End with the selected manager.</td></tr>
+<tr><td>Separate retained-run records</td><td>Remain, but remote runs lose access when their SSH masters end.</td></tr>
+<tr><td>Hovel daemon, saved settings and collected evidence</td><td>Remain.</td></tr>
+<tr><td>Replacement manager or SSH login</td><td>Neither action starts one. The next explicitly approved connection activates a manager.</td></tr>
+</tbody></table>
+<p>The terminal <code>restart</code> command has a separate interactive flow and opens the TUI. See <a href="launch.html#upgrade">runtime upgrades</a>.</p>
+<h2 id="terminal-navigation">Navigate the terminal</h2>
+<p>The left sidebar lists workspaces above New/Menu and shells below. Click a workspace for management, or a shell child/top tab to observe that shell. The workspace list contains only paths opened in this frontend session.</p>
+<table><thead><tr><th>Input</th><th>Action</th></tr></thead><tbody>
+<tr><td><kbd>F6</kbd> / <kbd>Shift+F6</kbd></td><td>Cycle prompt, navigation, tabs and resource sections.</td></tr>
+<tr><td>Arrows / <kbd>Enter</kbd></td><td>Select and activate focused navigation.</td></tr>
+<tr><td><kbd>Alt+1–9</kbd> / <kbd>Alt+Left/Right</kbd></td><td>Select or cycle shells in the current workspace.</td></tr>
+<tr><td><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></td><td>Cycle prompt completions.</td></tr>
+<tr><td><kbd>Alt+N</kbd> / <kbd>Ctrl+P</kbd> / <kbd>Alt+W</kbd></td><td>New workspace, searchable menu, workspace drawer.</td></tr>
+<tr><td><kbd>F1</kbd> / <kbd>Esc</kbd></td><td>Contextual help; dismiss a dialog or restore prompt focus.</td></tr>
+<tr><td>Click / wheel</td><td>Select a control or scroll the pointed list or panel.</td></tr>
+</tbody></table>
+<h3>Create a workspace</h3>
+<p>Choose New, enter a name, then press Enter or Create &amp; open. The default location is <code>${XDG_DATA_HOME:-$HOME/.local/share}/burrow/workspaces/NAME</code>; unset or relative XDG paths use the home fallback.</p>
+<p>Tab selects the optional parent Location. <kbd>Ctrl+O</kbd> opens its path browser. The form previews the destination and validates permissions, names and socket-path length before creating anything. Existing destinations must pass ownership checks.</p>
+<h3>Switch and observe health</h3>
+<p>Switching preserves each workspace's draft, output, history and background terminals. It verifies the destination without reconnecting SSH or replacing a daemon. Delayed commands update their originating workspace.</p>
+<table><thead><tr><th>Indicator</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>Daemon green</td><td>A recent successful verification.</td></tr>
+<tr><td>Daemon yellow</td><td>Checking, unknown, or last success older than eight seconds.</td></tr>
+<tr><td>Daemon red</td><td>Verification failed or identity was refused.</td></tr>
+<tr><td>SSH circles</td><td>Connected, transitioning, disconnected, unknown or unverified; independent of row selection.</td></tr>
+</tbody></table>
+<p>Metadata includes last-success age, verification duration, PID and endpoint. Verification duration is not network latency. Failed observation remains <strong>UNVERIFIED</strong>, not an empty inventory.</p>
+<h2>Results and recovery</h2>
+<p>Workspace commands emit results/reviews on stdout and JSON errors on stderr with exit 1. Missing or stale review confirmation preserves resources. <code>cleanup_unconfirmed</code> can follow partial cleanup; inspect before retrying. See the <a href="../api/contract.html#errors">error contract</a>.</p>
+<p>An open TUI observes CLI-created connections through the same owner. Run <code>shells</code> to refresh retained shell tabs. Use <a href="logs.html">follow</a> for activity and <a href="troubleshooting.html#ownership">ownership recovery</a> after loss.</p>
 </article>

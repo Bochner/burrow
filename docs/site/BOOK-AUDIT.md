@@ -88,3 +88,45 @@ Verification completed:
 - Independent Standards and Spec reviews: no findings. `git diff --check` passed.
 
 These are local checks, not published CI evidence or the #65 owner walkthrough.
+
+## Full Pages scrub — 2026-09-30
+
+Baseline: `main` at `6ef61cc7be2b7d205a99dea11de6cec8315645c5`.
+Local branch: `docs/full-scrub`; version: 0.2.4. The historical audit above
+describes its original baseline; this section records the current scrub.
+
+All 22 book pages and the homepage were reviewed. Task steps, controls, ownership,
+failure/recovery guidance and code examples replace release/acceptance narratives
+and long paragraphs. Ten accessible Mermaid diagrams explain ownership,
+connection review, forwarding, transfers, runs, shells, chains, agent workflows
+and release promotion. One-time PyPI publisher setup is removed from the book.
+The generated API now presents invocation, examples, typed parameters, approvals,
+effects and return fields, with full JSON schemas behind disclosures. Schema
+descriptions, named unions, nullable array element types and enum-only types have
+focused rendering regression checks. The inventory still comes from the real
+production binary; the reference does not introduce a separate SDK or service.
+
+The homepage bug reproduced as mandatory scroll snapping moving a requested
+160-pixel scroll to 500 pixels and preventing a return to zero. Removing the
+mandatory snap rules fixes both cases in the same browser probe. Reports assets,
+routes, renderer and data contract remain unchanged; the existing Reports UI
+check passes. The operational-reports book chapter is separate from that tab.
+
+Final local evidence:
+
+- `aspect burrow-site check`: passes all three targets, including every page's
+  links, assets, search, live-binary inventory and readable schema regressions.
+- `aspect burrow-site browser`: Google Chrome for Testing 149.0.7827.55;
+  homepage, all 22 book pages and all 17 API pages at 1280×900 and 390×844
+  (80 layouts). Diagram rendering, expanded disclosures, page overflow and
+  homepage scrolling pass. This optional host-browser inspection is not pinned
+  CI evidence or a screen-reader certification.
+- `aspect burrow-site stage`: materializes the declared site in `_site/`.
+- `aspect burrow python-format-check`, `aspect burrow python-lint`, and
+  `git diff --check`: pass.
+- Independent Standards and Spec reviews: identified schema display and example
+  formatting gaps plus the undocumented host-browser exception. Those were
+  corrected; both follow-up reviews report no remaining findings.
+
+No application behavior beyond documentation rendering was changed; production
+SSH suites were not rerun for this scrub. No push, PR, merge or deployment occurred.
