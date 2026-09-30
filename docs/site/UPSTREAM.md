@@ -123,3 +123,27 @@ layout, contribution and licensing. Burrow-specific release assets and Linux
 requirements replace Hovel's PyPI/SDK/module installation instructions. Milestone
 history, CI internals, private-project links and detailed restart/cleanup notes
 are removed from the front page; development shortcuts remain in the book.
+
+## Documentation scrub (2026-09-30)
+
+The book and generated CLI reference now lead with tasks, labelled code blocks,
+parameter/return tables and focused approval/lifetime guidance. One-time PyPI
+publisher setup and historical test/acceptance narratives are removed from the
+public reading path. The Hovel API landing at the locally inspected v0.4.4 pin
+(`1789ce47554a2ee17c7bd46d391b63946af60d0a`) supplies the tile/navigation pattern;
+Burrow documents its CLI/base module rather than presenting nonexistent SDKs.
+No additional Hovel implementation was copied. The Reports application, renderer,
+styles, data contract and routes are unchanged.
+
+Homepage mandatory scroll snapping is removed: the Burrow opening section had
+no snap destination, preventing a return to its top. An explicit local Chromium
+check covers ordinary scroll positions at desktop/mobile widths.
+
+Mermaid 11.12.0 (MIT), pinned in package.json and the declared pnpm lock, renders
+original diagrams with strict security, accessible titles/descriptions and a dark
+theme. Source: https://github.com/mermaid-js/mermaid/tree/mermaid%4011.12.0.
+The distributed ESM entry avoids bundling server-side parser dependencies.
+Assets are bundled locally through Astro; there is no CDN or runtime external
+fetch. The new code labels, parameter cards and diagram styles are scoped to the
+book/API content. Existing Hovel dependency versions remain pinned; lock refresh
+also prunes unused packages from the inherited lock.

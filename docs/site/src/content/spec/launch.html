@@ -1,73 +1,64 @@
-<!-- burrow-doc: {"title":"Install and launch","group":"Foundations","order":110,"description":"Build the source release, install the Linux amd64 archive and open a private workspace."} -->
+<!-- burrow-doc: {"title":"Install and launch","group":"Foundations","order":110,"description":"Install the Linux archive or local wheel, build from source, and open a workspace."} -->
 <article>
 <h1>Install and launch</h1>
-<p>Burrow supports Linux amd64. It installs a verified Hovel runtime on first workspace launch and manages that local daemon. You do not need to install Hovel separately or run it on the SSH target.</p>
-<nav aria-label="On this page"><p><strong>On this page:</strong> <a href="#distribution">Available distribution</a> · <a href="#requirements">Requirements</a> · <a href="#build">Build and install</a> · <a href="#first-launch">Open your first workspace</a> · <a href="#offline">Offline and managed Hovel setup</a> · <a href="#upgrade">Upgrade deliberately</a></p></nav>
-<h2 id="distribution">Available distribution</h2>
-<p>The <a href="https://github.com/Bochner/burrow/releases/tag/v0.2.2">v0.2.2 release</a> provides <a href="https://github.com/Bochner/burrow/releases/download/v0.2.2/burrow-v0.2.2-linux-amd64.tar.gz">burrow-v0.2.2-linux-amd64.tar.gz</a>, a <a href="https://github.com/Bochner/burrow/releases/download/v0.2.2/burrow_ssh-0.2.2-py3-none-manylinux_2_28_x86_64.whl">pipx wheel</a> and <a href="https://github.com/Bochner/burrow/releases/download/v0.2.2/SHA256SUMS">SHA256SUMS</a>. Download the public archive and checksums, then verify before extracting:</p>
-<pre data-lang="Local shell"><code>sha256sum --check --ignore-missing SHA256SUMS
-mkdir -m 700 "$HOME/burrow-v0.2.2"
-tar -xzf burrow-v0.2.2-linux-amd64.tar.gz -C "$HOME/burrow-v0.2.2"
-"$HOME/burrow-v0.2.2/burrow" --help
-export PATH="$HOME/burrow-v0.2.2:$PATH"</code></pre>
-<p>Use a fresh operator-owned directory. Release notes identify the exact source commit and archive digest. The archive contains <code>burrow</code>, <code>hovel-module.yaml</code>, <code>burrow-agent.zip</code> and Hovel's license; it downloads the separately pinned Hovel runtime on first launch. There is no automatic updater.</p>
-<p>The older v0.1.0 release has source only and lacks <code>capabilities</code>, <code>workspace</code> subcommands, <code>follow</code> and <code>agent install</code>. The public module identity <code>burrow@0.1.0</code> is not a feature-version check. See <a href="user-guide.html#versions">release scope and acceptance status</a>.</p>
+<p>Burrow supports Linux amd64 and requires OpenSSH client tools. It installs its pinned Hovel runtime on first workspace launch; the SSH target needs only a running SSH server and your authorized account.</p>
 <h2 id="requirements">Requirements</h2>
-<table><thead><tr><th>Use</th><th>Required</th></tr></thead><tbody>
-<tr><td>Build</td><td>Linux amd64, Git and the <a href="https://github.com/aspect-build/aspect-cli#installation">Aspect CLI launcher</a>. Network access for the public repository and uncached pinned dependencies.</td></tr>
-<tr><td>Run</td><td>Linux amd64 with OpenSSH client tools (<code>ssh</code> and <code>ssh-keygen</code>), an account-owned private workspace and a terminal for the TUI. The pinned Hovel wheel targets manylinux 2.28 x86_64; other operator platforms are unsupported.</td></tr>
-<tr><td>View</td><td>Optional: Vim with syntax and JSON runtime files for profile editing and the Ctrl+N/Ctrl+L viewers. SSH shell history and the native Markdown report browser do not require Vim.</td></tr>
-<tr><td>SSH target</td><td>An already running SSH server and an authorized account. File workflows need SFTP. Reverse-listener verification and process-group cancellation need the Linux facilities documented in their chapters.</td></tr>
-<tr><td>Check</td><td>Development only: Docker and OpenSSH client tools for controlled SSH acceptance. Docker is not an operator runtime requirement.</td></tr>
+<table><thead><tr><th>Use</th><th>Requirement</th></tr></thead><tbody>
+<tr><td>Run</td><td>Linux amd64 compatible with manylinux 2.28, <code>ssh</code>, <code>ssh-keygen</code>, and a private workspace. Use a terminal for the TUI.</td></tr>
+<tr><td>Install a wheel</td><td>pipx and Python 3.10 or later.</td></tr>
+<tr><td>Build from source</td><td>Git and <a href="https://github.com/aspect-build/aspect-cli#installation">Aspect CLI</a>; network access for uncached pinned dependencies.</td></tr>
+<tr><td>Files</td><td>SFTP support on the SSH server.</td></tr>
+<tr><td>Optional editor</td><td>Local Vim with syntax and JSON runtime files for profile editing and log/output viewers.</td></tr>
 </tbody></table>
-<p>The checkout pins Aspect <code>2026.33.3</code> in <code>.aspect/version.axl</code> and Bazel <code>9.1.1</code> in <code>.bazelversion</code>. Run all build and check commands through Aspect; Go, Python, Node and site dependencies come from the declared toolchains.</p>
-<h2 id="build">Build and install</h2>
-<p>For the released baseline, clone the public release tag:</p>
-<pre data-lang="Local shell"><code>git clone --branch v0.2.2 https://github.com/Bochner/burrow.git
-cd burrow
-aspect burrow package</code></pre>
-<p>For a current-source build, run <code>aspect burrow package</code> in that checkout instead. Record <code>git rev-parse HEAD</code> and any local changes with your build. The declared output is <code>bazel-bin/core/cmd/burrow/package.tgz</code>. Extract it into a new operator-owned directory:</p>
-<pre data-lang="Local shell"><code>mkdir -m 700 "$HOME/burrow-install"
-tar -xzf bazel-bin/core/cmd/burrow/package.tgz -C "$HOME/burrow-install"
-"$HOME/burrow-install/burrow" --help
-export PATH="$HOME/burrow-install:$PATH"</code></pre>
-<p>Choose another fresh directory if that destination already exists. The PATH change applies to this shell; use the absolute executable path or add that directory to your shell configuration for later sessions. The package contains the executable, <code>hovel-module.yaml</code>, Hovel's license and <code>burrow-agent.zip</code>, whose contents are embedded in the executable.</p>
-<h2 id="first-launch">Open your first workspace</h2>
-<details><summary>Install the release wheel with pipx</summary>
-<p>Download the wheel and <code>SHA256SUMS</code> from the GitHub release, verify them as above, then install the local file. The wheel has not been published to PyPI. You can also build it from the release checkout with <code>aspect burrow-release build</code>; that output lands under <code>dist/</code>.</p>
-<pre data-lang="Local shell"><code>pipx install ./burrow_ssh-0.2.2-py3-none-manylinux_2_28_x86_64.whl
+<h2 id="distribution">Install a release archive</h2>
+<p>Download the Linux amd64 archive and <code>SHA256SUMS</code> from the same <a href="https://github.com/Bochner/burrow/releases">GitHub release</a>. Run these commands in the download directory, replacing <code>VERSION</code> with that release's version:</p>
+<pre data-lang="Local shell"><code>RELEASE_VERSION=VERSION
+sha256sum --check --ignore-missing SHA256SUMS
+mkdir -m 700 "$HOME/burrow-$RELEASE_VERSION"
+tar -xzf "burrow-v$RELEASE_VERSION-linux-amd64.tar.gz" -C "$HOME/burrow-$RELEASE_VERSION"
+export PATH="$HOME/burrow-$RELEASE_VERSION:$PATH"
 burrow --help</code></pre>
-<p>This requires pipx and Python 3.10 or later, plus the Linux/OpenSSH requirements above. The package contains the Go application; Python only launches it. Burrow still installs and verifies its own pinned Hovel. The distribution is <code>burrow-ssh</code>; <code>pipx install burrow</code> refers to an unrelated project. For a newer local wheel use <code>pipx install --force /absolute/new-wheel.whl</code>. Once public releases exist, use <code>pipx upgrade burrow-ssh</code>. Uninstall with <code>pipx uninstall burrow-ssh</code>; workspace state, installed agent skills, retained processes and the Hovel cache remain. Review and close live resources deliberately before removing the frontend. See <a href="releasing.html">release preparation</a>.</p>
-</details>
+<p>Proceed only if verification succeeds for the downloaded archive. Extract into a new directory. Add its path to your shell configuration for future sessions.</p>
+<h3>Alternative: install the release wheel</h3>
+<p>Download the wheel and checksums from the same GitHub release. After verification, install the local wheel:</p>
+<pre data-lang="Local shell"><code>sha256sum --check --ignore-missing SHA256SUMS
+pipx install ./burrow_ssh-VERSION-py3-none-manylinux_2_28_x86_64.whl
+burrow --help</code></pre>
+<p>Replace <code>VERSION</code> in the filename. The distribution is <code>burrow-ssh</code>; <code>burrow</code> is its console command. Python launches the bundled Go executable.</p>
+<h2 id="build">Build from source</h2>
+<pre data-lang="Local shell"><code>git clone https://github.com/Bochner/burrow.git
+cd burrow
+aspect burrow package
+mkdir -m 700 "$HOME/burrow-install"
+tar -xzf bazel-bin/core/cmd/burrow/package.tgz -C "$HOME/burrow-install"
+export PATH="$HOME/burrow-install:$PATH"
+burrow --help</code></pre>
+<p>Choose a fresh installation directory. To reproduce a release, check out its tag before building. Aspect supplies the declared Go and packaging toolchains.</p>
+<h2 id="first-launch">Open a workspace</h2>
 <pre data-lang="Local shell"><code>burrow --workspace "$HOME/burrow-lab"</code></pre>
-<p>The default command opens the Catppuccin Mocha management interface. Use a short absolute canonical path under a trusted parent; Burrow creates absent private workspace directories. Symlinks, unsafe permissions and overly long socket paths are refused. A workspace separates settings and evidence, but does not isolate processes running as the same user.</p>
-<p>In management, enter <code>connect</code> for guided entry. Use <code>help</code> or <kbd>F1</kbd> for commands and <kbd>Ctrl+P</kbd> for the searchable menu. Follow <a href="connections.html">connections</a> and <a href="workspace-navigation.html">workspace navigation</a> next.</p>
-<p>For JSON setup without a TUI, use the release-compatible <code>status</code> command:</p>
-<pre data-lang="Local shell"><code>burrow --workspace "$HOME/burrow-lab" status</code></pre>
-<p><code>status</code> initializes or reuses a workspace; it is not a read-only probe of an absent workspace. Use <code>workspace open</code> for the same operation and <code>workspace inspect</code> to verify an existing daemon without initializing it. Each invocation needs its own explicit workspace. Global flags such as <code>--offline</code> and <code>--no-color</code> go before the command.</p>
-<h2 id="offline">Offline and managed Hovel setup</h2>
-<p>Normal first launch downloads the exact Hovel v0.4.4 wheel and extracts its verified executable; it does not run pip. Later launches reuse the verified cache at <code>$XDG_CACHE_HOME/burrow/hovel/0.4.4</code>, falling back to <code>~/.cache/burrow/hovel/0.4.4</code>. <code>XDG_CACHE_HOME</code>, when set, must be absolute.</p>
-<pre data-lang="Local shell"><code># An already populated, verified cache:
-burrow --workspace "$HOME/burrow-lab" --offline status
-# First launch using an existing copy of the exact pinned wheel:
-burrow --workspace "$HOME/burrow-lab" --offline --hovel-package /absolute/hovel-0.4.4-py3-none-manylinux_2_28_x86_64.whl status</code></pre>
-<p>Obtain that exact wheel from <a href="https://github.com/vibepwners/hovel/releases/tag/v0.4.4">Hovel v0.4.4</a>. These options are for offline environments; they are not required normal setup. A different wheel or executable is refused. Burrow supports its own pinned local daemon, not adoption of an arbitrary existing Hovel installation or remote daemon.</p>
-<details><summary>Exact Hovel provenance and integrity pins</summary>
-<table><thead><tr><th>Input</th><th>Pin</th></tr></thead><tbody>
-<tr><td>Runtime release/source</td><td>v0.4.4 / <code>1789ce47554a2ee17c7bd46d391b63946af60d0a</code></td></tr>
-<tr><td>Wheel SHA256</td><td><code>87205142bb21af86e68819372467b814949d9f5f86b321003e8aa2c721fb503a</code></td></tr>
-<tr><td><code>hovel/bin/hovel</code> SHA256</td><td><code>0df24452dd7dcd0ea13dd1f3a52547ecce26f51e3f1df89e1df4b3abc4b6dcf8</code></td></tr>
-<tr><td>SDK source</td><td><code>1789ce47554a2ee17c7bd46d391b63946af60d0a</code>, recorded in <code>MODULE.bazel</code>; inspected SDK/runtime sources match the release.</td></tr>
-</tbody></table>
-<p>The independent archive and executable digests are enforced by <code>core/launch/package.go</code>. The package cannot override them. Burrow's module manifest uses its public SDK; protocol stdout is framed JSON-RPC, while the frontend owns terminal presentation.</p>
-</details>
+<p>Use a short absolute canonical path under a trusted parent. Burrow creates absent private workspace directories and refuses symlinks, unsafe permissions and socket paths over 90 bytes.</p>
+<p>Enter <code>connect</code> for guided entry, <kbd>F1</kbd> for help or <kbd>Ctrl+P</kbd> for the menu. Continue with <a href="connections.html">connections</a> and <a href="workspace-navigation.html">workspace navigation</a>.</p>
+<p>For JSON setup without a terminal interface:</p>
+<pre data-lang="Local shell"><code>burrow --workspace "$HOME/burrow-lab" workspace open
+burrow --workspace "$HOME/burrow-lab" workspace inspect</code></pre>
+<p><code>open</code> initializes or reuses a workspace; <code>inspect</code> verifies an existing daemon without initializing it. <code>status</code> is an alias for open. Global flags go before the command.</p>
+<h2 id="offline">Offline setup</h2>
+<p>First launch downloads and verifies the exact Hovel v0.4.4 wheel without running pip. Later launches use the verified cache under <code>${XDG_CACHE_HOME:-$HOME/.cache}/burrow/hovel/0.4.4</code>. A configured <code>XDG_CACHE_HOME</code> must be absolute.</p>
+<pre data-lang="Local shell"><code># Reuse a populated, verified cache.
+burrow --workspace "$HOME/burrow-lab" --offline workspace open
+# Populate a fresh cache from the exact pinned wheel.
+burrow --workspace "$HOME/burrow-lab" --offline \
+  --hovel-package /absolute/hovel-0.4.4-py3-none-manylinux_2_28_x86_64.whl workspace open</code></pre>
+<p>Obtain the wheel from <a href="https://github.com/vibepwners/hovel/releases/tag/v0.4.4">Hovel v0.4.4</a>. Different wheels and arbitrary existing or remote daemons are refused. Integrity pins live in <a href="https://github.com/Bochner/burrow/blob/main/core/launch/package.go">the package verifier</a>.</p>
 <h2 id="upgrade">Upgrade deliberately</h2>
 <ol>
-<li>Build the intended source revision and extract into a fresh directory. Keep the old executable while its retained resources still need it.</li>
-<li>Before a Hovel runtime upgrade, inspect active connections and retained work. Then run <code>burrow --workspace PATH restart --yes</code> with the new build. This explicit restart verifies the old daemon against its launch receipt, ends its live sessions, preserves its runtime files under <code>.burrow-upgrade-*</code>, starts the new pin and opens the TUI. Ordinary launch never replaces a mismatched daemon automatically.</li>
-<li>Reconnect explicitly with saved settings. The workspace directory, saved settings and collected evidence remain; stale or replaced process evidence is still refused for manual recovery.</li>
-<li>If a retained owner lacks a required capability, inspect its connections and review <a href="workspace-navigation.html#manager">manager retirement</a>. The release-compatible <code>burrow --workspace PATH restart</code> asks before ending that manager and opening the TUI; v0.2.0 also provides the headless workflow.</li>
-<li>Re-export chains whose build or resource bindings have changed.</li>
+<li>Download and verify the intended release, then extract into a fresh directory. For a wheel, use <code>pipx install --force /absolute/new-wheel.whl</code>.</li>
+<li>Inspect active connections and retained work. Keep the previous binary while its resources need it.</li>
+<li>For a manager update, review <a href="workspace-navigation.html#manager">workspace restart</a>. It ends that manager's resources and registers the current executable.</li>
+<li>For a Hovel runtime change, use the new executable's <code>restart</code> command below. Review before confirming: it ends live sessions and launches the new pinned daemon.</li>
+<li>Reconnect explicitly and re-export chains whose bindings changed. Saved settings and collected evidence remain.</li>
 </ol>
-<p>There is no automatic Burrow updater. A stale receipt, unknown socket or incomplete cache publication requires investigation; see <a href="troubleshooting.html">troubleshooting</a>. Quit reviews whether to keep or close connections, and retains the Hovel daemon in either case.</p>
+<pre data-lang="Local shell"><code>burrow --workspace /absolute/workspace restart</code></pre>
+<p>Ordinary launch never replaces a mismatched daemon automatically. See <a href="troubleshooting.html">troubleshooting</a> for stale receipts or uncertain ownership.</p>
+<p>To uninstall a wheel, use <code>pipx uninstall burrow-ssh</code>. Workspaces, agent skills, retained processes and the Hovel cache remain; close live resources deliberately before removing the frontend.</p>
 </article>

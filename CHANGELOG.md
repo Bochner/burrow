@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4] - 2026-09-30
+
+- Scrub the operator book: concise workflows, labelled command examples, Mermaid ownership/lifecycle diagrams, current capability guidance and a focused developer/release path. Remove one-time PyPI publisher setup and historical acceptance narratives from the published book.
+- Present the generated API as commands, typed parameters, approvals, effects and return fields, with full JSON schemas available as details.
+- Fix homepage scroll snapping that prevented returning to the opening section. Preserve the Hovel Reports application.
+- Verification: Aspect documentation/link/search checks and desktop/mobile browser checks for scrolling, diagrams and page overflow; Python format/lint gates.
+
 ## [0.2.3] - 2026-09-28
 
 ### Fixed

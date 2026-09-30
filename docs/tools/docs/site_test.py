@@ -1,6 +1,7 @@
 """Check the emitted Pages book, navigation, assets, and search under /burrow/."""
 
 import json
+import html as html_module
 import os
 import re
 import sys
@@ -63,6 +64,17 @@ for operation in contract["operations"]:
     assert f'id="{operation["id"]}"' in html, operation["id"]
     assert operation["agent"]["status"] in html, operation["id"]
     assert any(operation["id"] in entry["text"] for entry in index), operation["id"]
+# These contracts must be readable without opening the raw schema disclosure.
+results_html = (root / "api/results.html").read_text()
+results_visible = html_module.unescape(re.sub(r"<details>.*?</details>", "", results_html, flags=re.S))
+inputs_visible = html_module.unescape(
+    re.sub(r"<details>.*?</details>", "", (root / "api/inputs.html").read_text(), flags=re.S)
+)
+assert "<code>object | Run</code>" in results_visible, "named result unions must retain references"
+assert "<code>string[] | null</code>" in results_visible, "nullable arrays must retain element types"
+assert '<code>"stream" | "inline" | "stage"</code>' in inputs_visible, "enum-only inputs need readable types"
+for name in ["ShellControl", "Activity"]:
+    assert contract["results"][name]["description"] in results_visible, f"hidden {name} interpretation guidance"
 for page in pages:
     assert re.search(r'href="[^"]*api/"[^>]*>API</a>', page.read_text()), page
 assert 'aria-current="page">API</a>' in (root / "api/index.html").read_text()

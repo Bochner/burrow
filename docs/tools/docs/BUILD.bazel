@@ -52,6 +52,16 @@ py_test(
     data = ["//docs/site:astro_site", "//core/cmd/burrow:burrow"],
 )
 
+py_test(
+    name = "browser_test",
+    size = "medium",
+    srcs = ["browser_test.py"],
+    args = ["$(rootpath //docs/site:astro_site)"],
+    data = ["//docs/site:astro_site"],
+    tags = ["manual", "local"],
+    legacy_create_init = 0,
+)
+
 py_binary(
     name = "stage_site",
     legacy_create_init = 0,

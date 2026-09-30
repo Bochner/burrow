@@ -1,6 +1,7 @@
 ---
 // Adapted from Hovel c461ba; Copyright 2026 William Born; Apache-2.0. See UPSTREAM.md.
 import BookContents from "../components/BookContents.astro";
+import Diagrams from "../components/Diagrams.astro";
 import Sidebar from "../components/Sidebar.astro";
 import { bookChapter, orderedPages, rootPrefix, type DocPage } from "../lib/catalog";
 import PageShell from "./PageShell.astro";
@@ -29,6 +30,7 @@ const next = ordered[index + 1];
         <span class="document-context">Part {String(chapter.partNumber).padStart(2, "0")} / {chapter.partLabel}</span>
       </header>}
       <slot />
+      {!api && <Diagrams />}
       {page.slug === "spec/index" && <BookContents root={root} />}
       <nav class="page-nav" aria-label="Page navigation">
         {previous ? <a class="prev" href={`${root}${previous.href}`}><span class="page-nav-direction">← Previous</span><strong>{previous.title}</strong></a> : <span />}

@@ -1,10 +1,31 @@
 <!-- burrow-doc: {"title":"Hovel integration","group":"Runtime Platform","order":200} -->
-<article><h1>Hovel integration</h1>
-<p>Burrow uses Hovel’s public SDK and protocol through the single <code>burrow@0.1.0</code> module for workspace inspection, saved profiles, retained SSH connections and shell lifecycle, forwarding, files, runs, reports and chains. See <a href="connections.html">connection operation and legacy-module transition</a>.</p>
+<article>
+<h1>Hovel integration</h1>
+<p>Burrow uses Hovel's public SDK and daemon protocol through one base module, <code>burrow@0.1.0</code>. Hovel runs locally; the SSH target needs no Burrow or Hovel installation.</p>
+<figure class="diagram"><figcaption>Runtime ownership</figcaption><pre class="mermaid">flowchart TB
+accTitle: Burrow and Hovel ownership
+accDescr: Frontends use the local Hovel daemon and its retained Burrow module. That module owns OpenSSH connections to remote servers. Hovel stores collected evidence.
+Human[Human TUI] --&gt; Hovel[Local Hovel daemon]
+Agent[Agent CLI] --&gt; Hovel
+Hovel --&gt; Module[Retained Burrow module]
+Module --&gt; SSH[OpenSSH master]
+SSH --&gt; Target[Remote SSH server]
+Hovel --&gt; Evidence[Workspace state and artifacts]</pre><p>Human and agent frontends share the selected workspace and retained resources.</p></figure>
 <h2>Who owns what?</h2>
-<table><thead><tr><th>Owner</th><th>Resources</th><th>On frontend exit</th></tr></thead><tbody><tr><td>Burrow frontend</td><td>Terminal rendering, shared-shell attachments, editor and Hovel CLI processes.</td><td>End with this frontend.</td></tr><tr><td>Hovel-retained Burrow module</td><td>Connection manager, SSH masters, forwarding, transfers, retained shells and separate retained runs.</td><td>Remain subject to quit review and exact-resource cleanup.</td></tr><tr><td>Hovel daemon/workspace</td><td>Session records, plans, confirmations, saved state and collected artifacts.</td><td>Daemon remains; artifacts follow Hovel retention.</td></tr></tbody></table>
-<p>Hovel module stdout belongs exclusively to framed JSON-RPC. The separate Charm frontend owns rendering and shell attachments; retained modules own SSH connections, shells and runs. Hovel owns workspaces, sessions, confirmations and collected artifacts.</p>
-<p><a href="automation.html">Saved-chain automation</a> uses explicit workspace selection and Hovel's confirmation and launch policy. <a href="chains.html">Connection and tunnel chains</a> either create an explicitly confirmed connection to a running SSH server or consume an exactly selected live tunnel. Tunnel consumption is bounded owner-mediated HTTP, with no transparent arbitrary-module routing or generic Mesh bridge. <a href="reports.html">Markdown reports</a> remain ordinary Hovel artifacts usable outside Burrow.</p>
-<p>v0.2.0 <a href="shells.html#retained">session commands</a> create and manage Hovel-retained shells. Headless shared input, resize, independent observation and screen snapshots use public session commands. TUI tabs attach to these same sessions, with independent snapshots and explicit controller takeover. Keep running releases this frontend’s claims while retaining shells. See <a href="lifecycle.html">resource lifetimes</a> and <a href="../api/">the generated CLI/base-module reference</a>. Optional MCP is not required for Burrow operator skills, and Burrow exposes no separate REST service or public SDK.</p>
-<h2>Evidence and decisions</h2>
-<p>Read the <a href="https://github.com/Bochner/burrow/blob/main/docs/research/hovel-integration.md">Hovel integration research</a> and the <a href="https://github.com/Bochner/burrow/issues/1">decision map</a>. Research recommendations are not approved architecture, and the linked initial research predates the production SDK and controlled SSH acceptance. Historical prototype identities are not production modules.</p></article>
+<table><thead><tr><th>Owner</th><th>Resources</th><th>Frontend exit</th></tr></thead><tbody>
+<tr><td>Burrow frontend</td><td>Rendering, shell attachments, editors and embedded Hovel CLI.</td><td>Frontend processes end; shell claims are released on normal detach.</td></tr>
+<tr><td>Hovel-retained Burrow module</td><td>SSH masters, listeners, transfers, shared shells and separate run sessions.</td><td>Keep running retains them. Explicit close or manager loss ends dependent resources.</td></tr>
+<tr><td>Hovel daemon</td><td>Workspace state, session records, plans, confirmations and collected artifacts.</td><td>The daemon remains running.</td></tr>
+</tbody></table>
+<p>Module stdout is exclusively framed JSON-RPC. SDK logging carries progress; the separate frontend renders the terminal.</p>
+<h2>Integration surfaces</h2>
+<ul>
+<li><a href="../api/">CLI reference</a>: commands, JSON results and installed capability discovery.</li>
+<li><a href="chains.html">Saved Hovel chains</a>: confirmed connection creation or requests through exactly selected tunnels.</li>
+<li><a href="automation.html">Local automation</a>: retained local tools and documented public daemon operations.</li>
+<li><a href="shells.html">Shared sessions</a>: one controller, independent observers and explicit takeover.</li>
+</ul>
+<p>Burrow publishes no separate REST service or SDK. MCP is optional for external agents. Tunnel consumption is bounded owner-mediated HTTP, not transparent routing for arbitrary modules.</p>
+<h2>Decisions and evidence</h2>
+<p>The <a href="https://github.com/Bochner/burrow/issues/1">decision map</a> records accepted scope. <a href="https://github.com/Bochner/burrow/blob/main/docs/research/hovel-integration.md">Initial integration research</a> and historical prototypes are evidence, not current implementation specifications. See <a href="lifecycle.html">resource lifetimes</a> for loss and recovery limits.</p>
+</article>

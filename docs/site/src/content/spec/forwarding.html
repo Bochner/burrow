@@ -1,45 +1,54 @@
 <!-- burrow-doc: {"title":"SSH forwarding","group":"Operator Experience","order":210} -->
 <article>
 <h1>SSH forwarding</h1>
-<p>Create local or reverse TCP listeners on an existing named connection. Commands work in Burrow management and through <code>burrow --workspace /absolute/workspace COMMAND</code>. Required endpoints come first:</p>
-<pre><code>tunnel create gateway forward 8080 localhost 80
-tunnel create gateway forward 8080 localhost 80 --yes
-tunc gateway l 8080 localhost 80
-tunnel create gateway reverse 3000 127.0.0.1 3000
-tunc gateway r 3000 127.0.0.1 3000
-tunc gateway r 0 127.0.0.1 3000
-tunnel list
-tunnel check gateway/CREATION_ID
-tunnel remove gateway/CREATION_ID
-tund gateway/CREATION_ID --yes</code></pre>
-<p>In the TUI, the first command opens the existing confirmation recap; Escape or Cancel creates nothing. The CLI returns a review without <code>--yes</code>. To bind approval to that exact review, repeat its <code>--review HASH</code> with <code>--yes</code>. The listening endpoint defaults to <code>127.0.0.1</code>; select another literal address explicitly, such as <code>0.0.0.0:8080</code>. Broader binds expose the forwarded service to other hosts. Local forwarding reaches the destination from the SSH server; reverse forwarding reaches it from the local SSH client. IPv6 listening endpoints use brackets, for example <code>[::1]:8080</code>; the separate destination HOST argument uses a bare address, such as <code>::1</code>. TCP ports must be 1–65535, except reverse LISTEN port <code>0</code> requests a random high port.</p>
-<p><code>tunc CONNECTION l LISTEN HOST PORT</code> aliases <code>tunnel create CONNECTION forward LISTEN HOST PORT</code>; <code>r</code> aliases <code>reverse</code>; <code>tund ID</code> aliases <code>tunnel remove ID</code>. Both spellings share validation, immutable review and confirmation. Tab after <code>tunnel create </code> or <code>tunc </code> offers live connection names and directions from the current workspace, excluding saved profiles and closed/lost connections.</p>
-<p>The TUNNELS table retains the ID, owning connection, direction, listening endpoint, destination and observed state. Listener and destination cells identify their local or remote side. Alt+Shift+Up/Down scrolls overflowing rows. Tab completes connection names and complete tunnel IDs; <code>tunnel list</code> exposes full metadata when a narrow table truncates text. JSON direction <code>L</code> means local listener and remote destination; <code>R</code> means remote listener and local destination. IDs include a per-creation identity and never mean “whatever now occupies this port”. The connection-owned SOCKS proxy remains in the PROXY column, separate from forwarding inventory.</p>
+<p>Create listeners on an existing SSH connection. A listener and its destination belong to different sides of the SSH transport.</p>
 <h2>Choose a direction</h2>
-<table><thead><tr><th>Kind</th><th>Listener</th><th>Destination reached from</th></tr></thead><tbody><tr><td>Local / forward</td><td>Operator machine</td><td>SSH server</td></tr><tr><td>Remote / reverse</td><td>SSH server</td><td>Operator machine</td></tr><tr><td>SOCKS proxy</td><td>Operator machine</td><td>SSH server; chosen by each client request</td></tr></tbody></table>
-<p>For SOCKS use <code>proxy create gateway 1080</code> on an existing connection, then configure your client for that proxy. See <a href="connections.html#socks">SOCKS setup, inspection and removal</a>.</p>
-<h2>Reverse listener and local destination</h2>
-<p>For <code>reverse</code>/<code>r</code>, LISTEN is on the SSH server. HOST PORT is reached from the local SSH client, so <code>127.0.0.1</code> names the operator machine, not the server. A missing destination returns required-argument help without creating a listener. Select remote exposure explicitly, for example <code>0.0.0.0:3000</code> or <code>[::1]:3000</code>.</p>
-<p>Reverse LISTEN <code>0</code> (or <code>IP:0</code>) requests a random high port. Burrow tries up to eight candidates in 49152–65535 through actual OpenSSH allocation; it never advertises a merely probed free port. Inventory reports the successfully allocated <code>listen</code> endpoint and preserves <code>requestedListen</code>. Each creation remains independent, including repeated requests to the same destination. This deliberately avoids OpenSSH’s reuse of identical zero-port forwarding requests.</p>
-<p>Reverse exposure verification requires a Linux SSH server with readable <code>/proc/net/tcp</code> and, when IPv6 is enabled, <code>/proc/net/tcp6</code>, plus shell access and <code>awk</code>/<code>od</code>. No Python or uploaded helper is required. Burrow checks access before allocation and reads actual listening addresses afterward. Server <code>GatewayPorts</code> overrides that narrow or widen the requested address are refused and the selected listener is cancelled. A broader bind normally needs <code>GatewayPorts clientspecified</code>; <code>GatewayPorts yes</code> can force both wildcard address families and be refused even for an explicit IPv4 wildcard request. Exposure can differ briefly between allocation and verification. This observation trusts the authenticated server’s kernel tables; it is not an independent firewall or Internet-reachability assessment.</p>
-<p>Unreadable or malformed observations never count as a verified bind. If cancellation or its verification is uncertain, the creation remains <code>unverified</code> in inventory; inspect it and explicitly close its connection. A remote port already in use is conservatively refused across bind addresses, preserving existing listeners. Same-user changes outside Burrow are outside its ownership contract.</p>
-<h2>Verify and remove</h2>
-<p>Successful allocation means the requested local or remote listener exists, not that its destination is reachable. OpenSSH checks destination reachability and server forwarding permissions when a client uses it. Use the destination service’s normal client against the listener on its corresponding side to verify application traffic. <code>tunnel check CONNECTION/ID</code> performs a bounded passive greeting check: it sends no application commands and discards the received byte. It reports observed return traffic, a failure with destination/server guidance, or an inconclusive result for a silent service. It does not promise application authentication or health.</p>
-<p>For reverse tunnels, the same check first verifies remote exposure, then opens a channel from the SSH server to the remote listener and waits for a local-destination greeting. It requires server <code>AllowTcpForwarding</code>/<code>PermitOpen</code> access for this diagnostic channel. A server permitting only remote forwarding can still serve normal remote clients even if the diagnostic channel is refused. Use the service’s normal client on the remote host to establish application health; a same-port local service cannot satisfy the reverse check.</p>
-<p>Occupied ports and invalid binds fail without replacing sibling forwards. A lost allocation acknowledgement is reported as unverified with its creation identity; inspect before retrying, and explicitly close the connection if listener cleanup cannot be verified. Removing a selected forward stops new connections to that listener; already accepted streams may finish. Other listeners and the SSH connection remain usable. Keep-running quit retains forwards, while connection close removes all its listeners. Master loss marks its forwards unavailable; reconnect never recreates them.</p>
-<details><summary>Ownership, evidence and compatibility</summary>
-<p>The retained <code>burrow</code> manager owns the inventory. Creation uses the existing confirmed Hovel throw with immutable endpoints, owner generation and connection creation; Hovel retains the real plan, confirmation and run. Inventory and selected removal use the existing public session-command workaround and bounded SDK diagnostics, with the same audit limitations as connection inspection and close. Raw forwarded traffic and passive check output are not collected artifacts. Existing saved settings and evidence survive removal and connection close.</p>
-<p>All capabilities remain in <code>burrow@0.1.0</code>; there is no second daemon or resource registry. Public manager commands are <code>tunnels GENERATION</code>, <code>unforward GENERATION CONNECTION_CREATION ID</code>, and <code>tunnel-check GENERATION CONNECTION_CREATION ID</code>. The <code>forward</code> control is for the confirmed adapter, not a replacement approval route. Retained owners from an earlier binary may lack these controls; close their resources explicitly and restart the manager before reconnecting. Unknown ownership is never adopted.</p>
-<p>This follows the pinned <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/src/lazyssh/ssh.py">LazySSH forward/cancel implementation</a> and <a href="https://github.com/Bochner/lazyssh/blob/9eb84452c31cb527bf8e938e23ffc92974fb91cb/tests/test_ssh.py">its tunnel tests</a>. Intentional differences are explicit bind selection, verified reverse exposure, real random allocation, connection-qualified opaque IDs, immutable review binding, non-secret diagnostics and retained-owner inventory. See <a href="chains.html">SSH and tunnel chains</a> for the confirmed HTTP consumer and its TUI/CLI walkthroughs.</p>
+<table><thead><tr><th>Kind</th><th>Listener</th><th>Destination reached from</th></tr></thead><tbody>
+<tr><td>Local / forward (L)</td><td>Operator machine</td><td>SSH server</td></tr>
+<tr><td>Remote / reverse (R)</td><td>SSH server</td><td>Operator machine</td></tr>
+<tr><td>SOCKS (D)</td><td>Operator machine</td><td>SSH server; each client chooses a destination</td></tr>
+</tbody></table>
+<figure class="diagram"><figcaption>Listener and destination</figcaption><pre class="mermaid">flowchart LR
+accTitle: Local and reverse forwarding
+accDescr: A local listener sends traffic through SSH to a destination reached from the server. A remote listener sends traffic through SSH to a destination reached from the operator machine.
+subgraph L[Local forward]
+  LC[Local client] --&gt; LL[Local listener] --&gt; LS[SSH server] --&gt; LD[Remote destination]
+end
+subgraph R[Reverse forward]
+  RC[Remote client] --&gt; RL[Remote listener] --&gt; RO[SSH operator] --&gt; RD[Local destination]
+end</pre><p>For reverse forwarding, destination 127.0.0.1 means the operator machine.</p></figure>
+<h2>Create a listener</h2>
+<pre data-lang="Burrow management"><code># Reach a service from the SSH server through local port 8080.
+tunnel create gateway forward 8080 localhost 80
+# Expose a local service through remote port 3000.
+tunnel create gateway reverse 3000 127.0.0.1 3000
+# Ask for a random high remote port.
+tunnel create gateway reverse 0 127.0.0.1 3000</code></pre>
+<p>These are alternatives; review the endpoint you intend to expose. The TUI opens a recap; Escape creates nothing. A standalone CLI call returns a review. Repeat that creation with <code>--yes --review HASH</code> to bind approval.</p>
+<p>A port-only listener binds to <code>127.0.0.1</code>. Select another literal address with <code>IP:PORT</code>, or <code>[IPv6]:PORT</code>. Broad binds expose the service to other hosts. Destination IPv6 arguments are bare addresses.</p>
+<p>Ports are 1–65535; reverse LISTEN 0 requests a random port. Burrow attempts actual allocation in 49152–65535, up to eight candidates. Inventory preserves <code>requestedListen</code> and reports the allocated endpoint.</p>
+<h2>Inspect and check traffic</h2>
+<pre data-lang="Burrow management"><code>tunnel list
+tunnel check gateway/CREATION_ID</code></pre>
+<p>Use the complete ID returned by inventory, not a port or table row number. IDs bind one creation. <code>L</code> and <code>R</code> identify the listener side; SOCKS inventory remains separate.</p>
+<p>Allocation proves a listener exists, not that its destination works. Test with the service's normal client on the listener side. <code>tunnel check</code> waits for a passive greeting, sends no application command and discards the received byte. Silent services can be inconclusive.</p>
+<h2>Reverse exposure requirements</h2>
+<ul>
+<li>A Linux SSH server with readable <code>/proc/net/tcp</code> and, when enabled, <code>/proc/net/tcp6</code>.</li>
+<li>Shell access and <code>awk</code>/<code>od</code> for observing actual bind addresses.</li>
+<li>Compatible server forwarding permissions. A broad requested bind normally requires <code>GatewayPorts clientspecified</code>.</li>
+</ul>
+<p>Unexpectedly narrowed or widened binds are refused and cancelled. Exposure can differ briefly between allocation and verification. Kernel-table observation is not a firewall or Internet-reachability assessment.</p>
+<p>The passive reverse check also needs a server-origin forwarding channel. A server permitting only remote forwarding may serve remote clients while refusing that diagnostic channel.</p>
+<h2>Remove and recover</h2>
+<pre data-lang="Burrow management"><code>tunnel remove gateway/CREATION_ID</code></pre>
+<p>Review and confirm removal. It stops new connections to that listener; accepted streams may finish. Siblings and the SSH master remain. Keep-running quit retains listeners; connection close ends all of them. Reconnect never recreates them.</p>
+<p>Occupied ports are refused without replacing siblings. Uncertain allocation or cancellation remains <strong>unverified</strong>. Inspect before retrying; explicitly close the connection if cleanup cannot be verified.</p>
+<details><summary>Compatibility aliases</summary>
+<pre data-lang="Burrow management"><code>tunc gateway l 8080 localhost 80
+tunc gateway r 3000 127.0.0.1 3000
+tund gateway/CREATION_ID</code></pre>
+<p>Aliases share the same validation and reviews. <code>tunnel remove</code> does not accept <code>--review</code>; use its own advertised approval flow.</p>
 </details>
-<details><summary>Verification</summary>
-<pre><code>aspect burrow forward-check
-aspect burrow reverse-check
-aspect test //core/cmd/burrow:connection_test //core/cmd/burrow:interaction_test //core/connection:forward_control_test
-aspect burrow-check ci
-aspect burrow-check</code></pre>
-<p>The disposable OpenSSH lab checks actual bidirectional traffic and concurrent users, explicit exposure, duplicate/occupied binds, server refusal, selected removal, stale identities, connection loss/reconnect and teardown, TUI approval/cancellation, frontend quit retention and real Hovel confirmation evidence. Portable checks cover invalid inputs before workspace mutation, table overflow/completion, semantic colors, no-color, narrow layouts and safe text. The full SSH gate includes this lab with existing shell, authentication and ownership checks.</p>
-<p>The reverse check adds remote-origin round trips, independent random allocations, IPv4/IPv6 exposure, <code>GatewayPorts no/yes/clientspecified</code>, unavailable or malformed observations before and after allocation, and visible cleanup uncertainty. Synthetic hostile service output must remain absent from diagnostics and workspace evidence.</p>
-<p>See <a href="logs.html">Operation logs</a> for workspace-specific Burrow operation results and the Ctrl+N Vim viewer. Interactive terminal bytes are not recorded.</p>
-</details>
+<p>See <a href="connections.html#socks">SOCKS</a>, <a href="chains.html">selected-tunnel HTTP chains</a> and the <a href="../api/tunnel.html">tunnel API</a>.</p>
 </article>
